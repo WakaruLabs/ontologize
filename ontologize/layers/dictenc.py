@@ -39,6 +39,7 @@ class DictEnc(nn.Module):
     select: str = "softmax"
     activation_dict: str = "none"
     norm_rows: bool = False
+    signed: bool = False
 
     # heads write disjoint slices of the output and concatenate, instead
     # of each getting the whole of it and summing. Selects
@@ -109,7 +110,7 @@ class DictEnc(nn.Module):
             h=self.h,
             select=self.select,
             activation=self.activation_dict,
-            norm_rows=self.norm_rows,
+            norm_rows=self.norm_rows, signed=self.signed,
             sparse=self.sparse_F, entropy_loss=self.entropy_loss,
             cossim_loss=self.cossim_loss, bcossim_loss=self.bcossim_loss,
             kcossim_loss=self.kcossim_loss,

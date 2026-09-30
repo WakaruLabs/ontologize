@@ -126,6 +126,10 @@ class Ontologizer(nn.Module):
     select: str = "softmax"
     activation_dict: str = "none"
     norm_rows: bool = False
+    # let atoms subtract (drop `abs()` in `DictBlock.dicts`). Non-negativity
+    # is elementwise and so basis-dependent, which is why it makes the
+    # decoder's null space load-bearing; see `DictBlock.dicts`.
+    signed: bool = False
     # see ConcatDictBlock: heads take disjoint slices of e_dec
     # instead of summing into all of it. Needs e_dec % h == 0.
     concat: bool = False
@@ -183,6 +187,7 @@ class Ontologizer(nn.Module):
             select=self.select, 
             activation_dict=self.activation_dict,
             norm_rows=self.norm_rows, concat=self.concat,
+            signed=self.signed,
             scaled=self.scaled, n_sc=self.n_sc,
             activation_router=self.activation_router, gate_router=self.gate_router, 
             biased_router=self.biased_router,

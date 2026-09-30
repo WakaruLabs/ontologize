@@ -41,6 +41,10 @@ class DictBlock(Sparse):
     # `|F|_1 = sum_hk P_hk |W_hk|_1`, and `|W_hk|_1 >= |W_hk|_2 = 1`.
     norm_rows: bool = False
 
+    # drop the `abs()` in `dicts()`, letting atoms subtract. See there for
+    # why this changes the reachable output set and not just the sign.
+    signed: bool = False
+
     sparse: bool = False
     entropy_loss: bool = False
     cossim_loss: bool = False
@@ -103,8 +107,19 @@ class DictBlock(Sparse):
         Under `norm_rows`, each row is then scaled to unit L2 norm. Doing it
         here rather than by projecting after the optimizer step makes the
         radial direction an exact null direction of the forward pass, so no
-        gradient is produced along it and none has to be projected out."""
-        W = jnp.abs(self.weights.astype(self.dtype))
+        gradient is produced along it and none has to be projected out.
+
+        `signed` drops the `abs`, which is a larger change than it looks.
+        Non-negativity is an ELEMENTWISE constraint and so basis-dependent,
+        which couples the decoder's row space to its null space: the visible
+        component `P a` of an atom generically has negative entries, so null
+        content is what lifts `a` into the non-negative orthant and makes
+        that visible component representable at all. Signed atoms need no
+        such lift, so the reachable set of output directions becomes the
+        decoder's column SPAN rather than the cone its columns generate."""
+        W = self.weights.astype(self.dtype)
+        if not self.signed:
+            W = jnp.abs(W)
         if not self.norm_rows:
             return W
         n = jnp.linalg.norm(W, axis=-1, keepdims=True)
