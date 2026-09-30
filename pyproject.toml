@@ -1,0 +1,36 @@
+[project]
+name = "ontologize"
+version = "0.1.0"
+description = "Dictionary learning for neural network interpretability: MoE-structured contrastive classifiers over frozen encoder activations"
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Keira Wiechecki" }]
+requires-python = ">=3.13"
+dependencies = [
+    "datasets>=4.8.5",
+    "einops>=0.8.2",
+    "flax>=0.12.6",
+    "grain>=0.2.16",
+    "importlib-resources",
+    "jax[cuda12]>=0.10.0",
+    "langcodes>=3.5.1",
+    "language-data>=1.4.0",
+    "matplotlib>=3.10.9",
+    "orbax-checkpoint",
+    "pillow",
+    "pytest>=9.0.3",
+    "torch",
+    "torch-xla>=2.9.0",
+    "tqdm",
+    "transformers",
+]
+
+[tool.uv]
+override-dependencies = [
+    "nvidia-cudnn-cu12>=9.12.0",
+]
+
+[tool.pytest.ini_options]
+# only the curated suite -- root-level test_*.py are ad hoc debug scripts,
+# not tests, and several execute GPU/checkpoint code at import time
+testpaths = ["tests"]

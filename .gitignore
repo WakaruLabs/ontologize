@@ -1,0 +1,42 @@
+# editor artifacts
+**/*~
+**/\#*\#
+**/.\#*
+**/*.swp
+**/*.db.lock
+
+# LaTeX artifacts
+**/*.aux
+**/*.bcf
+**/*.nav
+**/*.snm
+**/*.log
+**/*.out
+**/*.bbl
+**/*.blg
+**/*.run.xml
+**/*.fls
+**/*.fdb_latexmk
+**/*.synctex.gz
+
+# Python artifacts
+**/*.py[oc]
+**/__pycache__/
+**/dist/
+**/wheels/
+**/*.egg-info
+**/*.model
+**/*.pb
+**/*.pickle
+**/*.pt
+
+**/.venv/
+
+# cache directories
+**/preview/
+**/tmp/
+**/build/
+**/old/
+
+# embedding caches, run checkpoints, and eval artifacts (19G+)
+/data/
