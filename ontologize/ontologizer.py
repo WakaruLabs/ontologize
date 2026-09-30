@@ -150,6 +150,8 @@ class Ontologizer(nn.Module):
     activation_router: str = "none"
     gate_router: str = "none"
     biased_router: bool = False
+    # let a head's gain go negative; see `DictEnc.scale`
+    router_signed: bool = False
 
     sparse_K: bool = False
     sparse_F: bool = False
@@ -191,6 +193,7 @@ class Ontologizer(nn.Module):
             scaled=self.scaled, n_sc=self.n_sc,
             activation_router=self.activation_router, gate_router=self.gate_router, 
             biased_router=self.biased_router,
+            router_signed=self.router_signed,
             sparse_K=self.sparse_K, sparse_F=self.sparse_F,
             sparse_S=self.sparse_S,
             entropy_loss=self.entropy_loss,

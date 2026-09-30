@@ -55,6 +55,9 @@ class DictEnc(nn.Module):
     gate_router: str = "none"
     biased_router: bool = False
 
+    # let a head's gain go negative; see `scale`
+    router_signed: bool = False
+
     sparse_K: bool = False
     sparse_F: bool = False
     sparse_S: bool = False
@@ -275,9 +278,24 @@ class DictEnc(nn.Module):
 
     def scale(self, E: Float[Array, "... d_in"]) -> Float[Array, "... h"]:
         """Forward pass for `self.router`, which returns the router vector for the output of
-        `self.dict`. If `self.scaled=False`, returns vector of all 1s."""
+        `self.dict`. If `self.scaled=False`, returns vector of all 1s.
+
+        The sole site deciding the router's sign convention; every path that
+        needs `S` routes through here so they cannot disagree. `withStats`
+        alone repeats the rule, because it needs `L1_S` from the same call.
+
+        The `abs` keeps a head's contribution additive: `S_h < 0` flips that
+        head's whole output, and since `S` is a function of the input the
+        sign would be per-sample, so a tag would mean presence for one
+        sample and negation for another. `router_signed` allows that.
+
+        No `gate_router` makes the `abs` redundant. The router computes
+        `fn(gate(Ys[0]) * prod(Ys[1:]))`, so a non-negative gate bounds the
+        gate factor while the magnitude factor stays a signed linear term
+        and `S` still straddles zero."""
         if self.scaled:
-            return jnp.abs(self.router(E))
+            S = self.router(E)
+            return S if self.router_signed else jnp.abs(S)
         shape = E.shape[:-1] + (self.h,)
         return jnp.full(shape, 1.0, dtype=self.dtype)
 
@@ -287,7 +305,7 @@ class DictEnc(nn.Module):
         U, G = self.gainshape_in(E)
         P = self.dict.cluster(self.classifier(U))
         if self.scaled:
-            S = self.router(U)
+            S = self.scale(U)
             return self.gained(self.dict.fwd(P, S, *args, **kwargs), G)
         return self.gained(self.dict.fwd(P, *args, **kwargs), G)
 
@@ -343,8 +361,10 @@ class DictEnc(nn.Module):
         K_n, rng_F = self.classifier.addnoise(K, sd_K, rng)
 
         if self.scaled:
+            # `scale`'s rule, repeated because `L1_S` comes from the same call
             S, L1_S = self.router.withL1(U)
-            S = jnp.abs(S)
+            if not self.router_signed:
+                S = jnp.abs(S)
         else:
             S, L1_S = None, 0.0
 
