@@ -42,7 +42,8 @@ class DictBlock(Sparse):
     norm_rows: bool = False
 
     # drop the `abs()` in `dicts()`, letting atoms subtract. See there for
-    # why this changes the reachable output set and not just the sign.
+    # why this frees the dictionary's correlation structure and not just
+    # the sign of one entry.
     signed: bool = False
 
     sparse: bool = False
@@ -110,13 +111,14 @@ class DictBlock(Sparse):
         gradient is produced along it and none has to be projected out.
 
         `signed` drops the `abs`, which is a larger change than it looks.
-        Non-negativity is an ELEMENTWISE constraint and so basis-dependent,
-        which couples the decoder's row space to its null space: the visible
-        component `P a` of an atom generically has negative entries, so null
-        content is what lifts `a` into the non-negative orthant and makes
-        that visible component representable at all. Signed atoms need no
-        such lift, so the reachable set of output directions becomes the
-        decoder's column SPAN rather than the cone its columns generate."""
+        Non-negativity binds through the Gram matrix: two non-negative
+        vectors have `<a, a'> >= 0` exactly, so the dictionary is
+        non-negatively correlated by construction, and for independent
+        `abs`-normal entries the chance pairwise cosine is `2/pi`. A head
+        selects one of `k` entries, so whatever its rows share carries no
+        information about which was selected -- the constraint spends the
+        head's discriminative capacity. Training lowers that correlation
+        but cannot cross zero; signed rows start near zero."""
         W = self.weights.astype(self.dtype)
         if not self.signed:
             W = jnp.abs(W)
