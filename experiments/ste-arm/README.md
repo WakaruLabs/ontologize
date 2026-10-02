@@ -1,0 +1,1899 @@
+# ste-arm
+
+A straight-through (hard-code) Ontologizer arm, and the calibration it
+needed. `train_ste.py` imports `sonar.py` and reads every constant from
+it, so the arm cannot drift from the live config; only the flags below
+are overridden.
+
+## Why
+
+Two measurements motivate it, both from the repo's own artifacts.
+
+**The live softmax code is not discrete.** `pareto.py`'s end-to-end
+argmax row for `sweep_softmax_shm` is whitened FVU 8,690,470, against
+0.0007 for the same model's soft forward. So the tag assignment that
+`decode.py`'s interventions and `decode_tags.py` read is not what
+carries the embedding. Under `select="ste"` the forward *is* the
+argmax, so no such gap can open, and the first checkpoint confirmed it:
+the `hard (argmax)` and full-soft rows agree to four decimals.
+
+**800 bits cannot reconstruct SONAR.** A hard code transmits exactly
+`l*h*log2(k)` bits. Reverse water-filling on the whitened eval tail's
+covariance (participation ratio 268, 667 dimensions for 90% of
+variance) puts the best distortion *any* 800-bit code can reach at
+FVU_w 0.226, and the live architecture spends exactly 800. So the head
+count has to rise for a discrete ontology to be possible at all. Heads
+are the cheap axis: bits and parameters are both linear in `h`, and
+heads run in parallel where layers are sequential.
+
+| whitened FVU target | bits | heads at k=32 |
+|---|---|---|
+| 0.226 | 800 | 160, the live architecture |
+| 0.05 | 1,898 | 380, this arm's default `--h 76` |
+| 0.0023, the live soft model | 4,167 | 833 |
+
+## The calibration, and why the live schedule does not transport
+
+A naive port (live config, `select="ste"`) trains but learns nothing in
+the classifier. Three settings have to change, each for a measured
+reason. The root cause is one property: **the argmax forward is
+scale-invariant, so nothing ever pushes the classifier's logits up.**
+They sit at their initialization scale, measured here at a standard
+deviation of 0.0015 within a head, for the whole run.
+
+- **Logit noise must be relative, not absolute.** `sd_K=0.02` is an
+  absolute perturbation in logit units. Against a spread of 0.0015 it
+  is thirteen times the signal, so the argmax is chosen by noise. But
+  setting it to zero removes the only exploration and the codebook
+  collapses. `--noise-k batchnorm` scales the noise by the logit RMS,
+  which is the form an argmax forward needs.
+- **The surrogate temperature must track the logit scale.** `ste`
+  back-propagates `softmax(K/T)`, so T alone decides whether the
+  gradient is informative. The live anneal floor of 0.03 leaves
+  `spread/T` at 0.05 and the surrogate flat; even T=0.01 gives max p
+  0.043 against a uniform 0.031. The classifier then receives
+  essentially no signal, and what improves is the dictionary adapting
+  to a fixed random partition.
+- **`s_Hm` must be rescaled.** Its 1e-6 is calibrated against a
+  whitened MSE of ~3e-6. A hard code trains at an MSE orders of
+  magnitude larger, where the term is inert and heads collapse.
+
+Measured at 4000 steps, `lr=1e-5`, `--noise-k batchnorm --sd-k 0.3`:
+
+| T | spread/T | max p | effective entries/head | raw FVU |
+|---|---|---|---|---|
+| 0.01 | 0.15 | 0.043 | 23.4 | 178 |
+| 0.0015 | 0.78 | 0.135 | 26.4 | 193 |
+| 0.0005 | 3.38 | 0.681 | 14.0 | 59.2 |
+| 0.00015 | 16.84 | 0.974 | 3.8 | 7.3 |
+
+Sharpening the surrogate is what makes the classifier train at all
+(its logit spread finally grows, 0.0015 to 0.0025) and improves
+reconstruction 25-fold, but it trades directly against head usage.
+That trade is what `--s-hm` exists to hold.
+
+**Learning rate.** At sonar.py's 5e-5 every sharp-surrogate arm was
+stable for ~1700 steps and then collapsed abruptly, MSE rising three
+orders of magnitude while KL_m jumped from 3 to 13 bits. 1e-5 is
+stable; 3e-6 is too slow to be worth it.
+
+Note the learning-rate confound when reading any of these tables: arms
+at different `lr` are not comparable step-for-step.
+
+## Result
+
+`pareto.py` on the held-out eval tail, whitened FVU. The arm is
+`--temperature 0.00015 --lr 1e-5 --noise-k batchnorm --sd-k 0.3
+--s-hm 1e-4`, h=76.
+
+Final, after the full 24 epochs (369,500 steps).
+
+| point | index bits | continuous coeffs | FVU_w |
+|---|---|---|---|
+| origin (input-independent) | 0 | 0 | 1.029 |
+| **ste h76, hard argmax** | **1900** | **0** | **0.2293** |
+| ste h76, soft forward | 1900 | 0 | 0.2293 |
+| live softmax h32, hard argmax | 800 | 0 | 8,690,470 |
+| top2 h32, hard argmax | 800 | 0 | 0.471 |
+| SAE, L0 = 73 | 895 | 73 | 0.633 |
+| SAE, L0 = 625 | 7699 | 625 | 0.261 |
+| rate floor at 1900 bits | 1900 | 0 | 0.05 |
+
+Three things to read off it.
+
+**The soft and hard rows are identical**, to four decimals, at every
+checkpoint scored. That is the point of the arm: the discrete code is
+the model rather than a lossy reading of it, so the tag assignment the
+interventions and `decode_tags.py` operate on is the thing that
+reconstructs. The live softmax model's two rows differ by nine orders
+of magnitude.
+
+**A purely discrete code beats a sparse linear one.** At 1900 bits and
+no continuous coefficients the arm scores 0.2293, against 0.261 for
+the SAE that spends 625 continuous coefficients plus 7699 index bits.
+That is the comparison raising the head count was for: the earlier
+800-bit hard codes could not get near it.
+
+Note the `dev m` truncation rows are *worse* than the hard row here
+(0.343 at m=1, 0.321 at m=4), the reverse of their behaviour on a
+softmax model. They are not a capacity curve for this arm: `cluster`
+returns a one-hot under `ste`, so pinning entries toward the corpus-mean
+origin only adds mass the model was never trained to decode. The hard
+row is the whole code, and the honest capacity axis for a hard model is
+`l*h*log2(k)` itself.
+
+**It is within five times its own rate floor**, where the live model's
+discrete reading was seven orders of magnitude away. The remaining gap
+is what a product-residual VQ with non-negative atoms gives up against
+an optimal quantizer.
+
+Training curve: reconstruction converges early and the dictionary
+keeps improving for the rest of the run, which is the argument for
+training it out rather than stopping at the plateau.
+
+| step | MSE | KL_m | row collinearity / layer |
+|---|---|---|---|
+| 44,500 | 3.50e-4 | 3.19 | 0.812 |
+| 137,500 | 3.37e-4 | 2.78 | 0.779 |
+| 237,500 | 3.23e-4 | 2.73 | 0.738 |
+| 369,500 | 3.31e-4 | 2.71 | 0.686 |
+
+Head usage imbalance peaks at 14.8 bits around step 5k and falls to
+2.71; within-head row collinearity falls the whole way to 0.686,
+against the ~0.64 floor random non-negative rows give -- so by the end
+the dictionary rows are close to as spread as non-negativity permits.
+The `s_Hm` rescale is what turns the usage peak around; at the live
+1e-6 the collapse stands. The last stretch buys no reconstruction (MSE
+is flat from 237k) but takes collinearity 0.738 to 0.686.
+
+Caveat: `pareto.py`'s disclosed train/eval asymmetry now runs the other
+way. This arm holds the eval tail out, so its score is out-of-sample,
+while the older Ontologizer rows it sits beside are not.
+
+## Downstream: textfid and steerfid
+
+**Text fidelity adds nothing beyond FVU.** Over the eleven Ontologizer
+runs with both numbers, "loss recovered" is a monotone function of
+soft-forward FVU_w (rank correlation essentially -1). The arm sits
+exactly where its reconstruction predicts, between `top2_shm` and
+`top2`.
+
+| run | FVU_w | chrF | loss recovered |
+|---|---|---|---|
+| sweep_softmax_shm | 0.0007 | 0.694 | 0.998 |
+| sweep_top8_shm | 0.0287 | 0.416 | 0.956 |
+| sweep_top4_shm | 0.0761 | 0.360 | 0.897 |
+| sweep_top2_shm | 0.1911 | 0.303 | 0.738 |
+| **ste_h76** | **0.2293** | **0.282** | **0.702** |
+| sweep_top2 | 0.3516 | 0.248 | 0.532 |
+| sweep_top1 | 0.7190 | 0.180 | 0.123 |
+
+So textfid is a check that the whitened objective transports to text,
+not an independent axis. It does.
+
+**Steerability does not track FVU, and this arm is weak on it.** Net
+effect is feature effect minus the random-direction control, at
+`--n-features 64`.
+
+| run | FVU_w | net @0.25 | @0.5 | @1.0 | hit @1.0 | random hit |
+|---|---|---|---|---|---|---|
+| sweep_top8 | 0.0370 | 0.131 | 0.303 | 0.580 | 0.713 | 0.277 |
+| topk4_rev | — | 0.103 | 0.266 | 0.520 | 0.640 | 0.275 |
+| sweep_top2 | 0.3516 | 0.125 | 0.289 | 0.474 | 0.564 | 0.217 |
+| sweep_top16 | 0.0052 | 0.065 | 0.119 | 0.243 | 0.313 | 0.139 |
+| sweep_top8_shm | 0.0287 | 0.072 | 0.096 | 0.193 | 0.291 | 0.142 |
+| sweep_softmax_shm | 0.0007 | 0.032 | 0.072 | 0.146 | 0.150 | 0.064 |
+| sweep_top2_shm | 0.1911 | 0.022 | 0.070 | 0.141 | 0.154 | 0.041 |
+| **ste_h76** | **0.2293** | **0.072** | **0.096** | **0.107** | **0.068** | **0.062** |
+| sweep_top1 | 0.7190 | 0.011 | 0.026 | 0.048 | 0.069 | 0.020 |
+
+The effect is positive but nearly flat in magnitude, and the hit rate
+(0.068) barely clears its own random control (0.062), so interventions
+change the text as much as a random direction of the same size without
+landing on the intended feature. Only `top1`, whose classifier never
+trains, is weaker.
+
+**The `s_Hm` confound, tested and rejected.** Every `_shm` variant
+steers about three times worse than its twin (`top2` 0.474 vs
+`top2_shm` 0.141 at `s_Hm` 1e-6 vs 3e-5; `top8` 0.580 vs 0.193), and
+this arm carries `s_Hm` at 1e-4, so the weak steering might have been
+the mean-entropy bonus rather than the argmax. It is not. A second full
+arm trained identically at `--s-hm 1e-6` steers no better:
+
+| arm | s_Hm | FVU_w | raw effect @1.0 | net @1.0 | loss recovered |
+|---|---|---|---|---|---|
+| ste_h76 | 1e-4 | 0.2293 | 0.029 | 0.107 | 0.702 |
+| ste_h76_hm1e6 | 1e-6 | 0.2095 | 0.039 | 0.039 | 0.735 |
+| sweep_top2 | 1e-6 | 0.3516 | 0.493 | 0.474 | 0.532 |
+| sweep_top8 | 1e-6 | 0.0370 | 0.553 | 0.580 | 0.940 |
+
+Read the raw effect, not the net: the two arms' random controls differ
+(-0.078 vs 0.000) on only eight directions, and that noise drives most
+of the net gap. On raw effect the two are indistinguishable, 0.029 and
+0.039, and both sit an order of magnitude under `top2` and `top8` at
+*the same* `s_Hm` of 1e-6. So the entropy bonus is not what costs this
+arm its steerability; hard argmax selection is.
+
+Removing the bonus does cost what it was added for. Head usage
+imbalance ends at 5.00 bits against 2.71, about 16 effective entries
+per head against 22, and row collinearity rises to 0.727 from 0.686. It
+buys a little reconstruction back (FVU_w 0.2095, loss recovered 0.735),
+which is again exactly the monotone FVU relationship above.
+
+What remains untested is whether the two effects cancel: the 1e-6 arm
+has more head collapse, and if collapse independently hurts steering it
+could be masking a gain from dropping the bonus. Separating that needs
+an arm that suppresses collapse by some route other than `s_Hm`.
+
+Two measurement caveats. `--n-features 16` is too noisy to quote: at
+16 features this arm's net effect was *negative* at every magnitude and
+at 64 it is positive throughout, so the first run was sampling error.
+And the hit rate is not comparable across hard and soft codes: under
+`ste` an activation is exactly 0 or 1, so q90 and q99 are both 1 and a
+"hit" demands the argmax land exactly on the target entry, where a soft
+code need only cross a fractional threshold.
+
+## Forwarding the code alongside the residual
+
+`forward="resid_labels"` hands each upper layer `[residual | const |
+code]`, keeping the residual direction and adding the previous layer's
+classification as symbolic context. The pilot, otherwise identical to
+the arm above and trained three epochs, is a clear negative:
+
+| arm | steps | training MSE | held-out FVU_w (hard) |
+|---|---|---|---|
+| resid | 44,700 | 3.55e-4 | 0.249 |
+| resid_labels | 41,700 | 5.97e-4 | 0.826 |
+
+It led early, by a factor of fifty at step 2,500, and was overtaken by
+step 8,000: the signature of a parameter advantage (its upper
+classifiers are 3.4 times wider) without an information advantage,
+which is what the code-predictability measurement in the section above
+implies, since the residual is by construction what the code failed to
+explain. The held-out number is worse than its training loss predicts
+by a further factor of two, so the extra width is also being spent on
+something that does not transfer; a one-hot block is a discrete key a
+bilinear classifier can memorize cell by cell. That is a hypothesis
+from one pilot, not a measurement. Not worth a full run.
+
+## Steering, scored in embedding space
+
+`steerfid.py` reads an intervention's effect off a re-encoding of the
+generated text, and that instrument is too weak here to support any
+conclusion. Measured on an UNSTEERED round trip, 512 held-out rows:
+
+| | ste_h76 | softmax | reference |
+|---|---|---|---|
+| cos(x, cycle(x)) | 0.378 | 0.380 | 0.314 between random pairs |
+| head argmax survives | 12.1% | 10.5% | 3.1% chance |
+
+The cycled embedding retains barely more than the shared corpus
+direction (0.561 to the corpus mean), so a perfect intervention could be
+observed at most ~12% of the time -- the same order as the hit rates
+that metric reports. For the hard code it is worse with depth: survival
+is 34.8% at layer 0 and 4.6% by layer 4, against 3.1% chance.
+Reconstruction into embedding space is fine; generation is where it
+goes.
+
+`steerembed.py` drops the round trip and asks the causal question
+directly: move the input, re-run the model, is the intended entry now
+selected (realization) and how many OTHER heads moved (collateral).
+64 entries, 32 held-out rows each, steered only where the entry was not
+already selected.
+
+| direction | ste_h76 @0.25 / 1.0 | softmax @0.25 / 1.0 |
+|---|---|---|
+| decode | 0.289 / 0.591 | 0.824 / 0.569 |
+| grad | 0.236 / 0.113 | 0.453 / 0.477 |
+| adjoint, before the sign fix | 0.007 / 0.016 | 0.224 / 0.329 |
+| adjoint, with `orient` | 0.008 / 0.021 | 0.427 / 0.501 |
+| adjoint, oriented per sample | 0.026 / 0.026 | 0.446 / 0.512 |
+| random | 0.023 / 0.030 | 0.020 / 0.037 |
+
+Collateral is within 0.01 across directions at a given strength, so
+these compare at equal budget.
+
+**Steering works, and the text cycle was hiding it.** The decode
+direction reaches 0.60 and 0.82 against a 0.031 chance rate, where the
+cycle put every model within noise of random.
+
+**The hard code is still the less steerable of the two, so the earlier
+conclusion survives a better instrument.** At matched collateral
+(~0.58) softmax realizes 0.82 against the hard code's 0.28, and it does
+so at the lowest strength while the hard code needs the largest. A
+hard argmax has margins a small nudge cannot cross.
+
+**Where a tag decodes to beats the classifier's own gradient.** That is
+not obvious and is worth a second look: the first-order direction is
+exactly right only for infinitesimal steps, and on the hard code it
+decays with strength (0.220 to 0.090) while the decode direction grows.
+
+**`BilinearBlock.rev` has a sign bug, and fixing it does not rescue
+steering.** `eigh` fixes eigenvectors only up to sign, so `rev` was
+returning a direction whose sign came from LAPACK rather than from the
+layer. `nlinear.orient` now settles it by the eigenvalue's sign with a
+leading-coordinate tie-break, which makes `rev` well-defined; a test
+pins that planting `e` and `-e`, which give the same bilinear form,
+now return the same direction.
+
+**The fix roughly doubles eigenvector steering on the soft model**,
+0.224 to 0.427 at strength 0.25, which lands within noise of orienting
+per sample (0.446). So the convention captures nearly all of the
+available benefit.
+
+That is more than the theory predicts, and the gap is instructive.
+Moving from `x` along `v` changes `x'Bx` by `2e*lam*(x.v)`, so the
+ascent direction depends on `x.v`, a property of the SAMPLE, and a
+weight-only convention should not be able to supply it. It can here
+because SONAR embeddings are strongly anisotropic: they sit at cosine
+0.561 to the corpus mean, so `x.v` is dominated by `mean.v` and has a
+consistent sign across samples. On isotropic inputs the argument holds
+and the fix would buy nothing, which is what the unit test measures --
+it uses Gaussian samples and finds a weight-only direction raising the
+logit on about half of them. Both statements are true of their own
+input distribution.
+
+**The hard code is unmoved either way**, 0.008 to 0.021 against
+random's 0.023 to 0.030, and per-sample orientation does not rescue it
+either. The eigendirection carries no steering signal there, so the
+decode direction remains the one to use.
+
+### Where the decode direction gets the hard code to
+
+Sweeping strength on `ste_h76`, all six directions at matched
+collateral (which is set by the step size, not the direction -- all
+six agree to 0.005 at each strength):
+
+| strength | decode | margin | grad | adjoint | random | collateral |
+|---|---|---|---|---|---|---|
+| 0.25 | 0.277 | 0.118 | 0.220 | 0.008 | 0.022 | 0.58 |
+| 1.00 | 0.597 | 0.201 | 0.104 | 0.021 | 0.035 | 0.81 |
+| 2.00 | 0.663 | 0.223 | 0.090 | 0.021 | 0.029 | 0.87 |
+| 8.00 | 0.657 | 0.226 | 0.064 | 0.024 | 0.039 | 0.92 |
+
+**Decode is far the best and saturates at ~0.66.** A third of
+interventions are unrealizable at any strength: the target entry never
+wins its head no matter how hard the input is pushed.
+
+**Against the soft model it wins only past collateral 0.85.** The two
+curves cross there -- below it softmax leads (0.824 against 0.277 at
+collateral 0.57), above it the hard code does (0.663 against 0.520 at
+0.87). But 0.87 collateral means most other heads moved too, which is
+not a regime any steering claim wants. In the clean regime the soft
+model is several times better.
+
+### The aggregate hides a reversal: it is all about depth
+
+Steering is applied to the INPUT, so a direction derived from layer i's
+classifier has to survive i layers of residual computation before it
+arrives. Splitting the same run by target layer, 12 entries per layer:
+
+| layer | decode | grad | margin | adjoint | random |
+|---|---|---|---|---|---|
+| 0 | 0.216 | **0.583** | 0.547 | 0.237 | 0.034 |
+| 1 | 0.464 | 0.089 | 0.367 | 0.000 | 0.023 |
+| 2 | 0.742 | 0.130 | 0.216 | 0.000 | 0.055 |
+| 3 | **0.966** | 0.130 | 0.091 | 0.000 | 0.034 |
+| 4 | 0.362 | 0.047 | 0.036 | 0.005 | 0.047 |
+
+(strength 1.0; at 0.25 layer 0 reads grad 0.688, margin 0.513, decode
+0.068, so the gap there is wider still.)
+
+**The classifier's geometry is exactly right where the input reaches it
+directly.** At layer 0 `grad` and `margin` beat `decode` by three to
+ten times. The earlier aggregate claim that decode wins was an artifact
+of averaging over layers, where four of five are deep.
+
+**And it fails with depth, which is the cascade.** `grad` falls from
+0.583 to 0.047 across the stack while `decode` rises to 0.966 by layer
+3. A direction computed against layer i's classifier input is only
+valid there, and the perturbation reaches layer i only after the
+earlier layers have re-encoded it. The decode direction does not have
+that problem: it moves the input toward what the model itself emits
+with the tag active, which is self-consistent down the whole stack.
+
+**Layer 4 is hard for everything.** By then the residual is nearly
+exhausted, so its decode delta is small and no direction does well.
+
+The practical reading: steer layer 0 with `grad`, steer the middle
+layers with `decode`, and expect little from layer 4. The layer-0 slice
+is also the single-layer experiment in miniature -- with no cascade
+ahead of it, the analytic directions work as the theory says.
+
+## Row collinearity (`--kcos-target`): the one lever that worked
+
+**The statistic is mostly gauge, so read the mechanism below with
+suspicion even though the effect is real.** `rowcos` is computed on
+`dicts()` in `e_dec`, and the decoder is 1024x2048 at full rank, so half
+of `e_dec` is its null space and the atoms put 74-78% of their energy
+there, where nothing they do reaches the output and no gradient reaches
+them. Decoded into output space the same statistic reads 0.023 at layer
+0 and -0.015 to -0.020 below it: a head's entries are already
+essentially orthogonal in the space that matters.
+
+| layer | rowcos in `e_dec` | rowcos decoded |
+|---|---|---|
+| 0 | 0.2880 | 0.0230 |
+| 1 | 0.2217 | -0.0152 |
+| 2 | 0.1910 | -0.0154 |
+| 3 | 0.1605 | -0.0165 |
+| 4 | 0.1226 | -0.0201 |
+
+So the lever is not making entries geometrically distinguishable --
+they already are -- and what it does instead is unexplained. It may act
+through the 22-26% of each atom that does reach the output, or as a
+regularizer on optimization rather than on the represented function.
+The steering gain below was measured and holds; the account of why does
+not.
+
+`s_Hm` scores head USAGE; `s_kcossim` scores the row cosine described
+above. The hard-code arms sit at 0.774, far above the 0.48 sonar.py's
+0.2 target was calibrated against, so the target was set against this
+arm at 0.5 with an explicit 50k ramp (the loop borrows its ramp from
+`anneal_steps`, which is 0 under a constant temperature).
+
+Unlike the HSIC penalty, the setpoint holds:
+
+| step | uncontrolled | controlled | applied `s_kcossim` |
+|---|---|---|---|
+| 10,000 | 0.790 | 0.790 | 4.1e-6 |
+| 50,000 | 0.821 | 0.500 | 0 |
+| 200,000 | 0.804 | 0.494 | 0 |
+| 377,300 | 0.774 | 0.473 | 0 |
+
+The multiplier reads 0 almost throughout because `dual_apply` projects
+it out while the constraint is satisfied: it is a thermostat that
+engages on drift, which is what the constraint being *held* looks like.
+
+**It improves steering in every direction, at lower collateral, for no
+reconstruction cost.** Held-out FVU_w is 0.2157 against 0.2293
+uncontrolled -- slightly better, despite a 14% worse training MSE,
+which is the deepsup prefix mean rather than the full model.
+
+| direction | ste_h76 @0.25 | + kcos @0.25 | change |
+|---|---|---|---|
+| decode | 0.280 | 0.322 | +15% |
+| grad | 0.315 | 0.370 | +17% |
+| margin | 0.174 | 0.264 | +52% |
+| adjoint | 0.032 | 0.061 | +91% |
+| adjoint, oriented | 0.051 | 0.113 | +122% |
+| random | 0.023 | 0.023 | -- |
+| collateral | 0.591 | 0.552 | lower |
+
+So head collapse does independently hurt steerability, which is the
+question left open when dropping `s_Hm` failed to help. The gain is
+largest for the directions derived from the classifier's geometry
+(adjoint, margin) and smallest for `decode`. The obvious reading --
+that spreading a head's rows makes its entries geometrically
+distinguishable -- is ruled out by the decoded figures above: they are
+already orthogonal. That the classifier-geometry directions gain most
+is at least consistent with the effect being on the classifier rather
+than on the dictionary, but nothing here establishes that.
+
+Three head-health levers, three outcomes: `s_Hm` holds usage balance
+but its removal does not change steering; `s_hsic_heads` moves its own
+statistic cheaply but the heads were already independent, so there is
+nothing there to take away; `s_kcossim` holds its setpoint precisely
+and is the only one that buys steerability, by a mechanism its own
+statistic does not explain.
+
+## Initialization: a third of the error, and a warning about the rest
+
+**Every arm in this file was initialized badly, and one scalar fixes
+it.** The dictionary is `abs()`'d, so a layer's `h` rows sum coherently
+and its output scales with `h`; `gained` compounds that across layers,
+so the initial residual grows as roughly `(c*h)^l`. The live arm starts
+at 1.84e8 where it should start near 1. `--dict-init-scale 0.1`
+rescales each dictionary so a layer contributes about a tenth of its
+input, which divides `h` out entirely and starts the cascade as a
+near-identity:
+
+| arm | shape | `s_Hm` | realized bits | FVU_w | params |
+|---|---|---|---|---|---|
+| `ste_h76` as shipped | 5x76 | 1e-4 | 1714 (90.2%) | 0.2293 | 51.93M |
+| `ste_h76_init01` | 5x76 | 1e-4 | 1895 (99.7%) | **0.1535** | 51.93M |
+| `ste_h76_i01_s43` (seed 43) | 5x76 | 1e-4 | 1895 (99.7%) | **0.1535** | 51.93M |
+| `ste_k2_h380` | 5x380, k=2 | 5e-4 | 1887 (99.3%) | 0.1844 | 17.67M |
+| `ste_l1_h380_i01_hm1e4` | 1x380 | 1e-4 | 1898 (99.9%) | 0.2750 | 51.93M |
+| `ste_l1_h380_i01` | 1x380 | 5e-4 | 1898 (99.9%) | 0.2870 | 51.93M |
+| `ste_l1_h380_i01_s43` | 1x380 | 5e-4 | 1898 (99.9%) | 0.2871 | 51.93M |
+
+A third off the held-out error and the code essentially full, from the
+initialization alone. It is the largest single effect in this file.
+
+**It subsumes two of the results below rather than adding to them.**
+Every arm at the fixed init fills 99.3% to 99.9% of its code, so the
+utilization gap that the entropy-pressure correction and the input
+conditioning were each recovering part of was the initialization.
+Specifically, the entropy lever now does nothing: the flat arm reads
+0.2750 at `s_Hm` 1e-4 and 0.2870 at 5e-4, both at 99.9%, so the
+shipped weight is marginally *better* and the 484-to-1199-bit gain
+that section reports was the initialization being partly unmasked. The
+arithmetic there still holds -- per-head pressure does scale as
+`s_Hm/h` per layer -- it simply has no consequence once the cascade
+starts contracting.
+
+**The depth claim survives at very nearly its reported size.** 0.1535
+against the best flat arm's 0.2750 is 1.79x, where the section below
+says 1.7x, and for the first time both sides fill their codes, so the
+comparison is between two models each doing what they can rather than
+two that were both starting 1.84e8 away from where they should.
+
+**Read every other magnitude below as measured on the shipped
+initialization.** Steering, the language probe, the gain ablation and
+the blend ablation have not been remeasured, and the arms they ran on
+were all badly initialized.
+
+On the rate-distortion table, 1900 index bits and no continuous
+coefficients at 0.1535 beats the comparable SAE's 0.2610 at 7699 index
+bits plus 625 coefficients. Against each code's own reverse
+water-filling floor, though, depth is the less efficient use of bits:
+
+| code | floor | achieved | ratio |
+|---|---|---|---|
+| 380 bits (one layer's prefix) | 0.4208 | 0.6427 | 1.53x |
+| 1900 bits, 5x76 | 0.0499 | 0.1535 | 3.08x |
+| 1900 bits, 5x380 k=2 | 0.0499 | 0.1844 | 3.70x |
+
+So the cascade buys absolute accuracy and loses rate efficiency: a
+single layer sits half again above its bound where the five-layer stack
+sits three times above its.
+
+**`k=2` answers its own question, in the negative for this file's
+premise.** At identical bits and identical samples, 380 binary heads
+reach 0.1844 against 76 thirty-two-way heads at 0.1535, so a hard code
+does not transmit "exactly `l*h*log2(k)` bits and nothing else". Bits
+go as `h*log2(k)` but the codebook goes as `h*k`, so the thirty-two-way
+arm holds 12160 atoms against the binary one's 3800 -- same bits, three
+times the dictionary. The binary arm reaches within 17% of it on 2.9x
+fewer parameters, and its features are one bit each rather than one of
+thirty-two, which is the form that is actually nameable.
+
+## Depth at fixed capacity: the flat arm (`--l 1 --h 380`)
+
+Five layers of 76 heads and one layer of 380 have the same nominal
+capacity of 1900 bits and exactly the same parameter count -- 51.93M,
+matching group by group, since both the dictionary (`h*k*e_dec`) and
+the classifier (`h*k*d*n`) depend on the layer count and the heads per
+layer only through their product. `ste_l1_h380` is trained at the same
+batch and step count as `ste_h76` with an otherwise identical
+configuration.
+
+**The capacity was not matched on paper or in fact, and fixing both
+does not close the gap.** Two things the original comparison got wrong
+were fixed one at a time, each recovering part of it:
+
+| arm | what changed | per-head entropy, median | live entries | realized bits | FVU_w |
+|---|---|---|---|---|---|
+| `ste_h76` | the stack | 4.92 of 5 | 32 of 32 | 1714 (90.2%) | **0.2293** |
+| `ste_l1_h380_zca` | + whitened input | 5.00 of 5 | 32 of 32 | **1900 (100.0%)** | 0.3842 |
+| `ste_l1_h380_hm5` | + matched pressure | 2.59 of 5 | 6 of 32 | 1199 (63.1%) | 0.4307 |
+| `ste_l1_h380` | as first run | 1.00 of 5 | 2 of 32 | 484 (25.5%) | 0.5822 |
+| `ste_l1_h380_enc` | + learned encoder | 1.00 of 5 | 2 of 32 | 380 (20.0%) | 0.6853 |
+
+**Utilization is not the reason depth wins, and this is the cleanest
+result in the file.** Conditioning the classifier's input fills the
+flat arm's code completely -- every head, every entry, 1900 of 1900
+bits, more than the stack itself realizes -- and it still reconstructs
+1.7x worse. Whatever the residual cascade buys, it is not code
+capacity and it is not code usage. Both of those can be handed to a
+flat model outright, and the gap survives.
+
+The two fixes together take the flat arm from 0.5822 to 0.3842, which
+is 56% of the distance to the stack. So most of what the first version
+of this section attributed to architecture was configuration, and the
+headline ratio is 1.7x rather than the 2.5x first reported. What is
+left is 1.7x at *more* realized bits on the flat side, which is a
+narrower claim resting on nothing that has since been shown to be an
+artifact.
+
+`loss.csv` has carried this all along. `KL_m` averages
+`log2(k) - entropy(E_batch[p])` over a layer's heads and the loss sums
+over layers, and a one-hot code makes `E_batch[p]` the usage
+distribution itself, so `realized bits = h * (l*log2(k) - KL_m)`. That
+reproduces both measurements to within 0.3%, and it says utilization is
+settled early: the flat arm is at 449 of its final 483 bits by step
+37k, and the stack at 1643 of 1695.
+
+| arm | structure | FVU_w | decode @0.25 | collateral | top-32 probe |
+|---|---|---|---|---|---|
+| `ste_h76_init01` | 5x76, fixed init | **0.1535** | -- | -- | -- |
+| `ste_l1_h380_i01_hm1e4` | 1x380, fixed init | 0.2750 | -- | -- | -- |
+| `ste_h76` | 5x76 residual | 0.2293 | 0.280 | 0.591 | **0.378** |
+| `ste_l1_h380_zca` | 1x380 flat, conditioned | 0.3842 | -- | -- | -- |
+| `ste_l1_h380_hm5` | 1x380 flat, matched pressure | 0.4307 | -- | -- | -- |
+| `ste_l1_h380` | 1x380 flat | 0.5822 | **0.966** | **0.086** | 0.257 |
+
+The top two rows are the comparison to quote: both fill 99.9% of their
+code and the ratio is 1.79x. The four below them are the same pair at
+the shipped initialization, where neither did, and they are what the
+steering and language columns were measured on.
+
+`ste_l1_h380` is the arm the steering and language columns were
+measured on, and it was both under-regularized and unconditioned
+relative to the stack. `ste_l1_h380_zca` is the corrected flat arm and
+is the one to compare on reconstruction; the steering and language
+numbers have not been remeasured on it.
+
+The gap is not undertraining. The flat arm's training MSE moves -0.55%
+over its last quarter, and its kcos sibling, run 2.5x longer, ends
+lower in training MSE (5.60e-4 against 5.74e-4) and no better held out.
+Both have plateaued.
+
+**Depth is worth 1.79x the reconstruction error at equal nominal
+capacity, equal parameters and 99.9% code utilization on both sides,
+and none of it is utilization.** A flat layer is a
+product quantizer: all 380 heads see the same input and their
+contributions are summed, so no head can see, let alone correct,
+another's error. The residual stack is a residual quantizer -- layer
+i+1 classifies `X - decode(R_i)`, so each stage codes what the earlier
+stages missed.
+
+That it is the residual rather than depth as such rests on the blend
+ablation below, which severs the pairing between a layer's input and
+this sample's own earlier reconstruction and costs 20x the error
+against a matched-magnitude control. `forward="labels"` is the mode
+that would test it from the other side by removing the residual
+entirely, and it has not been run at the fixed init.
+
+But the per-layer breakdown says the error-allocation story is not the
+main effect:
+
+| layer | prefix FVU_w | added | entropy | live entries | realized bits |
+|---|---|---|---|---|---|
+| 0 | 0.6427 | 0.3573 | 2.85 | 10.6 | 216 |
+| 1 | 0.4507 | 0.1920 | 4.98 | 32.0 | 378 |
+| 2 | 0.3309 | 0.1198 | 4.94 | 32.0 | 375 |
+| 3 | 0.2512 | 0.0797 | 4.89 | 32.0 | 372 |
+| 4 | 0.2293 | 0.0219 | 4.91 | 32.0 | 373 |
+
+Every layer that classifies a residual fills its code almost
+completely. The one layer that classifies the raw embedding does not,
+and it is the layer whose input distribution the flat arm shares. So
+the cascade's first effect may be conditioning the classifier's input
+rather than dividing the error, and the flat arm's 484 bits look like
+layer 0's problem at five times the width. Within `ste_h76` this
+contrast is already controlled for entropy pressure, since every layer
+carries the same `s_Hm` weight.
+
+`inputgeom.py` measures the premise directly, on the exact vector
+`gainshape_in` hands each classifier:
+
+| layer | mean direction | mean pairwise cos | effective dim of 1024 |
+|---|---|---|---|
+| 0 | 0.5638 | 0.3146 | 107.5 |
+| 1 | 0.0932 | 0.0087 | 611.3 |
+| 2 | 0.1522 | 0.0233 | 596.3 |
+| 3 | 0.1983 | 0.0396 | 548.8 |
+| 4 | 0.2348 | 0.0553 | 507.1 |
+
+The raw embedding cloud spans a tenth of the space and its samples
+average a cosine of 0.31 with each other; a residual spans over half
+and averages under 0.06. Layer 0 and every flat arm classify the first,
+layers 1-4 the second, at the same width, the same `k` and the same
+per-head pressure. That is a within-model control on everything except
+the input, and the utilization tracks the input.
+
+With `encoded` off the encoder is a passthrough, so `E` is `X` exactly
+and every arm sharing that setting reports an identical layer-0 row.
+The encoder is therefore the only place a one-layer model can change
+what its classifier sees, since the reconstruction target stays `X`
+regardless.
+
+### Conditioning the input: it is all of the utilization and none of the gap
+
+Two arms supply that conditioning, and they answer different halves.
+
+**Learning it jointly does not work.** `ste_l1_h380_enc` gives the flat
+arm a randomly initialized `Linear` encoder trained alongside the
+dictionary. Every one of its 380 heads ends on exactly two entries at
+exactly 1.000 bits, for 380 realized bits and FVU_w 0.6853 -- worse
+than having no encoder at all. The transform it found also moves the
+wrong way on the axis that matters, raising mean pairwise cosine from
+0.31 to 0.46 while raising effective dimension to 294. One optimizer
+cannot find an input transform and a discrete dictionary at once.
+
+**Largely superseded by the initialization section.** The utilization
+this recovers, 1199 bits to 1900, is what the fixed initialization
+gives the same arm for free, and the properly initialized flat arm
+reaches 0.2750 where the whitened one reached 0.3842. So conditioning
+was fixing the initialization by another route. What survives is the
+input-geometry measurement itself, which is the evidence that the
+cascade's conditioning and its pairing are one property, and the
+finding that a learned encoder collapses where a supplied one does not.
+
+**Handing it over works completely, for utilization.**
+`ste_l1_h380_zca` installs `make_zca.py`'s whitener as a frozen
+encoder, so the classifier sees a cloud of effective dimension 901
+against the raw 107, while the reconstruction target stays `X`:
+
+| arm | input eff. dim | realized bits | FVU_w | with the gain pinned |
+|---|---|---|---|---|
+| `ste_l1_h380_hm5` | 107.5 | 1199 (63.1%) | 0.4307 | 0.4307 |
+| `ste_l1_h380_zca` | 901.3 | 1900 (100.0%) | 0.3842 | 0.4013 |
+
+Every head, every entry: per-head entropy 4.999 of 5, zero heads below
+1.5 bits, the full 1900. **The conditioning hypothesis is right about
+utilization and nearly irrelevant to reconstruction.** It buys 58% more
+realized bits and about 7% of FVU, and leaves a flat arm that fills
+more of its code than the stack does while reconstructing 1.7x worse.
+
+The fourth column is why 7% and not the 11% the third column shows.
+A whitener rescales each sample by a different factor, so it hands
+layer 0 a gain that varies where the raw arm's is identically 1, and
+that gain reaches the decoder outside the code (see the next section).
+Pinning it to its mean puts `ste_l1_h380_zca` at 0.4013, so roughly
+40% of the apparent conditioning benefit was the side-channel the
+whitener created rather than the geometry it was built for. The arm
+changed two things and only one was controlled. A clean version would
+rescale per sample so the gain stays exactly 1, which is not a linear
+map and so cannot live in the encoder.
+
+That is what closes the question this section opened. Under-filled
+codes were a real defect with two real causes, and neither was the
+reason for the gap. Whatever depth contributes is downstream of code
+capacity and code usage alike -- it has to be the sequential dependence
+between stages, since that is what is left once both are equalized.
+
+### The code is not the whole channel: what the gain carries
+
+`gainshape_in` splits a layer's input into a unit direction and its
+norm. The classifier only sees the direction, so the code is discrete,
+but `gained` multiplies the layer's whole OUTPUT by that norm. One real
+number per layer per sample reaches the decoder without passing through
+the bottleneck, and "1900 bits" does not count it.
+
+It is not symmetric between the arms, and not in the direction a bit
+count would suggest. SONAR embeddings are exactly unit-norm, so with no
+encoder a layer-0 gain is identically 1 and carries nothing. Pinning
+each gain to its held-out mean:
+
+| arm | layer | gain sd/mean | cost of pinning |
+|---|---|---|---|
+| `ste_h76` | 0 | 0.0% | -0.0% |
+| | 1 | 13.9% | +0.6% |
+| | 2 | 14.4% | +0.7% |
+| | 3 | 14.6% | +0.6% |
+| | 4 | 14.7% | +0.2% |
+| | all | | **+2.1%** |
+| `ste_l1_h380_zca` | 0 | 14.5% | **+4.5%** |
+| `ste_l1_h380_hm5` | 0 | 0.0% | -0.0% |
+
+So the honest capacity statement is 1900 bits plus four real scalars
+for the stack against 1900 bits plus none for an unconditioned flat
+arm. **The channel is real and it is not the explanation.** The stack's
+entire gain is worth 2.1% of its error against a 68% gap, about a
+thirtieth of what depth buys. Where it matters is as a confound in the
+whitened arm above, which is the only place it changes a conclusion.
+
+### What the cascade contributes: pairing, and conditioning is its shadow
+
+Depth survives every elimination in this file, which left "sequential
+dependence between stages" as a label rather than a measurement.
+`blendablate.py` measures it without retraining: layer i+1 classifies
+`X - decode(R_i)`, so blend that subtracted term toward a reference
+carrying the same marginals and none of the pairing, and sweep.
+
+| blend | shuffle | mean | noise | eff dim L1 (shuffle) | (noise) |
+|---|---|---|---|---|---|
+| 0.000 | 0.2292 | 0.2292 | 0.2292 | 499.1 | 499.1 |
+| 0.125 | 0.2460 | 0.2374 | 0.2426 | 476.0 | 504.7 |
+| 0.250 | 0.3084 | 0.2652 | 0.2838 | 394.2 | 518.3 |
+| 0.500 | 0.6910 | 0.4100 | 0.4665 | 193.4 | 539.6 |
+| 0.750 | 1.8154 | 0.7497 | 0.8502 | 103.0 | 527.6 |
+| 1.000 | 4.6613 | 1.4302 | 1.5992 | 68.5 | 496.2 |
+
+`noise` is Gaussian rescaled per sample to the shuffle's exact
+magnitude, and it is what makes the rest readable: feeding a classifier
+the wrong input produces wrong corrections whatever the wrong input is.
+
+**The pairing is load-bearing and the model is sensitive to it far
+below full severance.** A quarter blend already costs 35% of FVU, and
+substituting another row's reconstruction beats matched-magnitude noise
+at every level, so the damage is specific rather than generic
+perturbation sensitivity.
+
+**What the sweep cannot do is separate pairing from conditioning, and
+that is the finding rather than a defect.** Effective dimension falls
+from 499 to 68 as the blend rises, in lockstep with the error. A
+residual is small and nearly isotropic *because* it is this sample's
+own error, so the two are one property seen twice, and no ablation of
+this kind can hold one while moving the other. The noise column is not
+the missing control either: by full blend it dominates the input, so
+its high effective dimension is the noise's own isotropy and not
+preserved conditioning.
+
+That resolves the whitened arm rather than conflicting with it.
+`ste_l1_h380_zca` is the one configuration that gets conditioning
+*without* pairing -- a fixed transform of the input, no earlier stage
+to be paired with -- and it bought 100% code utilization and about 7%
+of FVU. Conditioning on its own is cheap to supply and worth little.
+The cascade's value is the pairing; the conditioning is its shadow.
+
+### The decoder cannot be sparsified, and not for the reason it looks like
+
+Magnitude-pruning `ste_h76`'s trained decoder explodes at every level:
+zeroing the smallest half takes held-out FVU_w from 0.2293 into the
+thousands. There is no structure to find either -- median `|w|` is 27%
+of the maximum and half the total mass sits in the largest quarter,
+which is what an ordinary Gaussian matrix looks like.
+
+The obvious culprit is the non-negative dictionary. `R` is a sum of 380
+`abs()`'d vectors, so its constant part dwarfs its varying one, and the
+decoder has no bias, so one matrix appears to be both decoding the
+variation and attenuating that constant to reach the embedding mean:
+
+| arm | `\|\|mean R\|\|` | mean `\|\|R-mean\|\|` | ratio |
+|---|---|---|---|
+| `ste_h76` | 153.7 | 13.2 | 11.6 |
+| `ste_l1_h380_zca` | 289.9 | 34.6 | 8.4 |
+
+It is demonstrably doing that: the decoder maps mean `R` to norm 0.581,
+against the embedding cloud's own mean direction norm of 0.564.
+
+**That description is right and the inference from it is wrong.**
+`--biased-dec` hands the constant to 1024 free parameters instead, and
+at matched step it is worth -0.62% of training MSE on the stack and
+-0.20% on the conditioned flat arm. Consistent, growing slowly, and
+nowhere near what "the decoder is spending its capacity on this" would
+predict. The arithmetic says why: pinning `W @ mean(R)` is 1024 linear
+constraints on a 1024x2048 matrix, which is 0.05% of its freedom. It
+was never expensive.
+
+So the decoder is dense because a full-rank map carrying a roughly
+900-dimensional signal is dense, not because of any offset artifact.
+Sparsifying it means giving up reconstruction, and there is no cheap
+structure waiting to be found. The bias is a small free win worth
+taking and not a route to anything.
+
+(Both arms died of an out-of-memory at 23% and 34% of their runs, from
+two trainers preallocating the card at once. The comparison above is at
+matched step and holds; the absolute numbers are not converged, and a
+rerun is not worth it for a sub-1% effect.)
+
+Two mechanical notes for anyone repeating this. The whitener must
+preserve the input's norm: `gainshape_in` measures the gain on the
+classifier input and `gained` multiplies the layer's output by it, and
+because SONAR embeddings are exactly unit-norm that gain is invisibly 1
+without an encoder. Unscaled ZCA makes it 32 and inflates every
+contribution by that, for a training error three orders of magnitude
+off with every other statistic looking ordinary. And the eigenvalue
+floor belongs against the largest eigenvalue, not the mean; against the
+mean it sits below the near-null tail, and the effective dimension it
+appears to buy is amplified numerical noise.
+
+**Superseded by the initialization section.** At the fixed init both
+weights give 99.9% utilization and the shipped one is marginally
+better, so this lever recovers nothing; the gap it appeared to close
+was the initialization. The scaling argument below is still correct and
+still worth knowing when comparing differently shaped models -- it just
+has no effect on any arm here. Kept because the reasoning is the
+generally applicable part.
+
+**That control does not extend across the two arms, and correcting it
+takes back two fifths of the gap.** `hmean_kl` averages over a layer's
+heads and `Hyperparams.loss` sums the statistic over layers, so the
+pressure on any one head scales as `s_Hm / h` per layer: 1/76 in the
+stack against 1/380 in the flat arm, at the same configured weight. The
+flat arm had been trained at a fifth of the stack's per-head pressure.
+`ste_l1_h380_hm5` is the same arm at `s_Hm` 5e-4, which matches it
+exactly:
+
+| arm | shape | `s_Hm` | per-head | bits | of nominal | FVU_w |
+|---|---|---|---|---|---|---|
+| `ste_h76` | 5x76 | 1e-4 | 1.32e-6 | 1695 | 89.2% | 0.2293 |
+| `ste_h76_hm1e6` | 5x76 | 1e-6 | 1.32e-8 | 1519 | 80.0% | 0.2095 |
+| `ste_l1_h380` | 1x380 | 1e-4 | 2.63e-7 | 483 | 25.4% | 0.5822 |
+| `ste_l1_h380_hm5` | 1x380 | 5e-4 | 1.32e-6 | 1199 | 63.1% | **0.4307** |
+
+Matching the pressure raises realized capacity 2.5x, cuts held-out
+error 26%, and takes the count of heads under 1.5 bits from 234 to 16.
+**So the flat arm in the comparison above was handicapped**, by this
+and by its unconditioned input both; together they account for 56% of
+the gap, and the headline ratio is 1.7x rather than 2.5x.
+
+**What this lever does not explain is the gap.** At identical per-head
+pressure the flat arm fills 63% of its code against the stack's 89%,
+and the stack fills 80% at one hundredth of that pressure, so the
+stack fills its code essentially unprompted where the flat arm does
+not. But conditioning the input takes the flat arm to 100%, past the
+stack, and moves FVU about 7% once its incidental gain channel is
+discounted. Usage is a thing the pressure controls; it is not the thing
+the depth is buying. Note also that pressure and
+reconstruction do not move together across shapes: dropping `s_Hm` by
+100x costs the stack 176 bits and *improves* its FVU to 0.2095, while
+raising it 5x buys the flat arm 716 bits and 0.15 of FVU. Bits are not
+the objective, and the two shapes sit on opposite sides of the setting
+that was tuned for one of them.
+
+**The cost is entanglement, and it is the whole steering gap.** A
+single-head embedding-space intervention in the flat model realizes the
+target entry on 97% of rows while disturbing 9% of the other heads; in
+the stack it realizes 28% while disturbing 59%. Restricting both to
+layer 0, so the target is the same distance from the input, the gap
+does not close:
+
+| direction | stack layer 0 | flat |
+|---|---|---|
+| decode | 0.068 / 0.616 | 0.966 / 0.086 |
+| grad | 0.688 / 0.563 | 0.969 / 0.063 |
+| margin | 0.513 / 0.570 | 0.979 / 0.069 |
+| random | 0.005 / 0.584 | 0.064 / 0.093 |
+
+(realized / collateral, strength 0.25.)
+
+**The collateral is not a property of the intervention.** A random push
+of the same norm disturbs 58% of the stack's heads and 9% of the flat
+model's, so it is not that steering directions are blunt -- the
+residual cascade turns any input perturbation into widespread
+reclassification downstream, and a deliberate one is no exception. The
+flat model has nothing downstream to reclassify, so its heads are
+independently addressable by construction.
+
+**The stack also localizes the labeled variable better, in every sense
+that survives the null.** Its best 32 heads recover language at 0.378
+against the flat arm's 0.257, on a dense-probe ceiling of 0.721.
+
+| arm | best NMI less null | m=1 | m=2 | m=32 | m=1 as share of m=32 |
+|---|---|---|---|---|---|
+| `ste_h76` | 0.261 | 0.165 | 0.202 | 0.378 | 43.6% |
+| `ste_l1_h380` | 0.276 | 0.102 | 0.117 | 0.257 | 39.7% |
+
+Per-head content is a wash once the null is subtracted, held-out probe
+accuracy favours the stack at every head budget, and on concentration
+proper -- how much of what the top 32 heads carry comes from the best
+one -- the stack is slightly ahead.
+
+The one statistic that favours the flat arm is `info_share_best`, where
+it reads 8.7% against 4.2%. That is `I.max() / I.sum()` over an
+uncorrected plug-in mutual information, summed across 380 heads whose
+chance level differs eightfold between the arms (null NMI 0.001 flat,
+0.008 stacked). The flat arm's heads are mostly binary, so both its
+numerator and its denominator are small and differently biased. Do not
+read that column across architectures.
+
+**The row-collinearity setpoint does not transport.** `ste_l1_h380_kcos`
+reads FVU_w 0.5924 against 0.5822 uncontrolled, slightly worse, where
+on the stack the same target was slightly better. Two confounds run the
+other way and do not rescue it: the flat arm fell back to b=128, and it
+ran 929,400 steps for 119M samples against 94.6M, so it saw 26% more
+data and was still no better. Its steering is already saturated (0.992
+against 0.966), so there is no headroom for the lever that buys
+steerability on the stack.
+
+The reading: capacity is not the architecture. Whatever this model does
+that a wide flat dictionary does not, it does through the residual
+cascade -- and the same cascade is what makes single-head interventions
+leak.
+
+## The decoder's null space, and what non-negativity costs (`--signed`)
+
+The gpt2_l8 arms decode a 1536-wide dictionary into 768 dimensions, so
+`ker(D)` is 768-dimensional and half of every atom is invisible to the
+output. Several readings of that were wrong and are worth recording,
+because each was checkable and each failed.
+
+- **Head interference putting content in the null space.** No: head
+  null components add *coherently*, 3.3-11x over the cancelling
+  expectation, so they are not interference debris.
+- **Noise scale driving it.** No: the fraction does not track `sd_F`.
+- **A swap space, carrying content that later becomes visible.** No:
+  the per-atom visible fraction is flat at 22% across training and the
+  decoder's row space rotates 2.6-3.5 degrees in total. Nothing moves
+  in or out.
+- **`cossim_k` inflating it** to cheapen apparent row similarity by
+  hiding the shared part where the penalty cannot see it. Plausible,
+  and not what the numbers show.
+
+Two baseline errors ran the other way and both reversed an
+interpretation once fixed. Against `abs(N(0,1))` rather than signed
+normals, the right expectations are **18.26%** visible (not 50%) and
+**63.7%** alignment with **1** (not ~0): the trained dictionary is
+*less* null-heavy and *less* all-ones-aligned than chance. And the
+"49% of reconstruction gradient lies in `ker(D)`" measurement is a
+coordinate artifact -- w.r.t. `|W|` it is 3e-8, because `sign(W) ⊙` does
+not preserve a subspace.
+
+The size of the null part depends entirely on which norm is asked for,
+which is worth stating once: 2.43% of squared L2, 23.20% of L2, 56.55%
+of L1.
+
+### A fifth failed reading: the null space as a lift
+
+Worth recording because it survived longest and is wrong. The story was
+that non-negativity, being *elementwise*, is basis-dependent and is
+imposed on the stored atom `a` rather than on the visible component
+`P a` that reaches the output, so null content is the "lift" that lets
+a mixed-sign visible component be carried by a non-negative atom.
+
+**It does not hold.** `P a`'s entries are not constrained -- only `a`'s
+are -- so a mixed-sign `P a` is not a defect that anything needs to
+repair, and null content cannot repair it in any case, being invisible
+to the decoder. The supporting measurement (**0.00%** of atoms have a
+non-negative `P a`) is true and vacuous: it says only that atoms have a
+nonzero null component, which almost any vector in a 1536-dimensional
+space with a 768-dimensional null space does.
+
+### The mechanism: the orthant forces a collinear dictionary
+
+Non-negativity binds through the Gram matrix, not through the null
+space. Two non-negative vectors have `<a, a'> >= 0` exactly, so the
+dictionary is non-negatively correlated by construction. For
+independent `abs(N(0,1))` entries the chance pairwise cosine is
+`2/pi = 0.6367`, and over 4000 draws the *minimum* is `+0.5796` -- it
+does not approach zero. Signed draws give `0.0000`, minimum `-0.1314`.
+
+The effect on the dictionary is large. Converged, with `dictgeom.py`:
+
+| cell | `c` | eff rank | FVU_w |
+|---|---|---|---|
+| signed, e_dec 1536 | +0.0009 | 27.37 | 0.3363 |
+| signed, e_dec 768 | +0.0019 | 26.95 | 0.3367 |
+| abs, e_dec 1536 | +0.3038 | 9.15 | 0.3445 |
+| abs, e_dec 768 | +0.4543 | 5.41 | 0.3954 |
+
+**And it is nearly free in reconstruction, which breaks the account this
+section first gave.** `abs` at e_dec 1536 runs at a third of the signed
+arms' effective rank -- 9.15 against 27.37 -- for 2.4% of FVU_w. A
+quantity can be forced, and differ 3-fold, without being what costs the
+objective anything. An earlier version of this section had collinearity
+ordering all five cells with Spearman +0.90; that was measured at step
+93,000, mid-descent, and does not survive convergence.
+
+So the two are not one mechanism after all. Under `signed`, `e_dec`
+costs +0.1% -- nothing. Under `abs` it costs +14.8%. The reconstruction
+penalty is an **interaction**, carried by `abs` at a square decoder and
+not by either factor alone, which is what the cone account predicts and
+the collinearity account does not.
+
+What the collinearity buys is therefore dictionary geometry rather than
+error: a decorrelated, near-full-effective-rank dictionary at matched
+reconstruction. For an interpretability method that is the interesting
+half, but it should not be sold as a reconstruction result.
+
+`s_kcossim` and `KCOS_target` are 0 in all four arms, so none of this
+is a collinearity penalty doing the work. Removing one `abs` buys
+
+`s_kcossim` and `KCOS_target` are 0 in all four arms, so none of this
+is a collinearity penalty doing the work. Removing one `abs` buys
+roughly what the `--kcos-target` controller exists to buy.
+
+### Where concat fits, and the floor's actual form
+
+The bound on a head's mean pairwise cosine is
+
+    c >= (k/n - 1) / (k - 1),      n = d_head
+
+attained by spreading the `k` rows over the `n` coordinates with disjoint
+supports, which is also where non-negativity's own `c >= 0` stops being
+the binding one. So the floor only rises above zero once `k > n`: it is
+0 for both summing widths and for `--d-head 32` (where `n = k = 32`),
+0.0194 at `--d-head 20`, and 0.0616 at `--d-head 11`, the narrowest the
+`d_out / h <= D` window allows.
+
+`ste_h76_cat32` therefore does not face a raised floor. What it faces is
+a collapsed tradeoff: reaching `c = 0` at `n = k` requires one
+coordinate per atom, so a decorrelated dictionary is a one-hot one with
+nothing left to express. It took the correlation instead, and ends with
+the highest of the three `abs` arms (per layer, at convergence):
+
+| arm | `cossim_k` | `cossim_k_max` | FVU_w |
+|---|---|---|---|
+| summing, e_dec 1536 | +0.3039 | 0.666 | 0.3445 |
+| summing, e_dec 768 | +0.4543 | 0.765 | 0.3954 |
+| concat, d_head 32 | +0.5353 | 0.841 | 0.5140 |
+
+Monotone in both across these three, but do not read that as the
+statistic driving FVU: the signed cells break exactly that relation,
+sitting at `c ~ 0` for only 2.4% less error than summing/1536. Within
+the `abs` family the two move together because both track how much room
+the orthant constraint has, which is also what the error tracks.
+`cossim_flat` is not comparable here -- `ConcatDictBlock` overrides it,
+and between-head pairs are exactly orthogonal by construction and swamp
+the within-head ones.
+
+Concat is not explained by `c` alone, though. At matched step 93,000 it
+has a *lower* `c` than the summing e_dec-768 arm (0.5657 against 0.5768)
+and a much worse FVU_w (0.8545 against 0.6532); the convergent ordering
+above holds only because it keeps degrading. Over the five cells
+Spearman is +0.90, and concat is the single inversion.
+
+Its extra cost is reachability, which is the one place that frame does
+bind. At `d_head = 32` a head's rows are non-negative vectors in `R^32`
+and its output is `D_block a` for a `(768, 32)` column block: 32
+generators in a 32-dimensional subspace, a simplicial cone, the most
+restrictive case there is. `train_ste.py` prints the per-head null space
+as 0 for this config. The summing arm at e_dec 1536 spreads a head's
+rows over all 1536 dimensions against the full decoder.
+
+### Does a softer code raise the dictionary's rank? (`dictgeom.py`)
+
+No, and rank is the wrong variable. `dictgeom.py` reads the weights
+directly; the selection sweep is config-matched (k=32, h=32, l=5,
+e_dec=2048) at 369,500 steps with only `select` varying.
+
+| select | `c` | eff rank | rank99 | FVU_w | | `c` +s_Hm | eff +s_Hm |
+|---|---|---|---|---|---|---|---|
+| top1 | +0.3613 | 6.41 | 31.3 | 0.962 | | - | - |
+| top2 | +0.5797 | 2.68 | 30.7 | 0.591 | | +0.2177 | 13.83 |
+| top4 | - | - | - | - | | +0.1505 | 19.78 |
+| top8 | +0.3887 | 4.72 | 31.0 | 0.265 | | +0.1410 | 18.72 |
+| top16 | +0.2244 | 12.45 | 31.1 | 0.111 | | +0.2150 | 15.45 |
+| softmax | +0.2056 | 13.90 | 31.8 | 0.062 | | +0.3592 | 9.05 |
+
+`rank99` is 30.7-31.8 of 32 in all ten arms, so the numerical rank is
+full whatever the code is and carries no signal. Effective rank varies
+7-fold and is **not monotone in softness**, and the two families reverse
+each other: without the mean-entropy bonus softening raises it
+(6.41 -> 13.90), with it the peak is mid-ladder at top4 and softmax is
+the worst cell. The selection rule is not the controlling variable.
+
+The mechanism points the way the `_shm` family went, and `rowcos`'s
+docstring already says why: under a hard code a head's output *is* one of
+its rows, so collinear rows make the output independent of which entry
+wins and the head carries nothing. Under a soft code, continuous
+coefficients give a continuum of outputs along even small differences
+between rows, so collinearity costs much less. A soft code needs rank
+less than a hard one does.
+
+Caveat on the whole table: the arms span FVU_w 0.96 to 0.05, so they sit
+at very different points of fit and nothing here is matched on
+reconstruction quality.
+
+#### Matching on FVU instead reverses it, and neither matching is a control
+
+`dictgeom.py --fvu=` picks each arm's checkpoint closest to a target, and
+`--steps=` traces one arm, which is what the comparison actually needs:
+checkpoints are 10k apart and a fast arm's FVU moves further between two
+of them than the spread being measured, so single matched points are
+interpolated onto a common grid.
+
+| select | FVU 0.90 | 0.60 | 0.45 | 0.40 |
+|---|---|---|---|---|
+| top2 | 0.7588 | 0.6791 | 0.4547 | 0.2580 |
+| top4 | 0.7799 | 0.7391 | 0.6951 | 0.6705 |
+| top8 | 0.7733 | 0.7494 | 0.7242 | 0.7137 |
+| top16 | 0.7408 | 0.7197 | 0.7033 | 0.6921 |
+| softmax | 0.6286 | 0.5950 | 0.5800 | 0.5705 |
+
+At the deepest common FVU the hardest code has the lowest `c` by a wide
+margin, the opposite of the step-matched reading; at FVU 0.90 it is among
+the highest. But this is the mirror confound rather than a fix: at FVU
+0.40 `top2` sits at step ~234,000 against 23,000-43,000 for the soft
+arms, and decorrelation continues long after FVU plateaus, so the arm
+that trained ten times longer looks decorrelated for that reason.
+
+**Duration dominates the selection rule by 3.8x.** Mean `c` falls from
+0.750 at 10k to 0.217 at 369.5k, a swing of 0.533, while the spread
+across all five rules at a fixed step averages 0.140.
+
+The orderings cross at around step 100k, which is what made the
+converged table above look non-monotone and the two families look
+contradictory -- they sample opposite sides of it:
+
+| step | top2 | top4 | top8 | top16 | softmax | spread |
+|---|---|---|---|---|---|---|
+| 10,000 | 0.795 | 0.788 | 0.774 | 0.743 | 0.648 | 0.147 |
+| 50,000 | 0.658 | 0.639 | 0.612 | 0.588 | 0.519 | 0.139 |
+| 100,000 | 0.459 | 0.418 | 0.406 | 0.426 | 0.435 | 0.053 |
+| 150,000 | 0.329 | 0.275 | 0.256 | 0.303 | 0.370 | 0.114 |
+| 369,500 | 0.218 | 0.151 | 0.141 | 0.215 | 0.359 | 0.218 |
+
+The late half is the mechanism: the soft arm's `c` plateaus at 0.359 once
+reconstruction is good, while the hard arms keep paying collinearity down
+to 0.14 long after their own FVU has flattened -- `top2` improves FVU_w
+only 7% from 150k to 369.5k while dropping `c` by 34%. Collinearity costs
+a hard code information directly, so it keeps working on it; a soft code
+has no such pressure and stops. At convergence a softer code therefore
+gives the *more* collinear dictionary, inverting the naive expectation.
+
+This is the `s_Hm` family. The family without the bonus disagrees at
+convergence, but its hard arms pair high `c` with poor FVU (`top2` at
+0.58 and 0.591), which reads as head collapse -- what `s_Hm` exists to
+prevent -- rather than a selection-rule effect. One seed per cell either
+way.
+
+#### The last layer: its collinearity is a correlate (`lastlayer.py`)
+
+Collinearity falls monotonically with depth in every hard arm measured
+(SONAR `ste`, `sweep_top1`, and the gpt2 `ste` and `signed` arms) but not
+in the soft ones, which spike at the LAST layer: `sweep_softmax_shm`
+ends at `c = 0.799` with eff 1.54, nearly rank-one, and `top16_shm` at
+0.433 after reaching 0.048 one layer earlier.
+
+`lastlayer.py` reads the deepsup per-prefix decodes and ablates the final
+layer's heads two ways. **Uniform** replaces its classification with
+`1/k` so it emits its mean atom; **zero** removes it. The pair separates
+a layer that emits nothing from one that emits a constant.
+
+| arm | select | L4 `c` | L4 eff | p3 | L4 adds | zero-ablate |
+|---|---|---|---|---|---|---|
+| sweep_top1 | top1 | +0.246 | 10.60 | 0.7511 | +4.3% | +4.5% worse |
+| sweep_top2_shm | top2 | +0.188 | 14.89 | 0.2378 | +19.7% | +24.5% worse |
+| sweep_top8_shm | top8 | - | - | 0.0304 | +5.5% | +5.8% worse |
+| sweep_top16_shm | top16 | +0.433 | 3.46 | 0.0043 | +0.0% | +0.0% |
+| sweep_softmax | softmax | +0.263 | 6.00 | 0.0023 | -1.2% | -1.1% better |
+| sweep_softmax_shm | softmax | +0.799 | 1.54 | 0.0007 | -1.9% | -1.8% better |
+
+**The contribution tracks `p3` -- the error left before the last layer --
+and not the collinearity.** `sweep_softmax` settles it: its L4 is not
+collapsed, `c = 0.263` at eff 6.0, and is just as useless as the
+rank-one one, with zero-ablation improving held-out error. Saturation is
+the cause and the geometry is downstream. Below about `p3 = 0.005` the
+last layer is inert or mildly harmful; above it, it earns its place.
+
+The two collapses are different endings, which the ablation pair
+separates. `top16_shm`'s L4 shrank its norms to 4% of the other layers'
+(within-head norm CV 3.03) and zero-ablating it is a literal no-op: it
+emits nothing. `softmax_shm`'s L4 keeps a norm of 0.668 at CV 0.076 --
+collinear AND near-equal in magnitude, so it emits a near-constant
+vector -- and removing that *improves* held-out error, making it a small
+overfit rather than a useful bias. Neither is a "usable scalar-gain
+correction", which is what the collinearity alone suggested.
+
+So the depth trend is not a hard-code property, as the first version of
+this claim had it. Soft codes break it because they saturate before the
+last layer, not because they tolerate collinearity.
+
+Evaluating these arms needs their annealed temperature: they end at
+`temperature_end = 0.03`, and scoring at the `1.0` default puts
+`sweep_softmax_shm` at FVU_w 0.91 instead of 0.0007, which looks exactly
+like a broken checkpoint. Their logged training MSE is far above the
+clean number because it carries `sd_F = 0.1` noise and `p_drop`.
+
+The same tool gives the gpt2 arms' exact geometry, which adds a fact the
+correlation alone missed -- concat loses genuine numerical rank, not just
+effective rank:
+
+| arm | `c` | eff rank | rank99 |
+|---|---|---|---|
+| summing, e_dec 1536 | +0.3038 | 9.15 | 30.2 |
+| summing, e_dec 768 | +0.4543 | 5.41 | 28.1 |
+| concat, d_head 32 | +0.5337 | 3.30 | 17.1 |
+
+### The reachability frame, and where it does not bind
+
+The reachability framing that replaced the lift story is too coarse for
+the `e_dec` contrast, and oversold the wide arm. `{D a : a >= 0}` is the conical hull
+of `D`'s columns: a single simplicial cone when the decoder is square,
+much larger at `e_dec = 2d`. But by Wendel's theorem `m` random columns
+lie in some halfspace with probability `2^(1-m) sum_{i<d} C(m-1, i)`,
+which at `m = 2d` is exactly `1/2` -- so `e_dec = 1536` sits on the
+threshold where a random decoder's cone covers the output space at all.
+Reachability is binary; the measured effect is continuous in `c`.
+
+The cost of narrowing, under `abs`, grows as the model learns to use
+the lift (train FVU_w, mean of the 200 rows ending at each step):
+
+| step | e_dec 1536 | e_dec 768 | cost |
+|---|---|---|---|
+| 20,000 | 0.9277 | 0.9407 | +1.4% |
+| 93,000 | 0.5964 | 0.6532 | +9.5% |
+| 200,000 | 0.4503 | 0.4973 | +10.5% |
+| 371,900 | 0.3445 | 0.3954 | +14.8% |
+
+### The test
+
+`--signed` drops the `abs()` in `DictBlock.dicts`. The prediction made
+beforehand was a *pattern* over the 2x2: three cells alike and one
+worse, since `abs` at e_dec 1536 should already have the room it needs.
+**At convergence that is what happened** -- but it took the full run to
+show it, and reading the 2x2 at 25% said the opposite.
+
+| e_dec | abs | signed | | abs @93k | signed @93k |
+|---|---|---|---|---|---|
+| 1536 | 0.3445 | 0.3363 | -2.4% | 0.5964 | 0.5362 (-10.1%) |
+| 768 | 0.3954 | 0.3367 | -14.8% | 0.6532 | 0.5410 (-17.2%) |
+| narrowing | +14.8% | +0.1% | | +9.5% | +0.9% |
+
+At step 93,000 `signed` led by 10.1% at e_dec 1536 and the pattern
+looked falsified; by 371,900 that lead is 2.4% and the three cells
+agree while `abs`/768 alone is 14.8% back. `abs` at the wide width
+catches up, it is merely slower. A prediction called wrong at a quarter
+of the run was right.
+
+The pair also settles capacity, which the `e_dec` arm alone cannot: the
+two signed cells agree to +0.1%, so the wide dictionary was buying room
+for the constraint, not representational capacity.
+
+`ste_h76_sgn768` and `ste_h76_sgn` are that pair, at the reference
+arms' settings and full 24 epochs:
+
+```bash
+uv run python experiments/ste-arm/train_ste.py --base gpt2_l8 \
+    --dict-init-scale 1.0 --signed --e-dec 768 \
+    --out data/out/gpt2_l8/ste_h76_sgn768
+uv run python experiments/ste-arm/train_ste.py --base gpt2_l8 \
+    --dict-init-scale 1.0 --signed --out data/out/gpt2_l8/ste_h76_sgn
+```
+
+Signed atoms give up two things the default has. Subtractive features
+are harder to read as "this concept is present". And under `norm_rows`
+the `|F|_1 >= h` floor disappears: it rested on non-cancellation, and
+signed rows can cancel across `k` (`tests/test_signed.py` pins this).
+
+Those costs are now weighed against a measured gain rather than against
+a diagnostic, since the arms also decorrelate the dictionary by two
+orders of magnitude without any collinearity pressure applied. Whether
+that survives to convergence is the open question.
+
+## Head-independence pressure (`--s-hsic-heads`): a measurement artifact
+
+**Everything in this section was chasing estimator bias.** The heads
+were already independent; the statistic said otherwise because it was
+biased, and the bias was larger than the quantity it was measuring.
+Per-layer head CKA on `ste_h76`, the same codes scored both ways:
+
+| layer | 0 | 1 | 2 | 3 | 4 | mean |
+|---|---|---|---|---|---|---|
+| unbiased | 0.0041 | 0.0005 | 0.0005 | 0.0004 | 0.0002 | **0.0011** |
+| biased | 0.0315 | 0.1062 | 0.1018 | 0.0963 | 0.0976 | 0.0867 |
+
+The biased estimator reads chance co-occurrence between independent
+categorical heads as dependence, and the floor grows as the batch
+shrinks: at h=76 and k=32 it is 0.109 at b=256, 0.057 at 512 and 0.029
+at 1024, against an unbiased 0.0001 at every size. At the training
+batch the floor exceeded any real dependence, so the penalty had
+nothing to descend but the bias. `hsic.pairwise_head_cka` now defaults
+to Song et al.'s unbiased estimator, which agrees with explicit
+pairwise evaluation to six digits and still reads 0.06 at 0.5 factor
+correlation and 0.41 at 0.8.
+
+That explains every result below, which are kept because the reasoning
+that produced them is instructive and the failure was not where any of
+it looked:
+
+- The penalty could not reduce the biased CKA in training because most
+  of that number is a floor the batch sets and the weights cannot
+  reach. Under the unbiased estimator it reduces it readily, and there
+  is then no dependence left worth reducing.
+- It fell 56% when descended alone with MSE removed, which is the
+  bias term being optimised by degrading the code in ways
+  reconstruction correctly resists.
+- Conditioning on language or script explains none of it (within-language
+  0.0033, within-script 0.0023, against 0.0011 mixed -- noise around
+  zero), so the correlated-factor hypothesis was never the binding
+  question.
+
+The finding worth keeping is the opposite of the one the arm was built
+to test: **this architecture produces near-independent heads with no
+pressure to do so**, at a CKA of 0.001 where 0.5 factor correlation
+would read 0.06. Nothing needs to enforce it.
+
+Before trusting any statistic as a training signal, measure it on a
+null it should score zero on. `auxpull.py` answers whether a penalty
+applies force; it cannot tell you the target is fictitious.
+
+### The rerun under the unbiased estimator
+
+`auxpull.py` now covers the penalty, and the two estimators are not
+interchangeable as training signals. Same checkpoint, same batch, same
+codes:
+
+| estimator | statistic | grad at classifier | equal-pull w | applied at 1e-3 |
+|---|---|---|---|---|
+| biased | 0.434 | 0.221 | 7.9e-4 | 1.26 |
+| unbiased | 0.006 | 0.053 | 3.3e-3 | 0.30 |
+
+The biased estimator carries 4.2x the gradient. Its bias is not a
+constant offset -- it depends on the heads' marginals -- so that excess
+is force aimed at reshaping marginals rather than at reducing
+dependence, and the arm trained against it spent most of its pull
+there.
+
+Finetuning the converged `ste_h76` for 5,000 steps, each at its own
+equal-pull weight, against a control whose weight is low enough to
+apply no force (1e-9, so 3e-7 of the objective's gradient) but nonzero,
+so the statistic is still computed and logged:
+
+| run | estimator | weight | CKA | shift | MSE |
+|---|---|---|---|---|---|
+| `ste_h76_hsic_ctrl` | unbiased | 1e-9 | 0.003264 -> 0.003250 | -0.6 se | +0.16% |
+| `ste_h76_hsic_ftu` | unbiased | 3.31e-3 | 0.003189 -> 0.002895 | **-11.7 se** | +0.31% |
+| `ste_h76_hsic_ft` | biased | 1e-3 | 0.445899 -> 0.444302 | -11.1 se | -0.17% |
+
+(first and last 500 steps, as means of 100-step blocks so the standard
+error absorbs the trace's autocorrelation. CKA is summed over the five
+layers.)
+
+**The penalty was never broken; the statistic was.** Under the unbiased
+estimator it moves its own target 9.2% where an untreated control moves
+0.4%, for a third of a percent of reconstruction. Under the biased one
+it applied 1.26x the objective's own gradient and still moved the
+statistic 0.4%, because most of that value is a floor set by the batch
+rather than by the model, and no amount of force on the weights will
+shift it.
+
+**It still does not matter.** The unbiased statistic starts at 0.00064
+per layer and ends at 0.00058, where 0.5 factor correlation reads 0.06.
+The penalty is a working lever attached to nothing: the earlier
+conclusion holds, for a sharper reason than "it cannot move it."
+
+### What the arm measured, before that was understood
+
+The head-level language probe found language spread thinly over layer 0
+rather than held in one head, which is what a model with several
+hundred heads and no reason to localize should do. `hsic_ste.py` adds
+the mean pairwise CKA between heads' classifications as a penalty, so
+that sharing a variable costs something. Two weights, otherwise the
+configured arm:
+
+| step | CKA at 1e-4 | CKA at 1e-3 | MSE at 1e-4 | MSE at 1e-3 |
+|---|---|---|---|---|
+| 5,000 | 0.083 | 0.084 | 5.20e-3 | 5.12e-3 |
+| 13,000 | 0.216 | 0.195 | 6.21e-4 | 6.19e-4 |
+| 17,000 | 0.382 | 0.361 | 4.55e-4 | 4.58e-4 |
+| 21,000 | 0.415 | 0.405 | 4.10e-4 | 4.16e-4 |
+
+The unpenalized arm converges at 0.434, so ten times the weight buys a
+2% reduction. Two things are worth keeping from that.
+
+**Heads acquire dependence as reconstruction converges.** CKA is near
+0.08 while MSE is still falling fast and rises to its plateau between
+steps 9,000 and 21,000. A penalty here has to prevent a rise, not undo
+one, and no pilot shorter than ~20k steps can tell the weights apart --
+everything looks fine before step 9,000.
+
+**Loss-value share is not gradient share, and only the second selects a
+weight.** At 1e-4 the penalty was 12% of the loss value, which reads
+like a weak setting. Measured at the converged checkpoint, batch 256:
+
+| gradient norm | MSE | CKA | ratio |
+|---|---|---|---|
+| classifier | 1.76e-4 | 2.21e-1 | 1250 |
+| dictionary | 9.96e-4 | 2.21e-1 | 221 |
+
+so the weight for equal pull on the classifier is 8e-4 and 1e-3 is
+already balanced, not weak. At balanced pull the statistic does not
+move, which says the penalty is a weak lever on this architecture
+rather than a mis-scaled one: reducing head dependence costs more
+reconstruction than the penalty saves, even one-for-one. Dominating it
+needs ~1e-2, where the penalty's gradient is an order of magnitude over
+the objective's; whether the resulting model is worth having is
+untested.
+
+The gradient ratio is the number to measure first for any new auxiliary
+term here, and it is two `jax.grad` calls.
+
+**Trained out to 380,200 steps at the balanced weight, it changes
+nothing and costs localization.** Final CKA is 0.441 against the
+unpenalized arm's 0.434 -- marginally higher, with MSE, usage balance
+and row collinearity all within noise. And on the head-level language
+probe it is the worst of the hard arms: best-head NMI 0.199 against
+0.269, holding 3.1% of the head/language information against 4.2%.
+
+That is the reverse of the hypothesis. The penalty was added because a
+model with several hundred heads has no reason to concentrate a
+variable in one of them, and making sharing costly should encourage
+localization. Pairwise-CKA pressure neither reduced head dependence nor
+localized anything; if anything it diffused language further. The
+direction is closed unless a different dependence statistic is proposed.
+
+## Seed reproducibility: the function is determined, the features are not
+
+Two runs differing only in seed, both at the fixed initialization,
+reach **identical** held-out error -- 0.1535 and 0.1535 for the stack,
+0.2870 and 0.2871 for the flat arm. Nothing below that agrees. Four
+measurements, each against its own null:
+
+| what is compared | stack | flat | null |
+|---|---|---|---|
+| head partitions (NMI, `partition.py`) | 0.0121 | 0.0177 | 0.0048 |
+| head contributions (cosine, centered) | 0.0074 | -- | 0.0015 |
+| per-layer subspace, rank 8 | see below | -- | 1.0x chance |
+| per-head tag Grams | 1.05-1.11x within-layer chance | -- | -- |
+
+**Partitions.** The best-matched pair of heads across seeds reaches an
+NMI of 0.42, but the mean is 0.012 against a 0.005 shuffled null. The
+`splitting.py` tag-containment measure reads 0.000 at its standard
+threshold, which is not a metric artifact: the same partition measure
+scores 0.38 overall and 0.87 on layer 0 comparing one run against its
+own checkpoint 19,500 steps earlier, so it detects agreement when there
+is any.
+
+**Contributions.** A head is also a vector-valued function, and two
+heads could carve differently while adding the same thing. They do not:
+centered cosine between matched contribution matrices is 0.0074 against
+a 0.0015 null, with the best pair at 0.081. Uncentered the same
+comparison reads 0.205 with 99.5% layer agreement, which is the
+non-negative dictionary's shared offset and its per-layer gain, not
+reproducibility.
+
+**Subspaces, and why their agreement is not the architecture's.** Top-8
+eigenspaces of the per-layer contributions agree 25x to 33x above
+chance, falling to 1.1x by rank 128. But comparing each model against
+the *cache's own* principal directions in the whitened output frame
+gives the same numbers:
+
+| layer | A vs B | A vs cache | B vs cache |
+|---|---|---|---|
+| 0 | 116.7 | 114.2 | 108.0 |
+| 1 | 123.7 | 101.3 | 101.2 |
+| 2 | 115.5 | 97.3 | 97.6 |
+| 3 | 86.1 | 85.6 | 88.6 |
+| 4 | 8.9 | 24.0 | 21.8 |
+
+(overlap over chance at rank 8.) For layers 0 to 3 the models agree
+with each other no more than each agrees with the data, so their
+agreement is the data's dominant directions and nothing is left for the
+architecture. Layer 4 fails the other way: each model tracks the data
+about 23x above chance while agreeing with the other only 9x, so the
+two seeds pick *different* data-aligned directions.
+
+**Tag Grams reproduce, but there is almost nothing in them to
+reproduce.** Per-layer row collinearity agrees to four digits across
+seeds (0.2880/0.2891 at layer 0 down to 0.1226/0.1233 at layer 4), and
+so do the mean spectra. But the spectrum is nearly one-parameter: the
+top eigenvalue is exactly `1 + (k-1)*rowcos`, correlates with it at
+1.0000 across all 380 heads, and carries 82% of the spectrum's norm.
+That single dominant eigenvalue is forced by non-negativity, not
+learned -- random `abs()`'d rows give rowcos 0.64 and 97% of the norm
+in the top eigenvalue, where signed rows give 0.00 and 22%. So the Gram
+has about one free parameter.
+
+Comparing the Grams themselves rather than their spectra -- entries put
+in a canonical order by each one's mean cosine to the others in its own
+head, then differenced off-diagonally -- puts individual agreement at
+chance, against a null that pairs heads *within the same layer*:
+
+| layer | across seeds | same run, 19.5k steps earlier |
+|---|---|---|
+| 0 | 1.11x | 1.15x |
+| 1 | 1.05x | 1.07x |
+| 2 | 1.06x | 1.07x |
+| 3 | 1.06x | 1.07x |
+| 4 | 1.07x | 1.11x |
+
+The second column is the sharper result. One run against its own recent
+checkpoint scores the same as a different seed, where the partition
+measure separates those two comparisons thirtyfold (0.38 against
+0.012). So a head's Gram barely moves across 19,500 steps of training
+and barely moves across a seed: it is close to a fixed property of the
+configuration rather than something learned, which is why its one free
+parameter reproduces to four digits.
+
+The table above is computed in `e_dec`, where 74-78% of each atom is in
+the decoder's null space and so cannot be either learned or reproduced
+(see the row-collinearity section). Decoding the atoms into output space
+first removes that and changes nothing: 1.18x at layer 0 falling to
+1.03x at layer 4. The conclusion survives, but it survived by luck
+rather than design, and any future comparison of dictionaries should
+decode before measuring.
+
+Three figures from earlier passes were wrong and are worth recording as
+traps. Against a whole-model random pairing the spectra read 35x, which
+was entirely the layer signal, since layers differ in collinearity by
+0.12 to 0.29 while heads within a layer differ by a standard deviation
+of 0.0014. The spectral test at 1.5-3.0x was measuring a necessary
+condition only -- different Grams can share a spectrum -- so it
+overstated the direct figure by roughly twofold. And a first direct pass
+recomputed its normalizer per layer, which produced ratios below 1 for
+an assignment minimizing that same distance; impossible, and the only
+reason it was caught.
+
+What the Gram does measure is how far training drives the atoms apart
+against the constraint: 0.64 at random, 0.29 at layer 0, 0.12 at layer
+4. Monotone in depth, and real work.
+
+**The one positive result is that coarse features reproduce better,
+and the flat arm shows it cleanly.** With all 380 heads at one depth,
+so depth cannot confound it, a head's matched agreement correlates with
+its contribution size at **r = 0.963** (0.911 against the varying part
+alone). In the stack the same relationship is confined to layer 0 at
+0.41 and 0.53, and is absent in layers 1 to 4. Flat heads also
+reproduce better overall, 0.0177 against the stack's 0.0121 on the same
+null, which is what a seed-independent input predicts.
+
+**So what reproduces is aggregate or layer-level:** the total error to
+four digits, per-layer collinearity to four digits, and the data's
+dominant directions. What does not reproduce is anything identifying an
+individual head -- what it separates, what it contributes, the subspace
+it works in beyond what the data forces, or its own internal geometry.
+Feature-level claims about individual heads have no foundation in this
+architecture as it currently trains, and every head-level result
+elsewhere in this file inherits that.
+
+Each of the four measures needed a control before it said anything, and
+three of them reversed under one. Tag containment read 0.000 and looked
+like a broken metric until the same-run checkpoint comparison showed it
+detects agreement at 0.38 when there is any. Uncentered contributions
+read 0.205 with 99.5% layer agreement, which was the non-negative
+dictionary's shared offset. Subspaces read 25-33x above chance until the
+cache's own directions turned out to score the same. And the Gram read
+35x, then 1.5-3.0x, then chance. The pattern is consistent enough to
+state as a rule: in this architecture, non-negativity and the
+layer-dependent gain put structure into every measure's floor, so a
+result without a null of the same shape is not a result.
+
+Layer 0 is the exception in every head-level measure and in none of the
+aggregate ones, which is consistent with it being the only layer whose
+input does not depend on upstream choices.
+
+## Does a labeled variable land in one head? (`headlang.py`)
+
+Held-out language identity over 86 languages, against a dense-embedding
+ridge ceiling of 0.721 and chance of 0.012:
+
+| arm | structure | best-head NMI | less null | probe m=1 | m=32 |
+|---|---|---|---|---|---|
+| ste_h76 | 5x76 | 0.269 | 0.261 | 0.165 | 0.378 |
+| + kcos setpoint | 5x76 | 0.287 | 0.279 | 0.139 | 0.318 |
+| - mean-entropy bonus | 5x76 | 0.085 | 0.078 | 0.038 | 0.322 |
+| + head-independence | 5x76 | 0.199 | 0.189 | 0.097 | 0.383 |
+| flat | 1x380 | 0.277 | 0.276 | 0.102 | 0.257 |
+| flat + kcos | 1x380 | 0.247 | 0.246 | 0.080 | 0.271 |
+| softmax reference | 5x32 | 0.055 | 0.043 | 0.036 | 0.275 |
+
+**No head is a language variable in any arm.** The best reaches an NMI
+of 0.28 against an attainable ceiling of 0.875, and none of the
+head-health levers changes that. The architecture's distinguishing
+claim is still unsupported on the one variable with ground truth.
+
+That ceiling is not 1.0, and an earlier version of this section said a
+32-entry head "could hold all 6.43 bits", which is false: `log2(32)` is
+5.00 bits against the label's 6.43, so **no single k=32 head can
+represent 86 languages** and the question was partly asked of something
+the architecture forbids. `nmi` normalizes by the arithmetic mean and
+`I <= min(H_h, H_l)`, so the cap is `2 min / (H_h + H_l)` = 0.875 here.
+The gap from 0.28 to 0.875 is wide enough that the verdict stands, but
+the clean test needs `k >= 128`, the smallest head that can hold the
+label at all. `headlang.py` had the same error in its reported ceiling
+(`min(1, H_l/H_h)`, which prints 1.00 for these arms and is wrong in
+both regimes); it is fixed.
+
+**The hard code is consistently the more concept-aligned**, six times
+the softmax reference on null-corrected best-head NMI, which is the
+result that survives everything else in this file.
+
+### Per-label tags, script, and conjunctions (`headscript.py`)
+
+Three finer readings of the same claim on `ste_h76`, all on the cache
+tail, all scored against a label-shuffled null (the maximum runs over
+`l*h*k` cells, and precision is floored by a label's own share -- Latin's
+raw best-cell F1 of 0.570 ranks highly at 1.02x enrichment, i.e. chance).
+
+**Script is not the variable either.** Best-head NMI 0.191 against a
+0.671 ceiling is 28.6% of attainable, against language's 30.3%, and the
+same head (L0 h50) is best for both. Capacity was not the obstacle:
+script is 2.52 bits inside a head's 5.00. Note the ceiling binds from the
+other side here -- a 5-bit head is too FINE for a 2.52-bit label.
+
+Most of that is not a new test: 18 of the 24 scripts are a single
+language, so their cell is the language cell. The two real group labels
+split -- Cyrillic (11 languages) has a genuine cell at recall 0.697 and
+4.7x enrichment, Latin (53 languages, 62% of rows) sits at 1.02x.
+
+**A single tag is a strong but permissive detector.** Best cell per
+language: recall 0.74-0.98 at FPR 1.6-2.2%, 26-36x enrichment, precision
+0.30-0.42. 9/86 languages reach recall 0.8 and 0/86 reach precision 0.8.
+Precision 0.8 at these recalls needs FPR 0.0015 against 0.026 observed,
+so the shortfall is real -- 17x -- but smaller than raw precision implies,
+since 86 near-balanced classes make the negative class 85x larger.
+
+**Conjunctions do not fix it, because the heads share their mistakes.**
+Top-m cells from distinct heads (entries within a head are mutually
+exclusive, so a same-head conjunction is empty by construction):
+
+| m | AND prec | AND rec | AND F1 | FPR | if independent |
+|---|---|---|---|---|---|
+| 1 | 0.195 | 0.512 | 0.282 | 0.0250 | - |
+| 2 | 0.433 | 0.234 | 0.303 | 0.0036 | 0.00062 (5.8x) |
+| 3 | 0.584 | 0.102 | 0.174 | 0.00086 | 0.000016 (55x) |
+| 4 | 0.598 | 0.048 | 0.088 | 0.00038 | 4e-7 (974x) |
+
+Precision triples while recall falls tenfold; F1 peaks at m=2, 7% above a
+single tag, and the best precision anywhere is 0.598 at 4.8% recall. OR
+is strictly worse (recall 0.512 -> 0.779, precision 0.195 -> 0.041, F1
+monotonically down).
+
+Were the false positives independent, m=2 would give precision 0.83 and
+m=3 0.99. Recall DOES combine nearly independently (0.234 against 0.262
+predicted), so true positives are near-independent while false positives
+are shared: a common set of confusable rows that many heads send to the
+same wrong language, which the cell compositions show directly (`fi`'s
+cell carries `et` at 0.28, `ja`'s carries `ko` at 0.29, `ja-Latn`'s
+carries `ja`, `en`'s carries `en-multi`). The errors are systematic
+language confusions rather than noise, so the code looks like it encodes
+language NEIGHBOURHOOD rather than identity.
+
+This is not in tension with the head-independence section below: that
+concerns independence of the head codes, which says nothing about whether
+their errors against an external label coincide.
+
+### Why, from the embedding geometry (`embedgeom.py`, `headeta.py`)
+
+SONAR embeddings are unit-normed but not centred -- `||mean|| = 0.5637`,
+so the cloud is a spherical cap and 0.318 of every squared norm is a
+shared direction. They are dense without being isotropic: effective
+dimension 108 of 1024, yet 943 PCs for 99% of variance.
+
+Language explains 6.51% of embedding variance and script 2.26%. The
+tempting conclusion -- that an MSE objective ignores a 6.5% factor -- is
+**wrong**, and `headeta.py` is the control that kills it. Corrected for
+group count (a random partition into `g` groups scores `(g-1)/(n-1)`):
+
+| partition | groups | eta^2 | x baseline |
+|---|---|---|---|
+| best head L0h54 | 32 | 0.1112 | 235x |
+| best language head L0h50 | 32 | 0.0432 | 91x |
+| script | 24 | 0.0226 | 64x |
+| language | 86 | 0.0658 | 51x |
+| layer-0 median head | 32 | 0.0080 | 17x |
+| median head | 32 | 0.0025 | 5x |
+| layer-4 median head | 32 | 0.0010 | 2x |
+
+Language is a *stronger* partition than 90% of the heads, so neither
+salience nor capacity is the obstacle. What is: languages are weakly
+separated regions, not directions. Within-language mean cosine is 0.3596
+against 0.3160 between, and the shared mean direction alone accounts for
+0.3178 of that -- so the real cluster signal is the +0.0436 excess, 0.30
+sd of the pair distribution. A partition code cuts along local residual
+variance, and at 0.30 sd those cuts pass through the clusters rather than
+around them, which is what produces tags that fire on a language plus its
+neighbours with confusions shared across heads.
+
+Two asides from the same table. The heads are radically unequal, 235x for
+the best against 5x for the median. And the layer-4 heads are
+near-random partitions at 2x, which is `lastlayer.py`'s workless final
+layer arrived at from a different direction.
+
+### What the strongest head holds (`decodehead.py`)
+
+L0 h54, the 235x head, is not a language head: NMI 0.149 against language
+where h50 reaches 0.265, 30 of 32 entries used at near-uniform load, and
+each entry a broad language mixture -- 16.1 distinct languages among an
+entry's top-20 activating rows, where a language feature would
+concentrate.
+
+Decoded, it reads as topic and genre: crime news (e8, e10), geopolitics
+and parliament (e7, e18, e21), encyclopedic place description (e3, e19),
+manufacturing (e4, e23), marketing and customer service (e9, e27),
+legislative text (e25), entertainment and gaming (e13, e20).
+
+**That reading is half the head, not all of it.** `autointerp.py --mode
+cacts` has an LLM describe each entry from its top-activating TEXTS, and
+scores the descriptions by blinded detection, which is the only one of the
+three modes that works (see below). By claim type, with the mode's 0.273
+null as the floor:
+
+| what the description claims | n | mean F1 |
+|---|---|---|
+| genre / topic | 16 | 0.523 |
+| multilingual or code-switched passages | 8 | 0.476 |
+| text artifact (duplication, mojibake) | 3 | 0.395 |
+| script or region | 5 | 0.394 |
+
+So genre/topic is the largest group and the best described, but a quarter
+of the head keys on documents that MIX languages, and three entries on
+encoding damage. All four beat the null, so none is a judge artifact --
+the multilingual ones in particular were the suspicious case and they
+score nearly as well as genre.
+
+The topic half still explains the profile that prompted the look: the
+highest variance explained of any head, because topic dominates sentence
+embeddings, and the lowest language NMI among structured heads, because
+topic is near-orthogonal to language. Monosemantic features are there and
+the labeled variable we had was the wrong one -- but "a topic head" was
+too clean a summary.
+
+**Entries must be decoded as deviations from the head mean.** An entry's
+cosine to that mean is 0.849, so decoding entries raw returns one shared
+sentence 32 times with the details shuffled -- the same "constant part
+dwarfs its varying one" as the decoder-sparsity section, at entry level.
+`--deviation` subtracts it. Anything resting on `decode_tags.py` is
+reading the template rather than the feature, since it decodes raw
+entries.
+
+`autointerp.py`'s `params` mode has the same flaw and worse: it decodes a
+code with all `l*h` heads at the measured origin and one forced, so the
+origin dominates. `--mode pdev` subtracts the pure-origin decode.
+**Legibility is all that buys, though.** Scored by blinded detection over
+h54's 32 entries:
+
+| mode | self F1 | null F1 | delta |
+|---|---|---|---|
+| cacts (LLM reads activating texts) | 0.479 | 0.273 | +0.206 |
+| pdev (origin-subtracted decode) | 0.052 | 0.014 | +0.038 |
+| params (raw decode) | 0.031 | 0.000 | +0.031 |
+
+#### Per-latent detection F1 is mostly a density measure
+
+The campaign in `data/out/sonar/autointerp` scores six runs in all three
+modes (no null control recorded -- the old `scores.csv` has no `kind`
+column -- so these are raw self F1):
+
+| run | density | freq | acts | cacts | n |
+|---|---|---|---|---|---|
+| m5120_k32 | 0.6% | 0.61% | 0.645 | 0.603 | 250 |
+| m5120_k32_bl | 0.6% | 2.62% | 0.578 | 0.470 | 75 |
+| m5120_g160top1 | 3.1% | 5.08% | 0.646 | 0.594 | 150 |
+| m11264_k5120 | 45.5% | 17.97% | 0.470 | 0.332 | 256 |
+| m5120_g160softmax | 100% | 0.00% | 0.449 | 0.364 | 256 |
+| onto (5x32, T=0.03) | 100% | 10.80% | 0.473 | 0.392 | 225 |
+
+Read naively this says the Ontologizer is 0.21 below the plain top-k SAE
+on cacts, 7.9 sd. **It mostly says the Ontologizer's code is denser.**
+Pearson(log nominal density, acts F1) is -0.894 across the six runs, so
+density alone carries ~80% of the variance; sparse runs (<5%) average
+cacts 0.556 against 0.363 for dense ones (>=40%).
+
+Fitting `cacts ~ a + b log(firing rate)` on the four SAE runs with nonzero
+firing rate (slope -0.069 per log unit, r = -0.766) and holding `onto`
+out predicts 0.421 against an actual 0.392 -- a residual of **-0.029, or
+-1.8 sem**. `onto` sits on the SAE trend. `m5120_g160top1` is the real
+outlier at +0.120 above it, which is what makes it look like a damning
+control: it is 160 groups of 32 with top-1 per group, the Ontologizer's
+own categorical code in SAE form, and unusually describable for its
+density.
+
+Caveats, because the control is thin: the fit has n=4 and a weak r;
+`g160softmax` is excluded because its firing rate is exactly 0, and it is
+the run most like `onto` in being a softmax code; there is no null
+control; and `freq` is thresholded at `2/k`, which is non-monotone in true
+density -- it goes to zero for a maximally diffuse code as well as a
+maximally sparse one, which is exactly why `g160softmax` reads 0.00%.
+
+The lesson for the benchmark is the durable part: per-latent detection F1
+cannot compare architectures at unmatched density, and every Ontologizer
+arm is dense by construction.
+
+`params` is at zero, so that mode should be dropped or read only as prose.
+It does **not** invalidate a published number: the `0.646 vs 0.645`
+per-latent describability figure in `categorical/` is SAE-vs-SAE
+(`g160top1` against `k32`) and `replicate.sh` scores it in `--mode acts`,
+which never touches the parameter decode. No Ontologizer autointerp score
+has been published at all -- `experiments/partition-autointerp` is written
+to consume one (`data/out/sonar/autointerp/onto/scores.csv`, `cacts`, on
+`resid_nc`) that is not on disk.
+
+`pdev` is also at the floor: a decoded sentence is an INSTANCE of what
+a tag writes, and detection needs a criterion to sort snippets by. Read
+`pdev` to see what a tag holds; do not read either decode mode as evidence
+that a tag is describable. Only `cacts` supports that, and its own null is
+high (0.273) because top-activating rows differ from random ones in
+surface register, exactly as `autointerp.py`'s header warns.
+
+`info_share_best` in `summary.json` -- the best head's share of the
+summed head/language information -- is comparable only between arms of
+the same shape. It divides by a sum of uncorrected plug-in mutual
+informations over all heads, and the per-head bias tracks how many
+entries a head uses, which the null NMI column reports: 0.008 for the
+5x76 arms against 0.001 for the flat ones, whose heads are mostly
+binary. Across architectures it reverses the probe's verdict, and the
+probe is the one without a bias term.
+
+## Run
+
+```bash
+# the configured arm (fresh dir; resumable, checkpoints every 100 steps)
+uv run python experiments/ste-arm/train_ste.py \
+    --temperature 0.00015 --lr 1e-5 --noise-k batchnorm --sd-k 0.3 \
+    --s-hm 1e-4 --out data/out/sonar/multilingual/ste_h76
+
+# short configuration pilot (shrinks the exposed head of the cache,
+# holding out everything past it, the eval tail included)
+uv run python experiments/ste-arm/train_ste.py --steps 4000 --temperature 5e-4
+
+# capacity control: same head count, live selection rule
+uv run python experiments/ste-arm/train_ste.py --select softmax \
+    --out data/out/sonar/multilingual/softmax_h76
+```
+
+Score it with `pareto.py --ckpt <dir> --temperature <the arm's T>`. The
+`onto hard (argmax)` row is the number this arm exists to move.
+
+Run at most three of these concurrently on one 24 GB device; six
+exhausted it and three died with `RESOURCE_EXHAUSTED`.
+
+## Caveats
+
+- The temperature is hand-matched to a logit scale measured once, and
+  that scale drifts as the classifier trains. The principled version
+  normalizes the logits per head, or controls T against a measured
+  `spread/T` setpoint, and needs a package change.
+- The table above is one seed per cell at 4000 steps, which is early.
+  It ranks configurations; it does not predict final quality.
+- `p_revive` works under `ste` only since `k_sel = 1` there: the guard
+  had read a non-`top<k>` rule as dense and returned immediately. Dead
+  entries are recoverable without it anyway, since the softmax surrogate
+  gives every entry gradient.
