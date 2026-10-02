@@ -13,6 +13,20 @@ from .classify import softmax_cl, ste, topk_cl
 from .loss import l2, addnoise, addnoise_batchnorm, addnoise_featvar, identity
 from ontologize.data.loaders import SampleLoader, EmbeddingLoader, ImageLoader, TextLoader
 
+def _lookup(table: dict, name: str, what: str):
+    """Strict keyed lookup.
+    Replaces `table.get(name.lower(), <default>)`, which
+    made every typo and every not-yet-implemented name silently resolve to
+    the default.
+    """
+    try:
+        return table[name.lower()]
+    except KeyError:
+        raise KeyError(
+            f"unknown {what} {name!r}; implemented: "
+            f"{', '.join(sorted(table))}") from None
+
+
 # Helper function to map string to JAX activation function
 def get_activation(name: str) -> Callable:
     """Activations functions used by `ontologize.layers.*`. Keys stay
@@ -33,7 +47,7 @@ def get_activation(name: str) -> Callable:
         "argmax": ste,
         "ste": ste,
     }
-    return activations.get(name.lower(), identity)
+    return _lookup(activations, name, "activation")
 
 def get_dtype(name: str) -> Any:
     """`jax.numpy` float types."""
@@ -43,7 +57,7 @@ def get_dtype(name: str) -> Any:
         "bfloat16": jnp.bfloat16,
         "float64": jnp.float64,
     }
-    return dtypes.get(name.lower(), jnp.float32)
+    return _lookup(dtypes, name, "dtype")
 
 def get_loss(fn: str) -> Callable:
     """Loss functions used by `Hyperparams`."""
@@ -53,7 +67,7 @@ def get_loss(fn: str) -> Callable:
         "crossentropy_int": optax.softmax_cross_entropy_with_integer_labels,
         "binary_crossentropy": optax.sigmoid_binary_cross_entropy
         }
-    return losses.get(fn.lower(), l2)
+    return _lookup(losses, fn, "loss fn")
 
 def get_srctype(name: str) -> Callable:
     """Training data types used to specify `SampleLoader` subtype."""
@@ -62,7 +76,7 @@ def get_srctype(name: str) -> Callable:
         "image": ImageLoader,
         "text": TextLoader
         }
-    return srctypes.get(name.lower(), SampleLoader)
+    return _lookup(srctypes, name, "srctype")
 
 def get_noise(name:str) -> Callable:
     """Type of noise to add to the training data."""
@@ -74,4 +88,4 @@ def get_noise(name:str) -> Callable:
         "batchnorm": addnoise_batchnorm,
         "featvar": addnoise_featvar,
         }
-    return noisefns.get(name.lower(), identity)
+    return _lookup(noisefns, name, "noise fn")

@@ -100,11 +100,11 @@ def parse_args():
                         "previous layer's code, widening every upper "
                         "classifier, so it is not parameter-matched to "
                         "'resid' at equal h")
-    p.add_argument("--h", type=int, default=19,
+    p.add_argument("--h", type=int, default=76,
                    help="heads per layer (sonar.py ships 32; 76 puts the "
                         "hard code at 1900 bits)")
-    p.add_argument("--k", type=int, default=128, help="entries per head (0 = sonar.py's)")
-    p.add_argument("--l", type=int, default=5, help="layers (0 = sonar.py's)")
+    p.add_argument("--k", type=int, default=0, help="entries per head (0 = sonar.py's)")
+    p.add_argument("--l", type=int, default=0, help="layers (0 = sonar.py's)")
     p.add_argument("--b", type=int, default=0,
                    help="batch size (0 = sonar.py's; lower it if the "
                         "raised head count will not fit)")
@@ -197,6 +197,14 @@ def parse_args():
                         "falls, so it has a free direction to descend. Only "
                         "a saturating gate, or a bias inside the gate that "
                         "`NLinear` does not have, makes it well-posed")
+    p.add_argument("--gate", default=None, metavar="FN",
+                   help="the CLASSIFIER's gate activation (`NLinearBlock`'s "
+                        "`fn_gate` on `Ys[0]`), distinct from --gate-router. "
+                        "Default is the base config's, which reads ONTO_GATE "
+                        "and so was previously the only way to set this: an "
+                        "arm launched with a mistyped variable trains with "
+                        "gate='none' and nothing errors, because 'none' and "
+                        "'sigmoid' have identical parameter shapes")
     p.add_argument("--scaled", action="store_true",
                    help="build the per-head router (sonar.py ships it off). "
                         "One scalar gain per head, so the router decides how "
@@ -247,10 +255,10 @@ def parse_args():
                         "a dictionary component in its null space changes "
                         "nothing and takes no gradient, and Adam turns the "
                         "noise there into full-size steps. On ste_h76 that "
-                        "left 97.7%% of the dictionary's movement, and all "
-                        "but 2.4%% of its final energy, invisible "
+                        "left 97.7% of the dictionary's movement, and all "
+                        "but 2.4% of its final energy, invisible "
                         "downstream. L1_F is aimed at the right quantity "
-                        "but lands 92.5%% of its pressure on the atoms doing "
+                        "but lands 92.5% of its pressure on the atoms doing "
                         "the work; see dictwd.py")
     p.add_argument("--init-from", default=None, metavar="CKPT",
                    help="take starting parameters from this checkpoint "
@@ -393,7 +401,11 @@ def main() -> None:
         "refusing to write into sonar.py's own output directory"
 
     bits = l * h * math.log2(k)
-    print(f"{out.name}: select={cfg.select} h={h} k={k} l={l} b={b} "
+    # `gate` is echoed because it is the one architectural field that can be
+    # wrong without any error: 'none' and 'sigmoid' share parameter shapes, so
+    # a resume restores straight into the wrong architecture
+    print(f"{out.name}: select={cfg.select} gate={cfg.gate or base.gate} "
+          f"h={h} k={k} l={l} b={b} "
           f"T={'anneal' if cfg.anneal else cfg.temperature} "
           f"sd_K={base.sd_K if cfg.sd_k is None else cfg.sd_k} "
           f"p_drop={base.p_drop if cfg.p_drop is None else cfg.p_drop}")
@@ -501,7 +513,7 @@ def main() -> None:
 
     model = hyper.ontologizer(
         base.d, base.d, e_dec, k, h, l,
-        n=base.n, gate=base.gate, select=cfg.select,
+        n=base.n, gate=cfg.gate or base.gate, select=cfg.select,
         norm_rows=base.norm_rows, concat=cfg.concat, signed=cfg.signed,
         scaled=cfg.scaled or base.scaled,
         gate_router=cfg.gate_router or 'none',
