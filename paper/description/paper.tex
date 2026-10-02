@@ -1,0 +1,61 @@
+\documentclass{article}
+
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{amsmath}
+
+\usepackage{arxiv}
+
+\usepackage[utf8]{inputenc} % allow utf-8 input
+\usepackage[T1]{fontenc}    % use 8-bit T1 fonts
+\usepackage{hyperref}       % hyperlinks
+\usepackage{url}            % simple URL typesetting
+\usepackage{booktabs}       % professional-quality tables
+\usepackage{amsfonts}       % blackboard math symbols
+\usepackage{nicefrac}       % compact symbols for 1/2, etc.
+\usepackage{microtype}      % microtypography
+\usepackage{lipsum}
+\usepackage{graphicx}
+
+\usepackage{algorithm2e}
+
+
+\usepackage{authblk}
+
+\usepackage[backend=biber]{biblatex}
+\addbibresource{refs.bib}
+
+% allow long URLs in the bibliography to break across lines
+\setcounter{biburlnumpenalty}{9000}
+\setcounter{biburlucpenalty}{9000}
+\setcounter{biburllcpenalty}{9000}
+
+\graphicspath{ {./fig/} }
+
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, bending, positioning}
+
+\input{vars.tex}
+
+\date{\today}
+
+\title{A proposal for mixture-of-experts-based interpretability}
+
+\author[1]{Keira Wiechecki}
+\affil[1]{Wakaru, \texttt{kaw504@nyu.edu}}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+  
+  %Adapting this method to nontrivial models will be involved, but I expect it to represent a substantial advance in interpretability.  
+\end{abstract}
+
+\input{sections/introduction.tex}
+
+\printbibliography
+
+%\input{sections/appendix.tex}
+
+\end{document}

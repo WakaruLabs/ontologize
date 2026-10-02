@@ -1,3 +1,15 @@
+"""Multilayer Ontologizer architecture, intervention dataclasses, and whole-network steering.
+
+This module defines the core neural network architecture for Ontologizer models:
+- `DictIntervention`: Dataclass specifying causal interventions on dictionary heads
+  (clamping to specific tags, scaling, adding/subtracting tags, or uniform/zero ablating).
+- `OntologizerIntervention`: Dataclass associating a `DictIntervention` with a specific layer index.
+- `Ontologizer`: Root Flax `nn.Module` stacking multiple `DictEnc` residual layers.
+  Supports label forwarding (`forward="labels"`) or residual forwarding (`forward="resid"`),
+  deep supervision (`deepsup`, `deepsup_sg`), residual conditioning (`resid_norm`, `resid_const`),
+  per-layer intervention passes (`withArgs`), tag decoding (`decodeLayerEntries`, `decodeEntries`),
+  and backward adjoint steering interventions (`intervene`).
+"""
 import jax
 import jax.numpy as jnp
 import flax.linen as nn
@@ -13,7 +25,21 @@ from .fns.keys import get_activation, get_dtype
 
 @dataclass
 class DictIntervention:
-    """Container for arguments to `DictBlock.intervene`."""
+    """Container for arguments to `DictBlock.intervene`.
+
+    Specifies causal interventions on dictionary heads within a `DictBlock`.
+
+    Attributes:
+        scale: Optional head scaling factors of shape `(h,)`.
+        k_set: Optional tag indices of shape `(n_set,)` to clamp onto active heads.
+        h_set: Optional head indices of shape `(n_set,)` corresponding to `k_set`.
+        h_unif: Optional head indices of shape `(n_unif,)` to uniform-ablate (set to 1/k).
+        h_zero: Optional head indices of shape `(n_zero,)` to zero-ablate.
+        k_add: Optional tag indices of shape `(n_add,)` to additively boost.
+        h_add: Optional head indices of shape `(n_add,)` corresponding to `k_add`.
+        k_sub: Optional tag indices of shape `(n_sub,)` to subtractively penalize.
+        h_sub: Optional head indices of shape `(n_sub,)` corresponding to `k_sub`.
+    """
     scale: Optional[Float[Array, "h"]] = None
     k_set: Optional[UInt[Array, "n_set"]] = None
     h_set: Optional[UInt[Array, "n_set"]] = None
@@ -25,17 +51,24 @@ class DictIntervention:
     h_sub:Optional[UInt[Array, "n_sub"]] = None
 
     def show(self):
+        """Pretty-print active intervention fields to stdout."""
         print(f"scale: {self.scale}   set: {self.h_set}->{self.k_set}   "
               f"unif: {self.h_unif}   zero: {self.h_zero}   "
               f"add: {self.h_add}->{self.k_add}   sub: {self.h_sub}->{self.k_sub}")
 
 @dataclass
 class OntologizerIntervention:
-    """Container for specifying which `Ontologizer` layer to apply a `DictIntervention` to."""
+    """Container for specifying which `Ontologizer` layer to apply a `DictIntervention` to.
+
+    Attributes:
+        layer: 0-indexed integer specifying target layer index in `[0, l)`.
+        method: `DictIntervention` instance containing the intervention arguments.
+    """
     layer: int
     method: DictIntervention
 
     def show(self):
+        """Pretty-print target layer index and associated intervention fields."""
         print(f"ontologizer layer: {self.layer}")
         self.method.show()
 
@@ -44,7 +77,52 @@ class Ontologizer(nn.Module):
     """Multilayer Ontologizer where each layer is a `DictEnc`. Uses `DictEnc.withClusts`
     to add the output of each layer to a residual and pass either the flattened
     classifications or the running reconstruction residual to the next layer
-    (see `forward`)."""
+    (see `forward`).
+
+    Attributes:
+        d_in: Input embedding dimension.
+        d_out: Output reconstruction embedding dimension.
+        e_dec: Intermediate decoder dimension (output of each `DictBlock`).
+        k: Number of dictionary entries (tags) per head.
+        h: Number of categorical heads per layer.
+        l: Number of sequential `DictEnc` layers stacked in the model.
+        forward: Layer chaining strategy (`"labels"` or `"resid"`).
+        deepsup: Whether to return per-prefix decodes on leading axis `(l, ..., d_out)`.
+        deepsup_sg: Whether each prefix decode stop-gradients the prior accumulated residual.
+        resid_norm: Whether to unit-normalize residual before passing to upper layers.
+        resid_const: Whether to append a constant 1 coordinate to the residual.
+        n: Polynomial order of the classifier (e.g. 2 for bilinear).
+        gate: Gating function key for the classifier.
+        activation_cl: Activation function key for the classifier.
+        biased_cl: Whether the classifier includes an additive bias.
+        select: Selection function key for `DictBlock` (default `"softmax"`).
+        activation_dict: Activation function key for `DictBlock`.
+        activation_dec: Activation function key for the output decoder.
+        biased_dec: Whether the decoder includes an additive bias.
+        encoded: Whether to precede dictionary layers with an input linear encoder.
+        e_enc: Output dimension of the input encoder.
+        activation_enc: Activation function key for the input encoder.
+        biased_enc: Whether the input encoder includes an additive bias.
+        scaled: Whether to apply learned per-head scaling vectors.
+        n_sc: Polynomial order of the scaling module.
+        activation_scale: Activation function key for scaling module.
+        gate_scale: Gating function key for scaling module.
+        biased_scale: Whether the scaling module includes an additive bias.
+        sparse_K: Whether to track L1 sparsity loss on classifications.
+        sparse_F: Whether to track L1 sparsity loss on dictionary activations.
+        entropy_loss: Whether to track classification entropy penalty.
+        cossim_loss: Whether to track pairwise cosine similarity penalty across heads.
+        bcossim_loss: Whether to track batch cosine similarity penalty.
+        hmean_loss: Whether to track batch-mean classification KL divergence penalty.
+        noise_in: Noise type for input activations.
+        noise_K: Noise type for classification logits.
+        noise_F: Noise type for dictionary activations.
+        sd_in: Noise standard deviation for input activations.
+        sd_K: Noise standard deviation for classification logits.
+        sd_F: Noise standard deviation for dictionary activations.
+        dtype_str: Computation floating-point precision dtype string.
+        dtype_p_str: Parameter floating-point precision dtype string.
+    """
     d_in: int = 0
     d_out: int = 0
     e_dec: int = 0
@@ -60,12 +138,6 @@ class Ontologizer(nn.Module):
     # heads are the loss-optimal response); residual forwarding gives every
     # layer continuous input. The stop_gradient prevents lower layers from
     # writing a communication code into the residual instead of reducing it.
-    # "resid_labels": the residual with layer i's flattened classification
-    # concatenated onto it, so the next layer keeps the continuous input it
-    # needs and gains the symbolic context labels forwarding was wanted
-    # for. Both blocks are stop-gradiented, and upper classifiers widen by
-    # h*k, so it is not parameter-matched to "resid" at equal h. See
-    # `nextinput`.
     forward: str = "labels"
     # when True, `withStats`/`withGhost` return the per-prefix decodes
     # stacked on a leading axis (l, ..., d_out) instead of the final decode:
@@ -91,30 +163,63 @@ class Ontologizer(nn.Module):
     # bilinear logits are even in their input (blind to residual sign; the
     # NLinear bias is added after the product, so biased_cl cannot fix
     # this), and the constant coordinate gives the quadratic form linear
-    # terms in the input while keeping the pure-bilinear
-    # eigendecomposition analysis (over d+1 dims). Every classifier input
-    # gets the coordinate: `nextinput` appends it to the residual and
-    # `constinput` to the encoder output -- layer-0 logits lack linear
-    # terms just the same, and the anisotropic input cone can only emulate
-    # them through cross-terms with the corpus mean. Changes classifier
-    # input dims.
+    # terms in the residual while keeping the pure-bilinear
+    # eigendecomposition analysis (over d_out+1 dims). Changes upper-layer
+    # classifier input dims: not checkpoint-compatible.
     resid_norm: bool = False
     resid_const: bool = False
-    # gain-shape separation at each DictEnc input (forward="resid" only).
-    # Moves resid_norm's normalization inside the layer: each DictEnc
-    # unit-normalizes its own input (the shape), classifies that, and
-    # scales its residual contribution by the measured input norm (the
-    # gain, stop-gradiented -- measured, not trained). Closes the gap
-    # resid_norm leaves open: the normalized classifier input no longer
-    # says how large the residual is, forcing the dictionary to bake in a
-    # corpus-average scale; here the magnitude is carried through exactly
-    # (stagewise gain-shape VQ), and interventions pick a direction while
-    # the sample keeps its own gain. Supersedes resid_norm's `nextinput`
-    # normalization (skipped when set, so the DictEnc sees the raw
-    # magnitude); resid_const's constant coordinate is appended to the RAW
-    # residual and excluded from the norm inside the layer. Applies to
-    # layer 0 too -- the identity for unit-norm SONAR input.
-    resid_gain: bool = True
+    # `resid_first`: layer 0 also consumes the conditioned residual of the
+    # empty reconstruction (X - decode(0), normalized/const-augmented like
+    # the upper layers), so on centered data it is not sign-blind either.
+    # `resid_gain`: scale each residual-consuming layer's contribution by the
+    # norm of the residual it consumed (gain-shape quantization). With
+    # `resid_norm` a layer sees only the residual's direction, so without
+    # the gain its output magnitude cannot track the residual's magnitude.
+    resid_first: bool = False
+    resid_gain: bool = False
+    # see `DictEnc.logit_norm`
+    logit_norm: bool = False
+    # see `DictBlock.fast_stats`
+    fast_stats: bool = False
+    # head-private dictionary spaces (see `DictBlock.private`): e_dec is split
+    # into h blocks, head i of every layer writes only to block i, and the
+    # decoder reads the concatenation
+    private_heads: bool = False
+    # signed dictionary entries (no abs(); see `DictBlock.signed`)
+    signed_dict: bool = False
+    # no latent space: dictionary entries live in output space (requires
+    # e_dec == d_out) and there is no decoder, so each entry is directly a
+    # direction in activation space
+    direct: bool = False
+    # see `DictBlock.p_head_drop`
+    p_head_drop: float = 0.0
+    # see `DictBlock.fiber_rank`, `.fiber_drop`, `.fiber_bound`
+    fiber_rank: int = 0
+    fiber_drop: float = 0.0
+    fiber_bound: float = 0.0
+    fiber_eps: float = 0.0
+    fiber_eps_layer: float = 0.0
+    fiber_radial: bool = False
+    fiber_shared: bool = False
+    # base-only auxiliary loss: the training forward also accumulates a
+    # fiber-free residual and appends its decode to the deep-supervision
+    # stack (weight 1/(l+1)), so the base is trained to reconstruct on its
+    # own and the fiber can only be a correction. Needs deepsup. The value
+    # is the number of copies appended, so the base loss has weight
+    # base_aux / (l + base_aux) (a bool is 1 copy).
+    base_aux: int = 0
+    # with `resid_gain`, clip a layer's gain at the sample's input norm, so a
+    # mis-estimated layer cannot enlarge the residual that scales the next
+    gain_clip: bool = False
+    # see `DictEnc.head_sparse`
+    head_sparse: str = "none"
+    hs_shared: bool = False
+    hs_decoder: bool = False
+    hs_auxk: int = 0
+    m_h: int = 32
+    k_z: int = 4
+    hs_bandwidth: float = 1e-3
+    hs_init_threshold: float = 1e-3
 
     # classifier (NLinearBlock) args
     n: int = 2
@@ -125,14 +230,6 @@ class Ontologizer(nn.Module):
     # DictBlock args
     select: str = "softmax"
     activation_dict: str = "none"
-    norm_rows: bool = False
-    # let atoms subtract (drop `abs()` in `DictBlock.dicts`). Non-negative
-    # rows cannot have negative pairwise cosine, which bounds how far a
-    # head's entries can be decorrelated; see `DictBlock.dicts`.
-    signed: bool = False
-    # see ConcatDictBlock: heads take disjoint slices of e_dec
-    # instead of summing into all of it. Needs e_dec % h == 0.
-    concat: bool = False
 
     # decoder (Linear) args
     activation_dec: str = "none"
@@ -147,23 +244,16 @@ class Ontologizer(nn.Module):
     #scaling (NLinear) args
     scaled: bool = False
     n_sc: int = 2
-    activation_router: str = "none"
-    gate_router: str = "none"
-    biased_router: bool = False
-    # let a head's gain go negative; see `DictEnc.scale`
-    router_signed: bool = False
+    activation_scale: str = "none"
+    gate_scale: str = "none"
+    biased_scale: bool = False
 
     sparse_K: bool = False
     sparse_F: bool = False
-    sparse_S: bool = False
     entropy_loss: bool = False
     cossim_loss: bool = False
     bcossim_loss: bool = False
-    kcossim_loss: bool = False
-    flatcos_loss: bool = False
     hmean_loss: bool = False
-    pwak_loss: bool = False
-    l2pwak_loss: bool = False
 
     noise_in: str = "none"
     noise_K: str = "none"
@@ -175,54 +265,51 @@ class Ontologizer(nn.Module):
     dtype_str: str = "float32"
     dtype_p_str: str = "float32"
 
-    def dictenc(self, d_enc: int, n_const: int = 0) -> DictEnc:
+    def dictenc(self, d_enc: int) -> DictEnc:
         """Initialize `DictEnc`s for a specified input dimension with all other properties
-        taken from the `Ontologizer`. `n_const` is the number of trailing
-        constant input coordinates (resid_const) the layer's gain-shape
-        split must exclude from the norm."""
+        taken from the `Ontologizer`.
+
+        Args:
+            d_enc: Input dimension for the dictionary encoder layer.
+
+        Returns:
+            Configured `DictEnc` layer instance.
+        """
         return DictEnc(
-            d_enc, self.e_dec, self.k, self.h,
-            gainshape=self.resid_gain, n_const=n_const,
-            n=self.n,
+            d_enc, self.e_dec, self.k, self.h, n=self.n,
             gate=self.gate, activation_cl=self.activation_cl, 
             biased_cl=self.biased_cl, 
             select=self.select, 
             activation_dict=self.activation_dict,
-            norm_rows=self.norm_rows, concat=self.concat,
-            signed=self.signed,
             scaled=self.scaled, n_sc=self.n_sc,
-            activation_router=self.activation_router, gate_router=self.gate_router, 
-            biased_router=self.biased_router,
-            router_signed=self.router_signed,
-            sparse_K=self.sparse_K, sparse_F=self.sparse_F,
-            sparse_S=self.sparse_S,
-            entropy_loss=self.entropy_loss,
+            activation_scale=self.activation_scale, gate_scale=self.gate_scale, 
+            biased_scale=self.biased_scale,
+            sparse_K=self.sparse_K, entropy_loss=self.entropy_loss,
             cossim_loss=self.cossim_loss, bcossim_loss=self.bcossim_loss,
-            kcossim_loss=self.kcossim_loss,
-            flatcos_loss=self.flatcos_loss,
             hmean_loss=self.hmean_loss,
-            pwak_loss=self.pwak_loss, l2pwak_loss=self.l2pwak_loss,
+            logit_norm=self.logit_norm,
+            fast_stats=self.fast_stats,
+            private_dict=self.private_heads, signed_dict=self.signed_dict,
+            p_head_drop=self.p_head_drop,
+            fiber_rank=self.fiber_rank, fiber_drop=self.fiber_drop,
+            fiber_bound=self.fiber_bound, fiber_eps=self.fiber_eps, fiber_eps_layer=self.fiber_eps_layer,
+            fiber_radial=self.fiber_radial, fiber_shared=self.fiber_shared,
+            head_sparse=self.head_sparse, m_h=self.m_h, k_z=self.k_z,
+            hs_shared=self.hs_shared,
+            hs_decoder=self.hs_decoder,
+            hs_auxk=self.hs_auxk,
+            hs_bandwidth=self.hs_bandwidth, hs_init_threshold=self.hs_init_threshold,
             noise_K=self.noise_K, noise_F=self.noise_F,
             sd_K=self.sd_K, sd_F=self.sd_F,
             dtype_str=self.dtype_str, dtype_p_str=self.dtype_p_str)
 
     def setup(self):
-        """Layer 0's input is the encoder output (`d_in`, or `e_enc` when
-        `encoded`); later layers consume the layer-to-layer interface per
-        `forward` (the `h * k` labels, or the `d_out` residual). With
-        `resid_const`, every layer's input gains the trailing constant
-        coordinate."""
+        """The first layer will have input dimension `d_in`. Subsequent layers will have
+        input dimension `h * k`."""
         self.n_tags = self.k * self.h * self.l
         self.n_feat = self.e_dec * self.h * self.l
         self.dtype = get_dtype(self.dtype_str)
         self.dtype_p = get_dtype(self.dtype_p_str)
-
-        if self.resid_gain and self.forward not in ("resid", "resid_labels"):
-            raise ValueError(
-                "resid_gain measures the residual magnitude and only makes "
-                "sense with a residual-carrying forward mode ('resid' or "
-                "'resid_labels'); labels forwarding hands the next layer a "
-                "probability vector, whose norm is not a gain")
 
         if self.encoded and self.e_enc > 0:
             d_enc = self.e_enc
@@ -244,28 +331,23 @@ class Ontologizer(nn.Module):
                 dtype_p_str=self.dtype_p_str
             )
 
-        # layer 0 never has a previous code, so its pass-through tail is
-        # only resid_const's coordinate; the upper layers' tail also
-        # carries the concatenated code under "resid_labels". Ordering is
-        # [residual | const | code], so `gainshape_in` normalizes exactly
-        # the residual and measures the gain on it alone.
-        n_const = int(self.resid_const)
+        if self.resid_first:
+            assert self.forward == "resid" and not self.encoded, \
+                "resid_first needs forward='resid' and no encoder"
+            d_enc = self.d_out + int(self.resid_const)
+        dictencs = [self.dictenc(d_enc)]
+
         if self.forward == "labels":
             d_next = self.k * self.h
-            n_const = n_up = 0
-        elif self.forward == "resid_labels":
-            n_up = n_const + self.k * self.h
-            d_next = self.d_out + n_up
         else:
-            n_up = n_const
-            d_next = self.d_out + n_const
-
-        dictencs = [self.dictenc(d_enc + n_const, n_const)]
+            d_next = self.d_out + int(self.resid_const)
         for _ in range(self.l - 1):
-            dictencs.append(self.dictenc(d_next, n_up))
+            dictencs.append(self.dictenc(d_next))
 
         self.dictencs = dictencs
 
+        if self.direct:
+            assert self.e_dec == self.d_out, "direct needs e_dec == d_out"
         self.decoder = Linear(
             d_in=self.e_dec, 
             d_out=self.d_out, 
@@ -278,7 +360,16 @@ class Ontologizer(nn.Module):
         self.interventions = [OntologizerIntervention(i, []) for i in range(self.l+1)]
 
     def fwd_dec(self, F: Float[Array, "... e_dec"]) -> Float[Array, "... d_out"]:
-        """Forward decoder pass without applying bias or activation function"""
+        """Forward decoder pass without applying bias or activation function.
+
+        Args:
+            F: Dictionary reconstruction tensor of shape `(..., e_dec)`.
+
+        Returns:
+            Decoded output tensor of shape `(..., d_out)`.
+        """
+        if self.direct:
+            return F.astype(self.dtype)
         return self.decoder.fwd(F)
 
     def prefix(self, R: Float[Array, "... e_dec"],
@@ -286,13 +377,29 @@ class Ontologizer(nn.Module):
         """Residual prefix handed to the deepsup decode. With `deepsup_sg`,
         gradients stop at the residual accumulated before this layer (`R_0`),
         so only the newest layer's contribution trains against this prefix;
-        the value is unchanged."""
+        the value is unchanged.
+
+        Args:
+            R: Current accumulated residual tensor of shape `(..., e_dec)`.
+            R_0: Prior accumulated residual tensor before the current layer, shape `(..., e_dec)`.
+
+        Returns:
+            Prefix residual tensor of shape `(..., e_dec)`.
+        """
         if self.deepsup_sg:
             return R - R_0 + jax.lax.stop_gradient(R_0)
         return R
 
     def resid(self, X: Float[Array, "... d_in"]
               ) -> Float[Array, "... e_dec"]:
+        """Allocate a zero-initialized residual accumulator matching the batch shape of `X`.
+
+        Args:
+            X: Input tensor of shape `(..., d_in)`.
+
+        Returns:
+            Zero tensor of shape `(..., e_dec)`.
+        """
         shape = list(X.shape)
         shape[-1] = self.e_dec
         R = jnp.zeros(shape, self.dtype)
@@ -302,25 +409,21 @@ class Ontologizer(nn.Module):
                sd: float=0.0, rng: Optional[PRNGKeyArray]=None
                ) -> Tuple[Float[Array, "... e_enc"],
                           Optional[PRNGKeyArray]]:
+        """Encode input activations, optionally injecting Gaussian noise.
+
+        Args:
+            X: Input tensor of shape `(..., d_in)`.
+            sd: Noise standard deviation.
+            rng: Optional pseudo-random number generator key.
+
+        Returns:
+            Tuple of `(E, rng_next)` where `E` has shape `(..., e_enc)`.
+        """
         X = X.astype(self.dtype)
         X_n, rng_K = self.encoder.addnoise(X, sd, rng)
         if self.encoded:
             return self.encoder(X_n), rng_K
         return X_n, rng_K
-
-    def constinput(self, E: Array, const: float = 1.0) -> Array:
-        """Appends resid_const's constant coordinate to the layer-0
-        classifier input (the encoder output); `nextinput` does the same
-        for the upper layers. `const` is the value appended: 1 for live
-        inputs, 0 for ghost inputs (the coordinate is constant, so its
-        gradient surrogate is zero). No-op unless a residual-carrying
-        forward mode is set and `resid_const`; a `None` ghost input passes
-        through."""
-        if (E is None or not self.resid_const
-                or self.forward not in ("resid", "resid_labels")):
-            return E
-        c = jnp.full(E.shape[:-1] + (1,), const, E.dtype)
-        return jnp.concatenate([E, c], axis=-1)
 
     def nextinput(self, X: Float[Array, "... d_out"],
                   R: Float[Array, "... e_dec"],
@@ -328,37 +431,55 @@ class Ontologizer(nn.Module):
         """Input handed to the next layer, per `self.forward`: the flattened
         classification, or the stop-gradiented output-space residual
         (unit-normalized when `resid_norm`; with a constant 1 coordinate
-        appended when `resid_const` -- see the field comments). With
-        `resid_gain` the residual is passed RAW (const coordinate aside):
-        the DictEnc normalizes internally so it can measure the gain.
+        appended when `resid_const` -- see the field comments).
 
-        `resid_labels` appends the previous layer's flattened
-        classification, giving `[residual | const | code]`. The code is
-        carried alongside the residual direction, never instead of it:
-        the residual is by construction the part of the input the code
-        failed to explain, so its conditional mean given the code alone
-        is near zero and a code-only layer has nothing to reduce. This
-        mode buys the symbolic context labels forwarding was wanted for,
-        at the cost of a wider upper-layer classifier."""
-        if self.forward in ("resid", "resid_labels"):
+        Args:
+            X: Target embedding tensor of shape `(..., d_out)`.
+            R: Accumulated residual dictionary representation of shape `(..., e_dec)`.
+            K: Flattened classification tensor of shape `(..., h * k)`.
+
+        Returns:
+            Input array for the subsequent layer: shape `(..., h * k)` if `forward == "labels"`,
+            or shape `(..., d_out + int(resid_const))` if `forward == "resid"`.
+        """
+        if self.forward == "resid":
             D = jax.lax.stop_gradient(
                 X.astype(self.dtype) - self.decode(R))
-            if self.resid_norm and not self.resid_gain:
+            if self.resid_norm:
                 D = D / (jnp.linalg.norm(D, axis=-1, keepdims=True)
                          + jnp.finfo(self.dtype).eps)
             if self.resid_const:
                 ones = jnp.ones(D.shape[:-1] + (1,), D.dtype)
                 D = jnp.concatenate([D, ones], axis=-1)
-            if self.forward == "resid_labels":
-                if K is None:
-                    raise ValueError(
-                        "forward='resid_labels' needs the previous layer's "
-                        "classification; this caller passed K=None, which "
-                        "only 'resid' can ignore")
-                D = jnp.concatenate(
-                    [D, jax.lax.stop_gradient(K.astype(D.dtype))], axis=-1)
             return D
         return K
+
+    def first_input(self, X: Float[Array, "... d_out"],
+                    E: Float[Array, "... e_enc"],
+                    R: Float[Array, "... e_dec"]) -> Array:
+        """Layer-0 input: the encoded input, or with `resid_first` the
+        conditioned residual of the empty reconstruction."""
+        if self.resid_first:
+            return self.nextinput(X, R, None)
+        return E
+
+    def gain(self, X: Float[Array, "... d_out"], R: Float[Array, "... e_dec"],
+             i: int) -> Optional[Float[Array, "... 1"]]:
+        """`resid_gain`: per-sample norm of the residual layer `i` consumes
+        (stop-gradiented), or None when layer `i` is not gain-scaled."""
+        if not self.resid_gain or (i == 0 and not self.resid_first):
+            return None
+        D = jax.lax.stop_gradient(X.astype(self.dtype) - self.decode(R))
+        g = jnp.linalg.norm(D, axis=-1, keepdims=True)
+        if self.gain_clip:
+            g = jnp.minimum(g, jnp.linalg.norm(
+                jax.lax.stop_gradient(X.astype(self.dtype)), axis=-1, keepdims=True))
+        return g
+
+    @staticmethod
+    def apply_gain(R_0: Array, R: Array, g: Optional[Array]) -> Array:
+        """Scale the newest layer's contribution `R - R_0` by `g`."""
+        return R if g is None else R_0 + g * (R - R_0)
 
     def classify(self, E: Float[Array, "... e_enc"], *args,
                  X_ref: Optional[Float[Array, "... d_out"]]=None,
@@ -368,14 +489,29 @@ class Ontologizer(nn.Module):
                          Float[Array, "l ... (h k)"]]:
         """`X_ref` is the reconstruction target used as the residual
         reference when `forward == "resid"`; defaults to `E` (exact when the
-        encoder is a noiseless passthrough)."""
+        encoder is a noiseless passthrough).
+
+        Args:
+            E: Encoded input tensor of shape `(..., e_enc)`.
+            *args: Additional arguments passed to `DictEnc.withClusts`.
+            X_ref: Optional reference target tensor of shape `(..., d_out)`.
+            rng: Optional pseudo-random number generator key.
+            **kwargs: Additional keyword arguments passed to `DictEnc.withClusts`.
+
+        Returns:
+            Tuple of:
+                - Final accumulated residual tensor `R` of shape `(..., e_dec)`.
+                - Stacked per-layer classification probabilities `Ps` of shape `(l, ..., h * k)`.
+        """
         if X_ref is None:
             X_ref = E
         R = self.resid(E)
-        E = self.constinput(E)
+        E = self.first_input(X_ref, E, R)
         Ps = []
         for i, dictenc in enumerate(self.dictencs):
+            R_0, g = R, self.gain(X_ref, R, i)
             R, K = dictenc.withClusts(R, E, *args, **kwargs)
+            R = self.apply_gain(R_0, R, g)
             Ps.append(K)
             if i < self.l - 1:
                 E = self.nextinput(X_ref, R, K)
@@ -383,7 +519,16 @@ class Ontologizer(nn.Module):
         return R, jnp.stack(Ps)
 
     def decode(self, E: Float[Array, "... e_dec"]) -> Float[Array, "... d_out"]:
-        """`self.decoder` forward pass. Unembeds a reconstructed output of `self.dict`."""
+        """`self.decoder` forward pass. Unembeds a reconstructed output of `self.dict`.
+
+        Args:
+            E: Intermediate dictionary reconstruction tensor of shape `(..., e_dec)`.
+
+        Returns:
+            Decoded output tensor of shape `(..., d_out)`.
+        """
+        if self.direct:
+            return E.astype(self.dtype)
         return self.decoder(E)
 
     def __call__(self, X: Float[Array, "... d_in"],
@@ -392,6 +537,19 @@ class Ontologizer(nn.Module):
                  arglist: Optional[List[DictIntervention]] = None,
                  **kwargs,
                  ) -> Float[Array, "... d_out"]:
+        """Full forward inference pass mapping input `X` to decoded reconstruction.
+
+        Args:
+            X: Input activation tensor of shape `(..., d_in)`.
+            *args: Additional positional arguments forwarded to `classify`.
+            sd_in: Noise standard deviation applied to the input.
+            rng: Optional pseudo-random number generator key.
+            arglist: Optional list of per-layer `DictIntervention`s (unused; see `withArgs`).
+            **kwargs: Additional keyword arguments forwarded to `classify`.
+
+        Returns:
+            Reconstructed output tensor of shape `(..., d_out)`.
+        """
         E, rng_K = self.encode(X, sd_in, rng)
         F, Ps = self.classify(E, *args, X_ref=X, rng=rng_K, **kwargs)
         return self.decode(F)
@@ -399,27 +557,53 @@ class Ontologizer(nn.Module):
     def withStats(self, X: Float[Array, "... d_in"],
                   sd_in: float=0.0, rng: Optional[PRNGKeyArray]=None, *args, **kwargs
                   ) -> Tuple[Float[Array, "... d_out"],
-                             Float[Array, "l 8"]]:
+                             Float[Array, "l 6"]]:
         """Iterate `DictEnc.withStats` sequentially over layers.
 
         `Y` is `(..., d_out)`, or `(l, ..., d_out)` under `deepsup`: the
         per-prefix decodes stacked on a leading axis. `Hyperparams.loss`
         needs no change either way -- the target broadcasts against the
         prefix axis and the MSE mean averages over it, so every prefix
-        carries weight `1/l`."""
+        carries weight `1/l`.
+
+        Args:
+            X: Input activation tensor of shape `(..., d_in)`.
+            sd_in: Input noise standard deviation.
+            rng: Optional pseudo-random number generator key.
+            *args: Additional positional arguments forwarded to `DictEnc.withStats`.
+            **kwargs: Additional keyword arguments forwarded to `DictEnc.withStats`.
+
+        Returns:
+            Tuple of:
+                - Reconstruction tensor `Y`: shape `(..., d_out)` (or `(l, ..., d_out)` if `deepsup=True`).
+                - Stacked per-layer statistics tensor of shape `(l, 6)` containing
+                  `[L1_K, L1_F, entropy, cossim_b, cossim_h, KL_m]`.
+                - Threaded pseudo-random number generator key for subsequent steps.
+        """
         E, rng_K = self.encode(X, sd_in, rng)
         R = self.resid(E)
-        E = self.constinput(E)
+        E = self.first_input(X, E, R)
+        aux = bool(self.base_aux and self.fiber_rank)
+        if aux:
+            assert self.deepsup, "base_aux needs deepsup"
+            R_b = R
         stats, Ys = [], []
         for i, dictenc in enumerate(self.dictencs):
-            R_0 = R
-            R, K, stat, rng_K = dictenc.withStats(R, E, rng=rng_K, *args, **kwargs)
+            R_0, g = R, self.gain(X, R, i)
+            out = dictenc.withStats(R, E, rng=rng_K, *args, return_base=aux, **kwargs)
+            R, K, stat, rng_K = out[:4]
+            R = self.apply_gain(R_0, R, g)
+            if aux:  # the same selection, without the fiber
+                F_b = out[4]
+                R_b = R_b + (F_b if g is None else g * F_b)
             stats.append(stat)
             if self.deepsup:
                 Ys.append(self.decode(self.prefix(R, R_0)))
             if i < self.l - 1:
                 E = self.nextinput(X, R, K)
 
+        if aux:
+            Ys.extend([self.decode(R_b)] * int(self.base_aux))
         Y = jnp.stack(Ys) if self.deepsup else self.decode(R)
         return Y, jnp.stack(stats), rng_K
 
@@ -427,7 +611,7 @@ class Ontologizer(nn.Module):
                   sd_in: float=0.0, rng: Optional[PRNGKeyArray]=None, *args, **kwargs
                   ) -> Tuple[Float[Array, "... d_out"],
                              Float[Array, "... d_out"],
-                             Float[Array, "l 8"],
+                             Float[Array, "l 6"],
                              Optional[PRNGKeyArray]]:
         """Iterate `DictEnc.withGhost` sequentially over layers.
 
@@ -438,19 +622,35 @@ class Ontologizer(nn.Module):
         `L2_g = lossfn(Y_g, X - Y)`, and decoding only the final ghost
         residual would leave `Y_g` a single `(..., d_out)` array that
         broadcasts silently against every prefix, scoring the last layer's
-        ghost output against reconstruction errors it did not produce."""
+        ghost output against reconstruction errors it did not produce.
+
+        Args:
+            X: Input activation tensor of shape `(..., d_in)`.
+            sd_in: Input noise standard deviation.
+            rng: Optional pseudo-random number generator key.
+            *args: Additional positional arguments forwarded to `DictEnc.withGhost`.
+            **kwargs: Additional keyword arguments forwarded to `DictEnc.withGhost`.
+
+        Returns:
+            Tuple of:
+                - Clean reconstruction tensor `Y`: shape `(..., d_out)` or `(l, ..., d_out)`.
+                - Ghost reconstruction tensor `Y_g`: shape `(..., d_out)` or `(l, ..., d_out)`.
+                - Stacked per-layer statistics tensor of shape `(l, 6)`.
+                - Threaded pseudo-random number generator key.
+        """
         E, rng_K = self.encode(X, sd_in, rng)
         E_g = self.encoder.ghost(X, E)
 
         R = self.resid(E)
         R_g = self.resid(E)
-        E = self.constinput(E)
-        E_g = self.constinput(E_g, 0.0)
+        E = self.first_input(X, E, R)
         stats, Ys, Ys_g = [], [], []
         for i, dictenc in enumerate(self.dictencs):
             R_0, R_g_0 = R, R_g
+            g = self.gain(X, R, i)
             R, R_g, K, stat, rng_K = dictenc.withGhost(
                     R, R_g, E, E_g, rng=rng_K, *args, **kwargs)
+            R, R_g = self.apply_gain(R_0, R, g), self.apply_gain(R_g_0, R_g, g)
             stats.append(stat)
             E_g = None # only first layer should accept encoder ghost grad
             if self.deepsup:
@@ -481,17 +681,35 @@ class Ontologizer(nn.Module):
                  sd_in: float=0.0, rng: Optional[PRNGKeyArray]=None, **kwargs
                  ) -> Tuple[Float[Array, "... d_out"],
                             Float[Array, "... (h k)"],
-                            Float[Array, "l 8"], Optional[PRNGKeyArray]]:
+                            Float[Array, "l 6"], Optional[PRNGKeyArray]]:
         """As `withClust`, but accepts a list of `DictIntervention`s of length `l`.
         Each is passed as arguments to `DictBlock.intervene` for the corresponding
-        layer."""
+        layer.
+
+        Args:
+            X: Input activation tensor of shape `(..., d_in)`.
+            arglist: List of length `l` containing `DictIntervention` instances (or dicts)
+                specifying interventions for each layer.
+            *args: Additional positional arguments forwarded to `DictEnc.withStats`.
+            sd_in: Input noise standard deviation.
+            rng: Optional pseudo-random number generator key.
+            **kwargs: Additional keyword arguments forwarded to `DictEnc.withStats`.
+
+        Returns:
+            Tuple of:
+                - Decoded output tensor of shape `(..., d_out)`.
+                - Last layer's classification tensor `K` of shape `(..., h * k)`.
+                - Stacked per-layer statistics tensor of shape `(l, 6)`.
+                - Threaded pseudo-random generator key.
+        """
         E, rng_K = self.encode(X, sd_in, rng)
 
         R = self.resid(E)
-        E = self.constinput(E)
+        E = self.first_input(X, E, R)
         stats = []
         K = None
         for i, (dictenc, kwargs_l) in enumerate(zip(self.dictencs, arglist)):
+            R_0, g = R, self.gain(X, R, i)
             import dataclasses
             if dataclasses.is_dataclass(kwargs_l):
                 intervention_dict = dataclasses.asdict(kwargs_l)
@@ -499,6 +717,7 @@ class Ontologizer(nn.Module):
             else:
                 intervention_dict = kwargs_l
             R, K, stat, rng_K = dictenc.withStats(R, E, *args, rng=rng_K, **intervention_dict, **kwargs)
+            R = self.apply_gain(R_0, R, g)
             stats.append(stat)
             if i < self.l - 1:
                 E = self.nextinput(X, R, K)
@@ -512,7 +731,18 @@ class Ontologizer(nn.Module):
         pass of the remaining layers. The classification for each is taken to be a
         1-hot vector of shape `h * k`. With `forward == "resid"` there is no
         label path into later layers -- contributions are additive through
-        the shared decoder -- so entries decode directly."""
+        the shared decoder -- so entries decode directly.
+
+        Args:
+            layer: Integer layer index in `[0, l)`.
+            *args: Additional positional arguments passed to `DictEnc.withClusts`.
+            **kwargs: Additional keyword arguments passed to `DictEnc.withClusts`.
+
+        Returns:
+            Tuple of:
+                - Decoded tag representations in output space, shape `(h * k, d_out)`.
+                - Final layer's classification tensor, shape `(h * k, h * k)`.
+        """
         dictenc = self.dictencs[layer]
         R = dictenc.tags()
         K = jnp.eye(self.h * self.k, dtype=R.dtype)
@@ -524,7 +754,17 @@ class Ontologizer(nn.Module):
     def decodeEntries(self, *args, **kwargs
                       ) -> Tuple[Float[Array, "(l h k) d_out"],
                                  Float[Array, "l (h k) (h k)"]]:
-        """Runs `decodeLayerEntries` for each layer."""
+        """Runs `decodeLayerEntries` for each layer.
+
+        Args:
+            *args: Additional positional arguments forwarded to `decodeLayerEntries`.
+            **kwargs: Additional keyword arguments forwarded to `decodeLayerEntries`.
+
+        Returns:
+            Tuple of:
+                - Concatenated decoded tag representations for all layers, shape `(l * h * k, d_out)`.
+                - Stacked classification tensors across layers, shape `(l, h * k, h * k)`.
+        """
         Rs = []
         Ps = []
         for i in range(self.l):
@@ -537,7 +777,16 @@ class Ontologizer(nn.Module):
     def decodeLayerUnif(self, layer: int, *args, **kwargs) -> Float[Array, "(h k) d_out"]:
         """Takes `DictEnc.decodeUniform()` for a specified layer, then runs a forward
         pass of the remaining layers. The classification for each is taken to be a
-        1-hot vector of shape `h * k`."""
+        1-hot vector of shape `h * k`.
+
+        Args:
+            layer: Integer layer index in `[0, l)`.
+            *args: Additional positional arguments forwarded to `DictEnc.withClusts`.
+            **kwargs: Additional keyword arguments forwarded to `DictEnc.withClusts`.
+
+        Returns:
+            Decoded uniform tag representations of shape `(h * k, d_out)`.
+        """
         dictenc = self.dictencs[layer]
         R = dictenc.decodeUniform()
         K = dictenc.dict.uniformTags()
@@ -549,7 +798,15 @@ class Ontologizer(nn.Module):
         return self.decode(R)
 
     def decodeUniform(self, *args, **kwargs) -> Float[Array, "(l h k) d_out"]:
-        """Runs `decodeLayerUnif` for each layer."""
+        """Runs `decodeLayerUnif` for each layer.
+
+        Args:
+            *args: Additional positional arguments forwarded to `decodeLayerUnif`.
+            **kwargs: Additional keyword arguments forwarded to `decodeLayerUnif`.
+
+        Returns:
+            Concatenated decoded uniform representations across all layers, shape `(l * h * k, d_out)`.
+        """
         Rs = []
         for i in range(self.l):
             R = self.decodeLayerUnif(i, *args, **kwargs)
@@ -589,9 +846,11 @@ class Ontologizer(nn.Module):
 
         # forward pass up to `layer` to obtain its natural input
         R = self.resid(E)
-        E = self.constinput(E)
+        E = self.first_input(X, E, R)
         for i in range(layer):
+            R_0, g = R, self.gain(X, R, i)
             R, K = self.dictencs[i].withClusts(R, E, temperature=temperature)
+            R = self.apply_gain(R_0, R, g)
             E = self.nextinput(X, R, K)
 
         dictenc = self.dictencs[layer]
@@ -604,12 +863,9 @@ class Ontologizer(nn.Module):
         # input X - decode(R) passes input-space deltas through identically,
         # so the classifier adjoint already lands in input space.
         D = dictenc.classifier.rev(P_int - P)
-        if self.forward in ("resid", "resid_labels"):
-            # keep only the residual block of the adjoint; the constant
-            # and, under resid_labels, the code block are not input-space
-            # directions (layer 0's input has neither)
-            D = D[..., :self.d_out] if layer else D[..., :D.shape[-1]
-                                                    - int(self.resid_const)]
+        if self.forward == "resid" and self.resid_const and (
+                layer > 0 or self.resid_first):
+            D = D[..., :-1] # drop the constant-coordinate adjoint
         if self.forward == "labels":
             for i in reversed(range(layer)):
                 D_i = einops.rearrange(D, "... (h k) -> ... h k", h=self.h)

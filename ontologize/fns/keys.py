@@ -1,41 +1,25 @@
+"""Key-to-callable and key-to-type lookup resolvers for serializable configurations.
+
+This module provides dictionary mapping helpers that resolve string keys into JAX/Flax
+activation functions, floating-point data types, loss functions, data loader classes,
+and noise injection functions. This allows hyperparameters and model configurations to be
+stored in JSON/dataclasses without directly referencing non-serializable Python callables.
+"""
 # Functions to query `dict`s of classes by key. This is a workaround for serializing 
 # `dataclasses` with fields referencing `Callable`s, which can't be written to JSON.
-
-import functools
-import re
 
 import jax
 import jax.numpy as jnp
 import optax
 from typing import Any, Callable
 
-from .classify import softmax_cl, ste, topk_cl
+from .classify import softmax_cl, ste
 from .loss import l2, addnoise, addnoise_batchnorm, addnoise_featvar, identity
 from ontologize.data.loaders import SampleLoader, EmbeddingLoader, ImageLoader, TextLoader
 
-def _lookup(table: dict, name: str, what: str):
-    """Strict keyed lookup.
-    Replaces `table.get(name.lower(), <default>)`, which
-    made every typo and every not-yet-implemented name silently resolve to
-    the default.
-    """
-    try:
-        return table[name.lower()]
-    except KeyError:
-        raise KeyError(
-            f"unknown {what} {name!r}; implemented: "
-            f"{', '.join(sorted(table))}") from None
-
-
 # Helper function to map string to JAX activation function
 def get_activation(name: str) -> Callable:
-    """Activations functions used by `ontologize.layers.*`. Keys stay
-    JSON-serializable strings, so parameterized functions are spelled
-    into the key: "top<k>" ("top1", "top4", ...) returns `topk_cl`
-    bound to that k."""
-    match = re.fullmatch(r"top(\d+)", name.lower())
-    if match:
-        return functools.partial(topk_cl, k=int(match.group(1)))
+    """Activations functions used by `ontologize.layers.*`.""" 
     activations = {
         "none": identity,
         "relu": jax.nn.relu,
@@ -47,7 +31,7 @@ def get_activation(name: str) -> Callable:
         "argmax": ste,
         "ste": ste,
     }
-    return _lookup(activations, name, "activation")
+    return activations.get(name.lower(), identity)
 
 def get_dtype(name: str) -> Any:
     """`jax.numpy` float types."""
@@ -57,7 +41,7 @@ def get_dtype(name: str) -> Any:
         "bfloat16": jnp.bfloat16,
         "float64": jnp.float64,
     }
-    return _lookup(dtypes, name, "dtype")
+    return dtypes.get(name.lower(), jnp.float32)
 
 def get_loss(fn: str) -> Callable:
     """Loss functions used by `Hyperparams`."""
@@ -67,7 +51,7 @@ def get_loss(fn: str) -> Callable:
         "crossentropy_int": optax.softmax_cross_entropy_with_integer_labels,
         "binary_crossentropy": optax.sigmoid_binary_cross_entropy
         }
-    return _lookup(losses, fn, "loss fn")
+    return losses.get(fn.lower(), l2)
 
 def get_srctype(name: str) -> Callable:
     """Training data types used to specify `SampleLoader` subtype."""
@@ -76,7 +60,7 @@ def get_srctype(name: str) -> Callable:
         "image": ImageLoader,
         "text": TextLoader
         }
-    return _lookup(srctypes, name, "srctype")
+    return srctypes.get(name.lower(), SampleLoader)
 
 def get_noise(name:str) -> Callable:
     """Type of noise to add to the training data."""
@@ -88,4 +72,4 @@ def get_noise(name:str) -> Callable:
         "batchnorm": addnoise_batchnorm,
         "featvar": addnoise_featvar,
         }
-    return _lookup(noisefns, name, "noise fn")
+    return noisefns.get(name.lower(), identity)

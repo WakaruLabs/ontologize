@@ -145,18 +145,14 @@ def load_steerable(path, cfg):
     def probe(module, X):
         E, _ = module.encode(X, 0.0, None)
         R = module.resid(E)
-        E_in = module.constinput(E)
+        Ein = E
         Ps = []
-        # reproduce the DictEnc's gain-shape split: under `resid_gain` it
-        # classifies the unit-norm SHAPE of its input and scales its
-        # contribution by the measured GAIN. Identity / no-op when off.
         for i, de in enumerate(module.dictencs):
-            U, G = de.gainshape_in(E_in)
-            P = de.dict.cluster(de.classifier(U), T)
+            P = de.dict.cluster(de.classifier(Ein), T)
             Ps.append(P)
-            R = R + de.gained(de.dict.combine(de.dict.hfwd(P)), G)
+            R = R + de.dict.combine(de.dict.hfwd(P))
             if i < module.l - 1:
-                E_in = module.nextinput(X, R, P.reshape(P.shape[0], -1))
+                Ein = module.nextinput(X, R, None)
         return jnp.stack(Ps, 1).reshape(X.shape[0], -1)
 
     acts = jax.jit(lambda X: model.apply({"params": mparams}, X, method=probe))
@@ -255,61 +251,52 @@ def main():
                      .astype(np.float32))
 
     rows, log = [], open(out / "steers.jsonl", "w")
-    # Every job carries a TARGET feature whose activation gain is measured,
-    # random directions included: each is scored against a real feature, so
-    # `effect(feat) - effect(random)` isolates what the direction earns.
-    # Collateral alone cannot do that -- it says how much text an arbitrary
-    # push destroys, not how much it activates the feature anyway, and a
-    # model whose features are broad enough to be hit from any direction
-    # would look maximally steerable by the collateral comparison alone.
-    jobs = [("feat", int(f), int(f)) for f in feats] + \
-           [("random", r, int(feats[r % len(feats)]))
-            for r in range(cfg.n_random)]
-    for kind, j, tgt in jobs:
+    jobs = [("feat", int(f)) for f in feats] + \
+           [("random", r) for r in range(cfg.n_random)]
+    for kind, j in jobs:
         D = deltas_fn(X_s, j) if kind == "feat" else \
             np.broadcast_to(rand_dirs[j], X_s.shape)
-        fi = int(np.where(feats == tgt)[0][0])
         for m in cfg.mags:
             Xp = (X_s + m * D).astype(np.float32)
             steer_txt = generate(Xp)
             coll = np.array([1 - chrf(a, b)
                              for a, b in zip(base_txt, steer_txt)])
-            a_cyc = cycle_acts(steer_txt)[:, tgt]
-            eff, hit = effect_scores(a_base_cyc[:, tgt], a_cyc,
-                                     q_hi[fi], q_hit[fi])
-            rows.append([kind, j, tgt, m, float(eff.mean()),
-                         float(hit.mean()), coll.mean()])
+            if kind == "feat":
+                fi = int(np.where(feats == j)[0][0])
+                a_cyc = cycle_acts(steer_txt)[:, j]
+                eff, hit = effect_scores(a_base_cyc[:, j], a_cyc,
+                                         q_hi[fi], q_hit[fi])
+                rows.append([kind, j, m, float(eff.mean()),
+                             float(hit.mean()), coll.mean()])
+            else:
+                eff = np.full(len(X_s), np.nan)
+                rows.append([kind, j, m, float("nan"), float("nan"),
+                             coll.mean()])
             for s in range(len(X_s)):
                 log.write(json.dumps(
-                    {"kind": kind, "feature": j, "target": tgt, "mag": m,
-                     "sample": s,
+                    {"kind": kind, "feature": j, "mag": m, "sample": s,
                      "base": base_txt[s], "steered": steer_txt[s],
                      "collateral": float(coll[s]),
-                     "effect": float(eff[s])},
+                     "effect": None if kind != "feat" else float(eff[s])},
                     ensure_ascii=False) + "\n")
         print(f"{kind} {j}: done", flush=True)
     log.close()
 
     with open(out / "steer.csv", "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["kind", "feature", "target", "mag", "effect", "hit_rate",
+        w.writerow(["kind", "feature", "mag", "effect", "hit_rate",
                     "collateral"])
         w.writerows(rows)
-    # `net` is the headline: the activation gain the feature's own direction
-    # earns OVER an arbitrary direction of the same magnitude scored on the
-    # same feature. A model whose features are broad enough to be activated
-    # from any direction scores high on `effect` and ~0 on `net`.
-    print(f"\n{'mag':>6} {'effect':>8} {'rand eff':>9} {'net':>7} "
-          f"{'hit':>6} {'rand hit':>9} {'coll':>7} {'rand coll':>10}")
-    arr = np.array([r[3:] for r in rows], dtype=np.float64)
+    print(f"\n{'mag':>6} {'effect':>8} {'hit rate':>9} {'collateral':>11} "
+          f"{'rand coll':>10}")
+    arr = np.array([r[2:] for r in rows], dtype=np.float64)
     kinds = np.array([r[0] for r in rows])
     for m in cfg.mags:
         sel = (arr[:, 0] == m) & (kinds == "feat")
         rnd = (arr[:, 0] == m) & (kinds == "random")
-        e, r_e = np.nanmean(arr[sel, 1]), np.nanmean(arr[rnd, 1])
-        print(f"{m:>6.2f} {e:>8.3f} {r_e:>9.3f} {e - r_e:>7.3f} "
-              f"{np.nanmean(arr[sel, 2]):>6.3f} {np.nanmean(arr[rnd, 2]):>9.3f} "
-              f"{arr[sel, 3].mean():>7.3f} {arr[rnd, 3].mean():>10.3f}")
+        print(f"{m:>6.2f} {np.nanmean(arr[sel, 1]):>8.3f} "
+              f"{np.nanmean(arr[sel, 2]):>9.3f} {arr[sel, 3].mean():>11.3f} "
+              f"{arr[rnd, 3].mean() if rnd.any() else float('nan'):>10.3f}")
     print(f"-> {out / 'steer.csv'}")
 
 

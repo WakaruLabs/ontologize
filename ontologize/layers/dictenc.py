@@ -1,3 +1,13 @@
+"""Single-layer dictionary encoder combining classifier, dictionary lookup, and scaling.
+
+Defines `DictEnc`, a composite Flax Linen module that wraps:
+- A multihead classifier (`BilinearBlock` or `NLinearBlock`) mapping `(..., d_in) -> (..., h, k)`
+- An ontofeature dictionary (`DictBlock`) mapping `(..., h, k) -> (..., d_out)`
+- An optional scaling module (`Bilinear` or `NLinear`) mapping `(..., d_in) -> (..., h)`
+
+Supports training with per-layer statistics, ghost gradients for dead feature reactivation,
+and causal intervention round-trips.
+"""
 import jax
 import jax.numpy as jnp
 import flax.linen as nn
@@ -5,31 +15,21 @@ from typing import Callable, Optional, Tuple, List
 from jaxtyping import Array, Float, UInt, PRNGKeyArray
 import einops
 
-import re
-
 from ontologize.fns.loss import ghost, identity
-from ontologize.fns.pwak import pwak_kl, pwak_l2
-from .dictblock import DictBlock, ConcatDictBlock
+from .dictblock import DictBlock
 from .dictblock import entropy, l1, bcossim
 from .nlinear import NLinear, NLinearBlock, Bilinear, BilinearBlock
 from .linear import Linear, get_activation, get_dtype
+from .headsparse import HeadSparseEncoder, HeadBilinear
 
 class DictEnc(nn.Module):
-    """Dictionary Encoder composed of a dense linear encoder, 
-    multihead `NLinear` classifier, `DictBlock`, dense linear decoder,
-    and optional bilinear router."""
+    """Dictionary Encoder composed of a dense linear encoder, multihead bilinear classifier,
+    `DictBlock`, dense linear decoder, and optional bilinear scaling.
+    TODO: move encoder/decoder to `Ontologizer`"""
     d_in: int = 0
     d_out: int = 0
     k: int = 0
     h: int = 0
-
-    # gain-shape input separation (set from `Ontologizer.resid_gain`):
-    # classify the unit-normalized input direction (shape) and scale
-    # the layer's output contribution by the measured input norm (gain).
-    # The trailing `n_const` coordinates (resid_const's constant)
-    # are excluded from the norm and passed through untouched.
-    gainshape: bool = False
-    n_const: int = 0
 
     n: int = 2
     gate: str = "none"
@@ -38,37 +38,19 @@ class DictEnc(nn.Module):
 
     select: str = "softmax"
     activation_dict: str = "none"
-    norm_rows: bool = False
-    signed: bool = False
-
-    # heads write disjoint slices of the output and concatenate, instead
-    # of each getting the whole of it and summing. Selects
-    # ConcatDictBlock, whose docstring has the consequences. Kept as a
-    # flag rather than a constructor argument because the checkpoint spec
-    # is dataclasses.asdict(model) restored through Ontologizer(**spec),
-    # which serializes a bool and not a class.
-    concat: bool = False
 
     scaled: bool = False
     n_sc: int = 2
-    activation_router: str = "none"
-    gate_router: str = "none"
-    biased_router: bool = False
-
-    # let a head's gain go negative; see `scale`
-    router_signed: bool = False
+    activation_scale: str = "none"
+    gate_scale: str = "none"
+    biased_scale: bool = False
 
     sparse_K: bool = False
     sparse_F: bool = False
-    sparse_S: bool = False
     entropy_loss: bool = False
     cossim_loss: bool = False
     bcossim_loss: bool = False
-    kcossim_loss: bool = False
-    flatcos_loss: bool = False
     hmean_loss: bool = False
-    pwak_loss: bool = False
-    l2pwak_loss: bool = False
 
     noise_K: str = "none"
     noise_F: str = "none"
@@ -78,67 +60,132 @@ class DictEnc(nn.Module):
     dtype_str: str = "bfloat16"
     dtype_p_str: str = "float32"
 
+    # standardize logits per head across `k` (zero mean, unit std) before
+    # noise, winner dropout and the temperature. Bilinear logits have a free
+    # scale, so without this the classifier can shrink its weights to cancel
+    # any temperature schedule; with it, `temperature` alone sets the spread.
+    logit_norm: bool = False
+    # per-head sparse encoder in front of the classifier: each head first
+    # encodes the input as `m_h` JumpReLU (or top-k_z) features and classifies
+    # with a small per-head bilinear map on them. Its L0 replaces the L1_K
+    # stat, so `Hyperparams.s_L1K` acts as the sparsity coefficient.
+    head_sparse: str = "none"  # "none" | "jumprelu" | "topk"
+    # one encoder per layer shared by all heads (features broadcast to every
+    # head's classifier) instead of one per head
+    hs_shared: bool = False
+    m_h: int = 32
+    k_z: int = 4
+    hs_bandwidth: float = 1e-3
+    hs_init_threshold: float = 1e-3
+    # auxiliary SAE objective on the sparse encoder (see
+    # `HeadSparseEncoder.decoder`); its loss fills the `aux` stats slot,
+    # weighted by `Hyperparams.s_aux`
+    hs_decoder: bool = False
+    hs_auxk: int = 0
+    # see `DictBlock.fiber_rank`: the per-head coordinates c_h are a linear
+    # read of the layer input, c_h = A_h E
+    fiber_rank: int = 0
+    fiber_drop: float = 0.0
+    fiber_bound: float = 0.0
+    fiber_eps: float = 0.0
+    fiber_eps_layer: float = 0.0
+    fiber_radial: bool = False
+    # one coordinate vector per layer, shared by all heads (each selected
+    # entry still has its own basis), so the continuous channel is only
+    # fiber_rank numbers per layer
+    fiber_shared: bool = False
+    # see `DictBlock.fast_stats`, `.private`, `.signed`, `.p_head_drop`
+    fast_stats: bool = False
+    private_dict: bool = False
+    signed_dict: bool = False
+    p_head_drop: float = 0.0
+
     def setup(self):
+        """Initializes classifier, dictionary, and optional scaling submodules.
+
+        Instantiates `self.classifier` (`BilinearBlock` or `NLinearBlock`),
+        `self.dict` (`DictBlock`), and optional `self.scaling` (`Bilinear` or `NLinear`).
+        """
         self.n_tags = self.k * self.h
         self.n_feat = self.d_in * self.h
         self.dtype = get_dtype(self.dtype_str)
         self.dtype_p = get_dtype(self.dtype_p_str)
 
-        if self.pwak_loss and re.fullmatch(r"top\d+", self.select.lower()):
-            raise ValueError(
-                "top-k selection and pwak_loss are mutually exclusive: "
-                "the consensus target diffuses mass onto tags outside a "
-                "sample's exact-zero support, where log2(P + eps) makes "
-                "KL_pwak explode. `l2pwak_loss` has no log and composes "
-                "with top-k selection.")
-
         ClType = BilinearBlock if self.n == 2 else NLinearBlock
         ScType = Bilinear if self.n == 2 else NLinear
 
-        self.classifier = ClType(
-            d_in=self.d_in, 
-            d_out=self.k, 
-            h=self.h, n=self.n,
-            biased=self.biased_cl, 
-            gate=self.gate, 
-            activation=self.activation_cl,
-            sparse=self.sparse_K,
-            noise=self.noise_K, sd=self.sd_K,
-            dtype_str=self.dtype_str,
-            dtype_p_str=self.dtype_p_str
-        )
-        self.dict = (ConcatDictBlock if self.concat else DictBlock)(
+        if self.head_sparse != "none":
+            self.hs_encoder = HeadSparseEncoder(
+                h=1 if self.hs_shared else self.h,
+                d_in=self.d_in, m=self.m_h, mode=self.head_sparse,
+                k_z=self.k_z, bandwidth=self.hs_bandwidth,
+                init_threshold=self.hs_init_threshold, dtype_str=self.dtype_str,
+                decoder=self.hs_decoder, auxk=self.hs_auxk)
+            self.classifier = HeadBilinear(
+                h=self.h, m=self.m_h, k=self.k, biased=self.biased_cl,
+                sparse=self.sparse_K, noise=self.noise_K, sd=self.sd_K,
+                dtype_str=self.dtype_str, dtype_p_str=self.dtype_p_str)
+        else:
+            self.classifier = ClType(
+                d_in=self.d_in, 
+                d_out=self.k, 
+                h=self.h, n=self.n,
+                biased=self.biased_cl, 
+                gate=self.gate, 
+                activation=self.activation_cl,
+                sparse=self.sparse_K,
+                noise=self.noise_K, sd=self.sd_K,
+                dtype_str=self.dtype_str,
+                dtype_p_str=self.dtype_p_str
+            )
+        if self.fiber_rank:
+            n_read = 1 if self.fiber_shared else self.h
+            self.fiber_read = self.param(
+                'fiber_read',
+                nn.initializers.lecun_normal(in_axis=-1, out_axis=-2, batch_axis=(0,)),
+                (n_read, self.fiber_rank, self.d_in), dtype=self.dtype_p)
+        self.dict = DictBlock(
             k=self.k, 
             d=self.d_out, 
             h=self.h,
             select=self.select,
             activation=self.activation_dict,
-            norm_rows=self.norm_rows, signed=self.signed,
             sparse=self.sparse_F, entropy_loss=self.entropy_loss,
             cossim_loss=self.cossim_loss, bcossim_loss=self.bcossim_loss,
-            kcossim_loss=self.kcossim_loss,
-            flatcos_loss=self.flatcos_loss,
             hmean_loss=self.hmean_loss,
             noise=self.noise_F, sd=self.sd_F,
+            fast_stats=self.fast_stats,
+            private=self.private_dict, signed=self.signed_dict,
+            p_head_drop=self.p_head_drop, fiber_rank=self.fiber_rank,
+            fiber_drop=self.fiber_drop, fiber_bound=self.fiber_bound,
+            fiber_eps=self.fiber_eps, fiber_eps_layer=self.fiber_eps_layer, fiber_radial=self.fiber_radial,
             dtype_str=self.dtype_str,
             dtype_p_str=self.dtype_p_str
         )
 
         if self.scaled:
-            self.router = ScType(
+            self.scaling = ScType(
                 d_in=self.d_in, 
                 d_out=self.h, n=self.n,
-                biased=self.biased_router,
-                gate=self.gate_router,
-                activation=self.activation_router,
-                sparse=self.sparse_S,
-                dtype_str=self.dtype_str,
-                dtype_p_str=self.dtype_p_str
+                biased=self.biased_scale, 
+                gate=self.gate_scale, 
+                activation=self.activation_scale
             )
 
     def fwd_dict(self, P: Float[Array, "... h k"], *args, **kwargs
                  ) -> Float[Array, "... d_out"]:
-        """Forward `DictBlock` pass followed by `fwd_dec`."""
+        """Forward `DictBlock` pass followed by `fwd_dec`.
+
+        Note: References `self.fwd_dec`, which is defined on `Ontologizer` rather than `DictEnc`.
+
+        Args:
+            P: Classification probabilities of shape `(..., h, k)`.
+            *args: Positional arguments forwarded to `self.dict.fwd`.
+            **kwargs: Keyword arguments forwarded to `self.dict.fwd`.
+
+        Returns:
+            Reconstruction tensor of shape `(..., d_out)`.
+        """
         return self.fwd_dec(self.dict.fwd(P, *args, **kwargs))
 
     def fwd(self, E: Float[Array, "... d_in"], *args, **kwargs
@@ -147,167 +194,111 @@ class DictEnc(nn.Module):
         transformations."""
         K = self.classifier.fwd(E)
         if self.scaled:
-            S = self.router.fwd(E)
+            S = self.scaling.fwd(E)
             return self.fwd_dict(K, S, *args, **kwargs)
         return self.fwd_dict(K, *args, **kwargs)
 
     def rev_dict(self, Y: Float[Array, "... d_out"], *args, **kwargs
                  ) -> Float[Array, "... h k"]:
-        """Reversal of `fwd_dec` and `fwd_dict`."""
+        """Reversal of `fwd_dec` and `fwd_dict`.
+
+        Args:
+            Y: Output tensor of shape `(..., d_out)`.
+            *args: Positional arguments forwarded to `self.dict.rev`.
+            **kwargs: Keyword arguments forwarded to `self.dict.rev`.
+
+        Returns:
+            Classification projection tensor of shape `(..., h, k)`.
+        """
         return self.dict.rev(Y, *args, **kwargs)
 
     def rev(self, Y: Float[Array, "... d_out"], *args, **kwargs
                ) -> Float[Array, "... d_in"]:
         """Reversal of `fwd_dec`, `fwd_dict`, and `fwd_cl`. Does not account for 
-        `self.router`. `S` must be passed explicitly."""
+        `self.scaling`. `S` must be passed explicitly."""
         K = self.rev_dict(Y, *args, **kwargs)
         return self.classifier.rev(K)
 
-    def gainshape_in(self, E: Float[Array, "... d_in"]
-                     ) -> Tuple[Float[Array, "... d_in"],
-                                Optional[Float[Array, "... 1"]]]:
-        """Gain-shape split of the layer input. Returns the input with its
-        first `d_in - n_const` coordinates unit-normalized (the shape; the
-        trailing constant coordinates are excluded from the norm and pass
-        through untouched) and the measured norm (the gain, `(..., 1)`).
-        The gain is stop-gradiented: it is measured, not trained, so it
-        cannot become a gradient side-channel (the residual input is
-        already stop-gradiented above layer 0; this also covers layer 0's
-        encoder path). Identity `(E, None)` when `gainshape` is off."""
-        if not self.gainshape:
-            return E, None
-        E = E.astype(self.dtype)
-        d = E.shape[-1] - self.n_const
-        D = E[..., :d]
-        n = jnp.linalg.norm(D, axis=-1, keepdims=True)
-        U = D / (n + jnp.finfo(self.dtype).eps)
-        if self.n_const:
-            U = jnp.concatenate([U, E[..., d:]], axis=-1)
-        return U, jax.lax.stop_gradient(n)
+    def logits(self, E: Float[Array, "... d_in"]) -> Float[Array, "... h k"]:
+        """Classifier logits, standardized per head when `logit_norm`."""
+        if self.head_sparse != "none":
+            Z = self.hs_encoder(E)          # (..., 1, m) when hs_shared; the classifier broadcasts
+            K = self.classifier(Z)
+        else:
+            K = self.classifier(E)
+        if not self.logit_norm:
+            return K
+        K = K.astype(self.dtype)
+        mu = K.mean(-1, keepdims=True)
+        # a fixed tiny eps: bilinear logits at init have variance ~1/d_in^2,
+        # comparable to finfo.eps, which would bias the standardization
+        sd = jnp.sqrt(((K - mu) ** 2).mean(-1, keepdims=True) + 1e-12)
+        return (K - mu) / sd
 
-    def pwak_in(self, U: Float[Array, "... d_in"]) -> Float[Array, "... d"]:
-        """The semantic part of the shaped classifier input: the trailing
-        `n_const` coordinates are constant, so they would distort the
-        affinity's cosine and pad the prediction target with a dimension
-        every neighbourhood predicts exactly. Dropped from both pwak
-        stats."""
-        if not self.n_const:
-            return U
-        return U[..., :U.shape[-1] - self.n_const]
+    def fiber_coords(self, E: Float[Array, "... d_in"]
+                     ) -> Optional[Float[Array, "... h r"]]:
+        """Per-head fiber coordinates c_h = A_h E (None without fibers)."""
+        if not self.fiber_rank:
+            return None
+        A = self.fiber_read.astype(self.dtype)
+        C = jnp.einsum("...i,hri->...hr", E.astype(self.dtype), A)
+        if self.fiber_shared:
+            C = jnp.broadcast_to(C, C.shape[:-2] + (self.h, self.fiber_rank))
+        return C
 
-    def withPWAK(self, stats: Float[Array, "8"], L1_K: Float[Array, ""],
-                 P: Float[Array, "... h k"], U: Float[Array, "... d_in"],
-                 pwak_s: int = 0, pwak_tau: float = 0.2,
-                 L1_S: Float[Array, ""] = 0.0
-                 ) -> Float[Array, "12"]:
-        """Completes a `DictBlock.withStats` row into the `DictEnc` one:
-        the classifier's `L1_K` in front, the two pwak stats behind, and
-        anything `DictBlock` carries past its seventh entry on the end.
+    def stat_aux(self, E) -> Float[Array, ""]:
+        """The `aux` stats slot: the sparse encoder's SAE loss, or 0."""
+        if self.head_sparse != "none" and self.hs_decoder:
+            return self.hs_encoder.recon_loss(E)
+        return jnp.zeros((), self.dtype)
 
-        `Hyperparams.s_loss`'s weight vector pairs against this order
-        positionally, so a stat inserted anywhere but the end makes every
-        weight beyond it multiply the wrong quantity.
-
-        `L1_S` goes last for that reason. It is the router's own L1, which
-        `L1_F` cannot stand in for: `L1_F` reduces `hfwd(P, S)`, so it sees
-        the product `S * |W| * c` and shrinking either factor pays it down.
-        Penalising `S` alone is the separation a gated architecture is
-        built around -- the router decides how much each head speaks, the
-        dictionary decides what it says. Zero when `scaled` is off, where
-        there is no router to read."""
-        return jnp.concatenate([
-            jnp.stack([L1_K]), stats[:7],
-            jnp.stack([self.pwak_kl(P, U, pwak_s, pwak_tau),
-                       self.pwak_l2(P, U, pwak_s, pwak_tau)]),
-            stats[7:], jnp.stack([jnp.asarray(L1_S, stats.dtype)])])
-
-    def pwak_kl(self, P: Float[Array, "... h k"],
-                E: Optional[Float[Array, "... d_in"]] = None,
-                pwak_s: int = 0, pwak_tau: float = 0.2) -> Float[Array, ""]:
-        """KL(neighbourhood-consensus target ‖ classification), bits. The
-        target is the batch's partition-gated diffusion of `P` over the
-        affinity of this layer's input.
-        Gated on the static `pwak_loss` flag: the target costs a dense
-        (h, b, b) affinity graph per layer, so a pwak-off model should not
-        build it at all. Also 0 when `E` is absent (inference paths), and
-        exactly 0 at `pwak_s=0`."""
-        if E is None or not self.pwak_loss:
-            return jnp.zeros((), self.dtype)
-        return pwak_kl(P.astype(self.dtype),
-                       self.pwak_in(E).astype(self.dtype),
-                       pwak_s, pwak_tau, self.pwak_loss)
-
-    def pwak_l2(self, P: Float[Array, "... h k"],
-                E: Optional[Float[Array, "... d_in"]] = None,
-                pwak_s: int = 0, pwak_tau: float = 0.2) -> Float[Array, ""]:
-        """Noise2self error of this layer's own input predicted from its
-        partition-gated neighbourhood, as a fraction of the batch's
-        spread -- 0 if neighbours predict a sample exactly, 1 if the graph
-        does no better than the batch mean. See
-        `ontologize.fns.pwak.pwak_l2`.
-
-        The layer input is both the affinity source and the thing being
-        predicted, which under `forward="resid"` is exactly what this
-        layer is tasked with reconstructing. It is stop-gradiented
-        so the only gradient path is the partition gate. The term scores
-        the clustering, not the dictionary, and it cannot be reduced by
-        changing what is being predicted. Gated on the static
-        `l2pwak_loss` flag, 0 when `E` is absent (inference paths), and
-        exactly 0 at `pwak_s=0`."""
-        if E is None or not self.l2pwak_loss:
-            return jnp.zeros((), self.dtype)
-        return pwak_l2(P.astype(self.dtype),
-                       self.pwak_in(E).astype(self.dtype),
-                       pwak_s, pwak_tau)
-
-    def gained(self, Y: Array, G: Optional[Float[Array, "... 1"]]) -> Array:
-        """Scale a layer contribution by the measured input gain. A zero
-        gain (perfectly reconstructed residual) zeroes the contribution,
-        so the eps-normalized zero direction never reaches the output."""
-        if G is None:
-            return Y
-        return Y * G.astype(self.dtype)
+    def stat_K(self, E, K):
+        """The L1_K stat slot: the classifier logits' L1, or with `head_sparse`
+        the encoders' L0 (differentiable via the JumpReLU STE), so that
+        `s_L1K` weights the sparsity penalty."""
+        if self.head_sparse != "none":
+            return self.hs_encoder.l0(E)
+        return self.classifier.l1(K)
 
     def classify(self, E: Float[Array, "... d_in"], *args, **kwargs) -> Float[Array, "... h k"]:
         """Forward pass up to `DictBlock.cluster`. Returns the classification tensor.
-        With `gainshape`, classifies the unit shape of `E` (idempotent up to eps
-        if `E` is already shaped)."""
-        U, _ = self.gainshape_in(E)
-        K = self.classifier(U)
+
+        Args:
+            E: Input tensor of shape `(..., d_in)`.
+            *args: Arguments forwarded to `self.dict.cluster`.
+            **kwargs: Keyword arguments forwarded to `self.dict.cluster` (e.g. `temperature`).
+
+        Returns:
+            Probability tensor of shape `(..., h, k)`.
+        """
+        K = self.logits(E)
         return self.dict.cluster(K, *args, **kwargs)
 
     def scale(self, E: Float[Array, "... d_in"]) -> Float[Array, "... h"]:
-        """Forward pass for `self.router`, which returns the router vector for the output of
-        `self.dict`. If `self.scaled=False`, returns vector of all 1s.
-
-        The sole site deciding the router's sign convention; every path that
-        needs `S` routes through here so they cannot disagree. `withStats`
-        alone repeats the rule, because it needs `L1_S` from the same call.
-
-        The `abs` keeps a head's contribution additive: `S_h < 0` flips that
-        head's whole output, and since `S` is a function of the input the
-        sign would be per-sample, so a tag would mean presence for one
-        sample and negation for another. `router_signed` allows that.
-
-        No `gate_router` makes the `abs` redundant. The router computes
-        `fn(gate(Ys[0]) * prod(Ys[1:]))`, so a non-negative gate bounds the
-        gate factor while the magnitude factor stays a signed linear term
-        and `S` still straddles zero."""
+        """Forward pass for `self.scaling`, which returns the scaling vector for the output of
+        `self.dict`. If `self.scaled=False`, returns vector of all 1s."""
         if self.scaled:
-            S = self.router(E)
-            return S if self.router_signed else jnp.abs(S)
+            return jnp.abs(self.scaling(E))
         shape = E.shape[:-1] + (self.h,)
         return jnp.full(shape, 1.0, dtype=self.dtype)
 
     def __call__(self, E: Float[Array, "... d_in"], *args, **kwargs) -> Float[Array, "... d_out"]:
         """Forward pass through `self.dict.fwd`. Reconstructs but does not unembed the input.
+
+        Args:
+            E: Input tensor of shape `(..., d_in)`.
+            *args: Arguments forwarded to `self.dict.fwd`.
+            **kwargs: Keyword arguments forwarded to `self.dict.fwd`.
+
+        Returns:
+            Reconstructed output tensor of shape `(..., d_out)`.
         """
-        U, G = self.gainshape_in(E)
-        P = self.dict.cluster(self.classifier(U))
+        P = self.classify(E)
+        C = self.fiber_coords(E)
         if self.scaled:
-            S = self.scale(U)
-            return self.gained(self.dict.fwd(P, S, *args, **kwargs), G)
-        return self.gained(self.dict.fwd(P, *args, **kwargs), G)
+            S = self.scaling(E)
+            return self.dict.fwd(P, S, *args, C=C, **kwargs)
+        return self.dict.fwd(P, *args, C=C, **kwargs)
 
     def tags(self) -> Float[Array, "n_tags d_out"]:
         """Flattens `sel.dict.dicts()` to shape `(h * k, d)`. This allows the weights to be
@@ -328,103 +319,86 @@ class DictEnc(nn.Module):
         the flattened classifications `K` as the second value. This is used to build an
         `Ontologizer` from sequential `DictEnc`s, each of which adds its output to
         `R` and passes `K` to the next `DictEnc`."""
-        U, G = self.gainshape_in(E)
-        K_0 = self.classifier(U)
+        K_0 = self.logits(E)
+        C = self.fiber_coords(E)
         if self.scaled:
-            S = self.scale(U)
-            F, K = self.dict.withClusts(K_0, S, *args, **kwargs)
+            S = self.scale(E)
+            F, K = self.dict.withClusts(K_0, S, *args, C=C, **kwargs)
         else:
-            F, K = self.dict.withClusts(K_0, *args, **kwargs)
+            F, K = self.dict.withClusts(K_0, *args, C=C, **kwargs)
         Y = self.dict.combine(F)
-        return R + self.gained(Y, G), einops.rearrange(K, "... h k -> ... (h k)")
+        return R + Y, einops.rearrange(K, "... h k -> ... (h k)")
     
     def withStats(self, R: Float[Array, "... d_out"],
                   E: Float[Array, "... d_in"], sd_K: float=0.0, sd_F: float=0.0,
                   rng: Optional[PRNGKeyArray]=None,
-                  *args, p_drop: float=0.0, p_revive: float=0.0,
-                  revive_frac: float=0.5,
-                  pwak_s: int = 0, pwak_tau: float = 0.2, **kwargs
+                  *args, p_drop: float=0.0, return_base: bool = False, **kwargs
                   ) -> Tuple[Float[Array, "... d_out"],
                              Float[Array, "... (h k)"],
-                             Float[Array, "11"], PRNGKeyArray]:
+                             Float[Array, "6"], PRNGKeyArray]:
         """As `withClusts`, but also returns validation statistics
-        `[L1_K, L1_F, entropy, cossim_batch, cossim_heads, cossim_tags,
-        cossim_tags_max, KL_mean,
-        KL_pwak, L2_pwak]`. If `noisefn_K` and `sd_K` are specified, adds
+        `[L1_K, L1_F, entropy, cossim_batch, cossim_heads, KL_mean, aux]`.
+        If `noisefn_K` and `sd_K` are specified, adds
         noise to `K` before passing it to `self.dict`.
-        Splits `rng` so `noisefn_K` and `noisefn_F` use different seeds.
-        The two pwak stats are appended here rather than in `DictBlock`
-        because both read the layer input `U` alongside `P`."""
-        U, G = self.gainshape_in(E)
-        K, L1_K = self.classifier.withL1(U)
+        Splits `rng` so `noisefn_K` and `noisefn_F` use different seeds."""
+        K = self.logits(E)
 
         K_n, rng_F = self.classifier.addnoise(K, sd_K, rng)
+        L1_K = self.stat_K(E, K)
 
         if self.scaled:
-            # `scale`'s rule, repeated because `L1_S` comes from the same call
-            S, L1_S = self.router.withL1(U)
-            if not self.router_signed:
-                S = jnp.abs(S)
+            S = self.scale(E)
         else:
-            S, L1_S = None, 0.0
+            S = None
 
-        F, P, stats, rng_next = self.dict.withStats(
+        out = self.dict.withStats(
                 K_n, S, *args, **kwargs, sd=sd_F, rng=rng_F, p_drop=p_drop,
-                p_revive=p_revive, revive_frac=revive_frac)
+                C=self.fiber_coords(E), return_base=return_base)
+        F, K, stats, rng_next = out[:4]
 
-        stats = self.withPWAK(stats, L1_K, P, U, pwak_s, pwak_tau, L1_S)
-        K = einops.rearrange(P, "... h k -> ... (h k)")
-        return R + self.gained(F, G), K, stats, rng_next
+        K = einops.rearrange(K, "... h k -> ... (h k)")
+        stats = jnp.insert(stats, 0, L1_K)
+        stats = jnp.append(stats, self.stat_aux(E))
+        if return_base:  # the layer's fiber-free output, for a base-only loss
+            return R + F, K, stats, rng_next, out[4]
+        return R + F, K, stats, rng_next
 
     def withGhost(self, R: Float[Array, "... d_out"], R_g: Float[Array, "... d_out"],
                   E: Float[Array, "... d_in"], E_g: Optional[Float[Array, "... d_in"]],
                   temperature: float=1.0, sd_K: float=0.0, sd_F: float=0.0,
                   rng: Optional[PRNGKeyArray]=None, *args, p_drop: float=0.0,
-                  p_revive: float=0.0, revive_frac: float=0.5,
-                  pwak_s: int = 0, pwak_tau: float = 0.2, **kwargs
+                  **kwargs
                   ) -> Tuple[Float[Array, "... d_out"],
                              Float[Array, "... d_out"],
                              Float[Array, "... (h k)"],
-                             Float[Array, "11"], PRNGKeyArray]:
+                             Float[Array, "6"], PRNGKeyArray]:
         """As `withStats`, but also returns ghost gradient output."""
-        U, G = self.gainshape_in(E)
-        K = self.classifier(U)
+        K = self.logits(E)
 
         K_n, rng_F = self.classifier.addnoise(K, sd_K, rng)
-        L1_K = self.classifier.l1(K)
-        K_g = self.classifier.ghost(U, K)
+        L1_K = self.stat_K(E, K)
+        K_g = self.classifier.ghost(E, K)
         if E_g is not None:
-            if G is not None:
-                # the classifier consumed E / (n + eps); with n
-                # stop-gradiented the normalization is linear in E, so the
-                # encoder's ghost input takes the same rescale (only layer
-                # 0 receives E_g; its constant coordinate, if any, arrives
-                # as ghost-0, which the rescale preserves)
-                E_g = E_g / (G + jnp.finfo(self.dtype).eps)
             K_g = K_g + self.classifier.fwd(E_g)
         if self.scaled:
-            S = self.scale(U)
-            L1_S = self.router.l1(S)
-            S_g = self.router.ghost(U, S)
+            S = self.scale(E)
+            S_g = self.scaling.ghost(E, S)
         else:
             S = None
             S_g = None
-            L1_S = 0.0
 
         F, P, stats, rng_next = self.dict.withStats(
                 K_n, S, sd=sd_F, rng=rng_F, temperature=temperature,
-                p_drop=p_drop, p_revive=p_revive, revive_frac=revive_frac,
-                *args, **kwargs)
+                p_drop=p_drop, C=self.fiber_coords(E), *args, **kwargs)
         F_R = self.dict.fwd(K_g, S_g, *args, **kwargs)
         F_g = self.dict.ghost(K, F, S) + F_R
 
-        stats = self.withPWAK(stats, L1_K, P, U, pwak_s, pwak_tau)
         P = einops.rearrange(P, "... h k -> ... (h k)")
+        
+        stats = jnp.insert(stats, 0, L1_K)
+        stats = jnp.append(stats, self.stat_aux(E))
 
-        # the ghost contribution takes the same gain as the live one: G is
-        # a stop-gradiented per-sample constant, so this is a pure rescale
-        # of both paths and the ghost algebra is unchanged
-        return R + self.gained(F, G), R_g + self.gained(F_g, G), P, stats, rng_next
+        return R + F, R_g + F_g, P, stats, rng_next
 
     def intervene(self, E: Float[Array, "... d_in"],
                   *args, temperature: float=1.0, **kwargs
@@ -435,22 +409,31 @@ class DictEnc(nn.Module):
         classification, and reverses the intervened classification through the
         classifier to reconstruct an input that would produce it. Returns the
         intervened layer output, the flattened intervened classification, and
-        the reconstructed input. With `gainshape` the output keeps the
-        sample's own measured gain (the intervention chooses a direction
-        only), and the reconstructed input lives in shaped (unit-norm)
-        input space."""
-        U, G = self.gainshape_in(E)
-        K = self.classifier(U)
+        the reconstructed input.
+
+        Args:
+            E: Input tensor of shape `(..., d_in)`.
+            *args: Positional arguments forwarded to `self.dict.intervene`.
+            temperature: Softmax temperature scalar (default: 1.0).
+            **kwargs: Keyword arguments forwarded to `self.dict.intervene`.
+
+        Returns:
+            Tuple of:
+                - `F`: Intervened reconstruction output of shape `(..., d_out)`.
+                - `P_int`: Flattened intervened classification of shape `(..., h * k)`.
+                - `E_int`: Reconstructed steered input of shape `(..., d_in)`.
+        """
+        K = self.logits(E)
         P = self.dict.cluster(K, temperature)
         P_int = self.dict.intervene(P, *args, **kwargs)
         E_int = self.classifier.rev(P_int)
         if self.scaled:
-            S = self.scale(U)
+            S = self.scale(E)
         else:
             S = None
         # P_int is already intervened; do not pass *args again or additive/
-        # router interventions would be applied twice.
-        Fs = self.dict.hfwd(P_int, S)
+        # scaling interventions would be applied twice.
+        Fs = self.dict.hfwd(P_int, S, C=self.fiber_coords(E))
         F = self.dict.combine(Fs)
-        return self.gained(F, G), einops.rearrange(P_int, "... h k -> ... (h k)"), E_int
+        return F, einops.rearrange(P_int, "... h k -> ... (h k)"), E_int
 

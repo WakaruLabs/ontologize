@@ -1,3 +1,15 @@
+"""Language code mappings between HuggingFace datasets and SONAR / NLLB BCP-47.
+
+This module provides standard mapping dictionaries between HuggingFace dataset
+split names (ISO 639 codes or variants, such as those used in mC4 and C4) and
+BCP-47 language-script codes expected by the SONAR sentence encoder and
+M2M100/NLLB tokenizers.
+
+Constants:
+    MC4_TO_SONAR: Dictionary mapping 90 ISO 639 language keys to their corresponding
+        SONAR/NLLB BCP-47 code strings (e.g. "en" -> "eng_Latn", "zh" -> "zho_Hans").
+"""
+
 # Mapping between HuggingFace mC4 / C4 dataset split names (ISO 639)
 # and SONAR (NLLB) BCP-47 language codes.
 MC4_TO_SONAR = {

@@ -61,7 +61,6 @@ from pathlib import Path
 
 import sae
 from ontologize.ontologizer import Ontologizer
-from ontologize.training.serialize import migrate_spec
 
 
 def parse_args():
@@ -100,7 +99,7 @@ def load_onto(ckpt, step):
                        "spec": ocp.PyTreeCheckpointer()})
     step = step or manager.latest_step()
     spec = manager.restore(step, items={"spec": None})["spec"]
-    model = Ontologizer(**migrate_spec(spec))
+    model = Ontologizer(**spec)
     state = manager.restore(step, items={"state": None})["state"]
     params = state["params"] if "opt_state" in state else state
     while "params" in params:
@@ -156,44 +155,34 @@ def onto_points(cfg, X_eval, w, base_w):
     T = cfg.temperature
     print(f"onto: {cfg.ckpt} step {step} (l={l} h={h} k={k} T={T})")
 
-    # Each layer's gain-shape split has to be reproduced here: under
-    # `resid_gain` the DictEnc classifies the unit-norm SHAPE of its input
-    # and scales its contribution by the measured GAIN. Classifying the raw
-    # input and accumulating an unscaled contribution silently reconstructs
-    # a different model. `gainshape_in` is the identity and `gained` a no-op
-    # when the flag is off, so this is correct for either setting.
     def probe(module, X, m, hard, code, origin):
         E, _ = module.encode(X, 0.0, None)
         R = module.resid(E)
-        E_in = module.constinput(E)
+        Ein = E
         for i, dictenc in enumerate(module.dictencs):
-            U, G = dictenc.gainshape_in(E_in)
-            K = dictenc.classifier(U)
+            K = dictenc.classifier(Ein)
             if hard:
                 P = jax.nn.one_hot(jnp.argmax(K, -1), k, dtype=K.dtype)
             elif code == "dev":
                 P = topdev(dictenc.dict.cluster(K, T), origin[i], m, k)
             else:
                 P = tophead(dictenc.dict.cluster(K, T), origin[i], m, h)
-            R = R + dictenc.gained(
-                    dictenc.dict.combine(dictenc.dict.hfwd(P)), G)
+            R = R + dictenc.dict.combine(dictenc.dict.hfwd(P))
             if i < module.l - 1:
-                E_in = module.nextinput(X, R, P.reshape(P.shape[0], -1))
+                Ein = module.nextinput(X, R, None)
         return module.decode(R)
 
     def meanp(module, X):
         E, _ = module.encode(X, 0.0, None)
         R = module.resid(E)
-        E_in = module.constinput(E)
+        Ein = E
         Ps = []
         for i, dictenc in enumerate(module.dictencs):
-            U, G = dictenc.gainshape_in(E_in)
-            P = dictenc.dict.cluster(dictenc.classifier(U), T)
+            P = dictenc.dict.cluster(dictenc.classifier(Ein), T)
             Ps.append(P.mean(0))
-            R = R + dictenc.gained(
-                    dictenc.dict.combine(dictenc.dict.hfwd(P)), G)
+            R = R + dictenc.dict.combine(dictenc.dict.hfwd(P))
             if i < module.l - 1:
-                E_in = module.nextinput(X, R, P.reshape(P.shape[0], -1))
+                Ein = module.nextinput(X, R, None)
         return jnp.stack(Ps)  # (l, h, k)
 
     if cfg.origin == "uniform":
@@ -260,8 +249,8 @@ def sae_points(cfg, X_eval, w_sqrt, base_w):
             m, topk = parse_sae_name(path)
             groups, group_fn = 0, "top1"
         params = {k_: jnp.asarray(v) for k_, v in np.load(path).items()}
-        fvu, l0, *_ = sae.evaluate(sae.make_eval(topk, groups, group_fn),
-                                   params, X_eval, w_sqrt, base_w, cfg.b)
+        fvu, l0 = sae.evaluate(sae.make_eval(topk, groups, group_fn), params,
+                               X_eval, w_sqrt, base_w, cfg.b)
         # index bits only apply to codes sparse enough to need addressing
         bits = 0 if round(l0) >= m else round(l0 * math.log2(m))
         points.append((f"sae {Path(path).parent.name}", round(l0), bits, fvu))

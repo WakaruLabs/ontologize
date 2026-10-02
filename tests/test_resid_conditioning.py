@@ -11,10 +11,7 @@ from conftest import KW
 
 @pytest.fixture(scope="module")
 def conditioned(build):
-    # resid_gain pinned off: this file tests the nextinput-side
-    # conditioning it supersedes (gain-shape moves the normalization
-    # inside the DictEnc; that path is covered by test_resid_gain.py)
-    return build(resid_norm=True, resid_const=True, resid_gain=False)
+    return build(resid_norm=True, resid_const=True)
 
 
 def layer_rows(model, params, X):
@@ -23,23 +20,20 @@ def layer_rows(model, params, X):
         E, _ = module.encode(X, 0.0, None)
         R = module.resid(E)
         rows = []
-        E_in = module.constinput(E)
+        Ein = E
         for i, dictenc in enumerate(module.dictencs):
-            K = dictenc.classifier(E_in)
-            rows.append((E_in, jnp.std(K, axis=-1).mean()))
-            R, Kc = dictenc.withClusts(R, E_in, temperature=1.0)
+            K = dictenc.classifier(Ein)
+            rows.append((Ein, jnp.std(K, axis=-1).mean()))
+            R, Kc = dictenc.withClusts(R, Ein, temperature=1.0)
             if i < module.l - 1:
-                E_in = module.nextinput(X, R, Kc)
+                Ein = module.nextinput(X, R, Kc)
         return rows
     return model.apply(params, X, method=probe)
 
 
-def test_classifier_input_dims(conditioned):
-    # resid_const widens every classifier input by the constant coord:
-    # layer 0's encoder output and the upper layers' residual alike
+def test_upper_classifier_input_dim(conditioned):
+    # resid_const widens upper-layer classifier input by the constant coord
     _, params = conditioned
-    w0 = params['params']['dictencs_0']['classifier']['weight']
-    assert w0.shape == (KW["n"], KW["h"], KW["k"], KW["d_in"] + 1)
     w1 = params['params']['dictencs_1']['classifier']['weight']
     assert w1.shape == (KW["n"], KW["h"], KW["k"], KW["d_out"] + 1)
 
@@ -74,31 +68,13 @@ def test_residual_input_carries_no_gradient(conditioned, X):
         def probe(module, X):
             E, _ = module.encode(X, 0.0, None)
             R = module.resid(E)
-            R, K = module.dictencs[0].withClusts(
-                    R, module.constinput(E), temperature=1.0)
+            R, K = module.dictencs[0].withClusts(R, E, temperature=1.0)
             return (module.nextinput(X, R, K) ** 2).sum()
         return model.apply(p, X, method=probe)
 
     g = jax.grad(f)(params)
     total = sum(float(jnp.abs(v).sum()) for v in jax.tree_util.tree_leaves(g))
     assert total == 0.0
-
-
-def test_layer0_sign_sensitivity(conditioned, X):
-    # layer 0's classifier gets the constant coordinate too: without it
-    # the pure bilinear form is even in the encoder output, and the
-    # anisotropic input cone can only emulate linear terms through
-    # cross-terms with the corpus mean
-    model, params = conditioned
-
-    def logits(module, X):
-        E, _ = module.encode(X, 0.0, None)
-        return module.dictencs[0].classifier(module.constinput(E))
-
-    Xpm = jnp.concatenate([X, -X])
-    K = model.apply(params, Xpm, method=logits)
-    b = X.shape[0]
-    assert jnp.abs(K[:b] - K[b:]).max() > 1e-3
 
 
 def test_sign_sensitivity(conditioned, X):

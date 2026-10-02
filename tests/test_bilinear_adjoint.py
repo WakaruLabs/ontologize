@@ -119,5 +119,5 @@ def test_scaled_stats_path(X, build):
     Y, stats, _ = model.apply(params, X, temperature=0.5,
                               method=Ontologizer.withStats)
     assert jnp.all(jnp.isfinite(Y))
-    assert stats.shape == (model.l, 12)
+    assert stats.shape == (model.l, 7)  # [L1_K, L1_F, entropy, cossim_b, cossim_h, KL_m, aux]
     assert jnp.all(jnp.isfinite(stats))

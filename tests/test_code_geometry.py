@@ -25,14 +25,14 @@ def soft_forward(model, params, X):
     def probe(module, X):
         E, _ = module.encode(X, 0.0, None)
         R = module.resid(E)
-        E_in = module.constinput(E)
+        Ein = E
         Ps = []
         for i, dictenc in enumerate(module.dictencs):
-            P = dictenc.dict.cluster(dictenc.classifier(E_in), T)
+            P = dictenc.dict.cluster(dictenc.classifier(Ein), T)
             Ps.append(P)
             R = R + dictenc.dict.combine(dictenc.dict.hfwd(P))
             if i < module.l - 1:
-                E_in = module.nextinput(X, R, None)
+                Ein = module.nextinput(X, R, None)
         return module.decode(R), Ps
     return model.apply(params, X, method=probe)
 

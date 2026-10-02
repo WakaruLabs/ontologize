@@ -37,7 +37,7 @@ def test_thirty_steps_finite_and_decreasing(flags, X):
     rng = jax.random.PRNGKey(2)
     losses = []
     for step in range(30):
-        T, pd, sk, _ = schedules(step, 100, 1.0, 0.03, 0.1, 0.0, 0.02, 0.006)
+        T, pd, sk = schedules(step, 100, 1.0, 0.03, 0.1, 0.0, 0.02, 0.006)
         rng, r = jax.random.split(rng)
         state, L, _ = update(state, hyper.loss, r, X, X,
                              temperature=T, p_drop=pd, sd_K=sk,

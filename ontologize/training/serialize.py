@@ -1,34 +1,18 @@
+"""Flax model serialization and restoration utilities using Orbax.
+
+This module provides standalone helper functions for saving and restoring Flax
+Linen neural network parameters and dataclass configuration metadata via Orbax
+(`orbax.checkpoint`).
+
+Functions:
+    save_model: Serializes Flax parameters and model metadata to an Orbax checkpoint.
+    load_model: Reinstantiates a Flax module and restores parameter PyTrees from an Orbax checkpoint.
+"""
+
 import orbax.checkpoint as ocp
 import flax.linen as nn
 from typing import Any, Tuple, Dict
 import dataclasses
-
-#: spec keys earlier checkpoints wrote under other names. A model is saved
-#: as `dataclasses.asdict(model)` and restored by splatting that back into
-#: its class, so renaming a field makes every checkpoint written before the
-#: rename unconstructable -- `105223c` renamed these three and broke every
-#: pre-existing checkpoint for every script that loads one. Mapping them
-#: forward here keeps that a one-line cost rather than a per-caller one.
-LEGACY_SPEC_KEYS = {
-    "activation_scale": "activation_router",
-    "gate_scale": "gate_router",
-    "biased_scale": "biased_router",
-}
-
-
-def migrate_spec(spec: Dict[str, Any]) -> Dict[str, Any]:
-    """A saved model spec with legacy field names mapped forward.
-
-    Renames only. A key this does not know is left alone, so a genuinely
-    unrecognized one still raises from the constructor instead of being
-    dropped: silently discarding a spec key would build a model whose
-    configuration differs from the one that was trained, which is worse
-    than failing to build one at all."""
-    spec = dict(spec)
-    for old, new in LEGACY_SPEC_KEYS.items():
-        if old in spec:
-            spec[new] = spec.pop(old)
-    return spec
 
 def save_model(
     checkpoint_dir: str, 
@@ -92,7 +76,7 @@ def load_model(
     if metadata is None:
         raise ValueError(f"No metadata found in checkpoint at step {step}")
         
-    model = model_class(**migrate_spec(metadata))
+    model = model_class(**metadata)
     
     # 2. Restore the parameters
     # If dummy_input is provided, we can do a structured restore for safety

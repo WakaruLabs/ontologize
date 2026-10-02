@@ -241,20 +241,6 @@ def main():
         R = R * np.sqrt(w)
         if not cfg.out:
             out = out.with_name(out.name + "_w")
-    # the `_w` suffix above only applies when `--out` is absent, so naming
-    # the directory puts both metrics on the same path and the second run
-    # silently destroys the first. Refuse rather than overwrite: the two
-    # are not alternative renderings of one measurement but different
-    # inner products, and the raw one costs a full recomputation to get
-    # back.
-    prior = out / "summary.json"
-    if prior.exists():
-        was = json.loads(prior.read_text()).get("metric")
-        if was is not None and was != cfg.metric:
-            raise SystemExit(
-                f"{out} holds a '{was}' run and this is '{cfg.metric}'. "
-                f"Pass a different --out (the convention is a _w suffix for "
-                f"whitened), or delete it if it is no longer wanted.")
     out.mkdir(parents=True, exist_ok=True)
 
     rows = group_zscores(R, labels, pools, cfg.n_null, cfg.seed)

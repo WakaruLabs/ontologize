@@ -119,16 +119,12 @@ def recon_fn(path, cfg):
     def probe(module, X):
         E, _ = module.encode(X, 0.0, None)
         R = module.resid(E)
-        E_in = module.constinput(E)
-        # reproduce the DictEnc's gain-shape split: under `resid_gain` it
-        # classifies the unit-norm SHAPE of its input and scales its
-        # contribution by the measured GAIN. Identity / no-op when off.
+        Ein = E
         for i, de in enumerate(module.dictencs):
-            U, G = de.gainshape_in(E_in)
-            P = de.dict.cluster(de.classifier(U), T)
-            R = R + de.gained(de.dict.combine(de.dict.hfwd(P)), G)
+            P = de.dict.cluster(de.classifier(Ein), T)
+            R = R + de.dict.combine(de.dict.hfwd(P))
             if i < module.l - 1:
-                E_in = module.nextinput(X, R, P.reshape(P.shape[0], -1))
+                Ein = module.nextinput(X, R, None)
         return module.decode(R)
 
     recon = jax.jit(functools.partial(model.apply, {"params": params},

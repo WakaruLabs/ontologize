@@ -1,3 +1,10 @@
+"""Dense linear layer with bidirectional projections and ghost gradient support.
+
+Defines `Linear`, a Flax Linen module extending `Sparse` that implements
+affine transformations `output = activation(W @ x + b)` along with unbiased
+forward (`fwd`) and transpose-reverse (`rev`) projections used for multi-layer
+ghost gradient propagation.
+"""
 import jax.numpy as jnp
 import flax.linen as nn
 from jaxtyping import Array, Float
@@ -59,12 +66,34 @@ class Linear(Sparse):
         return jnp.einsum("oi, ...o -> ...i", W, Y)
 
     def __call__(self, X: Float[Array, "... d_in"]) -> Float[Array, "... d_out"]:
+        """Full forward pass applying linear projection, activation, and optional bias.
+
+        Args:
+            X: Input tensor of shape `(..., d_in)`.
+
+        Returns:
+            Output tensor of shape `(..., d_out)`.
+        """
         Y = self.fn(self.fwd(X))
         return self.addbias(Y, self.bias)
 
     def ghost(self, X: Float[Array, "... d_in"], Y: Float[Array, "... d_out"],
               lbound: int=-10.0, ubound: int=10.0) -> Float[Array, "... d_out"]:
-        """Applies `fns.ghostgrad(self.weights, X, Y)`."""
+        """Computes ghost gradient signals for dead feature reactivation.
+
+        Passes weight matrix `W` of shape `(d_out, d_in)`, input `X`, and output `Y`
+        to `fns.loss.ghostgrad`. Inactive features with all-zero activations across
+        the batch generate exponential gradient signals to restore gradient flow.
+
+        Args:
+            X: Input tensor of shape `(..., d_in)`.
+            Y: Output tensor of shape `(..., d_out)` used to identify dead features.
+            lbound: Lower clipping bound for ghost activations (default: -10.0).
+            ubound: Upper clipping bound for ghost activations (default: 10.0).
+
+        Returns:
+            Ghost activation tensor of shape `(..., d_out)`.
+        """
         X = X.astype(self.dtype)
         Y = Y.astype(self.dtype)
         W = self.weights.astype(self.dtype)

@@ -1,0 +1,30 @@
+\begin{tikzpicture}[
+    font=\footnotesize,
+    >={Stealth[round,length=1.8mm,width=1.6mm]},
+    lab/.style={inner sep=1.5pt, font=\scriptsize},
+  ]
+  %% ---- head i --------------------------------------------------------
+  \fill[black!8]   (0,0) -- (2.4,0) -- (1.2,2.0) -- cycle;
+  \draw[semithick] (0,0) -- (2.4,0) -- (1.2,2.0) -- cycle;
+  \fill (0,0)     circle (1.5pt) node[below,lab]{$\lvert \mathbf{d}_{i,1,\cdot}\rvert$};
+  \fill (2.4,0)   circle (1.5pt) node[below,lab]{$\lvert \mathbf{d}_{i,2,\cdot}\rvert$};
+  \fill (1.2,2.0) circle (1.5pt) node[above,lab]{$\lvert \mathbf{d}_{i,3,\cdot}\rvert$};
+  \fill (1.05,0.72) circle (1.7pt) node[left,lab]{$F_i$};
+
+  %% ---- head j -------------------------------------------------------
+  \fill[black!8]   (5.0,0) -- (7.4,0) -- (6.2,2.0) -- cycle;
+  \draw[semithick] (5.0,0) -- (7.4,0) -- (6.2,2.0) -- cycle;
+  \fill (5.0,0)   circle (1.5pt) node[below,lab]{$\lvert \mathbf{d}_{j,1,\cdot}\rvert$};
+  \fill (7.4,0)   circle (1.5pt) node[below,lab]{$\lvert \mathbf{d}_{j,2,\cdot}\rvert$};
+  \fill (6.2,2.0) circle (1.5pt) node[above,lab]{$\lvert \mathbf{d}_{j,3,\cdot}\rvert$};
+  \fill (6.55,0.60) circle (1.7pt) node[right,lab]{$F_{j}$};
+
+  \draw[<->, densely dashed, semithick, black!55] (1.35,0.71) -- (6.30,0.61);
+  \node[lab] at (3.85,1.35)
+    {$\mathrm{cossim}_h$ penalises $\cos(F_i,F_{j})$};
+
+  \node[lab, anchor=north, align=center] at (3.7,-0.9)
+  {$F'=\sum^h_{i=1} F_i$,\qquad
+  $F_i=\sum^k_{j=1} p_{i,j}\lvert \mathbf{d}_{i,j,\cdot}\rvert$,\qquad $\sum^k_{j=1} p_{i,j}=1$};
+\end{tikzpicture}
+

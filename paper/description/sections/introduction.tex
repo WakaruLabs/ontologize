@@ -1,0 +1,289 @@
+worked:
+pointless vector space
+subspaces of cluster
+graph theory
+
+didn't:
+dimension reduction 
+algebraic 
+topology
+
+\section{Assumptions}
+
+methods/assumptions"
+- steering is inherent to the training objective  (interpretability steering isomorphism) (the dictionary vectors must also be high quality steering vectors)
+- assumption that weights are themselves interpretable
+- clustering rather than decomposition (actually the clustering thing is counterintuitive if you don't bring leiden)
+- imposing categorical structure on feature (ontology vs typology. also relates to a related work.)
+- cheap interpretability "forward pass"
+- straightforward composition of concepts (concepts must be composable to be useful)
+- (nonstandard) dictionary learning is all you need 
+- the dictionary forms a basis for the representantion rather than a target
+- representations are not themselves quantized (the learned dictionary serves as a basis for the representation rather than a discrete codebook. quantization comes from sharpening of classifications over said basis)
+- interpreting a well trained model is the same as interpreting the data/training tasks.
+
+\subsection{Pivotal assumptions}
+Some version of the linear representation hypothesis
+Latent space is ``natural''
+
+\subsection{Concerns}
+
+\paragraph{Timelines could be too short}
+We'll just have to go faster.
+
+\paragraph{Contrastive classifiers might not be expressive enough}
+
+\paragraph{Steering could push it too far off manifold}
+%(diffusive steering? activation steering? still gives good data to test steering methods) (can we RL a model on high activations vs. low activations for given classification? does it converge faster than normal contrastive pairs/arbitrary PCA vector?)
+This is an open problem in mechinterp. Diffusion steering is one candidate to address it\cite{wagenmaker2025}.
+If we can't solve the problem it still gives good data to test steering methods. e.g. can we RL a model for high/low scores on a classification and have it converge faster than paired steering or PCA vectors?
+
+\paragraph{Representations could be too soft/dense/high entropy}
+%(highly correlated across all feature-based interp i.e. SAEs, transcoders, J-space)
+This is highly correlated across all feature-based interp (SAEs, transcoders, J-space). Dividing representations across orthogonal categorical subspaces makes it possible to interpret the conceptual basis vectors even if the representations are dense mixtures.
+
+\paragraph{Ontofeatures could be too polysemantic}
+%(theoretical inductive bias, as long as they have decent explanatory power we can do eigendecomposition; we have more directions to increase parameters)
+Orthogonality \& categorical constraints give a theoretical inductive bias to monosemanticity.
+As long as they have decent explanatory power we can do eigendecomposition; polysemanticity decreases with parameter count and we have more directions to increase parameters (in addition to increasing width we can increase head size or stack more layers)
+
+\paragraph{Interpreting ontofeatures could be otherwise intractable}
+%(implies SLT is false)
+This would imply the universality hypothesis is false and is highly correlated with intractability of other interpretability agendas. Submodules could be interpretable even if features aren't.
+
+\paragraph{Training could be intractable}
+%(sparsity trades against sample/compute efficiency; we have less need for sparsity constraint)
+Sparsity trades against sample/compute efficiency; preliminary experiments suggest we have less need for a sparsity constraint.
+
+\paragraph{Too many hyperparameters/too hyperparameter dependent}
+%(becomes less of an issue with scaling; qualitatively seems to just converge slower)
+This generally becomes less of an issue with scaling; preliminary experiments show most changes to hyperparameters just change the rate of convergence.
+
+\paragraph{Doesn't converge in the limit}
+%(collapse propagates down layers) (underparameterised, really bad optimizer, bad initialization, bad loss function)
+\paragraph{not orthogonal in the limit}
+
+\paragraph{might not generalize out of distribution}
+
+\paragraph{inference too expensive}
+
+\paragraph{autointerp doesn't work on parameters/eigenfeatures}
+
+\section{Theory of change}
+Conditional on my underlying model of ontology being true, 
+I'm ~80\% confident that the techniques I propose will be a substantial interpretability advance.
+Moreover, I believe the proposed research agenda to have a high counterfactual impact.
+Because the theoretical basis consists of nonobvious applications of obscure techniques from 
+niche fields of bioinformatics, I'm 50\% confident that similar research would not be done in the 
+next 2 years otherwise.
+
+\subsection{What I expect a solution to look like}
+I believe (~50\%) that mechinterp offers the best path to a robust alignment solution despite
+\href{https://www.lesswrong.com/posts/tEPHGZAb63dfq2v8n/how-useful-is-mechanistic-interpretability}{criticisms}.
+This is based on 
+\begin{enumerate}
+    \item \textbf{decomposability} Mechinterp allows alignment to be broken into manageable subproblems.
+    \item \textbf{parallelizability} Decomposable subproblems can be worked on independently.
+    \item \textbf{robustness} Mechinterp offers direct causal explanations of model behavior.
+\end{enumerate}
+The most straightforward mechinterp alignment solutions are
+\begin{enumerate}
+    \item \href{https://www.alignment.org/blog/arcs-first-technical-report-eliciting-latent-knowledge/}{eliciting latent knowledge (ELK)} 
+    Directly inferring a model's ontology.
+    \label{it:elk}
+    \item \href{https://www.alignment.org/blog/mechanistic-anomaly-detection-and-elk/}{mechanistic anomaly detection (MAD)} 
+    Detecting when a model has ``unusual'' thoughts.
+    \label{it:mad}
+\end{enumerate}
+Both of these can be considered 
+\href{https://arbital.greaterwrong.com/p/ontology_identification/}{ontology identification}
+subproblems. 
+MAD requires mapping between the model's activations and the model's ontology.
+ELK requires mapping between the model's ontology and human ontology.
+These are hard but not intractable problems.
+Recently, \href{https://devinterp.com/}{developmental interpretability} 
+(devinterp) techniques have enabled identification of ``developmental stages'' 
+corresponding to learning specific tasks.
+\cite{hoogland2024developmental}.
+This is strong evidence that learning consists primarily of the network
+grokking\cite{nanda2023progress} discrete concepts.
+While these results are promising for MAD, 
+locating these emergent capabilities in the model's activations remains an open problem.
+
+\subsection{My macro-scale strategy}
+%I see the fundamental problems for alleviating this threat as
+Broadly, my goals are to
+\begin{enumerate}
+  \item formalize the notion of a model's latent concept space
+  \item distill a model's latent concept space
+  \item enforce decomposability of latent concept space
+  \item enforce robustness of existing concepts as the dimensionality of the latent concept space increases
+\end{enumerate}
+
+A prerequisite for all of these is the ability to express a 
+\href{https://plato.stanford.edu/entries/ontological-commitment/}{metaontology}
+which can identify latent concepts in activation space.
+
+The dominant paradigm in mechanistic interpretability is to treat a model as a finite state
+machine
+
+\section{Background}
+Mechanistic interpretability currently can do supervised steering well or unsupervised steering poorly. 
+This has prompted the Google Deep Mind interpretability team to pivot to a pragmatic steering 
+agenda\cite{gdmprogress2025}. 
+Compared to unsupervised interpretability, supervised steering is highly robust.
+However it can only distinguish what the experimenter is looking for
+and does not account for the actual computations performed by a model\cite{makelov2023}.
+The dominant unsupervised paradigm is the sparse autoencoder (SAE).
+A model's hidden state is approximated as a finite state machine consisting of discrete features.
+The initial implementation used a $\relu$ activation and sparsity loss\cite{bricken2023},
+though more recent implemetations have used a $\topk$ activation function without a sparsity loss\cite{gao2024}.
+
+\subsection{Common problems with SAEs}
+The motivation is to decompile a model to a finite state machine (FSM). 
+The limitation is that such an FSM only as interpretable as an enumeration of all possible states.
+
+\subsubsection{Features are not composable}
+A persistent problem with SAEs is feature absorption\cite{chanin2025}.
+Instead of representing an input as a composition of monosemantic features,
+an SAE will often instead use a single separate feature.
+This is a problem for interpretability, as we would like features to generalize.
+One attempt to address this problem is Matryoshka SAEs\cite{bussmann2025},
+which use multiple layers to build a hierarchical coarse-to-fine representation.
+
+\subsubsection{Features are not causal}
+Sparsity trades off against reconstruction fidelity.
+Using features for steering often results in inconsistent, context-sensitive behavior\cite{duan2026}.
+
+\subsubsection{Features are not closed-form}
+A major concern is how well an interpretability technique generalizes out-of-distribution.
+Ideally we would like to infer behavior by looking solely at model weights,
+which can be achieved with bilinear MLPs\cite{pearce2025}.
+
+\subsubsection{Forward passes are expensive}
+Efficiency is also a problem. Although the sparsity constraint means that only a handful of 
+features are active for a given input, the entire feature space needs to be computed\cite{} for each sample.
+Mixture-of-experts (MoE) SAE variants reduce compute costs by dividing feature space between smaller
+submodules. Examples include Switch SAEs\cite{mudide2025} and Tree SAEs\cite{cao2026}.
+
+Less explored is the effect of the structure imposed by the MoEfied architecture on the interpretability of feature space.
+A common approach to scalably interpreting features is using an LLM to predict activations from examples\cite{paulo2025}.
+With an unstructured feature space, it quickly becomes intractable to interpret all 
+permutations of features this way. It is however possible to instead apply this technique to 
+expert routings.
+The MLPs of a transformer can themselves be converted to an MoE architecture\cite{zhang2022}.
+Language models seem to organize contrastive concepts into orthogonal simplices\cite{park2025}.
+This is suggestive of MoEfication revealing latent contrastive steering vectors.
+Imposing an orthogonality constraint has been shown to significantly reduce feature
+absorption\cite{korznikov2025}.
+
+This assumes that
+\begin{itemize}
+	\item Some version of the linear representation hypothesis is true
+	\item Latent space is in some way ``natural''
+\end{itemize}
+
+\section{Methods}
+
+\subsection{Architecture}
+We propose a novel method which encodes samples as classifications mapped to contrastive vectors.
+This directly constrains a model's representations.
+Moreover, classifications can natively be used for steering.
+
+The model (Figure~\ref{fig:onto-stack}) is a stack of $l$ dictionary layers
+writing into a shared residual accumulator, decoded by a single linear map.
+Each layer (Figure~\ref{fig:dictenc}) splits into $h$ independent heads; a head
+classifies its input over $k$ dictionary entries and emits the corresponding
+convex combination of them. The softmax is what carries the contrastive
+structure: within a head the entries are mutually exclusive alternatives rather
+than independently firing features (Figure~\ref{fig:head-simplex}), so a
+classification is a well-defined object to intervene on.
+
+\input{sections/fig_architecture.tex}
+
+\subsection{Training}
+
+\subsubsection{Embedding model}
+We embed texts using SONAR\cite{sonar}, a multimodal and language-agnostic sentence embedding 
+model. SONAR embeddings have several desirable properties:
+\begin{itemize}
+	\item They correspond to entire texts rather than tokens.
+	\item They are bidirectional.
+	\item Language is encoded independently of text.
+\end{itemize}
+This allows us to validate steering fidelity against a ground truth.
+
+\subsubsection{Loss function}
+
+\subsection{Evaluation}
+
+\section{Preliminary results}
+
+\subsection{Reconstruction quality}
+
+\subsection{Orthogonality}
+
+\subsection{Categorical structure}
+
+\subsection{Automated interpretability}
+
+\subsection{Steering fidelity}
+
+have an underexplored method we believe allows high quality unsupervised steering.
+existing attempts to route activations to expert SAEs has focused on routing similar things to the same expert, but actually to do contrastive learning you want to train on things on opposite ends of a shared axis. we don't just want to find similar features, we want to find contrastive vectors in featurespace that correspond to what a model considers a natural category.
+
+\section{Future work}
+
+\subsection{Change in interpretability over training}
+
+\subsection{Transcoder adaptation}
+
+\subsection{HSIC bottleneck}
+
+freyavoice: 
+what we're doing glosses broadly as "let humans understand AI". the alternative is get AI to understand humans better.
+but you dummies! if you make the AI smarter this is going to lead to subtler and subtler issues with larger and larger effects!
+
+jadevoice:
+we're not just letting humans understand AI. because an LLM reflects humanity from the training data, high quality conceptual interpretability provides machine comprehensible mathematical representations of *every concept that humanity cares about*. yes, we're working on interp for the usual corrigibility reasons, but we're also solving one of the most challenging parts of outer alignment - feature representation!
+
+Ideally we would like mechanistic interpretability to provide guarantees about
+the computational process used by a model. We would like features to be
+1. causal
+2. composable
+3. closed
+
+However most existing techniques, such as sparse autoencoders (SAEs),
+produce features that can perform arbitrarily badly on these desiderata.
+Feature splitting breaks compositionality. 
+They can't usually be statically analyzed (though bilinear SAE variants can be).
+Sparsity trades off against reconstruction fidelity, limiting the extent to which 
+features can be used for steering.
+
+Arguably the simplest interpretability technique is a linear probe,
+and the simplest control technique is a steering vector.
+They are remarkably robust compared to unsupervised techniques such as SAEs,
+but require labeled contrastive datasets.
+We propose a MoEfication technique based on decomposing a model into a set of 
+contrastive classifiers. Each classification corresponds to a representative vector.
+Inputs are encoded as a series of classifier outputs, and reconstructed 
+from a weighted average of the representative vectors.
+This has several advantages over SAEs:
+1. It effectively gives steering for free.
+2. Outputs are bounded.
+3. The representative vectors can be statically interpreted.
+4. Feature space is structured.
+
+\subsection{Background}
+Bilinear MLPs
+Feature Absorption
+SONAR
+Large Concept Models
+Matryoshka SAEs
+Switch SAEs
+Tree SAE
+MoEfication
+SAEBench
+AxBench
+autointerp
+

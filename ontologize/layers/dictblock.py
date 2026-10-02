@@ -1,3 +1,10 @@
+"""Multihead ontofeature dictionary lookup and causal intervention layer.
+
+Defines `DictBlock`, a Flax Linen module that stores learned non-negative concept
+dictionaries `(h, k, d)` and reconstructs continuous embeddings from discrete or
+categorical multihead classification probabilities. Also implements causal
+feature interventions (clamping, scaling, adding, subtracting, and uniform/zero ablation).
+"""
 import jax
 import jax.numpy as jnp
 import flax.linen as nn
@@ -6,135 +13,226 @@ from typing import Any, Callable, List, Optional, Tuple
 from jaxtyping import Array, Float, UInt, PRNGKeyArray
 import einops
 
-import re
-
-from ontologize.fns.loss import (identity, cossim, bcossim, entropy, l1,
-                                 ghostgrad, recip_norm)
+from ontologize.fns.loss import identity, cossim, bcossim, entropy, l1, ghostgrad
+from ontologize.fns.loss import addnoise, addnoise_batchnorm, addnoise_featvar
 from ontologize.fns.keys import get_activation
 from .sparse import Sparse
 
 class DictBlock(Sparse):
     """Multihead ontofeature submodule. It does not have bias or an activation function.
-    While it inherits `activation` from `Sparse`, it is applied only by `__call__`,
-    which is not used. This ensured that the output is linear w.r.t. classifications.
     It expects an *input* which has an `h` axis, to which it applies `softmax` *before*
     `fwd`. If the preceding layer is interpreted as a classifier, a `DictBlock` returns
-    a weighted sum of representative vectors for each classification based on the
+    a weighted sum of representative vectors for each classification based on the 
     probability of that classification."""
     k: int = 0
     d: int = 0
     h: int = 0
 
-    # logits -> probabilities rule for `cluster`: "softmax" (dense),
-    # "argmax"/"ste" (straight-through hard), or "top<k>" ("top4"):
-    # softmax over the top-k logits per head, the rest masked to -inf
-    # (exact-zero probability, no gradient). The top-k support is chosen
-    # on the logits `cluster` receives -- after sd_K noise and winner
-    # dropout -- so both still explore support membership.
     select: str = "softmax"
     activation: str = "none"
-
-    # unit-L2-normalize each `(h, k)` dictionary row in `dicts()`, so a tag
-    # carries a direction and `cluster` alone sets its magnitude. Because
-    # the rows are non-negative and `P` sums to 1 per head, this puts a
-    # floor of `h` on the layer's `L1`: no cancellation means
-    # `|F|_1 = sum_hk P_hk |W_hk|_1`, and `|W_hk|_1 >= |W_hk|_2 = 1`.
-    norm_rows: bool = False
-
-    # drop the `abs()` in `dicts()`, letting atoms subtract. See there for
-    # why this frees the dictionary's correlation structure and not just
-    # the sign of one entry.
-    signed: bool = False
 
     sparse: bool = False
     entropy_loss: bool = False
     cossim_loss: bool = False
     bcossim_loss: bool = False
-    kcossim_loss: bool = False
-    flatcos_loss: bool = False
     hmean_loss: bool = False
 
     noise: str = "none"
     sd: float = 0.0
 
+    # compute `withStats` without materializing the per-head outputs
+    # (..., h, d). With non-negative weights Q = P*S and dictionaries |W|,
+    # the L1 stat, the head-cosine stat and the per-head noise all have exact
+    # closed forms (`_withStatsFast`). Differences from the reference path:
+    # L1 is taken on the clean per-head outputs rather than the noised ones,
+    # and the noise is drawn at the combined level (same distribution,
+    # different random stream). Only used when no intervention is passed.
+    # With `signed` entries, L1 and the head cosine come from a 32-row subset.
+    fast_stats: bool = False
+
+    # head-private spaces: head i's entries live only in the i-th block of
+    # d // h coordinates (a block-diagonal dictionary), so the heads' outputs
+    # are concatenated, not summed in a shared space, before the decoder
+    private: bool = False
+    # keep the dictionary's sign (by default abs() makes entries non-negative)
+    signed: bool = False
+    # head dropout: in training, with this probability per sample and head,
+    # replace the head's classification by its batch-mean classification (the
+    # head's origin), so heads cannot rely on co-adaptation and ablating a head
+    # to its origin stays in distribution. Inverted (kept deviations scaled
+    # by 1/(1-p)) so the expected output is unchanged.
+    p_head_drop: float = 0.0
+    # tangent-bundle fibers: each entry (h, k) carries a local basis U_hk of
+    # `fiber_rank` directions, and the head adds U_hk @ c_h to its output,
+    # where c_h (`C`, read linearly from the layer input by `DictEnc`) are the
+    # entry's local coordinates. Signed, unlike the entries. The stats
+    # (L1, cosines) describe the base output only.
+    fiber_rank: int = 0
+    # fiber dropout: in training, zero a head's fiber term with this
+    # probability per sample, so the base entry must reconstruct on its own
+    # and the fiber can only be a correction
+    fiber_drop: float = 0.0
+    # bound each fiber coordinate to (-fiber_bound, fiber_bound) via tanh
+    # (0 = unbounded); an unbounded fiber can run away with the gain
+    fiber_bound: float = 0.0
+    # cap each head's fiber output norm at fiber_eps (0 = no cap). With
+    # gain-shape the layer's output is later scaled by the residual norm, so
+    # this caps the correction at fiber_eps of what is left to explain, and
+    # zeroing the fibers can move each layer's output by at most that much
+    fiber_eps: float = 0.0
+    # joint cap: the sum over heads of the fiber output norms is capped at
+    # fiber_eps_layer (a group-lasso ball: L2 within a head, L1 across
+    # heads). Under gain-shape this bounds the whole layer's correction at
+    # fiber_eps_layer of the residual left to explain
+    fiber_eps_layer: float = 0.0
+    # radial fiber (needs fiber_rank == 1): no basis parameters; the single
+    # coordinate rescales the selected entry, F_h *= 1 + c_h (a per-head gain)
+    fiber_radial: bool = False
+
     dtype_str: str = "bfloat16"
     dtype_p_str: str = "float32"
 
     def setup(self):
+        """Initializes dictionary weight tensor and resolves selection function.
+
+        Allocates parameter `weights` of shape `(h, k, d)` using LeCun normal initialization.
+        Computes `n_tags = k * h` and `n_feat = d * h`.
+        """
         super().setup()
-        match = re.fullmatch(r"top(\d+)", self.select.lower())
-        if match:
-            k_sel = int(match.group(1))
-            if not 1 <= k_sel <= self.k:
-                raise ValueError(
-                    f"select={self.select!r} needs 1 <= k <= {self.k} "
-                    f"(tags per head)")
-        elif self.select.lower() in ("argmax", "ste"):
-            # one entry survives the forward, so the support is 1. Setting
-            # this to `k` made `revive_dead`'s `k_sel >= k` guard treat
-            # `ste` as dense and switch revival off for the rule the live
-            # arm uses. It is not dense where it matters: the
-            # straight-through estimator restores gradient to what PRODUCED
-            # the code, not to what consumes it. `fwd` is `P @ dicts()` and
-            # P's forward value is one-hot, so `d/dW[h,j]` is proportional
-            # to `P[..., h, j]` and is exactly zero for an entry that never
-            # won -- measured identical to `top<k>`, where `softmax` leaves
-            # every entry a little mass.
-            k_sel = 1
-        else:
-            k_sel = self.k
-        # tags kept per head by `select`; `k` only for the dense rules,
-        # which is what makes `revive_dead` a no-op for them
-        self.k_sel = k_sel
         self.fn_sel = get_activation(self.select)
         self.n_tags = self.k * self.h
         self.n_feat = self.d * self.h
-        self.d_head = self.head_width()
         # Shape is (h k d) rather than (h d k) so that tags() is contiguous
+        if self.private:
+            assert self.d % self.h == 0, "private heads need d divisible by h"
         self.weights = self.param(
             'weights',
             nn.initializers.lecun_normal(in_axis=-1, out_axis=-2, batch_axis=(0,)),
-            (self.h, self.k, self.d_head),
+            (self.h, self.k, self.d // self.h if self.private else self.d),
             dtype=self.dtype_p
         )
-
-    def head_width(self) -> int:
-        """Output width of one head. The whole of `d` here, since heads sum
-        into a shared space; `ConcatDictBlock` narrows it."""
-        return self.d
+        if self.fiber_rank and not self.fiber_radial:
+            e = self.d // self.h if self.private else self.d
+            # same per-element scale as the entries, spread over the rank
+            self.fiber = self.param(
+                'fiber', nn.initializers.normal(stddev=(e * self.fiber_rank) ** -0.5),
+                (self.h, self.k, e, self.fiber_rank), dtype=self.dtype_p)
 
     def dicts(self) -> Float[Array, "h k d"]:
         """Returns `abs(self.weights)`. This prevents subtractive ontofeatures.
-        Under `norm_rows`, each row is then scaled to unit L2 norm. Doing it
-        here rather than by projecting after the optimizer step makes the
-        radial direction an exact null direction of the forward pass, so no
-        gradient is produced along it and none has to be projected out.
-
-        `signed` drops the `abs`, which is a larger change than it looks.
-        Non-negativity binds through the Gram matrix: two non-negative
-        vectors have `<a, a'> >= 0` exactly, so the dictionary is
-        non-negatively correlated by construction, and for independent
-        `abs`-normal entries the chance pairwise cosine is `2/pi`. A head
-        selects one of `k` entries, so whatever its rows share carries no
-        information about which was selected -- the constraint spends the
-        head's discriminative capacity. Training lowers that correlation
-        but cannot cross zero; signed rows start near zero."""
+        With `signed`, the raw weights; with `private`, each head's block
+        embedded in its own d // h coordinates."""
         W = self.weights.astype(self.dtype)
         if not self.signed:
             W = jnp.abs(W)
-        if not self.norm_rows:
-            return W
-        n = jnp.linalg.norm(W, axis=-1, keepdims=True)
-        return W / (n + jnp.finfo(self.dtype).eps)
+        if self.private:
+            W = jnp.einsum("hke,hg->hkge", W, jnp.eye(self.h, dtype=W.dtype))
+            W = W.reshape(self.h, self.k, self.d)
+        return W
 
-    def cluster(self, K: Float[Array, "... h k"], temperature: float=1.0) -> Float[Array, "... h k"]:
+    def fiber_out(self, P: Float[Array, "... h k"],
+                  C: Optional[Float[Array, "... h r"]], per_head: bool
+                  ) -> Optional[Array]:
+        """Fiber term sum_k P_hk U_hk c_h, per head `(..., h, d)` or summed
+        over heads `(..., d)`. None when there is no fiber (or no `C`)."""
+        if not self.fiber_rank or C is None:
+            return None
+        C = C.astype(self.dtype)
+        if self.fiber_bound:
+            C = self.fiber_bound * jnp.tanh(C / self.fiber_bound)
+        if self.fiber_radial:
+            Fs = jnp.einsum("...hk,hkd->...hd", P, self.dicts())
+            Fb = Fs * C[..., :1]                                   # per-head gain
+            if self.fiber_eps or self.fiber_eps_layer:
+                Fb = self._cap(Fb)
+            return Fb if per_head else Fb.sum(-2)
+        U = self.fiber.astype(self.dtype)
+        if self.private:
+            # each head's block only: (..., h, e) is small
+            Fb = jnp.einsum("...hk,hker,...hr->...he", P, U, C)
+            if self.fiber_eps or self.fiber_eps_layer:
+                Fb = self._cap(Fb)
+            if per_head:  # embed each head's block in its own coordinates
+                Fb = jnp.einsum("...he,hg->...hge", Fb, jnp.eye(self.h, dtype=Fb.dtype))
+                return Fb.reshape(*Fb.shape[:-3], self.h, self.d)
+            return Fb.reshape(*Fb.shape[:-2], self.d)
+        if per_head or self.fiber_eps or self.fiber_eps_layer:
+            # the cap needs per-head norms, so materialize (..., h, d) here
+            Fb = jnp.einsum("...hk,hkdr,...hr->...hd", P, U, C)
+            if self.fiber_eps or self.fiber_eps_layer:
+                Fb = self._cap(Fb)
+            return Fb if per_head else Fb.sum(-2)
+        return jnp.einsum("...hk,hkdr,...hr->...d", P, U, C)     # one contraction
+
+    def _cap(self, Fb):
+        """Rescale fiber vectors: each head's norm <= fiber_eps, and/or the
+        sum of the heads' norms <= fiber_eps_layer."""
+        n = jnp.linalg.norm(Fb, axis=-1, keepdims=True)
+        if self.fiber_eps:
+            Fb = Fb * jnp.minimum(1.0, self.fiber_eps / (n + 1e-12))
+            n = jnp.linalg.norm(Fb, axis=-1, keepdims=True)
+        if self.fiber_eps_layer:
+            tot = n.sum(-2, keepdims=True)
+            Fb = Fb * jnp.minimum(1.0, self.fiber_eps_layer / (tot + 1e-12))
+        return Fb
+
+    def fiber_dropout(self, C, rng):
+        """Zero a head's fiber coordinates with prob `fiber_drop` per sample
+        (training only; see `fiber_drop`)."""
+        if C is None or not self.fiber_drop or rng is None:
+            return C, rng
+        rng, r = jax.random.split(rng)
+        drop = jax.random.bernoulli(r, self.fiber_drop, C.shape[:-1])[..., None]
+        return jnp.where(drop, 0.0, C), rng
+
+    def head_drop(self, P: Float[Array, "... h k"],
+                  rng: Optional[PRNGKeyArray]
+                  ) -> Tuple[Float[Array, "... h k"], Optional[PRNGKeyArray]]:
+        """Head dropout (see `p_head_drop`). No-op at inference (rng None)."""
+        if not self.p_head_drop or rng is None:
+            return P, rng
+        rng, r = jax.random.split(rng)
+        drop = jax.random.bernoulli(r, self.p_head_drop, P.shape[:-1])[..., None]
+        origin = jax.lax.stop_gradient(P.reshape(-1, self.h, self.k).mean(0))
+        # inverted: kept heads' deviations from the origin are scaled by
+        # 1/(1-p), so the expected output matches inference (no dropout)
+        kept = origin + (P - origin) / (1.0 - self.p_head_drop)
+        return jnp.where(drop, origin, kept), rng
+
+    def cluster(self, K: Float[Array, "... h k"], temperature: float=1.0,
+                hardness: Optional[float] = None) -> Float[Array, "... h k"]:
         """Converts logits to probabilistic classifications, used for the weighted 
-        sum of ontofeatures."""
+        sum of ontofeatures. With `select="anneal"`, a scheduled convex mix
+        (1-hardness) * softmax + hardness * straight-through argmax; with
+        `select="topm"`, the renormalized top-m of the softmax with m going
+        from k to 1 as `hardness` goes 0 -> 1. Either way the code hardens
+        structurally (argmax = normalized top-1) rather than through the
+        temperature; `hardness` defaults to 1 (fully hard, inference)."""
         K = K.astype(self.dtype)
+        if self.select == "anneal":
+            P = jax.nn.softmax(K / temperature, axis=-1)
+            hard = jax.nn.one_hot(jnp.argmax(K, -1), self.k, dtype=P.dtype)
+            P_ste = jax.lax.stop_gradient(hard - P) + P
+            lam = 1.0 if hardness is None else hardness
+            return (1.0 - lam) * P + lam * P_ste
+        if self.select == "topm":
+            # normalized top-m of the softmax, with m shrinking geometrically
+            # from k (soft) to 1 (argmax) as `hardness` goes 0 -> 1; the
+            # backward pass is straight-through to the softmax (a renormalized
+            # top-1 is the constant 1 and would have no gradient of its own)
+            P = jax.nn.softmax(K / temperature, axis=-1)
+            f = 1.0 if hardness is None else hardness
+            m = jnp.round(jnp.asarray(self.k, jnp.float32) ** (1.0 - f)).astype(jnp.int32)
+            srt = jnp.sort(P, axis=-1)[..., ::-1]
+            thr = jnp.take_along_axis(srt, jnp.broadcast_to(m - 1, srt.shape[:-1])[..., None], -1)
+            kept = jnp.where(P >= thr, P, 0.0)
+            P_m = kept / (kept.sum(-1, keepdims=True) + 1e-12)
+            return jax.lax.stop_gradient(P_m - P) + P
         return self.fn_sel(K / temperature)
 
     def fwd(self, P_0: Float[Array, "... h k"],
-                S: Optional[Float[Array, "... h"]] = None, *args, **kwargs
+                S: Optional[Float[Array, "... h"]] = None, *args,
+                C: Optional[Float[Array, "... h r"]] = None, **kwargs
                ) -> Float[Array, "... d"]:
         """Forward pass. Input `P_0` is expected to be probabilites from a multihead classifier.
         Accepts an optional scaling vector `S`, which should apply a scalar multiple
@@ -142,23 +240,26 @@ class DictBlock(Sparse):
         by passing arguments to `DictBlock.intervene`."""
         P = P_0.astype(self.dtype)
         P = self.intervene(P, *args, **kwargs)
-        if S is None:
-            return jnp.einsum("...hk,hkd->...d", P, self.dicts())
-        S = S.astype(self.dtype)
-        return jnp.einsum("...hk,hkd,...h->...d", P, self.dicts(), S)
+        if S is not None:
+            P = P * S.astype(self.dtype)[..., None]
+        F = jnp.einsum("...hk,hkd->...d", P, self.dicts())
+        Fb = self.fiber_out(P, C, per_head=False)
+        return F if Fb is None else F + Fb
 
     def hfwd(self, P_0: Float[Array, "... h k"],
              S: Optional[Float[Array, "... h"]] = None,
-             *args, **kwargs) -> Float[Array, "... h d"]:
+             *args, C: Optional[Float[Array, "... h r"]] = None,
+             **kwargs) -> Float[Array, "... h d"]:
         """As `DictBlock.fwd`, but returns the output without summing the `h` axis.
         This allows calculation of summary statistics and interventions on specific 
         heads."""
         P = P_0.astype(self.dtype)
         P = self.intervene(P, *args, **kwargs)
-        if S is None:
-            return jnp.einsum("...hk,hkd->...hd", P, self.dicts())
-        S = S.astype(self.dtype)
-        return jnp.einsum("...hk,hkd,...h->...hd", P, self.dicts(), S)
+        if S is not None:
+            P = P * S.astype(self.dtype)[..., None]
+        Fs = jnp.einsum("...hk,hkd->...hd", P, self.dicts())
+        Fb = self.fiber_out(P, C, per_head=True)
+        return Fs if Fb is None else Fs + Fb
 
     def combine(self, Y: Float[Array, "... h d"]) -> Float[Array, "... d"]:
         """Sum over `h` axis."""
@@ -168,6 +269,18 @@ class DictBlock(Sparse):
                  S: Optional[Float[Array, "... h"]] = None,
                  temperature: float=1.0, *args, **kwargs
                  ) -> Float[Array, "... d"]:
+        """Full forward evaluation: clusters logits, runs `fwd`, and applies activation.
+
+        Args:
+            K: Classification logits of shape `(..., h, k)`.
+            S: Optional per-head scaling tensor of shape `(..., h)`.
+            temperature: Softmax temperature scalar (default: 1.0).
+            *args: Positional arguments forwarded to `self.intervene`.
+            **kwargs: Keyword arguments forwarded to `self.intervene`.
+
+        Returns:
+            Output continuous activation vector of shape `(..., d)`.
+        """
         P = self.cluster(K, temperature)
         F = self.fwd(P, S, *args, **kwargs)
         return self.fn(F)
@@ -209,7 +322,11 @@ class DictBlock(Sparse):
 
 
     def tagGram(self) -> Float[Array, "h k k"]:
-        """Per-head Gram matrices of the dictionaries, `G_h = W_h @ W_h.T`."""
+        """Per-head Gram matrices of the dictionaries, `G_h = W_h @ W_h.T`.
+
+        Returns:
+            Gram matrix tensor of shape `(h, k, k)` containing pairwise inner products of dictionary entries.
+        """
         W = self.dicts()
         return jnp.einsum("hkd,hjd->hkj", W, W)
 
@@ -223,7 +340,15 @@ class DictBlock(Sparse):
         materializing the flattened Gram (~40x cheaper at b=256, d=4096).
         Identical in value and gradient to `Sparse.bcossim(hfwd(P, S))`.
         Note: computed from the classification, so (unlike the previous
-        `Fs`-based stat) `intervene` arguments do not enter it."""
+        `Fs`-based stat) `intervene` arguments do not enter it.
+
+        Args:
+            P_0: Classification probability tensor of shape `(..., h, k)`.
+            S: Optional per-head scaling tensor of shape `(..., h)`.
+
+        Returns:
+            Scalar float array `()` with mean absolute batch cosine similarity.
+        """
         P = P_0.astype(self.dtype)
         if S is not None:
             P = P * S[..., None].astype(self.dtype)
@@ -235,68 +360,9 @@ class DictBlock(Sparse):
         P = P.reshape(-1, self.h, self.k)
         M = jnp.einsum("ihk,hkj->ihj", P, G)
         C = jnp.einsum("ihj,qhj->iq", M, P)
-        r = recip_norm(jnp.diagonal(C))
-        C = C * r[:, None] * r[None, :]
+        n = jnp.sqrt(jnp.diagonal(C) + jnp.finfo(P.dtype).eps)
+        C = C / (n[:, None] * n[None, :])
         return jnp.abs(C).mean()
-
-    def rowcos(self) -> Float[Array, "h"]:
-        """Mean off-diagonal cosine between a head's dictionary rows,
-        averaged over heads. Zero when a head's entries have disjoint
-        supports, one when they are all the same direction.
-
-        This is head *liveness*, which `hmean_kl` does not measure.
-        `hmean_kl` scores usage balance -- whether `E_batch[p]` is uniform
-        -- and a head whose rows are all the same direction produces an
-        output independent of which entry wins, so its classifier is free
-        to spread usage perfectly and score zero while the head carries no
-        information. A head has two routes to contributing a constant:
-        saturate the classification, which `hmean_kl` prices at the full
-        log2(k) bits, or collapse the dictionary, which costs it nothing.
-        This closes the second.
-
-        Reads the weights alone, so unlike the other cossim stats it is a
-        property of the dictionary rather than of a batch. Rows are
-        non-negative (`dicts`), so the cosines are already in [0, 1].
-
-        Returns the per-head values rather than their mean: a head is
-        collapsed or it is not, and averaging lets a few collapsed heads
-        hide among healthy ones. `perhead` keeps that visible to a caller
-        deciding what to reduce with -- `withStats` sums for the penalty
-        (every head gets gradient) and maxes for the reported stat."""
-        G = self.tagGram()
-        if not self.kcossim_loss:
-            G = jax.lax.stop_gradient(G)
-        r = recip_norm(jnp.diagonal(G, axis1=-2, axis2=-1))
-        C = G * r[..., :, None] * r[..., None, :]
-        diag = jnp.diagonal(C, axis1=-2, axis2=-1).sum(-1)
-        return (C.sum((-2, -1)) - diag) / (self.k * (self.k - 1))
-
-    def flatcos(self) -> Float[Array, ""]:
-        """Mean off-diagonal cosine over the dictionary FLATTENED: every
-        pair of rows, not just pairs inside a head.
-
-        `rowcos` is within-head by construction and cannot see the other
-        redundancy: heads whose entries are individually diverse but
-        whose rows are parallel to another head's. Nothing else measures
-        that -- `cossim_h` scores head CONTRIBUTIONS after selection, not
-        the rows themselves.
-
-        The two are complements, not substitutes. Of the `h*k - 1`
-        partners a row has, only `k - 1` share its head, so this mean is
-        dominated by the between-head pairs and a single collapsed head
-        barely moves it where `rowcos`'s per-head max saturates. Report
-        both.
-
-        Needs no Gram: sum_{i!=j} u_i.u_j = |sum_i u_i|^2 - N over unit
-        rows, which is O(N d) against the per-head Gram's O(h k^2 d)."""
-        W = self.dicts()
-        if not self.flatcos_loss:
-            W = jax.lax.stop_gradient(W)
-        U = W.reshape(-1, W.shape[-1])
-        U = U * recip_norm(jnp.sum(U * U, -1))[:, None]
-        n = U.shape[0]
-        tot = jnp.sum(jnp.square(jnp.sum(U, 0))) - n
-        return tot / (n * (n - 1))
 
     def hmean_kl(self, P_0: Float[Array, "... h k"]) -> Float[Array, ""]:
         """KL(batch-mean classification ‖ uniform) in bits, averaged over
@@ -310,7 +376,14 @@ class DictBlock(Sparse):
         (nothing else ties E[p] to 1/k, and the resid_nc probe showed the
         non-negative dictionary amplifying a 0.1-bit drift into an
         off-manifold decode). Ignores the scaling vector: this measures
-        classification usage, not scaled output."""
+        classification usage, not scaled output.
+
+        Args:
+            P_0: Classification probability tensor of shape `(..., h, k)`.
+
+        Returns:
+            Scalar float array `()` with mean KL divergence in bits.
+        """
         P = P_0.astype(self.dtype)
         if not self.hmean_loss:
             P = jax.lax.stop_gradient(P)
@@ -320,13 +393,28 @@ class DictBlock(Sparse):
 
     def withClusts(self, K: Float[Array, "... h k"],
                    S: Optional[Float[Array, "... h"]] = None,
-                   temperature: float=1.0, *args, **kwargs
+                   temperature: float=1.0, *args,
+                   C: Optional[Float[Array, "... h r"]] = None,
+                   hardness: Optional[float] = None, **kwargs
                    ) -> Tuple[Float[Array, "... h d"], 
                               Float[Array, "... h k"]]:
         """As `DictBlock.hfwd`, but first applies `DictBlock.cluster` to the input, 
-        which it returns as a second value."""
-        P = self.cluster(K, temperature)
-        F = self.hfwd(P, S, *args, **kwargs)
+        which it returns as a second value.
+
+        Args:
+            K: Classification logits of shape `(..., h, k)`.
+            S: Optional per-head scaling tensor of shape `(..., h)`.
+            temperature: Softmax temperature scalar (default: 1.0).
+            *args: Positional arguments forwarded to `self.hfwd`.
+            **kwargs: Keyword arguments forwarded to `self.hfwd`.
+
+        Returns:
+            Tuple of:
+                - `Fs`: Per-head reconstruction tensor of shape `(..., h, d)`.
+                - `P`: Classification probabilities of shape `(..., h, k)`.
+        """
+        P = self.cluster(K, temperature, hardness)
+        F = self.hfwd(P, S, *args, C=C, **kwargs)
         return F, P
 
     def withEntropy(self, K: Float[Array, "... h k"], 
@@ -342,7 +430,17 @@ class DictBlock(Sparse):
     def withL1(self, Fs: Float[Array, "... h d"], isloss: bool=False
                ) -> Tuple[Float[Array, "... d"], Float[Array, ""]]:
         """Sums input over `h` axis, then returns the L1 loss for the result.
-        If `isloss=False`, backpropagation is stopped before `L1` calculation."""
+        If `isloss=False`, backpropagation is stopped before `L1` calculation.
+
+        Args:
+            Fs: Per-head reconstruction tensor of shape `(..., h, d)`.
+            isloss: If True, allows gradients through L1 calculation (default: False).
+
+        Returns:
+            Tuple of:
+                - `F`: Combined reconstruction vector of shape `(..., d)`.
+                - `L1`: Scalar L1 norm `()`.
+        """
         F = self.combine(Fs)
         return F, self.l1(Fs)
 
@@ -354,7 +452,17 @@ class DictBlock(Sparse):
         the argmax entry's logit to `-inf`, so `cluster` renormalizes over the
         remaining entries and the runner-up receives the gradient. Guarantees
         non-winning entries get training signal regardless of logit margins.
-        No-op when `rng` is `None` (inference)."""
+        No-op when `rng` is `None` (inference).
+
+        Args:
+            K: Classification logits of shape `(..., h, k)`.
+            p_drop: Probability of dropping the winning argmax entry (default: 0.0).
+            rng: Optional PRNG key. If None, operation is a no-op.
+
+        Returns:
+            Tuple of `(K_dropped, rng_next)` where `K_dropped` matches `K.shape`, and
+            `rng_next` is the updated PRNG key (or None).
+        """
         if rng is None:
             return K, None
         rng_next, rng = jax.random.split(rng)
@@ -363,101 +471,125 @@ class DictBlock(Sparse):
         drop = jax.random.bernoulli(rng, p_drop, K.shape[:-1])[..., None]
         return jnp.where(win & drop, -jnp.inf, K), rng_next
 
-    def revive_dead(self, K: Float[Array, "... h k"], p_revive: float=0.0,
-                    revive_frac: float=0.5,
-                    rng: Optional[PRNGKeyArray]=None
-                    ) -> Tuple[Float[Array, "... h k"],
-                               Optional[PRNGKeyArray]]:
-        """Tag-axis starved-entry revival, the counterpart of `drop_winners`:
-        where that promotes the runner-up, this promotes an entry the batch
-        has all but stopped selecting.
-
-        A hard `select` rule makes death absorbing. Under `top<k>` an entry
-        outside every sample's support has probability exactly 0, so it
-        receives exactly no gradient, so its logits cannot move, so it can
-        never return -- unlike the dense rules, where every entry keeps some
-        mass and can always recover. With probability `p_revive` per head
-        per sample, this lifts one starved entry to that head's leading
-        logit, which puts it in the support and splits the head's mass with
-        the incumbent.
-
-        An entry is starved when it is selected at less than `revive_frac`
-        of the rate uniform usage would give it (`k_sel / k`). The test has
-        to be a RATE rather than absence from the batch: a head makes
-        `b * k_sel` selections over `k` entries, so at any realistic batch
-        size essentially every entry is still picked at least once long
-        after usage has become badly skewed, and a test for absence would
-        simply never fire. `revive_frac` below 1 leaves a merely
-        below-average entry alone, so the mechanism is a genuine no-op on a
-        healthy head.
-
-        Promoting to a tie rather than past the leader is deliberate: merely
-        landing in the support with a low logit would leave the entry a
-        vanishing softmax share at the annealed temperature (so no useful
-        gradient), while dominating outright would saturate the softmax (so
-        no gradient to the classifier, only to the dictionary). A tie leaves
-        both paths live.
-
-        Promotion displaces the weakest incumbent from the support, which is
-        the same trade `drop_winners` makes: at a sane `p_revive` only that
-        fraction of (sample, head) pairs is disturbed.
-
-        No-op when `rng` is `None` (inference) or for a dense `select`,
-        where no entry is ever masked out. `p_revive` is traced (it is not
-        static on `update`), so a zero is handled by the Bernoulli drawing
-        no hits rather than by branching on it."""
-        if rng is None or self.k_sel >= self.k:
-            return K, rng
-        rng_next, r_pick, r_hit = jax.random.split(rng, 3)
-        K = K.astype(self.dtype)
-        # the support is fixed by logit rank, so the selection rate is
-        # temperature-invariant and can be read straight off the logits
-        thr = jax.lax.top_k(K, self.k_sel)[0][..., -1:]
-        freq = (K >= thr).reshape(-1, self.h, self.k).mean(0)
-        dead = freq < revive_frac * self.k_sel / self.k
-        # one dead entry per (sample, head), uniform over that head's dead
-        # set; Gumbel argmax picks it without materializing a categorical
-        g = jax.random.gumbel(r_pick, K.shape, K.dtype)
-        pick = jnp.argmax(jnp.where(dead, g, -jnp.inf), -1)
-        hit = (jax.random.bernoulli(r_hit, p_revive, K.shape[:-1])
-               & dead.any(-1))
-        boost = jax.nn.one_hot(pick, self.k, dtype=bool) & hit[..., None]
-        return jnp.where(boost, K.max(-1, keepdims=True), K), rng_next
-
     def withStats(self, K: Float[Array, "... b h k"],
                   S: Optional[Float[Array, "... b h"]] = None,
                   sd: float=0.0, rng: Optional[PRNGKeyArray]=None,
-                  *args, p_drop: float=0.0, p_revive: float=0.0,
-                  revive_frac: float=0.5, **kwargs
+                  *args, p_drop: float=0.0,
+                  C: Optional[Float[Array, "... b h r"]] = None,
+                  return_base: bool = False, **kwargs
                   ) -> Tuple[Float[Array, "... b d"], Float[Array, "... b h k"],
-                             Float[Array, "7"],
+                             Float[Array, "5"],
                              PRNGKeyArray]:
         """As `withEntropy`, but also calculates `L1`, `cossim`, and
         `hmean_kl`. If `noisefn_F` and `sd_F` are specified, adds noise to
         the result. If `p_drop` is specified, applies `drop_winners` to
-        `K` first. The pwak stats are not here: they are functions of the
-        classifications and the layer INPUT, which is `DictEnc`'s, so
-        `DictEnc.withStats` appends them to this row."""
-        # revive first: deadness is read off the logits the classifier
-        # produced, before drop_winners masks a winner out of them
-        K, rng = self.revive_dead(K, p_revive, revive_frac, rng)
+        `K` first."""
+        if self.fast_stats and not args and set(kwargs) <= {"temperature", "hardness"}:
+            return self._withStatsFast(K, S, sd, rng, p_drop,
+                                       kwargs.get("temperature", 1.0), C,
+                                       kwargs.get("hardness"), return_base)
         K, rng = self.drop_winners(K, p_drop, rng)
-        Fs, P, H = self.withEntropy(K, S, *args, **kwargs)
+        # withEntropy, inlined so head dropout can act between the
+        # classification (which the stats describe) and the lookup
+        temperature = kwargs.pop("temperature", 1.0)
+        hardness = kwargs.pop("hardness", None)
+        P = self.cluster(K, temperature, hardness)
+        H = self.entropy(P, S)
+        P_used, rng = self.head_drop(P, rng)
+        C, rng = self.fiber_dropout(C, rng)
+        Fs = self.hfwd(P_used, S, *args, **kwargs)   # base output; stats describe it
 
         Fs_n, rng_next = self.addnoise(Fs, sd, rng)
         cossim_b = self.bcossim_tags(P, S)
         cossim_h = self.cossim(Fs)
-        cossim_k = self.rowcos()      # (h,) per-head
-        cos_flat = self.flatcos()     # every row pair, within and between
         KL_m = self.hmean_kl(P)
 
         F, L1 = self.withL1(Fs_n)
-        # the mean is the penalty (every head gets gradient); the max is
-        # the constraint (a head is collapsed or it is not, and averaging
-        # lets a few hide among healthy ones) and carries weight 0
-        stats = [L1, H, cossim_b, cossim_h, cossim_k.mean(),
-                 cossim_k.max(), KL_m, cos_flat]
+        F_base = F
+        Q = P_used if S is None else P_used * S.astype(self.dtype)[..., None]
+        Fb = self.fiber_out(self.intervene(Q, *args, **kwargs), C, per_head=False)
+        if Fb is not None:
+            F = F + Fb
+        stats = [L1, H, cossim_b, cossim_h, KL_m]
+        if return_base:
+            return F, P, jnp.stack(stats), rng_next, F_base
         return F, P, jnp.stack(stats), rng_next
+
+    def _combined_noise(self, Q, W, F, sd, rng):
+        """Noise for F = sum_h Fs_h with the distribution of `self.fn_noise`
+        applied to each head's output Fs_h = Q_h @ W_h independently and then
+        summed (a sum of independent Gaussians), without materializing Fs."""
+        if rng is None:
+            return F, None
+        rng_next, rng = jax.random.split(rng)
+        sg = jax.lax.stop_gradient
+        eps = jnp.finfo(F.dtype).eps
+        if self.fn_noise is addnoise:
+            std = jnp.sqrt(jnp.asarray(self.h, F.dtype)) * sd
+        elif self.fn_noise is addnoise_featvar:
+            # per-head batch variance of Fs_hd: diag(W_h^T Cov_b(Q_h) W_h)
+            Qc = sg(Q) - sg(Q).mean(0, keepdims=True)
+            C = jnp.einsum("bhk,bhj->hkj", Qc, Qc) / Q.shape[0]
+            var = jnp.einsum("hkd,hkj,hjd->hd", sg(W), C, sg(W))
+            std = sd * jnp.sqrt((var + eps).sum(0))           # (d,)
+        elif self.fn_noise is addnoise_batchnorm:
+            G = jnp.einsum("hkd,hjd->hkj", sg(W), sg(W))
+            n2 = jnp.einsum("...hk,hkj,...hj->...h", sg(Q), G, sg(Q))
+            std = sd * jnp.sqrt(n2.sum(-1, keepdims=True) / W.shape[-1])
+        else:  # identity
+            return F, rng_next
+        noise = jax.random.normal(rng, F.shape, F.dtype)
+        return F + noise * std, rng_next
+
+    def _withStatsFast(self, K, S, sd, rng, p_drop, temperature, C=None, hardness=None,
+                       return_base=False):
+        """`withStats` for the no-intervention case, computed from P and the
+        dictionary directly (see `fast_stats`)."""
+        sg = jax.lax.stop_gradient
+        K, rng = self.drop_winners(K, p_drop, rng)
+        P = self.cluster(K, temperature, hardness)
+        H = self.entropy(P, S)
+        P_used, rng = self.head_drop(P, rng)
+        C, rng = self.fiber_dropout(C, rng)
+        Q = P_used if S is None else P_used * S.astype(self.dtype)[..., None]
+        W = self.dicts()
+        F = jnp.einsum("...hk,hkd->...d", Q, W)
+        F_n, rng_next = self._combined_noise(Q, W, F, sd, rng)
+        F_base = F_n
+        Fb = self.fiber_out(Q, C, per_head=False)
+        if Fb is not None:
+            F_n = F_n + Fb
+
+        if self.signed:
+            # the closed forms below need non-negative entries; with signed
+            # entries, take the two stats from a materialized 32-row subset
+            # (L1 rescaled to the full batch)
+            Qs = Q.reshape(-1, self.h, self.k)[:32]
+            Fs = jnp.einsum("bhk,hkd->bhd", Qs, W)
+            L1 = self.l1(Fs) * (Q.reshape(-1, self.h, self.k).shape[0] / Qs.shape[0])
+            cossim_h = self.cossim(Fs)
+        else:
+            # L1 of the per-head outputs: every term is >= 0, so
+            # sum |Fs| = sum_{hk} Q_hk ||W_hk||_1
+            Ql, Wl = (Q, W) if self.sparse else (sg(Q), sg(W))
+            L1 = jnp.einsum("...hk,hk->", Ql, Wl.sum(-1))
+
+            # mean |cos| between the heads' outputs, diagonal included (as in
+            # `Sparse.cossim`): all cosines are >= 0 and
+            # sum_{h,h'} <F^_h, F^_h'> = ||sum_h F^_h||^2
+            Qc, Wc = (Q, W) if self.cossim_loss else (sg(Q), sg(W))
+            G = jnp.einsum("hkd,hjd->hkj", Wc, Wc)
+            n = jnp.sqrt(jnp.einsum("...hk,hkj,...hj->...h", Qc, G, Qc)
+                         + jnp.finfo(self.dtype).eps)
+            Z = jnp.einsum("...hk,hkd->...d", Qc / n[..., None], Wc)
+            cossim_h = ((Z ** 2).sum(-1) / self.h ** 2).mean()
+
+        cossim_b = self.bcossim_tags(P, S)
+        KL_m = self.hmean_kl(P)
+        stats = [L1, H, cossim_b, cossim_h, KL_m]
+        if return_base:
+            return F_n, P, jnp.stack(stats), rng_next, F_base
+        return F_n, P, jnp.stack(stats), rng_next
 
     def tags(self) -> Float[Array, "n_tags d"]:
         """Flattens `self.dicts()` to shape `(h * k, d)`. This allows the weights to be
@@ -589,138 +721,3 @@ class DictBlock(Sparse):
             P = jnp.einsum("...hk,h->...hk", P, S)
 
         return P
-
-
-class ConcatDictBlock(DictBlock):
-    """Heads write disjoint slices of the output instead of summing into
-    a shared one.
-
-    Each head gets `d // h` of the output and the slices concatenate, so
-    `fwd` still returns `(..., d)` and the layer is a drop-in. Three
-    things change:
-
-      parameters   the dictionary is `h*k*(d//h) = k*d` rather than
-                   `h*k*d`, a factor of `h` fewer at matched `d`.
-      gauge        a head reaches the output only through the decoder's
-                   own `(d_out, d//h)` column block, which has full
-                   column rank whenever `d//h <= d_out`. Then that block
-                   has no null space, so every dictionary direction is
-                   visible downstream. The summing form instead sends
-                   every head through the whole `(d_out, d)` decoder,
-                   which for `d > d_out` has a null space an atom is free
-                   to sit in, changing no output and taking no gradient.
-      cossim_h     between-head cosine is 0 by construction, so the
-                   `s_hcossim` penalty has nothing left to do.
-
-    The two together fix the useful slice width: wide enough that `h` of
-    them span `d_out`, narrow enough to stay under it. Widening a slice
-    to the full `d` (so `d = e*h`) gives that up -- `D_h` is then
-    surjective, so every head can realize any `k` output vectors exactly
-    as in the summing form, and the orthogonality is pure gauge over a
-    per-head null space.
-
-    A subclass rather than a flag because the per-head shapes differ --
-    `dicts`, `hfwd` and `hrev` carry `d // h` -- and because three
-    statistics would otherwise return plausible wrong numbers rather
-    than fail: `cossim` and `flatcos` compare vectors from disjoint
-    slices as though they shared a space, and `tags` hands out atoms
-    that are no longer in the layer's output space. `ghost` would hand
-    each head the whole output rather than its own slice, and does at
-    least fail loudly. Each is overridden below. `rowcos`, `tagGram` and
-    `bcossim_tags` need no change: they are within-head, and a block's
-    inner products are the same computed in the slice or in the whole.
-    """
-
-    def head_width(self) -> int:
-        if self.h and self.d % self.h:
-            raise ValueError(
-                f"concat needs d divisible by h; got d={self.d}, h={self.h}. "
-                f"Each head writes d // h of the output, and a truncating "
-                f"division here would silently drop {self.d % self.h} dims")
-        return self.d // self.h if self.h else self.d
-
-    def combine(self, Y: Float[Array, "... h d_head"]
-                ) -> Float[Array, "... d"]:
-        """Concatenate the `h` axis instead of summing it."""
-        return einops.rearrange(Y, "... h d -> ... (h d)")
-
-    def split(self, F: Float[Array, "... d"]) -> Float[Array, "... h d_head"]:
-        """Inverse of `combine`."""
-        return einops.rearrange(F, "... (h d) -> ... h d", h=self.h)
-
-    def fwd(self, P_0: Float[Array, "... h k"],
-            S: Optional[Float[Array, "... h"]] = None, *args, **kwargs
-            ) -> Float[Array, "... d"]:
-        return self.combine(self.hfwd(P_0, S, *args, **kwargs))
-
-    def rev(self, F: Float[Array, "... d"],
-            S: Optional[Float[Array, "... h"]] = None, *args, **kwargs
-            ) -> Float[Array, "... h k"]:
-        Fs = self.split(F.astype(self.dtype))
-        if S is not None:
-            Fs = jnp.einsum("...hd,...h->...hd", Fs, S.astype(self.dtype))
-        return self.intervene(self.hrev(Fs), *args, **kwargs)
-
-    def cossim(self, F: Float[Array, "... h d_head"],
-               S: Optional[Float[Array, "..."]]=None,
-               isloss: Optional[bool]=None) -> Float[Array, ""]:
-        """The parent's value, computed in closed form. Heads occupy
-        disjoint coordinates, so every off-diagonal cosine is exactly 0
-        whatever the atoms contain and only the diagonal survives.
-
-        That diagonal is not 0, so this does not return 0: the parent
-        means over the full `(h, h)` matrix, giving `1/h` when a head is
-        nonzero and dropping its entry when a head's output vanishes,
-        since `recip_norm` defines a zero vector's cosine as 0. Returning
-        0 instead would put this layer's `cossim_h` column on a different
-        scale from a summing layer's and make the two unreadable side by
-        side. Costs O(b h d) rather than the parent's O(b h^2 d), and
-        takes no gradient because there is none to take -- which is the
-        point of the construction.
-
-        `S` and `isloss` are accepted and ignored: both scale or gate a
-        quantity that is constant here."""
-        Fs = F.astype(self.dtype)
-        live = jnp.sum(Fs * Fs, -1) > 0
-        return jnp.mean(live.astype(self.dtype)) / self.h
-
-    def ghost(self, K: Float[Array, "... h k"], F: Float[Array, "... d"],
-              S: Optional[Float[Array, "... h"]]=None, *args, **kwargs
-              ) -> Float[Array, "... d"]:
-        """As the parent, but each head's deadness is read off its own
-        slice of the output. The parent hands every head the whole of `F`,
-        which here is neither the right width nor the right dims."""
-        W = self.dicts()
-        K = K.astype(self.dtype)
-        Fs = self.split(F.astype(self.dtype))
-        def f(W_i, K_i, F_i):
-            # Transpose W_i to (d_head, k) because ghostgrad expects (d_out, d_in)
-            return ghostgrad(W_i.T, K_i, F_i, *args, **kwargs)
-
-        Fs_g = jax.vmap(f, (0, -2, -2), -2)(W, K, Fs)
-        if S is not None:
-            Fs_g = jnp.einsum("...hd,...h->...hd", Fs_g, S.astype(self.dtype))
-        return self.combine(Fs_g)
-
-    def flatcos(self) -> Float[Array, ""]:
-        """Mean off-diagonal cosine over the flattened dictionary, with
-        the block structure accounted for.
-
-        Of the `hk(hk-1)` ordered off-diagonal pairs, only the `hk(k-1)`
-        inside a head can be nonzero; every cross-head pair is exactly 0.
-        So this is `rowcos`'s per-head sum rescaled by the pair counts,
-        and it stays a strictly weaker signal than `rowcos` exactly as it
-        is in the parent."""
-        n = self.k * self.h
-        within = jnp.sum(self.rowcos()) * self.k * (self.k - 1)
-        return within / (n * (n - 1))
-
-    def tags(self) -> Float[Array, "n_tags d"]:
-        """Atoms embedded in the layer's full output space, zero outside
-        their own head's slice. The parent's raw concatenation would hand
-        out `(n_tags, d // h)` rows that are not in the space every
-        caller reads them as."""
-        W = self.dicts()                                # (h, k, d_head)
-        E = jnp.zeros((self.h, self.k, self.h, self.d_head), W.dtype)
-        E = E.at[jnp.arange(self.h), :, jnp.arange(self.h), :].set(W)
-        return einops.rearrange(E, "h k g d -> (h k) (g d)")

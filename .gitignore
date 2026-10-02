@@ -1,42 +1,169 @@
-# editor artifacts
+ontologized/
+
+# nested repos
+automated-interpretability/
+bilinear/
+writeup/
+haskell/
+SAEBench/
+
+# backup files
 **/*~
 **/\#*\#
 **/.\#*
 **/*.swp
 **/*.db.lock
 
-# LaTeX artifacts
+# intermediate files
 **/*.aux
 **/*.bcf
 **/*.nav
 **/*.snm
 **/*.log
 **/*.out
-**/*.bbl
-**/*.blg
-**/*.run.xml
-**/*.fls
-**/*.fdb_latexmk
-**/*.synctex.gz
 
-# Python artifacts
+# Python-generated files
 **/*.py[oc]
 **/__pycache__/
 **/dist/
 **/wheels/
 **/*.egg-info
+
+# Virtual environments
+**/.venv
+
+# cached environments
+**/environment*
+**/.ghc.environment*
+**/edit
+**/.antigravitycli/
+
+# images
+#**/*.png
+#**/*.jpg
+**/*.eps
+**/*.svg
+**/*.pdf
+**/*.dot
+
+# plain text tables
+**/*.csv
+#**/*.tsv
+#**/*.txt
+
+# office-likes
+**/*.xlsx
+**/*.pptx
+**/*.doc
+**/*.docx
+**/*.odp
+
+# binary files
+**/*.jld2
 **/*.model
 **/*.pb
 **/*.pickle
 **/*.pt
 
-**/.venv/
+**/*.Robj
+**/*.Rdata
+**/*.Rda
+**/*.RData
+**/*.Rhistory
 
-# cache directories
-**/preview/
-**/tmp/
-**/build/
-**/old/
+**/.DS_Store
 
-# embedding caches, run checkpoints, and eval artifacts (19G+)
-/data/
+# compressed
+**/*.zip
+**/*.gz
+**/*.tar
+
+# genomes
+**/*.fa
+**/*.fasta
+**/*.gff3
+**/*.bed
+
+# other temporary files
+**/*bak
+**/*backup
+**/*tmp
+**/*old
+
+**/notes*
+**/tmp*
+**/old*
+
+**/*.old.*
+**/*.tmp.*
+
+**/tmp/**
+**/build/**
+**/old*/**
+**/slop/
+**/scratch
+**/scratch_claude
+**/scratch_gemini
+**/scratch_gpt
+#**/_*/**
+
+# characters that shouldn't be in filename
+**/*\ *
+**/*'*
+**/*\!*
+**/"*
+
+# untracked output dirs
+data/**
+eval_results/**
+**/out/**
+**/20*-*-*/**
+**/20*_*_*/**
+**/untracked/**
+**/*untracked
+**/result*
+**/cache/**
+**/output/**
+**/outputs/**
+
+**/layer_states/**
+**/layer-states/**
+**/pooled_states/**
+**/pooled-states/**
+
+notes*/**
+presentation*/**
+fig/**
+figs/**
+paper/**
+
+targets/**
+interactionExample/**
+
+**/cabal.project.local
+**/cabal.project.freeze
+**/.stack-work/
+**/dist-newstyle/
+!paper/findings.tex
+!paper/description/
+!paper/description/**
+
+# ...but not LaTeX build artifacts inside it
+paper/description/**/*.pdf
+paper/description/**/*.aux
+paper/description/**/*.log
+paper/description/**/*.out
+paper/description/**/*.bcf
+paper/description/**/*.nav
+paper/description/**/*.snm
+paper/description/**/*.toc
+paper/description/**/*.bbl
+paper/description/**/*.blg
+paper/description/**/*.run.xml
+paper/description/**/*.fls
+paper/description/**/*.fdb_latexmk
+paper/description/**/*.synctex.gz
+
+# curated result artifacts of the hard-code designs (small JSON + gzipped curves)
+!experiments/gpt2/results/
+!experiments/gpt2/results/**

@@ -1,3 +1,11 @@
+"""Interactive command-line REPL for dynamic ontofeature interventions.
+
+This module provides the `ChatEnv` class, an interactive terminal command loop
+allowing users to configure, inspect, and reset causal interventions on trained
+`Ontologizer` models. Interventions (setting, adding, subtracting, zeroing, or
+scaling dictionary features) are staged per layer as `DictIntervention` dataclass
+instances and passed to `Ontologizer.withArgs` for steered text generation or analysis.
+"""
 import jax.numpy as jnp
 from typing import List, Optional, Tuple
 from ontologize.ontologizer import Ontologizer, DictIntervention
@@ -7,11 +15,17 @@ class ChatEnv:
     """An interactive CLI environment for setting `Ontologizer.withArgs` interventions."""
     
     def __init__(self, model: Ontologizer):
+        """Initialize the chat environment with empty interventions for all layers.
+
+        Args:
+            model: `Ontologizer` model instance to configure interventions for.
+        """
         self.model = model
         self.num_layers = model.l
         self.interventions = [DictIntervention() for _ in range(self.num_layers)]
 
     def _print_state(self):
+        """Print currently active non-empty interventions across all layers to stdout."""
         print("\n=== Current Interventions ===")
         has_active = False
         for i, inter in enumerate(self.interventions):
@@ -28,6 +42,15 @@ class ChatEnv:
         print("=============================\n")
 
     def _parse_array(self, val_str: str, dtype):
+        """Parse a comma-separated string of numeric values into a JAX array.
+
+        Args:
+            val_str: Comma-separated string of integers or floats (e.g. "5,10" or "0.5,1.0").
+            dtype: Target numeric type (`float` or `int`).
+
+        Returns:
+            JAX array of dtype `float32` or `int32`, or `None` if string is empty.
+        """
         if not val_str.strip():
             return None
         # Handle comma-separated list of numbers

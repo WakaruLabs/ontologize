@@ -398,7 +398,6 @@ def onto_acts_fn(ckpt, step, temperature):
     import jax.numpy as jnp
     import orbax.checkpoint as ocp
     from ontologize.ontologizer import Ontologizer
-    from ontologize.training.serialize import migrate_spec
 
     manager = ocp.CheckpointManager(
         Path(ckpt).resolve(),
@@ -406,7 +405,7 @@ def onto_acts_fn(ckpt, step, temperature):
                        'spec': ocp.PyTreeCheckpointer()})
     step = step or manager.latest_step()
     spec = manager.restore(step, items={'spec': None})['spec']
-    model = Ontologizer(**migrate_spec(spec))
+    model = Ontologizer(**spec)
     state = manager.restore(step, items={'state': None})['state']
     params = state['params'] if 'opt_state' in state else state
     while 'params' in params:
@@ -417,18 +416,14 @@ def onto_acts_fn(ckpt, step, temperature):
     def probe(module, X):
         E, _ = module.encode(X, 0.0, None)
         R = module.resid(E)
-        E_in = module.constinput(E)
+        Ein = E
         Ps = []
-        # reproduce the DictEnc's gain-shape split: under `resid_gain` it
-        # classifies the unit-norm SHAPE of its input and scales its
-        # contribution by the measured GAIN. Identity / no-op when off.
         for i, de in enumerate(module.dictencs):
-            U, G = de.gainshape_in(E_in)
-            P = de.dict.cluster(de.classifier(U), temperature)
+            P = de.dict.cluster(de.classifier(Ein), temperature)
             Ps.append(P)
-            R = R + de.gained(de.dict.combine(de.dict.hfwd(P)), G)
+            R = R + de.dict.combine(de.dict.hfwd(P))
             if i < module.l - 1:
-                E_in = module.nextinput(X, R, P.reshape(P.shape[0], -1))
+                Ein = module.nextinput(X, R, None)
         return jnp.stack(Ps, 1)  # (b, l, h, k)
 
     @jax.jit

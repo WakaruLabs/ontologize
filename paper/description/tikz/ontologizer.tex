@@ -1,0 +1,95 @@
+\begin{tikzpicture}[
+    font=\footnotesize,
+    >={Stealth[round,length=1.8mm,width=1.6mm]},
+    blk/.style={draw, rounded corners=2pt, align=center,
+                minimum height=8mm, inner xsep=4pt},
+    hook/.style={draw, rounded corners=2pt, densely dashed, align=center,
+                 inner sep=3pt, font=\scriptsize, black!55},
+    dec/.style={draw, rounded corners=2pt, fill=black!8,
+                minimum height=6.5mm, inner xsep=3pt},
+    cond/.style={draw, rounded corners=2pt, fill=black!4, align=center,
+                 inner sep=2.5pt, font=\scriptsize},
+    add/.style={draw, circle, minimum size=4.5mm, inner sep=0pt},
+    lab/.style={inner sep=1.5pt, font=\scriptsize},
+    sig/.style={->, semithick},
+    aux/.style={->, densely dashed, semithick, black!45},
+  ]
+
+  %% ---- layer row --------------------------------------------------
+  \node[lab] (x)  at (-1.5,0) {$\mathbf{x}\in\mathbb{R}^{d}$};
+  \node[blk] (D0) at ( 0.3,0) {$\mathtt{DictEnc}_1$};
+  \node[blk] (D1) at ( 4.3,0) {$\mathtt{DictEnc}_2$};
+  \node      (Dd) at ( 7.0,0) {$\cdots$};
+  \node[blk] (DL) at ( 9.7,0) {$\mathtt{DictEnc}_{l}$};
+
+  \draw[sig] (x) -- (D0);
+
+  \node[hook] (noise) at (-1.5,2.6) {$+\,\varepsilon$};
+  \draw[aux] (noise) -- (x);
+
+  %% ---- residual accumulator (top rail, y = 2.6) --------------------
+  \node[add] (A0) at ( 2.3,2.6) {$+$};
+  \node[add] (A1) at ( 6.1,2.6) {$+$};
+  \node[add] (AL) at (11.9,2.6) {$+$};
+
+  \node[lab] (R0) at (0.6,2.6) {$R_0\!=\!0$};
+  \draw[sig]      (R0) -- (A0);
+  \draw[sig]      (A0) -- (A1);
+  \draw[sig]      (A1) -- (AL);
+  \draw[semithick] (AL) -- (12.35,2.6);
+
+  %\node[lab] at (8.9,3.05) {$R\in\mathbb{R}^{e}$: residual accumulator};
+
+  %% ---- per-layer contributions F_i (enter from below) --------------
+  \draw[sig] (D0.north) -- ++(0,1.1) -| (A0.south);
+  \draw[sig] (D1.north) -- ++(0,1.1) -| (A1.south);
+  \draw[sig] (DL.north) -- ++(0,1.1) -| (AL.south);
+  \node[lab] at (0.62,1.05) {$F_1$};
+  \node[lab] at (4.62,1.05) {$F_2$};
+  \node[lab] at (10.05,1.05) {$F_{l}$};
+
+  %% ---- shared decoder, one decode per prefix -----------------------
+  \node[dec] (Y1) at ( 2.75,-1.9) {$\mathrm{dec}$};
+  \node[dec] (Y2) at ( 6.55,-1.9) {$\mathrm{dec}$};
+  \node[dec] (YL) at (12.35,-1.9) {$\mathrm{dec}$};
+
+  \draw[sig] ( 2.75,2.6) -- (Y1.north);
+  \draw[sig] ( 6.55,2.6) -- (Y2.north);
+  \draw[sig] (12.35,2.6) -- (YL.north);
+  \fill ( 2.75,2.6) circle (1.1pt);
+  \fill ( 6.55,2.6) circle (1.1pt);
+
+  \node[lab,anchor=west] at ( 2.85,1.0) {$R_1$};
+  \node[lab,anchor=west] at ( 6.65,1.0) {$R_2$};
+  \node[lab,anchor=west] at (12.45,1.0) {$R_l$};
+
+  %% ---- deep supervision --------------------------------------------
+  \node[lab] (L1) at ( 0.9,-1.9) {$\mathrm{MSE}(\mathbf{x},\mathbf{\hat{x}}_1)$};
+  \node[lab] (L2) at ( 4.9,-1.9) {$\mathrm{MSE}(\mathbf{x},\mathbf{\hat{x}}_2)$};
+  \node[lab] (LL) at (10.7,-1.9) {$\mathrm{MSE}(\mathbf{x},\mathbf{\hat{x}}_l)$};
+  \draw[aux] (Y1.west) -- (L1);
+  \draw[aux] (Y2.west) -- (L2);
+  \draw[aux] (YL.west) -- (LL);
+
+  %% ---- residual forwarding ------------------------------------------
+  \node[cond] (C1) at (2.75,-3.9)
+  {$\mathrm{sg}\,(\mathbf{x}-\mathbf{\hat{x}}_1)$\\ normalise, $\oplus\,1$};
+  \node[cond] (C2) at (6.55,-3.9)
+  {$\mathrm{sg}\,(\mathbf{x}-\mathbf{\hat{x}}_2)$\\ normalise, $\oplus\,1$};
+  \draw[sig] (Y1) -- node[right,lab]{$\mathbf{\hat{x}}_1$} (C1);
+  \draw[sig] (Y2) -- node[right,lab]{$\mathbf{\hat{x}}_2$} (C2);
+
+  \draw[sig] (C1.east) -- node[left,lab,pos=0.72]{$\mathbf{\tilde{y}}_1$} (D1.south);
+  \draw[sig] (C2.east) -- (7.8,-0.5);
+
+  %% ---- model output --------------------------------------------------
+  \node[lab] (out) at (12.35,-3.9) {$\mathbf{\hat{x}}$};
+  \draw[sig,thick] (YL) -- node[right,lab]{$\mathbf{\hat{x}}_l$} (out);
+
+  %% ---- x broadcast to every conditioning step -------------------------
+  \draw[aux] (x.south) -- (-1.5,-5.3) -- (2.75,-5.3) -- (C1.south);
+  \draw[aux] (2.75,-5.3) -- (6.55,-5.3) -- (C2.south);
+  \fill[black!45] (2.75,-5.3) circle (1.1pt);
+
+\end{tikzpicture}
+

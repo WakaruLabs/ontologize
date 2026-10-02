@@ -1,0 +1,45 @@
+\begin{tikzpicture}[
+    font=\footnotesize,
+    >={Stealth[round,length=1.8mm,width=1.6mm]},
+    blk/.style={draw, rounded corners=2pt, align=center,
+                minimum height=8mm, inner xsep=4pt},
+    hook/.style={draw, rounded corners=2pt, densely dashed, align=center,
+                 inner sep=3pt, font=\scriptsize, black!55},
+    lab/.style={inner sep=1.5pt, font=\scriptsize, align=center},
+    sig/.style={->, semithick, align=center},
+    aux/.style={->, densely dashed, semithick, black!45},
+  ]
+
+  %% ---- main chain ----------------------------------------------------
+  \node[lab] (E)  at (-0.6,0) {$\mathbf{\tilde{y}}$};
+  \node[blk] (CL) at ( 1.2,0) {$\bilinearblock^{d \to h \times k}$};
+  \node[blk] (SM) at ( 4.9,0) {$\mathrm{softmax}_k(\cdot/t)$};
+  \node[blk] (DB) at ( 9.4,0) {$\dictblock^{h \times k \to h \times e}$};
+  \node[blk] (SU) at (12.3,0) {$\sum^{h}_{i=1}$};
+  \node[lab] (F)  at (13.6,0) {$F'$\\ pooled\\ features};
+
+  \draw[sig] (E)  -- (CL);
+  \draw[sig] (CL) -- node[below,lab]{$K$\\ logits}   (SM);
+  \draw[sig] (SM) -- node[below,lab]{$P$\\ classifications}   (DB);
+  \draw[sig] (DB) -- node[below,lab]{$F$\\ features} (SU);
+  \draw[sig] (SU) -- (F);
+
+  %% ---- training-time hooks and the intervention interface (above) ----
+  \node[hook] (nk) at (3.0,1.5) {$+\,\varepsilon_K$,\ winner dropout};
+  \node[hook] (iv) at (7.0,2.3) {\texttt{DictIntervention}\\
+                                 set / add / sub / ablate / scale};
+  \node[hook] (nf) at (11.4,1.5) {$+\,\varepsilon_F$};
+  \draw[aux] (nk) -- (3.0,0.20);
+  \draw[aux] (iv) -- (7.0,0.20);
+  \draw[aux] (nf) -- (11.4,0.20);
+
+  %% ---- where each regulariser attaches (below) -----------------------
+  \node[hook] (lp) at (4.9,-1.8)
+    {$H$\quad $\mathrm{KL}_m$\quad $\mathrm{cossim}_b$};
+  \node[hook] (lf) at (9.4,-1.8)
+    {$\mathrm{L1}$\quad $\mathrm{cossim}_h$};
+  \draw[aux] (SM.south) -- (lp);
+  \draw[aux] (DB.south) -- (lf);
+
+\end{tikzpicture}
+

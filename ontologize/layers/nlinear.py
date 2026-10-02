@@ -1,4 +1,14 @@
 #Bilinear layer classes
+"""Multilinear and bilinear neural network interaction layers and blocks.
+
+Implements higher-order polynomial interactions between input features:
+- `NLinear`: Order-n multilinear gated projection `fn_gate(X @ W_0.T) * prod_{i=1}^{n-1}(X @ W_i.T)`.
+- `Bilinear`: Order-2 bilinear layer with symmetric interaction tensor, Jacobian,
+  and eigendecomposition for interpretability (Pearce et al., 2025).
+- `NLinearBlock`: Multihead extension of `NLinear` mapping inputs to `(..., h, d_out)`.
+- `BilinearBlock`: Multihead extension of `Bilinear` with per-head eigendecomposition
+  and adjoint reversal.
+"""
 
 import jax
 import jax.numpy as jnp
@@ -10,33 +20,10 @@ from .sparse import Sparse
 from .linear import get_activation, get_dtype
 from ontologize.fns.loss import ghostgrad
 
-def orient(V: Float[Array, "... d"], lam: Float[Array, "... 1"]
-           ) -> Float[Array, "... d"]:
-    """Give an eigenvector a well-defined sign.
-
-    `eigh` fixes eigenvectors only up to sign, so a `rev` built on them
-    returns a direction whose sign is a property of the LAPACK routine
-    rather than of the layer. Two factors settle it: the eigenvalue's
-    sign, which says whether the form grows or shrinks along the vector,
-    and a tie-break putting the largest-magnitude coordinate positive,
-    which is what makes the result reproducible at all.
-
-    This cannot supply the sign a STEERING caller wants. Moving from `x`
-    along `v` changes the logit `x'Bx` by `2e*lam*(x.v) + e^2*lam`, so
-    the ascent direction depends on `x.v` and is a property of the
-    sample, not of the weights. A weight-only linear reverse has no
-    access to it; `x'Bx`'s gradient does (`Bilinear.jacobian`)."""
-    i = jnp.argmax(jnp.abs(V), axis=-1, keepdims=True)
-    lead = jnp.take_along_axis(V, i, axis=-1)
-    s = jnp.where(lead < 0, -1.0, 1.0) * jnp.where(lam < 0, -1.0, 1.0)
-    return V * s.astype(V.dtype)
-
-
 class NLinear(Sparse):
     """Generalization of `Bilinear` to arbitrary `n`. Like `Linear`, has `fwd`
     methods for computing ghost gradients. Unlike `Linear` and `Bilinear, 
-    it does not have a `rev` method, as eigendecomposition is unimplemented.
-    `gate` is a function only applied to the first slice along the `n` dimension."""
+    it does not have a `rev` method, as eigendecomposition is unimplemented."""
     d_in: int = 0
     d_out: int = 0
     n: int = 2
@@ -47,6 +34,11 @@ class NLinear(Sparse):
     dtype_p_str: str = "bfloat16"
 
     def setup(self):
+        """Initialize layer parameters and resolve gating activation function.
+
+        Allocates weight tensor `(n, d_out, d_in)` using LeCun normal initialization
+        and optional bias vector `(d_out,)` using zeros initialization.
+        """
         super().setup()
         self.fn_gate = get_activation(self.gate)
         # weight shape in PyTorch was (d_out, d_in, n)
@@ -68,38 +60,70 @@ class NLinear(Sparse):
             self.bias = None
 
     def nfwd(self, X: Float[Array, "... d_in"]) -> Float[Array, "n ... d_out"]:
-        """`self.fwd` without reducing the `n` dimension."""
+        """Computes all `n` linear projections independently.
+
+        Args:
+            X: Input tensor of shape `(..., d_in)`.
+
+        Returns:
+            Projected tensor array of shape `(n, ..., d_out)` where index `i` along
+            axis 0 corresponds to branch projection `X @ W_i.T`.
+        """
         X = X.astype(self.dtype)
         W = self.weight.astype(self.dtype)
         Ys = jnp.einsum("...m,ndm->n...d", X, W)
         return Ys
 
     def fwd(self, X: Float[Array, "... d_in"]) -> Float[Array, "... d_out"]:
+        """Computes the gated multilinear product across all `n` projection branches.
+
+        Evaluates `self.fn_gate(Ys[0]) * prod_{i=1}^{n-1}(Ys[i])`.
+
+        Args:
+            X: Input tensor of shape `(..., d_in)`.
+
+        Returns:
+            Multilinear interaction tensor of shape `(..., d_out)`.
+        """
         Ys = self.nfwd(X)
         return self.fn_gate(Ys[0]) * jnp.prod(Ys[1:], axis=0)
 
     def __call__(self, X: Float[Array, "... d_in"]) -> Float[Array, "... d_out"]:
+        """Full forward pass applying multilinear interaction, activation, and bias.
+
+        Args:
+            X: Input tensor of shape `(..., d_in)`.
+
+        Returns:
+            Output tensor of shape `(..., d_out)`.
+        """
         Y = self.fn(self.fwd(X))
         return self.addbias(Y, self.bias)
 
-    def withL1(self, X: Float[Array, "... d_in"]
-               ) -> Tuple[Float[Array, "... d_out"], Float[Array, ""]]:
-        """As `NLinear.__call__` except for returning L1 loss calculated from the gate mask."""
-        Ys = self.nfwd(X)
-        mask = self.fn_gate(Ys[0])
-        L1 = self.l1(mask)
-        Y = self.fn(mask * jnp.prod(Ys[1:], axis=0))
-        return self.addbias(Y, self.bias), L1
-
     def weight_ubind(self) -> Tuple[Float[Array, "d_out d_in"], ...]:
-        """Unbind weights as a `Tuple` of `n` matrices"""
+        """Unbind weights as a `Tuple` of `n` matrices.
+
+        Returns:
+            Tuple of `n` weight matrices, each of shape `(d_out, d_in)`. For `n=2`,
+            returns `(W, V)`.
+        """
         # returns W, V for n=2
         W = self.weight.astype(self.dtype)
         return tuple(W)
 
     def ghost(self, X: Float[Array, "... d_in"], Y: Float[Array, "... d_out"],
               *args, **kwargs) -> Float[Array, "... d_out"]:
-        """Map `fns.loss.ghostgrad` over `n`."""
+        """Map `fns.loss.ghostgrad` over `n`.
+
+        Args:
+            X: Input tensor of shape `(..., d_in)`.
+            Y: Output tensor of shape `(..., d_out)` used to identify dead features.
+            *args: Additional arguments forwarded to `ghostgrad`.
+            **kwargs: Additional keyword arguments forwarded to `ghostgrad`.
+
+        Returns:
+            Ghost activation tensor of shape `(..., d_out)`.
+        """
         W = self.weight.astype(self.dtype)
         X = X.astype(self.dtype)
         Y = Y.astype(self.dtype)
@@ -110,6 +134,7 @@ class Bilinear(NLinear):
     """Bilinear layer with optional bias and activation function 
     as described by Pearce et al. (2025)."""
     def setup(self):
+        """Enforces order `n = 2` and initializes `(W, V)` parameters."""
         object.__setattr__(self, 'n', 2)
         super().setup()
 
@@ -126,6 +151,16 @@ class Bilinear(NLinear):
         return jnp.einsum("...k, ked -> ...ed", Y, B)
 
     def jacobian(self, X: Float[Array, "... d_in"]) -> Float[Array, "... d_out d_in"]:
+        """Computes the Jacobian matrix `dY / dX` at input point `X`.
+
+        Evaluates `J_k = (X @ V_k) * W_k + (X @ W_k) * V_k` via the product rule.
+
+        Args:
+            X: Input tensor of shape `(..., d_in)`.
+
+        Returns:
+            Jacobian tensor of shape `(..., d_out, d_in)`.
+        """
         X = X.astype(self.dtype)
         W, V = self.weight_ubind() # Each is (d_out, d_in)
 
@@ -146,13 +181,22 @@ class Bilinear(NLinear):
         return eigenvals, eigenvecs
 
     def rev(self, Y: Float[Array, "... d_out"]) -> Float[Array, "... d_in"]:
-        """Approximate reverse pass using only the `top1` eigenvalues."""
+        """Approximate reverse pass using only the `top1` eigenvalues.
+
+        Picks the eigenvector corresponding to the largest absolute eigenvalue for each
+        output feature `d_out` and projects `Y` onto them: `Y @ vecs_top1`.
+
+        Args:
+            Y: Output activation tensor of shape `(..., d_out)`.
+
+        Returns:
+            Reconstructed input-space vector of shape `(..., d_in)`.
+        """
         vals, vecs = self.decompose()
         top1 = jnp.argmax(jnp.abs(vals), axis=1)
         # eigh returns eigenvectors as columns: v[:, i] pairs with vals[i]
         vecs_top1 = jax.vmap(lambda v, i: v[:, i])(vecs, top1)
-        lam = jnp.take_along_axis(vals, top1[:, None], axis=1)
-        return jnp.dot(Y.astype(self.dtype), orient(vecs_top1, lam))
+        return jnp.dot(Y.astype(self.dtype), vecs_top1)
 
     def project(self, Y_0: Float[Array, "... d_out"]
                 ) -> Tuple[Float[Array, "... d_out d_in"], 
@@ -176,6 +220,10 @@ class NLinearBlock(Sparse):
     dtype_p_str: str = "bfloat16"
 
     def setup(self):
+        """Initialize multihead parameters and resolve gating activation function.
+
+        Allocates weight tensor `(n, h, d_out, d_in)` and optional bias `(h, d_out)`.
+        """
         super().setup()
         self.fn_gate = get_activation(self.gate)
         self.weight = self.param(
@@ -195,38 +243,70 @@ class NLinearBlock(Sparse):
             self.bias = None
 
     def nfwd(self, X: Float[Array, "... d_in"]) -> Float[Array, "n ... h d_out"]:
-        """As `NLinear.nfwd`, but broadcast over the `h` axis."""
+        """As `NLinear.nfwd`, but broadcast over the `h` axis.
+
+        Computes `einsum("...m,nhdm->n...hd", X, W)`.
+
+        Args:
+            X: Input tensor of shape `(..., d_in)`.
+
+        Returns:
+            Projected multihead tensor of shape `(n, ..., h, d_out)`.
+        """
         X = X.astype(self.dtype)
         W = self.weight.astype(self.dtype)
         Ys = jnp.einsum("...m,nhdm->n...hd", X, W)
         return Ys
 
     def fwd(self, X: Float[Array, "... d_in"]) -> Float[Array, "... h d_out"]:
-        """As `NLinear.fwd`, but broadcast over the `h` axis."""
+        """As `NLinear.fwd`, but broadcast over the `h` axis.
+
+        Evaluates `self.fn_gate(Ys[0]) * prod_{i=1}^{n-1}(Ys[i])`.
+
+        Args:
+            X: Input tensor of shape `(..., d_in)`.
+
+        Returns:
+            Multihead interaction tensor of shape `(..., h, d_out)`.
+        """
         Ys = self.nfwd(X)
         return self.fn_gate(Ys[0]) * jnp.prod(Ys[1:], axis=0)
 
     def __call__(self, X: Float[Array, "... d_in"]) -> Float[Array, "... h d_out"]:
+        """Full forward pass applying multihead multilinear interaction, activation, and head bias.
+
+        Args:
+            X: Input tensor of shape `(..., d_in)`.
+
+        Returns:
+            Multihead output tensor of shape `(..., h, d_out)`.
+        """
         # X: (batchsize, m) -> (batchsize, d, h)
         Y = self.fn(self.fwd(X))
         return self.haddbias(Y, self.bias)
 
-    def withL1(self, X: Float[Array, "... d_in"]
-               ) -> Tuple[Float[Array, "... h d_out"], Float[Array, ""]]:
-        """As `NLinearBlock.__call__` except for returning L1 loss calculated from the gate mask."""
-        Ys = self.nfwd(X)
-        mask = self.fn_gate(Ys[0])
-        L1 = self.l1(mask)
-        Y = self.fn(mask * jnp.prod(Ys[1:], axis=0))
-        return self.haddbias(Y, self.bias), L1
-
     def weight_ubind(self) -> Tuple[Float[Array, "h d_out d_in"], ...]:
+        """Unbinds multihead weights along axis 0 into a tuple of `n` tensors.
+
+        Returns:
+            Tuple of `n` arrays of shape `(h, d_out, d_in)`.
+        """
         W = self.weight.astype(self.dtype)
         return tuple(W)
 
     def ghost(self, X: Float[Array, "... d_in"], Y: Float[Array, "... h d_out"],
               *args, **kwargs) -> Float[Array, "... d_out"]:
-        """Map `fns.loss.ghostgrad` over `n` and `h`."""
+        """Map `fns.loss.ghostgrad` over `n` and `h`.
+
+        Args:
+            X: Input tensor of shape `(..., d_in)`.
+            Y: Multihead output tensor of shape `(..., h, d_out)`.
+            *args: Additional arguments forwarded to `ghostgrad`.
+            **kwargs: Additional keyword arguments forwarded to `ghostgrad`.
+
+        Returns:
+            Combined ghost gradient tensor of shape `(..., d_out)`.
+        """
         W = self.weight.astype(self.dtype)
         X = X.astype(self.dtype)
         Y = Y.astype(self.dtype)
@@ -239,7 +319,17 @@ class NLinearBlock(Sparse):
     def rev(self, Y: Float[Array, "... h d_out"]) -> Float[Array, "... d_in"]:
         """Adjoint reverse pass, summed over heads. Only defined for `n=1`
         (a plain per-head linear map), where the adjoint is the transpose;
-        the gate is ignored."""
+        the gate is ignored.
+
+        Args:
+            Y: Multihead tensor of shape `(..., h, d_out)`.
+
+        Returns:
+            Input-space tensor of shape `(..., d_in)`.
+
+        Raises:
+            NotImplementedError: If `self.n != 1`.
+        """
         if self.n != 1:
             raise NotImplementedError(
                 "NLinearBlock.rev requires n=1; use BilinearBlock for n=2")
@@ -251,17 +341,29 @@ class NLinearBlock(Sparse):
 class BilinearBlock(NLinearBlock):
     """Multihead version of `Bilinear`."""
     def setup(self):
+        """Enforces order `n = 2` and initializes multihead `(W, V)` parameters."""
         object.__setattr__(self, 'n', 2)
         super().setup()
 
     def bilinearTensor(self) -> Float[Array, "h d_out d_in d_in"]:
-        """As `Bilinear.bilinearTensor`, but broadcast over the `h` axis."""
+        """As `Bilinear.bilinearTensor`, but broadcast over the `h` axis.
+
+        Returns:
+            Multihead symmetric bilinear tensor of shape `(h, d_out, d_in, d_in)`.
+        """
         W, V = self.weight_ubind()
         B = jnp.einsum("hke, hkf -> hkef", W, V)
         return 0.5 * (B + jnp.swapaxes(B, -1, -2))
 
     def jacobian(self, x: Float[Array, "... d_in"]) -> Float[Array, "... h d_out d_in"]:
-        """As `Bilinear.jacobian`, but broadcast over the `h` axis."""
+        """As `Bilinear.jacobian`, but broadcast over the `h` axis.
+
+        Args:
+            x: Input tensor of shape `(..., d_in)`.
+
+        Returns:
+            Multihead Jacobian tensor of shape `(..., h, d_out, d_in)`.
+        """
         x = x.astype(self.dtype)
         W, V = self.weight_ubind() # Each is (d_out, d_in)
 
@@ -277,14 +379,27 @@ class BilinearBlock(NLinearBlock):
 
     def interactionMat(self, Y_0: Float[Array, "... h d_out"]
                        ) -> Float[Array, "... h d_in d_in"]:
-        """As `Bilinear.interactionMat`, but broadcast over the `h` axis."""
+        """As `Bilinear.interactionMat`, but broadcast over the `h` axis.
+
+        Args:
+            Y_0: Multihead output tensor of shape `(..., h, d_out)`.
+
+        Returns:
+            Multihead interaction matrix tensor of shape `(..., h, d_in, d_in)`.
+        """
         Y = Y_0.astype(self.dtype)
         B = self.bilinearTensor()
         return jnp.einsum("...hk, hkef -> ...hef", Y, B)
 
     def decompose(self) -> Tuple[Float[Array, "h d_out d_in"],
                                  Float[Array, "h d_out d_in d_in"]]:
-        """As `Bilinear.decompose`, but broadcast over the `h` axis."""
+        """As `Bilinear.decompose`, but broadcast over the `h` axis.
+
+        Returns:
+            Tuple of:
+                - `eigenvals`: Tensor of shape `(h, d_out, d_in)`.
+                - `eigenvecs`: Orthonormal eigenvectors of shape `(h, d_out, d_in, d_in)`.
+        """
         B = self.bilinearTensor()
         # B has shape (h, k, d, d) -> we want to map over k and h
         eigenvals, eigenvecs = jax.vmap(jax.vmap(jnp.linalg.eigh))(B)
@@ -293,19 +408,31 @@ class BilinearBlock(NLinearBlock):
     def project(self, Y_0: Float[Array, "... h d_out"]
                 ) -> Tuple[Float[Array, "... h d_out d_in"], 
                            Float[Array, "... h d_out d_in d_in"]]:
-        """As `Bilinear.project`, but broadcast over the `h` axis."""
+        """As `Bilinear.project`, but broadcast over the `h` axis.
+
+        Args:
+            Y_0: Multihead output tensor of shape `(..., h, d_out)`.
+
+        Returns:
+            Tuple of `(vals, vecs)`.
+        """
         Y = Y_0.astype(self.dtype)
         vals, vecs = self.decompose()
         vecs = jnp.einsum("hkef, ...hk -> ...hkef", vecs, Y)
         return vals, vecs
 
     def rev(self, Y: Float[Array, " ... h d_out"]) -> Float[Array, "... d_in"]:
-        """As `Bilinear.rev`, but broadcast over the `h` axis and summed over heads."""
+        """As `Bilinear.rev`, but broadcast over the `h` axis and summed over heads.
+
+        Args:
+            Y: Multihead output tensor of shape `(..., h, d_out)`.
+
+        Returns:
+            Reconstructed input-space vector of shape `(..., d_in)`.
+        """
         vals, vecs = self.decompose()
         top1 = jnp.argmax(jnp.abs(vals), axis=-1)         # (h, d_out)
         # eigh returns eigenvectors as columns: gather v[..., :, top1]
         vecs_top1 = jnp.take_along_axis(
             vecs, top1[..., None, None], axis=-1).squeeze(-1)  # (h, d_out, d_in)
-        lam = jnp.take_along_axis(vals, top1[..., None], axis=-1)
-        return jnp.einsum("...hk, hkd -> ...d", Y.astype(self.dtype),
-                          orient(vecs_top1, lam))
+        return jnp.einsum("...hk, hkd -> ...d", Y.astype(self.dtype), vecs_top1)

@@ -3,16 +3,15 @@
 import pickle
 
 import numpy as np
-import pytest
 
 from ontologize.data.loaders import NpyDataSource
 
 
-def make_source(tmp_path, **kwargs):
+def make_source(tmp_path):
     arr = np.arange(40, dtype=np.float32).reshape(10, 4)
     path = tmp_path / "cache.npy"
     np.save(path, arr)
-    return NpyDataSource(path, **kwargs), arr
+    return NpyDataSource(path), arr
 
 
 def test_len_and_random_access(tmp_path):
@@ -38,30 +37,3 @@ def test_pickles_into_workers(tmp_path):
     assert src2._arr is None
     assert len(src2) == 10
     assert np.array_equal(src2[7], arr[7])
-
-
-def test_holdout_hides_tail(tmp_path):
-    # the tail sae.py scores on (--eval-rows) must be unreachable when
-    # sonar.py trains with the matching `holdout`
-    src, arr = make_source(tmp_path, holdout=3)
-    assert len(src) == 7
-    assert np.array_equal(src[6], arr[6])
-    with pytest.raises(IndexError):
-        src[7]
-    with pytest.raises(IndexError):
-        src[-1]  # numpy wraparound must not reach the tail either
-
-
-def test_holdout_survives_pickle(tmp_path):
-    src, arr = make_source(tmp_path, holdout=3)
-    src2 = pickle.loads(pickle.dumps(src))
-    assert len(src2) == 7
-    with pytest.raises(IndexError):
-        src2[9]
-
-
-def test_holdout_out_of_range(tmp_path):
-    with pytest.raises(ValueError):
-        make_source(tmp_path, holdout=10)
-    with pytest.raises(ValueError):
-        make_source(tmp_path, holdout=-1)

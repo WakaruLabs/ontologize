@@ -1,3 +1,14 @@
+"""Loss functions, similarity metrics, information criteria, noise generators, and ghost gradients.
+
+This module provides the core mathematical functions used for dictionary learning objectives,
+regularization, and dead-feature revival:
+- Similarity and distance metrics: cosine similarity (`cossim`, `bcossim`), L0, L1, and L2 norms.
+- Information theory: Shannon entropy (`entropy`), Akaike (`aic`) and Bayesian (`bic`) information criteria.
+- Noise injection: Gaussian noise (`addnoise`), per-sample norm-scaled noise (`addnoise_batchnorm`),
+  and batch feature-variance scaled noise (`addnoise_featvar`).
+- Dead-feature ghost gradients: auxiliary gradient pathways (`l2_ghost`, `ghost`, `ghostgrad`)
+  preventing dictionary entries and linear units from permanently dying.
+"""
 import jax
 import jax.numpy as jnp
 from typing import Any, Callable, List, Optional, Tuple, TypeVar
@@ -6,35 +17,42 @@ import einops
 
 T = TypeVar('T') # generic type
 def identity(x: T, *args, **kwargs) -> T:
+    """Identity function returning input unchanged.
+
+    Used as a default passthrough activation, noise, or loss function.
+
+    Args:
+        x: Any input tensor or value.
+        *args: Ignored additional positional arguments.
+        **kwargs: Ignored additional keyword arguments.
+
+    Returns:
+        The input `x` unmodified.
+    """
     return x
 
-def recip_norm(sq: Float[Array, "..."]) -> Float[Array, "..."]:
-    """`1/sqrt(sq)` where `sq` is positive, and 0 where it is not.
-
-    The degenerate case is handled by definition rather than by adding an
-    epsilon to `sq`, because that epsilon is absolute while the quantities
-    here carry no guaranteed scale: once `sq` falls to the same order as
-    `jnp.finfo.eps` the guard dominates and the cosine is silently
-    deflated toward zero. That makes any cosine statistic built this way
-    reducible by shrinking the vectors rather than by separating their
-    directions -- which an optimizer under pressure will find. Defining a
-    zero vector's cosine as 0 costs nothing (it has no direction) and
-    leaves every nonzero vector exact at any scale.
-
-    The `where` is doubled so the gradient is also finite at `sq = 0`: the
-    inner one keeps the reciprocal-sqrt off the singular branch, and the
-    outer one selects it away."""
-    safe = jnp.where(sq > 0, sq, jnp.ones_like(sq))
-    return jnp.where(sq > 0, jax.lax.rsqrt(safe), jnp.zeros_like(sq))
-
 def cossim(x: Float[Array,  "d"], y: Float[Array, "d"]) -> Float[Array, ""]:
-    """Pairwise cosine similarity of two 1D arrays."""
-    return (jnp.dot(x, y) * recip_norm(jnp.sum(x ** 2))
-            * recip_norm(jnp.sum(y ** 2)))
+    """Pairwise cosine similarity of two 1D arrays.
+
+    Computes `dot(x, y) / (||x|| * ||y||)` with machine epsilon added to prevent
+    division by zero.
+
+    Args:
+        x: First 1D vector of shape `(d,)`.
+        y: Second 1D vector of shape `(d,)`.
+
+    Returns:
+        Scalar float array `()` containing the cosine similarity in `[-1.0, 1.0]`.
+    """
+    eps = jnp.finfo(x.dtype).eps
+    norm_x = jnp.sqrt(jnp.sum(x**2) + eps)
+    norm_y = jnp.sqrt(jnp.sum(y**2) + eps)
+    return jnp.dot(x, y) / (norm_x * norm_y)
 
 def bcossim(X: Float[Array, "... b d"]) -> Float[Array, "... b b"]:
     """Cosine similarity matrix for all samples. The -2 axis is assumed to be the batch dimension."""
-    X_norm = X * recip_norm((X ** 2).sum(axis=-1, keepdims=True))
+    norms = jnp.sqrt((X ** 2).sum(axis=-1, keepdims=True) + jnp.finfo(X.dtype).eps)
+    X_norm = X / norms
     return jnp.einsum("...id,...jd->...ij", X_norm, X_norm) 
 
 def entropy(X: Float[Array, "... d"]) -> Float[Array, "..."]:
@@ -45,22 +63,32 @@ def entropy(X: Float[Array, "... d"]) -> Float[Array, "..."]:
 
 def l0(x: Float[Array, "..."], reduction: Callable = jnp.sum
        ) -> Float[Array, ""]:
-    """Applies `reduction` to `abs(x) > 0`. When `reduction=jnp.sum` this gives L0 loss."""
-    return reduction(jnp.abs(x) > 0)
+    """Applies `reduction` to `abs(x) > 0`. When `reduction=jnp.sum` this gives L0 loss.
 
-def batchmean(X: Float[Array, "b ..."]) -> Float[Array, ""]:
-    """Reduction for `l1` (which has already taken the absolute value):
-    each sample's total over its feature axes, averaged over the batch
-    (axis 0). Independent of batch size, so a weight calibrated against it
-    keeps its strength when `b` changes -- a bare `jnp.sum` does not.
-    Matches sae.py's convention for the same quantity (`|z|_1` per sample,
-    meaned over the batch), which makes the Ontologizer and SAE L1 columns
-    directly comparable."""
-    return X.reshape(X.shape[0], -1).sum(-1).mean()
+    Measures sparsity by counting non-zero entries in `x`.
+
+    Args:
+        x: Input tensor of arbitrary shape `(...)`.
+        reduction: Aggregation function (default `jnp.sum`) reducing boolean array to a scalar.
+
+    Returns:
+        Scalar float array `()` with the reduced non-zero count.
+    """
+    return reduction(jnp.abs(x) > 0)
 
 def l1(x: Float[Array, "..."], reduction: Callable = jnp.sum
        ) -> Float[Array, ""]:
-    """Applies `reduction` to `abs(x)`. When `reduction=jnp.sum`, this gives L1 loss."""
+    """Applies `reduction` to `abs(x)`. When `reduction=jnp.sum`, this gives L1 loss.
+
+    Computes the L1 norm or mean absolute error of `x`.
+
+    Args:
+        x: Input tensor of arbitrary shape `(...)`.
+        reduction: Aggregation function (default `jnp.sum`) reducing array to a scalar.
+
+    Returns:
+        Scalar float array `()` containing the reduced L1 magnitude.
+    """
     return reduction(jnp.abs(x))
 
 def l2(x: Float[Array, "..."], y: Float[Array, "..."], 
@@ -71,6 +99,17 @@ def l2(x: Float[Array, "..."], y: Float[Array, "..."],
 
 def errorct(pred: Float[Array, "... d"], target: UInt[Array, "..."]
             ) -> UInt[Array, ""]:
+    """Count classification errors between predictions and integer class targets.
+
+    Computes `argmax(pred, axis=-1)` and counts mismatches with `target`.
+
+    Args:
+        pred: Predicted class logits or probabilities of shape `(..., d)`.
+        target: Ground-truth integer labels of shape `(...)`.
+
+    Returns:
+        Scalar unsigned integer array `()` containing total misclassification count.
+    """
     return jnp.sum(jnp.argmax(pred, -1) != target)
 
 def aic(k, L):
@@ -90,7 +129,19 @@ def bic(k, n, L):
 
 def addnoise(x: Float[Array, "..."], rng: PRNGKeyArray,  
              stddev: float=0.0) -> Float[Array, "..."]:
-    """Adds Gaussian noise with given standard deviation to `x` using a given `PRNGKey`."""
+    """Adds Gaussian noise with given standard deviation to `x` using a given `PRNGKey`.
+
+    Uses `jax.lax.cond` (rather than a Python `if`) so `stddev` can be traced; the
+    noise is always sampled, and is only added when `stddev > 0.0`.
+
+    Args:
+        x: Input tensor of arbitrary shape `(...)`.
+        rng: JAX pseudo-random number generator key.
+        stddev: Standard deviation of normal noise. If `<= 0.0`, returns `x` unchanged.
+
+    Returns:
+        Tensor of shape `(...)` with additive Gaussian noise.
+    """
     # use jax.lax.cond instead of Python if for JAX tracing compatibility
     noise = jax.random.normal(rng, shape=x.shape, dtype=x.dtype)
     return jax.lax.cond(

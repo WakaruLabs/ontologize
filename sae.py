@@ -7,9 +7,8 @@ comparable. Deliberately NOT built from the ontologize layers: the abs()'d
 dictionary and softmax selection make DictEnc structurally not an SAE, and
 the baseline should be the field-standard architecture at its
 best-practice configuration (pre-subtracted decoder bias, unit-norm
-decoder rows, tied init, aux-k dead-latent revival -- or, for the
-ReLU+L1 arm, --resample-every swaps in that lineage's neuron
-resampling), not a handicapped reimplementation.
+decoder rows, tied init, aux-k dead-latent revival), not a handicapped
+reimplementation.
 
 Matching the resid_nc Ontologizer (d=1024, e_dec=2048, k=32, h=32, l=5;
 ~23M params, l*h*k = 5120 dictionary entries, hard code = 800 bits/sample):
@@ -20,12 +19,9 @@ Matching the resid_nc Ontologizer (d=1024, e_dec=2048, k=32, h=32, l=5;
                        so topk=32 at m=5120 sits at the 800-bit point)
 
 Unlike sonar.py this takes CLI flags (it exists to be swept). The final
-eval slice is the cache TAIL (--eval-rows, never trained on here).
-sonar.py now holds out the same tail (its `holdout` config, same 32768
-default), so the tail is out-of-sample for both models -- but Ontologizer
-checkpoints trained before that holdout landed saw the full cache, so for
-writeups comparing against those, re-evaluate both models on freshly
-encoded data.
+eval slice is the cache TAIL (--eval-rows, never trained on here) -- note
+the Ontologizer runs trained on the full cache, so for the writeup
+re-evaluate both models on freshly encoded data.
 
 Structural-ablation rungs (each adds one Ontologizer-style commitment to
 the standard architecture, so the interpretability battery can attribute
@@ -66,8 +62,6 @@ gains to specific structure rather than to the whole architecture):
   uv run python sae.py                          # m=5120 topk=32
   uv run python sae.py --m 11264 --topk 64
   uv run python sae.py --topk 0 --l1 3e-4       # vanilla ReLU+L1
-  uv run python sae.py --topk 0 --l1 3e-4 --aux-k 0 --resample-every 5000
-                                                # canonical L1-lineage revival
   uv run python sae.py --m 5120 --topk 0 --groups 160          # 160 "heads"
   uv run python sae.py --m 5120 --topk 0 --groups 160 --group-fn softmax
   uv run python sae.py --m 5120 --topk 32 --prefixes 5         # 5 "layers"
@@ -75,28 +69,7 @@ gains to specific structure rather than to the whole architecture):
 
 Resumable: state is snapshotted atomically every --save-each steps and
 picked up automatically on restart. loss.csv columns:
-step, loss, mse_w, fvu_eval, l0_eval, l1_eval, dead, revived, new_dead,
-use_ent, hifreq, wdec_maxcos, wdec_meancos, fvu_train
-(runs from before l1_eval have 6 columns ending at dead; runs from
-before the health stats have 7).
-  l1_eval        held-out mean per-sample |z|_1, logged unpenalized in
-                 every mode -- its trajectory separates penalty-driven
-                 sparsity (--l1) from what the task and the activation
-                 rule produce on their own
-  revived,       dead-mask churn between consecutive evals: revival
-  new_dead       efficacy (resampling predicts step-drops that stick;
-                 aux-k on the L1 arm predicts standing churn at the
-                 firing boundary, since revival fights the penalty)
-  use_ent        effective number of latents in use (exp-entropy of the
-                 firing-frequency distribution; KL_m's SAE counterpart)
-  hifreq         latents firing on >10% of eval samples (dense features,
-                 which autointerp reliably scores poorly)
-  wdec_maxcos,   off-diagonal |cos| of unit-normalized decoder rows:
-  wdec_meancos   duplication/splitting forming over training (cossim_h's
-                 counterpart; headcoh/splitting measure this post hoc)
-  fvu_train      whitened FVU on a fixed held-in slice with its own
-                 constant-predictor baseline -- fvu_train vs fvu_eval is
-                 the generalization gap
+step, loss, mse_w, fvu_eval, l0_eval, dead.
 """
 # disable preallocation so this can share the GPU (same as sonar.py)
 import os
@@ -134,8 +107,7 @@ def parse_args():
     p.add_argument("--prefixes", type=int, default=1,
                    help="nested prefix losses over P latent blocks "
                         "(matryoshka/deepsup analogue; 1 = off)")
-    p.add_argument("--enc", choices=["linear", "bilinear", "gated"],
-                   default="linear",
+    p.add_argument("--enc", choices=["linear", "bilinear"], default="linear",
                    help="encoder form; bilinear latents admit eigenfeature "
                         "analysis")
     p.add_argument("--epochs", type=int, default=20)
@@ -149,11 +121,6 @@ def parse_args():
                    help="held-out tail rows of the cache (excluded from training)")
     p.add_argument("--aux-k", type=int, default=512,
                    help="dead latents used to reconstruct the residual (0 = off)")
-    p.add_argument("--resample-every", type=int, default=0,
-                   help="resample dead latents every N steps toward "
-                        "high-loss examples (Bricken et al. 2023, the "
-                        "ReLU+L1 lineage's revival; needs --aux-k 0 and "
-                        "--enc linear; pick N > --dead-steps; 0 = off)")
     p.add_argument("--dead-steps", type=int, default=1000,
                    help="steps without firing before a latent counts as dead")
     p.add_argument("--save-each", type=int, default=1000)
@@ -174,8 +141,6 @@ def run_name(cfg):
         name = f"m{cfg.m}_l1{cfg.l1:g}"
     if cfg.enc == "bilinear":
         name += "_bl"
-    if cfg.enc == "gated":
-        name += "_gated"
     if cfg.prefixes > 1:
         name += f"_p{cfg.prefixes}"
     if cfg.seed != 42:
@@ -193,17 +158,7 @@ def init_params(rng, d, m, x_mean, enc="linear", x_scale=1.0):
     W_dec = W_dec / jnp.linalg.norm(W_dec, axis=-1, keepdims=True)
     params = {"b_enc": jnp.zeros(m), "W_dec": W_dec,
               "b_dec": jnp.asarray(x_mean, jnp.float32)}
-    if enc == "gated":
-        # Rajamanoharan et al. 2024: one tied encoder direction per latent,
-        # read twice. `b_enc` is unused -- the two paths carry their own
-        # biases -- so it is dropped rather than left to confuse a reader
-        # of the checkpoint.
-        del params["b_enc"]
-        params["W_gate"] = W_dec.T
-        params["r_mag"] = jnp.zeros(m)      # W_mag = exp(r_mag) * W_gate
-        params["b_gate"] = jnp.zeros(m)
-        params["b_mag"] = jnp.zeros(m)
-    elif enc == "bilinear":
+    if enc == "bilinear":
         # factors act on [x - b_dec; 1]: the constant coordinate gives the
         # quadratic form linear terms (resid_const's sign-blindness fix).
         # Scale so the product matches the tied linear init's pre-activation
@@ -218,32 +173,11 @@ def init_params(rng, d, m, x_mean, enc="linear", x_scale=1.0):
     return params
 
 
-def gated_pre(params, X):
-    """Gated SAE's two read-outs of one tied encoder direction: the gate
-    logits that decide WHICH latents fire and the magnitude logits that
-    decide how much (Rajamanoharan et al. 2024).
-
-    The magnitude path shares `W_gate` up to a learned per-latent scale
-    `exp(r_mag)`, which is what lets an L1 on the gate control sparsity
-    without shrinking the magnitudes it selects -- the pathology of
-    ReLU+L1. The gate enters the code through a step function and so
-    passes no gradient; `W_gate` learns from the L1 and from the
-    auxiliary reconstruction in `loss_fn`, and without that auxiliary
-    term nothing would oppose the L1 and every gate would shut."""
-    Xc = X - params["b_dec"]
-    pre = Xc @ params["W_gate"]
-    return (pre + params["b_gate"],
-            pre * jnp.exp(params["r_mag"]) + params["b_mag"])
-
-
 def preacts(params, X):
-    """Raw encoder logits for any encoder form (which form a params dict
-    uses is carried by its keys, so downstream consumers need no flag).
-    For the gated form this is the magnitude path, the one whose
-    ReLU carries the coefficient."""
+    """Raw encoder logits for either encoder form (which form a params
+    dict uses is carried by its keys, so downstream consumers need no
+    flag)."""
     Xc = X - params["b_dec"]
-    if "W_gate" in params:
-        return gated_pre(params, X)[1]
     if "W_enc2" in params:
         Xa = jnp.concatenate([Xc, jnp.ones_like(Xc[..., :1])], -1)
         return (Xa @ params["W_enc1"]) * (Xa @ params["W_enc2"]) \
@@ -290,41 +224,11 @@ def activate(pre, topk, groups=0, group_fn="top1"):
 
 
 def encode(params, X, topk, groups=0, group_fn="top1"):
-    if "W_gate" in params:
-        # sparsity comes from the gate, so topk/groups do not apply
-        pi_gate, pi_mag = gated_pre(params, X)
-        return jnp.where(pi_gate > 0, jax.nn.relu(pi_mag), 0.0)
     return activate(preacts(params, X), topk, groups, group_fn)
 
 
 def decode(params, z):
     return z @ params["W_dec"] + params["b_dec"]
-
-
-def gated_loss(params, X, w_sqrt, l1):
-    """Gated SAE objective: reconstruction + L1 on the gate + the
-    auxiliary reconstruction that keeps the gate honest.
-
-    The three terms are not separable. The gate reaches the code only
-    through a step function, so reconstruction gives it no gradient and
-    the L1 alone would drive every gate shut; the auxiliary term asks
-    `ReLU(gate)` to reconstruct through a frozen decoder, which is what
-    makes the gate learn what is worth opening for. Dropping it leaves a
-    model that trains, reports a loss, and encodes nothing.
-
-    Both reconstruction terms are whitened, so `l1` is priced against the
-    same MSE scale as every other mode here."""
-    pi_gate, pi_mag = gated_pre(params, X)
-    z = jnp.where(pi_gate > 0, jax.nn.relu(pi_mag), 0.0)
-    recon = decode(params, z)
-    mse = (((recon - X) * w_sqrt) ** 2).mean()
-    g = jax.nn.relu(pi_gate)
-    # frozen decoder: this term trains the gate, not the dictionary
-    aux_recon = g @ jax.lax.stop_gradient(params["W_dec"]) \
-        + jax.lax.stop_gradient(params["b_dec"])
-    aux = (((aux_recon - X) * w_sqrt) ** 2).mean()
-    loss = mse + l1 * g.sum(-1).mean() + aux
-    return loss, (mse, (z > 0.0).any(0))
 
 
 def make_step(tx, cfg):
@@ -335,8 +239,6 @@ def make_step(tx, cfg):
     renorm = not (groups and group_fn == "softmax")
 
     def loss_fn(params, X, w_sqrt, dead):
-        if "W_gate" in params:
-            return gated_loss(params, X, w_sqrt, l1)
         pre = preacts(params, X)
         z = activate(pre, topk, groups, group_fn)
         if P > 1:
@@ -388,66 +290,22 @@ def make_eval(topk, groups=0, group_fn="top1"):
     def eval_batch(params, X, w_sqrt):
         z = encode(params, X, topk, groups, group_fn)
         err = ((decode(params, z) - X) * w_sqrt) ** 2
-        # l1 is logged unpenalized in every mode, so its trajectory
-        # separates penalty-driven sparsity (--l1) from what the task and
-        # the activation rule produce on their own
-        return (err.mean(0), (z > 0.0).sum(-1).mean(),
-                jnp.abs(z).sum(-1).mean(), (z > 0.0).sum(0))
+        return err.mean(0), (z > 0.0).sum(-1).mean()
 
     return eval_batch
 
 
 def evaluate(eval_batch, params, X_eval, w_sqrt, base_w, b):
-    """Returns (fvu, l0, l1, freq): whitened FVU, mean per-sample L0 and
-    |z|_1, and each latent's firing frequency over the evaluated rows."""
     b = min(b, len(X_eval))
     mse = np.zeros(X_eval.shape[1])
     l0 = 0.0
-    l1 = 0.0
-    fires = 0
     nb = 0
     for i in range(0, len(X_eval) - b + 1, b):
-        e, l, a, f = eval_batch(params, jnp.asarray(X_eval[i:i + b]), w_sqrt)
+        e, l = eval_batch(params, jnp.asarray(X_eval[i:i + b]), w_sqrt)
         mse += np.asarray(e)
         l0 += float(l)
-        l1 += float(a)
-        fires = fires + np.asarray(f)
         nb += 1
-    return (mse / nb).mean() / base_w, l0 / nb, l1 / nb, fires / (nb * b)
-
-
-def usage_stats(freq, hi=0.1):
-    """Usage-balance summaries from per-latent firing frequencies:
-    the effective number of latents in use (exp of the entropy of the
-    normalized firing-frequency distribution -- m when usage is uniform,
-    1 when one latent does everything) and the count of dense latents
-    (firing on more than `hi` of eval samples; dense features score
-    poorly under autointerp)."""
-    f = np.asarray(freq, np.float64)
-    s = f.sum()
-    if s <= 0:
-        return 0.0, 0
-    p = f[f > 0] / s
-    return float(np.exp(-(p * np.log(p)).sum())), int((f > hi).sum())
-
-
-def wdec_cos(params, chunk=1024):
-    """(max, mean) off-diagonal |cosine| between decoder rows -- the
-    training-time duplication/splitting signal headcoh.py and
-    splitting.py measure post hoc. Rows are unit-normalized first so the
-    stat is comparable across renorm modes; chunked so the (m, m)
-    similarity matrix never fully materializes."""
-    W = params["W_dec"]
-    Wn = W / (jnp.linalg.norm(W, axis=-1, keepdims=True) + 1e-9)
-    m = Wn.shape[0]
-    mx, tot = 0.0, 0.0
-    for i in range(0, m, chunk):
-        C = jnp.abs(Wn[i:i + chunk] @ Wn.T)
-        r = jnp.arange(C.shape[0])
-        C = C.at[r, r + i].set(0.0)  # drop self-similarity
-        mx = max(mx, float(C.max()))
-        tot += float(C.sum())
-    return mx, tot / (m * (m - 1))
+    return (mse / nb).mean() / base_w, l0 / nb
 
 
 def save_state(path, params, opt_state, step, last_fired):
@@ -458,66 +316,6 @@ def save_state(path, params, opt_state, step, last_fired):
     np.savez(tmp, step=step, last_fired=last_fired,
              **{f"leaf_{i}": np.asarray(x) for i, x in enumerate(leaves)})
     os.replace(tmp, path)  # atomic: a crash mid-write can't corrupt the snapshot
-
-
-def resample_dead(params, opt_state, X, w_sqrt, dead, rng,
-                  topk=0, groups=0, group_fn="top1"):
-    """Neuron resampling (Bricken et al. 2023), the ReLU+L1 lineage's
-    dead-latent treatment: point each dead latent at an example the
-    current dictionary reconstructs badly. Examples are drawn with
-    probability proportional to the squared whitened loss; each dead
-    latent's decoder row becomes the drawn example's centered unit
-    direction, its encoder column the same direction at 0.2x the mean
-    alive encoder-column norm (tied, like the init), its encoder bias 0.
-    Adam's moments are zeroed for every touched entry, so stale momentum
-    cannot immediately drag the fresh direction away (skipping the reset
-    largely defeats the method).
-
-    Works for the linear and gated forms, dispatching on the params keys
-    as `preacts` does. Not bilinear: a factor pair has no defined
-    resample direction.
-
-    For a gated model this is the only mechanism that can bring a latent
-    back at all. Its gate reaches the code through a step function, so a
-    gate that has shut receives nothing from reconstruction, and `aux_k`
-    -- which acts on `relu(preacts)`, the MAGNITUDE path -- cannot reopen
-    one however much gradient it delivers. Resampling clears `b_gate`,
-    which can. `r_mag` and `b_mag` are reset with it, since a revived
-    latent pointed at a fresh direction has no use for the magnitude
-    scale its previous life ended on."""
-    z = encode(params, jnp.asarray(X), topk, groups, group_fn)
-    loss = np.asarray((((decode(params, z) - X) * w_sqrt) ** 2).sum(-1))
-    p = loss ** 2
-    p = p / p.sum() if p.sum() > 0 else np.full(len(loss), 1.0 / len(loss))
-    idx = rng.choice(len(loss), size=int(dead.sum()), replace=True, p=p)
-    v = np.asarray(X)[idx] - np.asarray(params["b_dec"])
-    v = v / (np.linalg.norm(v, axis=-1, keepdims=True) + 1e-9)
-
-    d_idx = np.flatnonzero(dead)
-    alive = ~dead
-    gated = "W_gate" in params
-    enc = "W_gate" if gated else "W_enc"
-    col = np.linalg.norm(np.asarray(params[enc]), axis=0)
-    scale = 0.2 * (col[alive].mean() if alive.any() else 1.0)
-
-    params = dict(params)
-    params["W_dec"] = params["W_dec"].at[d_idx].set(jnp.asarray(v))
-    params[enc] = params[enc].at[:, d_idx].set(jnp.asarray(scale * v.T))
-
-    keep = {"W_dec": jnp.asarray(alive)[:, None],
-            enc: jnp.asarray(alive)[None, :],
-            "b_dec": jnp.ones_like(params["b_dec"], bool)}
-    # every per-latent vector goes back to its init value and is masked
-    # alike; `keep` must name each params key or the Adam reset below
-    # raises on the one it missed
-    for k in (("b_gate", "b_mag", "r_mag") if gated else ("b_enc",)):
-        params[k] = params[k].at[d_idx].set(0.0)
-        keep[k] = jnp.asarray(alive)
-    adam = opt_state[0]
-    adam = adam._replace(
-        mu={k: adam.mu[k] * keep[k] for k in adam.mu},
-        nu={k: adam.nu[k] * keep[k] for k in adam.nu})
-    return params, (adam,) + tuple(opt_state[1:])
 
 
 def load_state(path, params, opt_state):
@@ -536,22 +334,6 @@ def train(cfg):
         assert cfg.m % cfg.groups == 0, "--m must be a multiple of --groups"
     if cfg.prefixes > 1:
         assert cfg.m % cfg.prefixes == 0, "--m must be a multiple of --prefixes"
-    if cfg.resample_every:
-        assert not cfg.aux_k, ("--resample-every needs --aux-k 0 "
-                               "(one revival mechanism at a time)")
-        assert cfg.enc != "bilinear", \
-            "--resample-every cannot serve --enc bilinear: a factor pair " \
-            "has no defined resample direction"
-    if cfg.enc == "gated":
-        assert not cfg.topk and not cfg.groups, \
-            "--enc gated sets its own sparsity; needs --topk 0 and no --groups"
-        assert cfg.l1 > 0, "--enc gated needs --l1 (the gate's L1 coefficient)"
-        assert cfg.prefixes == 1, "--enc gated does not implement --prefixes"
-        # the paper's revival mechanism is the auxiliary reconstruction in
-        # `gated_loss`, which is always on; aux_k would give the MAGNITUDE
-        # path gradient for latents whose gate is shut, which cannot reopen
-        # a gate and would only report deadness as fixed
-        assert not cfg.aux_k, "--enc gated needs --aux-k 0 (see gated_loss)"
 
     out = Path(cfg.out) if cfg.out else Path("data/out/sonar/sae") / run_name(cfg)
     out.mkdir(parents=True, exist_ok=True)
@@ -561,7 +343,7 @@ def train(cfg):
     (out / "meta.json").write_text(json.dumps(
         {"m": cfg.m, "topk": cfg.topk, "l1": cfg.l1, "groups": cfg.groups,
          "group_fn": cfg.group_fn, "prefixes": cfg.prefixes,
-         "enc": cfg.enc, "resample_every": cfg.resample_every}))
+         "enc": cfg.enc}))
 
     mm = np.load(cfg.cache, mmap_mode="r")
     n_train = mm.shape[0] - cfg.eval_rows
@@ -575,11 +357,6 @@ def train(cfg):
     x_slice = np.asarray(mm[:min(n_train, 1 << 18)], dtype=np.float32)
     x_mean = x_slice.mean(0)
     x_scale = float(np.linalg.norm(x_slice - x_mean, axis=1).mean())
-    # fixed held-in slice, same size as the tail, with its own
-    # constant-predictor baseline: fvu_train vs fvu_eval reads as the
-    # generalization gap
-    X_tr = x_slice[:cfg.eval_rows]
-    base_tr = (X_tr.var(0) * w).mean()
     params = init_params(jax.random.PRNGKey(cfg.seed), d, cfg.m, x_mean,
                          cfg.enc, x_scale)
     tx = optax.adam(cfg.lr)
@@ -595,7 +372,6 @@ def train(cfg):
         print(f"resumed {state_path} at step {step}")
 
     loss_path = out / "loss.csv"
-    prev_dead = step - last_fired > cfg.dead_steps
     rng = np.random.default_rng(cfg.seed)
     total = cfg.epochs * (n_train // cfg.b)
     if cfg.max_steps:
@@ -624,42 +400,20 @@ def train(cfg):
                 pbar.set_postfix(loss=float(L), mse_w=float(mse))
 
                 if step % cfg.save_each == 0:
-                    fvu, l0, l1, freq = evaluate(eval_fn, params, X_eval,
-                                                 w_sqrt, base_w, cfg.b)
-                    fvu_tr = evaluate(eval_fn, params, X_tr, w_sqrt,
-                                      base_tr, cfg.b)[0]
-                    dead_now = step - last_fired > cfg.dead_steps
-                    revived = int((prev_dead & ~dead_now).sum())
-                    new_dead = int((~prev_dead & dead_now).sum())
-                    prev_dead = dead_now
-                    use_ent, hifreq = usage_stats(freq)
-                    maxcos, meancos = wdec_cos(params)
+                    fvu, l0 = evaluate(eval_fn, params, X_eval, w_sqrt,
+                                       base_w, cfg.b)
+                    n_dead = int((step - last_fired > cfg.dead_steps).sum())
                     with open(loss_path, "a", newline="") as f:
                         csv.writer(f).writerow(
-                            [step, float(L), float(mse), fvu, l0, l1,
-                             int(dead_now.sum()), revived, new_dead,
-                             use_ent, hifreq, maxcos, meancos, fvu_tr])
+                            [step, float(L), float(mse), fvu, l0, n_dead])
                     save_state(state_path, params, opt_state, step, last_fired)
 
-                # after the eval/save block, so logged numbers never show
-                # freshly reset latents; never on the final step, which
-                # would send untrained directions into the final eval
-                if (cfg.resample_every and step % cfg.resample_every == 0
-                        and step < total):
-                    dead_now = step - last_fired > cfg.dead_steps
-                    if dead_now.any():
-                        params, opt_state = resample_dead(
-                            params, opt_state, X, w_sqrt, dead_now,
-                            np.random.default_rng(cfg.seed + step),
-                            cfg.topk, cfg.groups, cfg.group_fn)
-                        last_fired[dead_now] = step
-
-    fvu, l0, l1, _ = evaluate(eval_fn, params, X_eval, w_sqrt, base_w, cfg.b)
+    fvu, l0 = evaluate(eval_fn, params, X_eval, w_sqrt, base_w, cfg.b)
     n_dead = int((step - last_fired > cfg.dead_steps).sum())
     save_state(state_path, params, opt_state, step, last_fired)
     np.savez(out / "params.npz", **{k: np.asarray(v) for k, v in params.items()})
     print(f"\n{run_name(cfg)} step {step}: FVU_w {fvu:.4f}  L0 {l0:.1f}  "
-          f"L1 {l1:.2f}  dead {n_dead}/{cfg.m}")
+          f"dead {n_dead}/{cfg.m}")
     return fvu, l0, n_dead
 
 

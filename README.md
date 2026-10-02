@@ -2,6 +2,16 @@
 
 A training and architectural framework for mixture-of-experts-based mechanistic interpretability.
 
+worked:
+pointless vector space
+subspaces of cluster
+graph theory
+
+didn't:
+dimension reduction 
+algebraic 
+topology
+
 ## Introduction
 
 Ideally we would like mechanistic interpretability to provide guarantees about
@@ -31,6 +41,11 @@ This has several advantages over SAEs:
 3. The representative vectors can be statically interpreted.
 4. Feature space is structured.
 
+
+
+only provide unstructured features for a given input.
+This presents several problems for feature analysis:
+
 We present the `Ontologizer` architecture, which aims to embed activations in an 
 interpretable-by-construction feature space. It consists of a stack of `l` 
 dictionary learning layers, each of which has `h` heads and `k` labels per head.
@@ -38,9 +53,8 @@ Each layer has two subnets. A classifier network encodes the input as soft label
 assignments. A dictionary network reconstructs the input as a weighted average of
 representative vectors for each label.
 The goal is for each classifier to partition latent space into simplices where the 
-vertices represent contrastive concepts.
-
-The result decomposes the activations of a frozen pretrained encoder into a structured, discrete-leaning code — `l` layers × `h` heads, each head classifying its input over `k` learned dictionary entries ("ontofeatures" or *tags*). Unlike a sparse autoencoder, whose features must be read off activations after the fact, the Ontologizer's interpretable objects *are* its parameters: every tag is an explicit weight vector you can decode, every classification is a point on a product of simplices you can intervene on, and the classifiers are bilinear, so the encoding computation itself admits closed-form weight analysis.
+vertices represent contrastive concepts. 
+that decomposes the activations of a frozen pretrained encoder into a structured, discrete-leaning code — `l` layers × `h` heads, each head classifying its input over `k` learned dictionary entries ("ontofeatures" or *tags*). Unlike a sparse autoencoder, whose features must be read off activations after the fact, the Ontologizer's interpretable objects *are* its parameters: every tag is an explicit weight vector you can decode, every classification is a point on a product of simplices you can intervene on, and the classifiers are bilinear, so the encoding computation itself admits closed-form weight analysis.
 
 The current target is the [SONAR](https://github.com/facebookresearch/SONAR) multilingual sentence-embedding space (1024-d, ~86 languages of mC4). Because SONAR embeddings pair with an M2M100 *decoder*, the learned ontology is directly legible: dictionary entries decode to text, and causal interventions on the code (force a tag, ablate a head) decode to *changed* text.
 
@@ -104,12 +118,10 @@ uv run python encode_corpus.py
 uv run python sonar.py          # or ./sonar.sh to run under tmux
 
 # 3. Interactive reconstruction + intervention REPL against the checkpoint
-#    (pass the checkpoint dir sonar.py wrote; the script's default is an
-#    older run path)
-uv run python decode.py data/out/sonar/multilingual/resid_nc_hm
+uv run python decode.py
 
 # 4. Decode the learned dictionary itself to text annotations
-uv run python decode_tags.py data/out/sonar/multilingual/resid_nc_hm
+uv run python decode_tags.py
 ```
 
 The test suite is fast and CPU-only (safe to run next to a live training run):

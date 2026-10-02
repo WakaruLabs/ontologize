@@ -1,3 +1,11 @@
+"""Pretrained PyTorch transformer integrations, tokenization, pooling, and DLPack bridges.
+
+This module provides bridges between PyTorch-based HuggingFace transformers (specifically
+SONAR text encoders and M2M100 decoders) and JAX/Flax arrays. It handles loading
+pretrained models in half precision, tokenizing text batches, performing attention-masked
+L2 sentence pooling, and zero-copy tensor transfers via DLPack.
+"""
+
 # Functions for integrating pretrained PyTorch transformers.
 
 import torch as t
@@ -44,6 +52,18 @@ def pretrained_transformer(model_id: str, dtype_str: str="bfloat16", dev=t.devic
     return encoder, tokenizer
 
 def tokenize(tokenizer, batch, *args, **kwargs):
+    """Tokenizes a batch of input text strings into PyTorch tensors with padding.
+
+    Args:
+        tokenizer: HuggingFace tokenizer callable or instance.
+        batch: Text string or sequence of text strings to tokenize.
+        *args: Additional positional arguments forwarded to `tokenizer`.
+        **kwargs: Additional keyword arguments forwarded to `tokenizer`.
+
+    Returns:
+        BatchEncoding: Dictionary-like object containing `'input_ids'`, `'attention_mask'`,
+        and other token tensors as PyTorch tensors.
+    """
     return tokenizer(batch, return_tensors="pt", padding=True, *args, **kwargs)
 
 def l2_pooling(

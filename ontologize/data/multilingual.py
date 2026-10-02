@@ -1,8 +1,29 @@
+"""Multilingual dataset loading and interleaving utilities for HuggingFace datasets.
+
+This module provides helper functions to load individual language splits from
+HuggingFace (e.g., mC4 or C4), sanitize schema variations across languages, and
+interleave multiple language streams into a unified training dataset.
+"""
+
 from datasets import load_dataset, interleave_datasets
 
 from ontologize.data.langs import MC4_TO_SONAR
 
 def load_lang(src, lang, *args, **kwargs):
+    """Loads a single language split from a HuggingFace dataset and standardizes fields.
+
+    Selects only the `"text"` column (stripping conflicting metadata fields such as
+    `timestamp` and `url`) and attaches a `"lang"` tag to every example.
+
+    Args:
+        src: Dataset repository path or identifier (e.g. `"allenai/c4"`).
+        lang: Language split identifier (e.g. `"en"`).
+        *args: Additional positional arguments forwarded to `datasets.load_dataset`.
+        **kwargs: Additional keyword arguments forwarded to `datasets.load_dataset`.
+
+    Returns:
+        Dataset: HuggingFace `Dataset` or `IterableDataset` with standardized `"text"` and `"lang"` fields.
+    """
     ds = load_dataset(src, lang, *args, **kwargs)
     # Strip metadata like 'timestamp' and 'url' which have conflicting 
     # types across different languages in C4 (e.g. string vs timestamp[us])
@@ -10,38 +31,39 @@ def load_lang(src, lang, *args, **kwargs):
     ds = ds.map(lambda x: {"text": x["text"], "lang": lang})
     return ds
 
-def load_langs(src, langs, *args, stopping_strategy="first_exhausted",
-               **kwargs):
-    """Round-robin interleave of one dataset per language.
+def load_langs(src, langs, *args, **kwargs):
+    """Loads and interleaves multiple language splits from a HuggingFace dataset.
 
-    No `probabilities` are passed, so the languages are drawn in strict
-    rotation and the result is a uniform mixture rather than a
-    natural-frequency sample: every language contributes equally for as
-    long as the stream runs.
+    Applies `load_lang` to each key in `langs` and combines them using
+    `datasets.interleave_datasets`.
 
-    `stopping_strategy` is `interleave_datasets`'s, and decides what
-    happens when the smallest language runs out:
+    Args:
+        src: Dataset repository path or identifier.
+        langs: Dictionary whose keys are language identifiers (e.g. `MC4_TO_SONAR`).
+        *args: Additional positional arguments forwarded to `load_lang`.
+        **kwargs: Additional keyword arguments forwarded to `load_lang`.
 
-      first_exhausted   (the default, and `interleave_datasets`' own)
-                        undersamples: the stream ends there, so every
-                        language is capped at the size of the smallest
-                        and the rest of the corpus is discarded.
-      all_exhausted     oversamples: exhausted languages restart and
-                        repeat until every language has been seen
-                        through once, so nothing is discarded but the
-                        small languages appear many times over.
-
-    Neither is free. Under the default a request larger than n_langs
-    times the smallest split silently yields a shorter stream than
-    asked for; under `all_exhausted` it yields duplicates instead.
-    Which one is wanted depends on whether repeated text or a truncated
-    corpus is the worse failure for the run at hand."""
+    Returns:
+        Dataset: Interleaved HuggingFace dataset combining all specified language splits.
+    """
     dss = [load_lang(src, x, *args, **kwargs) for x in langs.keys()]
-    return interleave_datasets(dss, stopping_strategy=stopping_strategy)
+    return interleave_datasets(dss)
 
 def mc4_data(src, *args, **kwargs):
-    """`load_langs` over the mC4 language set; `stopping_strategy`
-    passes through."""
+    """Loads and interleaves all multilingual splits defined in `MC4_TO_SONAR`.
+
+    Convenience wrapper invoking `load_langs` with the standard `MC4_TO_SONAR`
+    mapping table.
+
+    Args:
+        src: Dataset repository path or identifier (e.g. `"allenai/c4"`).
+        *args: Additional positional arguments forwarded to `load_langs`.
+        **kwargs: Additional keyword arguments forwarded to `load_langs`.
+
+    Returns:
+        Dataset: Interleaved HuggingFace dataset spanning all supported mC4 languages.
+    """
     return load_langs(src, MC4_TO_SONAR, *args, **kwargs)
+
 
 
