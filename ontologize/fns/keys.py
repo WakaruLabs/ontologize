@@ -15,9 +15,14 @@ from ontologize.data.loaders import SampleLoader, EmbeddingLoader, ImageLoader, 
 
 def _lookup(table: dict, name: str, what: str):
     """Strict keyed lookup.
-    Replaces `table.get(name.lower(), <default>)`, which
+
+    These resolvers used to be `table.get(name.lower(), <default>)`, which
     made every typo and every not-yet-implemented name silently resolve to
-    the default.
+    the neutral option: `--gate swish` trained with no gate, `gaussain`
+    trained with no noise, `bf16` trained in float32. The defaults are all
+    reachable by their own key ("none", "mse", "float32", "embedding"), so
+    nothing legitimate needs the fallback, and a wrong name is always a
+    mistake worth stopping for.
     """
     try:
         return table[name.lower()]

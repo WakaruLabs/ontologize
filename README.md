@@ -211,7 +211,20 @@ Key knobs in `sonar.py`:
 | data | `cache` (embedding `.npy` from `encode_corpus.py`; keeps the frozen encoder out of the training loop entirely), `b`, `epochs`, `mse_weights` (inverse-variance target whitening) |
 | logging | `save_each` (rolling checkpoints + `loss.csv` flush), `checkpoint_each` (kept checkpoints), `out` |
 
-`loss.csv` columns: `loss, MSE, MSE_ghost, L1_K, L1_F, entropy, cossim_b, cossim_h, KL_m`; `visualize/loss.py` plots each against step (called automatically after training).
+`loss.csv` has one row per step and 18 columns, documented with their
+provenance at `ontologize/visualize/loss.py:COLUMNS` — import that list
+rather than restating it here, since the layout is append-only and copies
+of it have gone stale and mislabelled columns before:
+
+`loss, MSE, MSE_ghost, L1_K, L1_F, entropy, cossim_b, cossim_h, cossim_k,
+cossim_k_hmax, KL_m, KL_pwak, L2_pwak, s_L1F, s_kcossim, cossim_k_max,
+cossim_flat, L1_S`
+
+`visualize/loss.py` plots each against step (called automatically after
+training). Note `cossim_k` (mean over heads, summed over layers),
+`cossim_k_hmax` (per-head max within a layer, summed over layers) and
+`cossim_k_max` (max over heads and layers) are three different columns.
+Arms from `experiments/hsic-bottleneck` write a different 9-wide row.
 
 ### Data Types
 
