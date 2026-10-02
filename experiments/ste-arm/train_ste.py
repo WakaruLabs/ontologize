@@ -100,11 +100,11 @@ def parse_args():
                         "previous layer's code, widening every upper "
                         "classifier, so it is not parameter-matched to "
                         "'resid' at equal h")
-    p.add_argument("--h", type=int, default=76,
+    p.add_argument("--h", type=int, default=19,
                    help="heads per layer (sonar.py ships 32; 76 puts the "
                         "hard code at 1900 bits)")
-    p.add_argument("--k", type=int, default=0, help="entries per head (0 = sonar.py's)")
-    p.add_argument("--l", type=int, default=0, help="layers (0 = sonar.py's)")
+    p.add_argument("--k", type=int, default=128, help="entries per head (0 = sonar.py's)")
+    p.add_argument("--l", type=int, default=5, help="layers (0 = sonar.py's)")
     p.add_argument("--b", type=int, default=0,
                    help="batch size (0 = sonar.py's; lower it if the "
                         "raised head count will not fit)")
@@ -247,10 +247,10 @@ def parse_args():
                         "a dictionary component in its null space changes "
                         "nothing and takes no gradient, and Adam turns the "
                         "noise there into full-size steps. On ste_h76 that "
-                        "left 97.7% of the dictionary's movement, and all "
-                        "but 2.4% of its final energy, invisible "
+                        "left 97.7%% of the dictionary's movement, and all "
+                        "but 2.4%% of its final energy, invisible "
                         "downstream. L1_F is aimed at the right quantity "
-                        "but lands 92.5% of its pressure on the atoms doing "
+                        "but lands 92.5%% of its pressure on the atoms doing "
                         "the work; see dictwd.py")
     p.add_argument("--init-from", default=None, metavar="CKPT",
                    help="take starting parameters from this checkpoint "

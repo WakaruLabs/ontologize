@@ -13,6 +13,7 @@ dependencies = [
     "grain>=0.2.16",
     "importlib-resources",
     "jax[cuda12]>=0.10.0",
+    "jaxtyping>=0.3.11",
     "langcodes>=3.5.1",
     "language-data>=1.4.0",
     "matplotlib>=3.10.9",
