@@ -995,9 +995,6 @@ half, but it should not be sold as a reconstruction result.
 
 `s_kcossim` and `KCOS_target` are 0 in all four arms, so none of this
 is a collinearity penalty doing the work. Removing one `abs` buys
-
-`s_kcossim` and `KCOS_target` are 0 in all four arms, so none of this
-is a collinearity penalty doing the work. Removing one `abs` buys
 roughly what the `--kcos-target` controller exists to buy.
 
 ### Where concat fits, and the floor's actual form
@@ -1256,8 +1253,10 @@ signed rows can cancel across `k` (`tests/test_signed.py` pins this).
 
 Those costs are now weighed against a measured gain rather than against
 a diagnostic, since the arms also decorrelate the dictionary by two
-orders of magnitude without any collinearity pressure applied. Whether
-that survives to convergence is the open question.
+orders of magnitude without any collinearity pressure applied. That
+survives to convergence: at 371,900 steps the signed cells sit at
+`c` +0.0009 and +0.0019 with effective rank 27, against +0.30 and +0.45
+at rank 9.15 and 5.41 under `abs`, for 2.4% of FVU_w at e_dec 1536.
 
 ## Head-independence pressure (`--s-hsic-heads`): a measurement artifact
 
