@@ -1452,6 +1452,154 @@ Layer 0 is the exception in every head-level measure and in none of the
 aggregate ones, which is consistent with it being the only layer whose
 input does not depend on upstream choices.
 
+### The same picture on GPT-2, concat (`partition.py`, `headcontrib.py`)
+
+`gpt2_l8/ste_h20_cat128` and `ste_h20_cat128-43` differ only in seed:
+5x20 heads, k=256, `ConcatDictBlock` at d_head 128, both at 371,900
+steps, scored on the held-out cache tail. Each measure is run twice --
+across seeds, and against the seed-42 run's own step-350,000 checkpoint
+as the positive control. `headcontrib.py` is the head-contribution
+measure from the table above, now a script: each head's decoded
+output contribution in the whitened frame, centered over rows, matched
+by cosine.
+
+| layer | partition NMI, seeds | control | contribution cos, seeds | control |
+|---|---|---|---|---|
+| 0 | **0.359** | 0.976 | **0.171** | 0.956 |
+| 1 | 0.188 | 0.766 | 0.017 | 0.758 |
+| 2 | 0.186 | 0.602 | 0.007 | 0.588 |
+| 3 | 0.186 | 0.538 | 0.005 | 0.516 |
+| 4 | 0.186 | 0.510 | 0.004 | 0.483 |
+| all | 0.221 | 0.679 | 0.041 | 0.660 |
+| null | 0.179 | 0.179 | 0.0017 | 0.0017 |
+
+(partition: 32,768 rows; contribution: 8,192 rows, null max 0.0030.)
+
+**Only layer 0 reproduces, at under a fifth of the control.** Its heads
+match into the other seed's layer 0 20 of 20 times on both measures.
+Layer 1 keeps its identity -- 19/20 and 20/20 of its heads land in the
+other seed's layer 1 -- while agreeing on almost nothing it separates or
+writes. Layers 2-4 lose even that and scatter across the deep layers.
+The two measures agree layer for layer, so it is not that heads carve
+differently while writing alike, or the reverse.
+
+The partition null is high (0.18) because plug-in NMI between two
+256-way partitions of 32,768 rows is bias-dominated, so it cannot
+resolve the deep layers; the contribution null is tight, and there they
+sit 2-4x above it at about 1% of the control. Real, and negligible.
+
+Against `ste_h76` on SONAR the excess over null is larger (contribution
+24x null against 5x), but nearly all of it is layer 0. Coarse heads
+reproduce better here too: matched cosine correlates with a head's
+centered contribution size at r = 0.926 overall, mostly the layer
+contrast, and 0.42 and 0.61 within layers 0 and 1.
+
+Uncentered cosine is unusable for this, as on SONAR: the non-negative
+dictionary's shared offset puts the row-shuffled null's maximum at
+0.85.
+
+```bash
+uv run python experiments/ste-arm/headcontrib.py \
+    --a data/out/gpt2_l8/ste_h20_cat128 --b data/out/gpt2_l8/ste_h20_cat128-43
+uv run python experiments/ste-arm/headcontrib.py \
+    --a data/out/gpt2_l8/ste_h20_cat128 --b data/out/gpt2_l8/ste_h20_cat128 \
+    --step-b 350000
+uv run python experiments/ste-arm/partition.py --cache data/activations/gpt2_l8.npy \
+    --a data/out/gpt2_l8/ste_h20_cat128 --b data/out/gpt2_l8/ste_h20_cat128-43
+```
+
+### Is layer 0's reproducibility a size effect?
+
+Layer-0 heads are the largest and the most reproducible, so "layer 0
+reproduces" could just be "big heads reproduce". Size here is a head's
+centered contribution energy as a share of the whitened target variance.
+
+**Within one stack it cannot be decided.** On the GPT-2 concat pair each
+layer's heads are nearly one size and the ranges do not overlap -- layer
+0 at 0.62-0.94%, layer 1 at 0.28-0.32%, down to 0.07% at layer 4 -- so no
+deep head is size-matched to a layer-0 one and every split is an
+extrapolation. Additive on cosine, a layer-0 indicator alone gives R^2
+0.958 and size adds 0.005 (about a tenth of the advantage); multiplicative
+on log cosine fits better (0.982), with cosine roughly proportional to
+size and layer 0 a further ~4x, which puts size at about half of the
+layer-0/layer-1 gap. Within layer 0 the size slope is 13x the deep
+layers'.
+
+**The flat arm breaks the confound**, since all its heads see the raw
+input with nothing downstream. SONAR, fixed init, both pairs 380 heads,
+4,096 held-out rows, `headcontrib.py`'s centered cosine (null 0.002, max
+0.011):
+
+| flat head size | matched cos | n |
+|---|---|---|
+| 0.057-0.060% | 0.008 | 95 |
+| 0.060-0.062% | 0.011 | 95 |
+| 0.062-0.066% | 0.035 | 95 |
+| 0.066-0.071% | 0.060 | 57 |
+| 0.071-0.691% | 0.149 | 38 |
+
+Correlation with log size is r = 0.875, and the two largest heads (0.69%,
+0.44%) reach 0.78 and 0.56. Size matters a great deal on its own.
+
+But the stack's heads fall far below that curve at every depth, layer 0
+included:
+
+| stack layer | size, median | stack cos | flat cos at that size (+-10%) | gap |
+|---|---|---|---|---|
+| 0 | 0.31% | 0.080 | 0.67 (n=2) | ~8x |
+| 1 | 0.16% | 0.005 | 0.13 (n=1) | ~24x |
+| 2 | 0.11% | 0.004 | 0.19 (n=3) | ~50x |
+| 3 | 0.073% | 0.003 | **0.059 (n=116)** | **~20x** |
+| 4 | 0.039% | 0.003 | below the flat range | -- |
+
+**Size is about a third of layer 0's advantage, in log terms.** Layer 0
+reproduces ~27x better than layer 3; the flat curve between their sizes
+accounts for 3-4x of that. Only layer 3's match is solid -- flat heads
+are almost all tiny, so layers 0-2 rest on one to three heads each, and
+fitted curves extrapolate absurdly (a power fit predicts 2.4 for layer
+0) -- so treat the fraction as rough and the direction as firm.
+
+**The larger result is that the stack costs reproducibility at matched
+size, at every layer.** Layer 0 receives exactly the flat arm's input
+and still reproduces several times worse than an equal-size flat head:
+in the stack, what a layer-0 head should carve depends on what the
+layers after it do with its error, so the input alone no longer pins
+it. Deeper layers lose more. This is the reproducibility face of the
+entanglement result -- the cascade that makes a single-head
+intervention leak into 59% of the other heads also leaves each head
+underdetermined by the data.
+
+Inside layer 0, size does most of the work. The SONAR stack's layer-0
+heads are the one layer that spans a wide size range (0.27-2.3%, the
+best-matched pair at cosine 0.84), and within it agreement tracks log
+size at r = 0.911; layers 1-4 are near one size each and show nothing.
+So the reading is: size decides which layer-0 heads reproduce, while
+being in layer 0 at all -- the only layer with no upstream choices --
+decides most of how far above the deep layers they sit (on log cosine,
+size + layer 0 gives R^2 0.943 with the layer-0 term at 2.1, about 8x).
+
+The SONAR stack repeats the GPT-2 layer pattern (0.080 at layer 0
+against 0.003-0.005 below it), but the matched-size comparison is
+SONAR-only; GPT-2 has no flat arm.
+
+```bash
+# size report and regressions, GPT-2
+uv run python experiments/ste-arm/headcontrib.py \
+    --a data/out/gpt2_l8/ste_h20_cat128 --b data/out/gpt2_l8/ste_h20_cat128-43
+# against the flat arm at matched size, SONAR
+uv run python experiments/ste-arm/headcontrib.py \
+    --cache data/sonar_embeddings/mc4_4M.npy \
+    --mse-weights data/out/sonar/mse_weights.npy --rows 4096 \
+    --a data/out/sonar/multilingual/ste_h76_init01 \
+    --b data/out/sonar/multilingual/ste_h76_i01_s43 \
+    --ref-a data/out/sonar/multilingual/ste_l1_h380_i01 \
+    --ref-b data/out/sonar/multilingual/ste_l1_h380_i01_s43
+``` `data/out/sonar/mse_weights.npy` was
+not on disk for this, so the whitening was regenerated with
+`make_mse_weights.py` into a scratch path; that fixes the frame for a
+cosine comparison but is not verified identical to the training
+weights.
+
 ## Does a labeled variable land in one head? (`headlang.py`)
 
 Held-out language identity over 86 languages, against a dense-embedding
