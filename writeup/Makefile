@@ -1,15 +1,15 @@
-SRC = paper.tex vars.tex refs.bib flockpaper.sty $(wildcard sections/*.tex) $(wildcard tikz/*.tex)
+SRC = findings.tex vars.tex refs.bib $(wildcard sections/*.tex) $(wildcard tikz/*.tex)
 
-paper.pdf: build/paper.bbl $(SRC)
-	pdflatex -output-directory=build paper.tex
-	pdflatex -output-directory=build paper.tex
-	mv build/paper.pdf .
+findings.pdf: build/findings.bbl $(SRC)
+	pdflatex -output-directory=build findings.tex
+	pdflatex -output-directory=build findings.tex
+	mv build/findings.pdf .
 
-build/paper.bbl: build/paper.bcf
-	biber build/paper
+build/findings.bbl: build/findings.bcf
+	biber build/findings
 
-build/paper.bcf: build $(SRC)
-	pdflatex -output-directory=build paper.tex
+build/findings.bcf: build $(SRC)
+	pdflatex -output-directory=build findings.tex
 
 build:
 	mkdir build
