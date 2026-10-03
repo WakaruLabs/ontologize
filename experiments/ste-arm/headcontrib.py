@@ -29,6 +29,10 @@ are confounded, so `--ref-a/--ref-b` scores a second seed pair -- a flat
 arm, all heads on the raw input -- and compares each layer with
 reference heads of the same size.
 
+Size itself splits into the layer's input gain, shared by all of a
+layer's heads, and the head's decoded atoms; the script reports both,
+since only the atoms can vary between heads of one layer.
+
   uv run python experiments/ste-arm/headcontrib.py \\
       --a data/out/gpt2_l8/ste_h20_cat128 \\
       --b data/out/gpt2_l8/ste_h20_cat128-43
@@ -135,6 +139,72 @@ def contributions(ckpt: str, step: int, T: float,
     C *= w_sqrt[None, None, :]
     layer = np.repeat(np.arange(model.l), C.shape[1] // model.l)
     return C.transpose(1, 0, 2), layer, used
+
+
+def decompose(ckpt: str, step: int, T: float, X: Float[np.ndarray, "n d_in"],
+              w_sqrt: Float[np.ndarray, "d_out"], batch: int
+              ) -> Tuple[Float[np.ndarray, "heads"], Float[np.ndarray, "heads"],
+                         Float[np.ndarray, "heads"]]:
+    """Splits each head's contribution size into its layer's input gain
+    and its own atoms. A head's contribution on a row is its gain times
+    the decoded atom it selected, so its centered energy is, up to the
+    gain's small variation, gain^2 * spread^2 -- spread being the
+    usage-weighted RMS distance of its decoded atoms from their
+    usage-weighted mean. Returns (gain RMS, usage-weighted decoded atom
+    norm, spread), all in the whitened frame.
+
+    Gain is one number per layer per row, shared by every head in the
+    layer, so across layers it cannot be told apart from the layer
+    itself; only the atom terms vary between heads of one layer."""
+    model, raw, _ = load_onto(ckpt, step)
+    params = {"params": raw}
+    k = model.k
+
+    def atoms(module) -> Float[Array, "lh k d_out"]:
+        zero = module.decode(jnp.zeros((1, module.e_dec), module.dtype))
+        out = []
+        for de in module.dictencs:
+            h = de.dict.h
+            # row j selects entry j in every head; then isolate each head
+            # as `contributions` does
+            P = jnp.zeros((k, h, k), module.dtype)
+            P = P.at[jnp.arange(k), :, jnp.arange(k)].set(1.0)
+            Y = de.dict.hfwd(P)                                # (k, h, dh)
+            Yh = Y[:, None] * jnp.eye(h, dtype=Y.dtype)[None, :, :, None]
+            out.append(module.decode(de.dict.combine(Yh)) - zero)
+        return jnp.concatenate(out, 1).transpose(1, 0, 2)
+
+    def codes(module, Xb: Float[Array, "b d_in"]
+              ) -> Tuple[Int[Array, "l b h"], Float[Array, "l b"]]:
+        E, _ = module.encode(Xb, 0.0, None)
+        R = module.resid(E)
+        Ein = module.constinput(E)
+        idx, gains = [], []
+        for i, de in enumerate(module.dictencs):
+            U, G = de.gainshape_in(Ein)
+            P = de.dict.cluster(de.classifier(U), T)
+            idx.append(jnp.argmax(P, -1))
+            gains.append(jnp.ones(Xb.shape[:1], module.dtype) if G is None
+                         else G[:, 0])
+            R = R + de.gained(de.dict.combine(de.dict.hfwd(P)), G)
+            if i < module.l - 1:
+                Ein = module.nextinput(Xb, R, P.reshape(Xb.shape[0], -1))
+        return jnp.stack(idx), jnp.stack(gains)
+
+    D = np.asarray(model.apply(params, method=atoms)) * w_sqrt  # (H, k, d)
+    f = jax.jit(lambda p, x: model.apply(p, x, method=codes))
+    parts = [f(params, jnp.asarray(X[i:i + batch]))
+             for i in range(0, len(X), batch)]
+    I = np.concatenate([np.asarray(a) for a, _ in parts], 1)    # (l, n, h)
+    G = np.concatenate([np.asarray(g) for _, g in parts], 1)    # (l, n)
+    l, n, h = I.shape
+    I = I.transpose(0, 2, 1).reshape(l * h, n)
+    usage = np.stack([np.bincount(row, minlength=k) / n for row in I])
+    gain = np.repeat(np.sqrt((G ** 2).mean(1)), h)
+    norm = (usage * np.linalg.norm(D, axis=-1)).sum(1)
+    mean = (usage[..., None] * D).sum(1)
+    spread = np.sqrt((usage * ((D - mean[:, None]) ** 2).sum(-1)).sum(1))
+    return gain, norm, spread
 
 
 def cosine_matrix(A: Float[np.ndarray, "ha n d"],
@@ -248,6 +318,43 @@ def size_report(v: Float[np.ndarray, "heads"], layer: Int[np.ndarray, "heads"],
                   f"coef {np.array2string(beta[1:], precision=4)}")
 
 
+def atom_report(v: Float[np.ndarray, "heads"], layer: Int[np.ndarray, "heads"],
+                share: Float[np.ndarray, "heads"],
+                gain: Float[np.ndarray, "heads"],
+                norm: Float[np.ndarray, "heads"],
+                spread: Float[np.ndarray, "heads"], var: float) -> None:
+    """Which part of size tracks agreement: the layer's gain or the
+    head's atoms? `var` is the whitened target variance per row, so
+    gain^2 * spread^2 / var should reproduce `share`; the check is
+    printed. Gain is constant within a layer, so the within-layer
+    correlations are the atoms' alone, and across layers the
+    atom-spread + layer-0 fit gives the lift that atoms leave to the
+    layer."""
+    nl = int(layer.max()) + 1
+    approx = (gain * spread) ** 2 / var
+    print(f"\n size = gain^2 * atom spread^2: corr(log) "
+          f"{np.corrcoef(np.log(share), np.log(approx))[0, 1]:+.3f}, "
+          f"median ratio {np.median(share / approx):.3f}")
+    for i in range(nl):
+        m = layer == i
+        print(f"    layer {i}: gain {np.median(gain[m]):.4g}  "
+              f"atom norm {np.median(norm[m]):.4g}  "
+              f"spread {np.median(spread[m]):.4g}  "
+              f"spread/norm {np.median(spread[m] / norm[m]):.3f}")
+    lv = np.log(np.maximum(v, 1e-4))
+    for label, x in (("atom norm", np.log(norm)), ("atom spread", np.log(spread))):
+        within = [np.corrcoef(lv[layer == i], x[layer == i])[0, 1]
+                  for i in range(nl) if (layer == i).sum() > 2]
+        print(f"  corr(log cosine, log {label}) {np.corrcoef(lv, x)[0, 1]:+.3f}"
+              f"  within layers " + " ".join(f"{t:+.2f}" for t in within))
+    if nl == 1:
+        return
+    beta, r2 = _fit([np.log(spread), (layer == 0).astype(float)], lv)
+    print(f"  log cosine ~ atom spread + layer 0  R^2 {r2:.3f}  "
+          f"coef {np.array2string(beta[1:], precision=3)}  "
+          f"(layer-0 lift {np.exp(beta[2]):.1f}x at equal atoms)")
+
+
 def reference_report(v: Float[np.ndarray, "heads"],
                      layer: Int[np.ndarray, "heads"],
                      share: Float[np.ndarray, "heads"],
@@ -284,6 +391,11 @@ def main() -> None:
     v, layer, share = compare(cfg.a, cfg.step_a, cfg.b, cfg.step_b, X,
                               w_sqrt, cfg)
     size_report(v, layer, share)
+    Xw = X * w_sqrt
+    atom_report(v, layer, share,
+                *decompose(cfg.a, cfg.step_a, cfg.temperature, X, w_sqrt,
+                           cfg.batch),
+                ((Xw - Xw.mean(0)) ** 2).sum() / len(X))
     if cfg.ref_a:
         print(f"\n=== reference pair")
         rv, _, rshare = compare(cfg.ref_a, 0, cfg.ref_b, 0, X, w_sqrt, cfg)

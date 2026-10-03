@@ -1578,12 +1578,59 @@ being in layer 0 at all -- the only layer with no upstream choices --
 decides most of how far above the deep layers they sit (on log cosine,
 size + layer 0 gives R^2 0.943 with the layer-0 term at 2.1, about 8x).
 
+#### What size is made of: the layer's gain, not the head's atoms
+
+A head's contribution on a row is its layer's input gain times the
+decoded atom it selected, so its size is gain^2 times atom spread^2
+(the usage-weighted RMS distance of its decoded atoms from their mean);
+on both stacks that product reproduces the measured size exactly
+(log correlation 1.000, median ratio 1.000).
+
+| layer | GPT-2 gain | GPT-2 atom norm (1e-4) | SONAR gain | SONAR atom norm |
+|---|---|---|---|---|
+| 0 | 122.2 | 4.6 | 1.000 | 0.042 |
+| 1 | 67.9 | 5.3 | 0.588 | 0.052 |
+| 2 | 62.3 | 4.4 | 0.490 | 0.051 |
+| 3 | 59.2 | 3.7 | 0.417 | 0.049 |
+| 4 | 57.2 | 3.2 | 0.359 | 0.042 |
+
+(decoded, whitened; medians over heads.)
+
+**Layer 0's larger contributions are all gain.** It receives the raw
+input -- GPT-2 activations of norm ~122 against residuals of ~60, unit
+SONAR embeddings against residuals of 0.36-0.59 -- while its atoms are
+no larger than layer 1's on either dataset, and on SONAR smaller than
+layers 1-3's and equal to layer 4's. Across layers SONAR's atom norm even
+correlates slightly negatively with log agreement (-0.21).
+
+Gain is one number per layer per row, shared by every head in the
+layer, so across layers "size" was the layer itself under another name.
+The size paragraph above should be read that way: the part of layer 0's
+lead that size accounts for is gain, which is a property of the layer
+and not of any head. At equal atom spread the layer-0 lift is 14x on
+GPT-2 and 23x on SONAR (log agreement on log spread plus a layer-0
+indicator, R^2 0.979 and 0.941) -- larger on SONAR because its layer-0
+atoms are the smaller ones.
+
+**Within layer 0 the atoms are what matter.** SONAR's layer-0 gain is
+identically 1, so its within-layer size variation is pure atom
+magnitude, and log agreement tracks it at r = 0.62 (norm) and 0.64
+(spread); GPT-2's layer 0 shows 0.17 and 0.42. Past layer 1 the atoms
+predict nothing on either dataset. So a few genuinely large-atom
+layer-0 heads are the reproducible ones; the flat arm's size curve,
+whose heads all have gain 1, was an atom-magnitude curve too.
+
+Spread and norm are one quantity here: their ratio is 0.99-1.08 in every
+layer, so a head's usage-weighted mean decoded atom is near zero. The
+non-negative dictionary's offset is cancelled by the decoder before it
+reaches the output.
+
 The SONAR stack repeats the GPT-2 layer pattern (0.080 at layer 0
 against 0.003-0.005 below it), but the matched-size comparison is
 SONAR-only; GPT-2 has no flat arm.
 
 ```bash
-# size report and regressions, GPT-2
+# size report, gain/atom decomposition and regressions, GPT-2
 uv run python experiments/ste-arm/headcontrib.py \
     --a data/out/gpt2_l8/ste_h20_cat128 --b data/out/gpt2_l8/ste_h20_cat128-43
 # against the flat arm at matched size, SONAR
