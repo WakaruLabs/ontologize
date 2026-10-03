@@ -100,8 +100,8 @@ stopping_strategy = _env("STOPPING_STRATEGY", "first_exhausted")
 # header caveat). 0 restores full-cache training.
 holdout = 32768
 
-save_each = 100 # how often to save model & write loss
-checkpoint_each = 10000 # how often to keep checkpoints indefinitely
+save_each = 250 # how often to save model & write loss
+checkpoint_each = 25000 # how often to keep checkpoints indefinitely
 out = path / "out/sonar/multilingual" / _env("RUN", "resid_nc_hm_c0")
 # output directory (fresh dir: resid_const widens every classifier input,
 # layer 0 included -- not checkpoint-compatible with the resid_nc_hm run,
