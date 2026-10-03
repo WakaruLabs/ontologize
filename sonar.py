@@ -179,12 +179,10 @@ scaled = False # skip scaling layer
 encoded = False # skip encoder layer
 
 b = 256 # batch size
-# passes over the cached corpus. NOTE this is the length of the DATA
-# stream, not a target step count: the training loop runs the loader to
-# exhaustion and `state.step` merely continues from wherever a resumed
-# checkpoint left off. So a run resumed with the default would train a
-# further 24 epochs on top of the steps it already has -- set
-# ONTO_EPOCHS to the remaining fraction when topping a run up.
+# passes over the cached corpus, counted over the whole run: a resumed
+# run skips the batches its checkpoint already trained on and stops at the
+# same final step an uninterrupted one would. Raise it to extend a
+# finished run.
 epochs = _env("EPOCHS", 24, int)
 
 lr = 5e-5 # bilinear MLPs require low learning rate for sability

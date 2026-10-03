@@ -87,7 +87,7 @@ def test_constant_head_is_zero_with_finite_gradient():
     """A head constant over the batch has an all-zero centered gram. Its
     CKA with every other head is 0 by definition, and the gradient must
     be finite there rather than sqrt(0)'s infinity times a zero."""
-    import hsic
+    import ontologize.fns.hsic as hsic
     P = jax.nn.one_hot(
         jax.random.randint(jax.random.PRNGKey(0), (32, 4), 0, 8), 8)
     Pc = P.at[:, 1, :].set(jax.nn.one_hot(3, 8))
@@ -123,7 +123,7 @@ def test_penalty_reaches_the_classifier(X):
         _, P, _, _ = model.apply(params, X, 0.0, rng,
                                  method=probe_with_codes, temperature=0.5)
         l, b, hk = P.shape
-        import hsic
+        import ontologize.fns.hsic as hsic
         return sum(hsic.pairwise_head_cka(
             P[i].reshape(b, KW["h"], KW["k"]), 1.0) for i in range(l))
 

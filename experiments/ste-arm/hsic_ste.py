@@ -39,8 +39,7 @@ from typing import Optional, Tuple
 import jax.numpy as jnp
 from jaxtyping import Array, Float, PRNGKeyArray
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "hsic-bottleneck"))
-import hsic
+import ontologize.fns.hsic as hsic
 
 from ontologize.ontologizer import Ontologizer
 from ontologize.training.config import Hyperparams

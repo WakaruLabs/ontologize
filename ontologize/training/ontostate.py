@@ -390,8 +390,11 @@ def train(state: OntoState, dat, lossfn: Callable,
     kcos = DualLoop(s_kcossim, KCOS_target, KCOS_eta, KCOS_ema, KCOS_min,
                     KCOS_max, KCOS_ramp or anneal_steps, step_0)
 
-    # dat iterator already repeats for `epochs` because of num_epochs in SampleLoader.
-    with tqdm(dat, desc=f"Training {epochs} epochs") as pbar:
+    # `dat` yields only the batches after `step_0` (see `SampleLoader`), so
+    # the loop ends at the run's final step whether or not it resumed
+    left = getattr(dat, "steps", None)
+    with tqdm(dat, desc=f"Training {epochs} epochs", initial=step_0,
+              total=None if left is None else step_0 + left) as pbar:
         for batch in pbar:
             # Assuming autoencoder where target Y_0 is exactly input X
             X = batch

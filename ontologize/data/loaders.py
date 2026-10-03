@@ -3,6 +3,7 @@ import grain.samplers as gs
 import jax.numpy as jnp
 import numpy as np
 import einops
+import itertools
 import json
 
 from pathlib import Path
@@ -205,21 +206,59 @@ class JSONLDataSource(gp.RandomAccessDataSource):
            return data[self.text_key]
 
 
+class OffsetSampler:
+    """`sampler` with its first `start` records removed.
+
+    `IndexSampler` lays every epoch end to end in one index stream, and the
+    record (and per-record rng) at each position is a pure function of the
+    position and the seed. Skipping a prefix of that stream therefore
+    reproduces exactly the records an uninterrupted pass would have read
+    from that point on, across epoch boundaries included. `index` is
+    renumbered from 0 because the DataLoader treats it as a position in
+    this sampler; `record_key` and `rng` are the wrapped sampler's."""
+    def __init__(self, sampler, start: int):
+        assert start >= 0, f"negative offset {start}"
+        self.sampler = sampler
+        self.start = start
+
+    def __len__(self) -> int:
+        return max(len(self.sampler) - self.start, 0)
+
+    def __repr__(self) -> str:
+        return f"OffsetSampler({self.sampler!r}, start={self.start})"
+
+    def __getitem__(self, index: int) -> gp.RecordMetadata:
+        if index < 0 or index >= len(self):
+            raise IndexError(f"index {index} outside [0, {len(self)})")
+        m = self.sampler[index + self.start]
+        return gp.RecordMetadata(index=index, record_key=m.record_key,
+                                 rng=m.rng)
+
+
 class SampleLoader:
     """Generic data loader class that does not apply additional transformations
-    to a batch. Used when `Metadata.srctype="embedding"`."""
-    def __init__(self, b: int, epochs: int, d: int, src, operations, 
+    to a batch. Used when `Metadata.srctype="embedding"`.
+
+    `epochs` fixes the length of the whole run's batch stream, and
+    `step_0` is how many of those batches a resumed run has already
+    trained on. Iteration yields only the rest, so a run resumed from a
+    checkpoint at step `step_0` sees the same batches in the same order
+    as one that was never interrupted, and stops at the same final step.
+    `steps` is the number of batches left (None when `src` has no length
+    and the stream's end is unknown)."""
+    def __init__(self, b: int, epochs: int, d: int, src, operations,
                  threads: int=0, shuffle: bool=False, seed: int=42,
-                 drop_remainder: bool=True):
+                 drop_remainder: bool=True, step_0: int=0):
         self.d = d
         self.b = b
         self.threads = threads
         self.seed = seed
-        self.src = src 
+        self.src = src
+        self.step_0 = step_0
         self.transformations = operations + [
                 gp.Batch(batch_size=b, drop_remainder=drop_remainder)
         ]
-        
+
         if hasattr(self.src, '__len__'):
             self.sampler = gs.IndexSampler(
                     num_records=len(self.src),
@@ -228,21 +267,28 @@ class SampleLoader:
                     seed=seed,
                     num_epochs=epochs
                     )
+            n = len(self.sampler) - step_0 * b
+            self.steps = max(n // b if drop_remainder else -(-n // b), 0)
             self.loader = gp.DataLoader(
                     data_source=self.src,
                     operations=self.transformations,
-                    sampler=self.sampler,
+                    sampler=OffsetSampler(self.sampler, step_0 * b),
                     worker_count=self.threads,
                     shard_options=gp.ShardOptions(shard_index=0, shard_count=1)
                     )
         else:
             self.sampler = None
             self.loader = None
+            self.steps = None
 
     def __iter__(self) -> Iterator[Dict[str, Int[np.ndarray, "b d"]]]:
         if self.loader is not None:
+            if not self.steps:
+                return iter(())
             return iter(self.loader)
-        
+        return itertools.islice(self._stream(), self.step_0, None)
+
+    def _stream(self) -> Iterator[Dict[str, Int[np.ndarray, "b d"]]]:
         # Manual pipeline evaluation for Iterable datasets
         iterator = iter(self.src)
         for op in self.transformations:
@@ -280,32 +326,32 @@ class EmbeddingLoader(SampleLoader):
     `Metadata.srctype="embedding"`."""
     def __init__(self, b: int, epochs: int, src, d: int=0,
                  threads: int=0, shuffle: bool=False, seed: int=42,
-                 drop_remainder: bool=True):
+                 drop_remainder: bool=True, step_0: int=0):
         super().__init__(b, epochs, d, src, [],
-                         threads, shuffle, seed, drop_remainder)
+                         threads, shuffle, seed, drop_remainder, step_0)
 
 class ImageLoader(SampleLoader):
     """Loader that applies `FlattenTransform` to a batch. Used when
     `Metadata.srctype="image"`."""
     def __init__(self, b: int, epochs: int, src, height: int, width: int,
                  threads: int=0, shuffle: bool=False, seed: int=42,
-                 drop_remainder: bool=True):
+                 drop_remainder: bool=True, step_0: int=0):
         d = height * width
         operations = [
                 FlattenTransform(height, width)
                 ]
-        super().__init__(b, epochs, d, src, operations, 
-                         threads, shuffle, seed, drop_remainder)
+        super().__init__(b, epochs, d, src, operations,
+                         threads, shuffle, seed, drop_remainder, step_0)
 
 class TextLoader(SampleLoader):
     """Loader that applies `DecodeTransform` and `TokenizeTransform` to a batch.
     Used when `Metadata.srctype="text"`"""
     def __init__(self, b: int, epochs: int, src, tokenizer: Callable,
                  threads: int=0, shuffle: bool=False, maxlen: int=512, seed: int=42,
-                 drop_remainder: bool=True):
+                 drop_remainder: bool=True, step_0: int=0):
         operations = [
                 DecodeTransform(),
                 TokenizeTransform(tokenizer, maxlen=maxlen),
                 ]
-        super().__init__(b, epochs, maxlen, src, operations, 
-                         threads, shuffle, seed, drop_remainder)
+        super().__init__(b, epochs, maxlen, src, operations,
+                         threads, shuffle, seed, drop_remainder, step_0)

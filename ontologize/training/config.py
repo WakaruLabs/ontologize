@@ -490,11 +490,10 @@ class TrainingEnv:
     def init(self, src, keep_spec: bool=False
              ) -> Tuple[OntoState, SampleLoader, ocp.CheckpointManager]:
         """Initialize `OntoState` with `self.hyper.init(self.spec)`,
-        `SampleLoader` with self.meta.loader`, and `CheckpointManager` with 
-        `self.meta.manager`"""
-        loader = self.meta.loader(
-                self.hyper.b, self.hyper.epochs, src,
-                *self.args_loader, **self.kwargs_loader)
+        `SampleLoader` with self.meta.loader`, and `CheckpointManager` with
+        `self.meta.manager`. The loader is built last, from the restored
+        `state.step`, so a resumed run continues the batch stream where
+        the checkpoint left it rather than replaying it from the start."""
         manager = self.meta.manager(*self.args_manager, **self.kwargs_manager)
 
         if self.meta.resume_from is None and not self.meta.overwrite:
@@ -541,6 +540,14 @@ class TrainingEnv:
                 except Exception as e:
                     print(f"Warning: could not truncate loss.csv: {e}")
 
+        step_0 = int(state.step)
+        loader = self.meta.loader(
+                self.hyper.b, self.hyper.epochs, src,
+                *self.args_loader, step_0=step_0, **self.kwargs_loader)
+        if loader.steps == 0:
+            print(f"Warning: step {step_0} is already at or past the end of "
+                  f"{self.hyper.epochs} epochs; nothing left to train. "
+                  f"Raise epochs to extend the run.")
         return state, loader, manager
 
     def train(self, src, encoder=None, decoder=None) -> OntoState:

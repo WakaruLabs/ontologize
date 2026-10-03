@@ -57,8 +57,7 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float, PyTree
 
-sys.path.insert(0, str(ROOT / "experiments" / "hsic-bottleneck"))
-import hsic
+import ontologize.fns.hsic as hsic
 
 from pareto import load_onto
 
