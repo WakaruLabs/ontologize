@@ -141,22 +141,18 @@ def contributions(ckpt: str, step: int, T: float,
     return C.transpose(1, 0, 2), layer, used
 
 
-def decompose(ckpt: str, step: int, T: float, X: Float[np.ndarray, "n d_in"],
-              w_sqrt: Float[np.ndarray, "d_out"], batch: int
-              ) -> Tuple[Float[np.ndarray, "heads"], Float[np.ndarray, "heads"],
-                         Float[np.ndarray, "heads"]]:
-    """Splits each head's contribution size into its layer's input gain
-    and its own atoms. A head's contribution on a row is its gain times
-    the decoded atom it selected, so its centered energy is, up to the
-    gain's small variation, gain^2 * spread^2 -- spread being the
-    usage-weighted RMS distance of its decoded atoms from their
-    usage-weighted mean. Returns (gain RMS, usage-weighted decoded atom
-    norm, spread), all in the whitened frame.
-
-    Gain is one number per layer per row, shared by every head in the
-    layer, so across layers it cannot be told apart from the layer
-    itself; only the atom terms vary between heads of one layer."""
-    model, raw, _ = load_onto(ckpt, step)
+def atoms_and_codes(ckpt: str, step: int, T: float,
+                    X: Float[np.ndarray, "n d_in"],
+                    w_sqrt: Float[np.ndarray, "d_out"], batch: int
+                    ) -> Tuple[Float[np.ndarray, "heads k d_out"],
+                               Int[np.ndarray, "heads n"],
+                               Float[np.ndarray, "l n"],
+                               Int[np.ndarray, "heads"], int]:
+    """Every head's decoded atoms in the whitened frame (each isolated as
+    `contributions` isolates a head, less `decode(0)`), the entry each
+    head selects on each row, and each layer's input gain per row.
+    Returns (atoms, selections, gains, layer of each head, step loaded)."""
+    model, raw, used = load_onto(ckpt, step)
     params = {"params": raw}
     k = model.k
 
@@ -191,7 +187,10 @@ def decompose(ckpt: str, step: int, T: float, X: Float[np.ndarray, "n d_in"],
                 Ein = module.nextinput(Xb, R, P.reshape(Xb.shape[0], -1))
         return jnp.stack(idx), jnp.stack(gains)
 
-    D = np.asarray(model.apply(params, method=atoms)) * w_sqrt  # (H, k, d)
+    # jitted so XLA fuses the per-head isolation: eagerly it materializes
+    # (k, h, h, e), 35 GB for a 380-head layer
+    D = np.asarray(jax.jit(lambda p: model.apply(p, method=atoms))(params)
+                   ) * w_sqrt                                  # (H, k, d)
     f = jax.jit(lambda p, x: model.apply(p, x, method=codes))
     parts = [f(params, jnp.asarray(X[i:i + batch]))
              for i in range(0, len(X), batch)]
@@ -199,8 +198,28 @@ def decompose(ckpt: str, step: int, T: float, X: Float[np.ndarray, "n d_in"],
     G = np.concatenate([np.asarray(g) for _, g in parts], 1)    # (l, n)
     l, n, h = I.shape
     I = I.transpose(0, 2, 1).reshape(l * h, n)
+    return D, I, G, np.repeat(np.arange(l), h), used
+
+
+def decompose(ckpt: str, step: int, T: float, X: Float[np.ndarray, "n d_in"],
+              w_sqrt: Float[np.ndarray, "d_out"], batch: int
+              ) -> Tuple[Float[np.ndarray, "heads"], Float[np.ndarray, "heads"],
+                         Float[np.ndarray, "heads"]]:
+    """Splits each head's contribution size into its layer's input gain
+    and its own atoms. A head's contribution on a row is its gain times
+    the decoded atom it selected, so its centered energy is, up to the
+    gain's small variation, gain^2 * spread^2 -- spread being the
+    usage-weighted RMS distance of its decoded atoms from their
+    usage-weighted mean. Returns (gain RMS, usage-weighted decoded atom
+    norm, spread), all in the whitened frame.
+
+    Gain is one number per layer per row, shared by every head in the
+    layer, so across layers it cannot be told apart from the layer
+    itself; only the atom terms vary between heads of one layer."""
+    D, I, G, layer, _ = atoms_and_codes(ckpt, step, T, X, w_sqrt, batch)
+    k, n = D.shape[1], I.shape[1]
     usage = np.stack([np.bincount(row, minlength=k) / n for row in I])
-    gain = np.repeat(np.sqrt((G ** 2).mean(1)), h)
+    gain = np.sqrt((G ** 2).mean(1))[layer]
     norm = (usage * np.linalg.norm(D, axis=-1)).sum(1)
     mean = (usage[..., None] * D).sum(1)
     spread = np.sqrt((usage * ((D - mean[:, None]) ** 2).sum(-1)).sum(1))
