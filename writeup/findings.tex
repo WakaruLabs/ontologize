@@ -72,7 +72,11 @@ layer's input gain and a few outsized atoms, and still several times
 worse than flat-layer heads of equal size. (ix) No head is a language
 variable in any arm; the strongest head is a topic/genre head. (x)
 Non-negativity forces a collinear dictionary at a third of the signed
-effective rank for $2.4\%$ of $\fvu$.
+effective rank for $2.4\%$ of $\fvu$. (xi) On GPT-2 small, an 800-bit hard
+code whose entries are signed directions in activation space recovers
+97.6\% of GPT-2's loss when spliced back in, more than a $k{=}32$ SAE at
+nearly the same $\fvu$ (96.2\%); per-entry fibers trained on the frozen
+code recover 99.9\% without changing it.
 \end{abstract}
 
 \section{Evaluation frame}
@@ -200,7 +204,10 @@ components for 99\% of variance --- and samples average a pairwise cosine
 of $0.31$. Sections~\ref{sec:gpt2} and~\ref{sec:seeds} additionally use
 GPT-2~\cite{radford2019} layer-8 residual-stream activations ($d{=}768$,
 harvested by \texttt{encode\_acts.py}) as a substrate where sparse
-dictionary learning is known to work.
+dictionary learning is known to work. Section~\ref{sec:gpt2hard} uses a
+separate GPT-2 setup from the \texttt{headline} branch --- the residual
+stream entering block 8 on FineWeb, unwhitened, scored also by GPT-2 loss
+recovered --- whose numbers compare only within that section.
 
 \paragraph{Evaluation.}
 All models minimize the whitened MSE of Equation~\ref{eq:mse}. We report
@@ -510,7 +517,12 @@ diagnostics live in \texttt{experiments/ste-arm/}
 \texttt{headscript.py}, \texttt{headeta.py}, \texttt{embedgeom.py},
 \texttt{decodehead.py}, \texttt{make\_zca.py}); its notebook
 \texttt{writeup/ste-arm.md} records every run's command and the
-superseded readings. The curated test suite pins each protocol's
+superseded readings. The GPT-2 hard-code runs of
+Section~\ref{sec:gpt2hard} live in \texttt{experiments/gpt2/}
+(\texttt{train\_onto.py}, \texttt{diagnose.py}, \texttt{seedstab.py}; notes
+in \texttt{DIRECT\_GAIN\_STE.md} and \texttt{results/README.md}, with the two
+headline runs' configs, diagnostics and loss curves) and need the
+\texttt{headline} branch's code. The curated test suite pins each protocol's
 statistics against planted-structure synthetics. Artifacts live under
 \texttt{data/out/sonar/} and \texttt{data/out/gpt2\_l8/}. At most three
 straight-through runs fit concurrently on one 24\,GB device.

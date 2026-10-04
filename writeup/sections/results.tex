@@ -1262,6 +1262,152 @@ Per Section~\ref{sec:seeds}, this describes one head of one seed --- though
 index 54 is also the fixed-init stack's one strongly reproducible head
 (Section~\ref{sec:entries}).
 
+\section{Hard codes on GPT-2 small: entries in activation space}
+\label{sec:gpt2hard}
+
+A second line of straight-through runs (\texttt{experiments/gpt2}, from the
+\texttt{headline} branch) takes the hard code to GPT-2 small and adds the
+measure an embedding substrate lacks: the fraction of GPT-2's loss
+recovered when the reconstruction is spliced back into the model, $(CE_{\rm
+ablate} - CE_{\rm recon})/(CE_{\rm ablate} - CE_{\rm clean})$ with the
+residual mean-ablated as the floor.
+
+\paragraph{Setup, and what is not comparable.} Activations are the residual
+stream \emph{entering} block 8 (Section~\ref{sec:seeds}'s GPT-2 runs use the
+stream leaving it), mean-centred and scaled to unit mean square, on
+FineWeb; $\fvu$ here is unwhitened. These numbers therefore do not compare
+with the other GPT-2 results in this document, only with each other and
+with the SAE baselines trained on the same cache. Held-out evaluation uses
+documents disjoint from training: 520k tokens for the 40M-token runs, 65k
+for the one-epoch ones. The runs use three options this branch does not
+implement --- \texttt{direct}, \texttt{resid\_first} and \texttt{gain\_clip},
+below --- so they reproduce only on \texttt{headline}; its private heads are
+this branch's \texttt{ConcatDictBlock}, and its fibers and head dropout
+have been ported.
+
+\paragraph{The design.} Relative to Section~\ref{sec:ste}, three changes.
+\emph{Direct entries}: dictionary entries are signed vectors in activation
+space itself, with no latent dictionary space and no decoder, so every
+class is literally a steering direction. \emph{Gain-shape on every layer}:
+layer 0 too classifies the unit direction of what it corrects
+(\texttt{resid\_first}), and each layer's contribution is scaled by the
+observed residual norm, clipped at $\lVert X\rVert$, which makes the model
+positively homogeneous, $f(cX) = c\,f(X)$. \emph{Annealed straight-through
+selection}: argmax forward, softmax backward, the temperature annealed $1
+\to 0.03$ over the first 60k of 156k steps. With $5\times32$ heads of 32
+labels the code is 800 bits per token with no continuous coefficients.
+
+\begin{table}[h]\centering\small
+\begin{tabular}{@{}lllrr@{}}
+\toprule
+model & entries & code per token & $\fvu$ & loss recovered \\
+\midrule
+\textbf{direct + gain + STE} & signed, in $\mathbb{R}^{768}$ & 800 bits & 0.195 & \textbf{97.6\%} \\
+private heads + gain + STE & 48-dim blocks, shared decoder & 800 bits & 0.186 & 97.5\% \\
+private heads, $k{=}64$ & 48-dim blocks, shared decoder & 960 bits & \textbf{0.164} & \textbf{97.9\%} \\
+\midrule
+top-$k$ SAE, $k{=}32$, $m{=}5120$ & --- & 32 coeffs + $\sim$394 bits & 0.189 & 96.2\% \\
+top-$k$ SAE, $k{=}128$, $m{=}5120$ & --- & 128 coeffs + $\sim$1580 bits & 0.116 & 98.6\% \\
+soft Ontologizer (1 epoch) & --- & 4960 mixture weights & 0.016 & 99.85\% \\
+\bottomrule
+\end{tabular}
+\caption{GPT-2 small, residual entering block 8. Ontologizers: one pass
+over 40M tokens, one seed. SAEs: 10 epochs over 10M tokens with
+\texttt{sae.py}'s unwhitened objective. Clean CE 3.806, mean-ablated 8.283;
+the direct code reaches 3.914.}
+\label{tab:gpt2hard}
+\end{table}
+
+\textbf{A discrete 800-bit code recovers more of GPT-2's loss than a $k{=}32$
+SAE at nearly the same $\fvu$}: 97.6\% against 96.2\%, at 0.195 against
+0.189. Across architectures, then, $\fvu$ does not order downstream loss
+--- the SAE's slightly lower error costs the model more --- where within
+the Ontologizer family on SONAR text fidelity was a monotone function of
+$\fvu$ (Section~\ref{sec:steer}). Raising the labels per head to 64 (960
+bits) passes the SAE on both measures. Every layer contributes (prefix
+$\fvu$ $0.472 \to 0.347 \to 0.278 \to 0.231 \to 0.195$ for the direct
+code, $0.451 \to 0.186$ for private heads), label usage stays near
+uniform in every layer (imbalance 0.01--0.16 bits of 5; 0.30 at the
+private code's last layer), and the observed gain is close to the best
+per-sample scale for each layer's contribution (optimal rescale
+0.89--1.09, coefficient of variation 0.05--0.08).
+
+\paragraph{What each change buys.} One-epoch runs (10M tokens) isolate them:
+
+\begin{center}\small
+\begin{tabular}{@{}lrr@{}}
+\toprule
+variant (800 bits unless noted) & $\fvu$ & loss recovered \\
+\midrule
+STE alone (latent dictionary + decoder) & 0.327 & 93.3\% \\
++ gain & 0.290 & 94.3\% \\
++ gain, private heads & 0.288 & 94.2\% \\
++ gain, direct entries & \textbf{0.217} & \textbf{96.95\%} \\
+\quad seed 43 & 0.219 & 96.85\% \\
+\quad $k{=}64$ (960 bits) & 0.186 & 97.6\% \\
+\quad $k{=}128$ (1120 bits) & 0.165 & 97.9\% \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Gain-shape and direct entries each help, and direct entries most. Their
+advantage is partly speed: over 40M tokens private heads close the gap and
+finish slightly ahead (0.186 against 0.195). Without direct entries and
+gain, more labels per head collapse rather than help ($\fvu$ 0.75 and 0.80
+at $k{=}64$ and 128), and the other straight-through configurations froze
+their last layer at 4.8--5.0 bits, every head constant; the direct code's
+deepest layer never froze. The base result reproduces across seeds to
+0.002 $\fvu$. Annealing matters: straight-through at a constant $T{=}1$
+reaches 0.50 and a scheduled soft-to-hard mix 0.39. Sparse encoders in
+front of the classifier never beat the dense one: at one epoch, 32- and
+640-wide front-ends reach 0.25--0.29 against the dense classifier's 0.217,
+and a 4096-wide, 64-active encoder per
+head with dead-latent resampling reaches 0.225 against 0.195 for the dense
+front-end on the same 40M tokens, with 88\% of its layer-1 latents dead at
+no cost to that layer.
+
+\paragraph{Fibers.} A rank-$r$ local basis per entry, with coordinates read
+linearly from the unit residual (\texttt{fiber\_rank}; ported to this
+branch), turns the code into a discrete base point plus $r$ numbers per
+head. ``Base only'' is the same model with the fibers removed, and
+measures whether the discrete code still means what it did:
+
+\begin{center}\small
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+variant (1 epoch, direct + gain + STE) & extra numbers & $\fvu$ (base only) & loss recovered \\
+\midrule
+base & 0 & 0.217 & 96.95\% \\
+rank-4 fiber, fiber dropout 0.5 & 640 & 0.059 (0.274) & 99.4\% \\
+rank-8 fiber, fiber dropout 0.5 & 1280 & 0.014 (0.304) & 99.9\% \\
+rank-4 fiber, joint norm cap 0.2 & 640 & 0.180 (0.227) & 97.6\% \\
+rank-1 radial fiber (gain per entry) & 160 & 0.148 (0.669) & 98.5\% \\
+\textbf{frozen base, rank-4 fibers trained after} & 640 & \textbf{0.016 (0.215)} & 99.9\% \\
+unconstrained fibers & --- & --- ($\sim$10) & --- \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Fibers recover far more than the SAE's $\fvu$ advantage, but they carry
+hundreds of continuous numbers per token --- more than the $k{=}32$ SAE's 32
+coefficients --- so this is not a matched-capacity comparison. The
+question they raise is what keeps the discrete base honest. Unconstrained,
+the fibers take over (base-only $\fvu$ $\sim$10); fiber dropout holds the
+base at 0.23--0.30 whatever the rank; a joint norm cap guarantees it at the
+cost of most of the fibers' value. \textbf{Training the fibers after
+freezing the base is best on both counts}: the base is untouched by
+construction (0.215) and the fibers reach the reconstruction of
+unconstrained joint fibers. The mechanisms used in joint training were
+suppressing the fibers, not protecting the base.
+
+\paragraph{Seed stability, replicated.} Matching heads across two seeds by
+partition NMI (\texttt{seedstab.py}), the partitions agree only in layer 0
+(NMI 0.09 against 0.05 for unrelated heads within one run) and not at all
+in layers 1--4. With direct signed entries, gain-shape from layer 0, a
+different hook and a different objective, this is the pattern of
+Section~\ref{sec:seeds}: which labels share a head is seed-dependent past
+the first layer.
+
 \section{Dictionary geometry and the non-negativity constraint}
 \label{sec:geom}
 
