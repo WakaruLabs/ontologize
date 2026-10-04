@@ -20,10 +20,9 @@ other.
 
 Every number in the prose comes from a script's output in the parent repo, almost all of
 it from `../experiments/ste-arm/` and the root eval scripts (`pareto.py`, `steerfid.py`,
-`autointerp.py`, ...). Their running record is `ste-arm.md` here and
-`../experiments/ste-arm/notes.md`; check claims against those or rerun the script, and do
-not invent numbers. The two notebooks have diverged and each holds sections the other
-lacks.
+`autointerp.py`, ...). Their running record is `../experiments/ste-arm/notes.md` (which
+absorbed the former `writeup/ste-arm.md`); check claims against it or rerun the script,
+and do not invent numbers.
 
 ## Build
 
