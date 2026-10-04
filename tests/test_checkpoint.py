@@ -91,10 +91,52 @@ def test_a_prerename_spec_still_rebuilds(tmp_path):
 
 
 def test_migrate_spec_leaves_unknown_keys_to_raise(tmp_path):
-    """Renames only. Dropping a key it does not recognize would build a
-    model configured differently from the one that trained, which is worse
-    than refusing to build one."""
+    """Dropping a key it does not recognize would build a model configured
+    differently from the one that trained, which is worse than refusing to
+    build one."""
     bad = {"d_in": 4, "d_out": 4, "not_a_field": 1}
     assert migrate_spec(bad) == bad
     with pytest.raises(TypeError):
         Ontologizer(**migrate_spec(bad))
+
+
+def headline_spec(model):
+    """`model`'s spec as the headline branch writes it: its names for signed
+    and concatenated heads, plus every headline-only field at its default
+    (the hs_* sizes are non-trivial defaults, inert while head_sparse is
+    off), with fast_stats on."""
+    import dataclasses
+    spec = {f.name: getattr(model, f.name) for f in dataclasses.fields(model)
+            if f.name not in ("parent", "name")}
+    spec["signed_dict"] = spec.pop("signed")
+    spec["private_heads"] = spec.pop("concat")
+    spec.update(resid_first=False, logit_norm=False, direct=False,
+                gain_clip=False, head_sparse="none", hs_shared=False,
+                hs_decoder=False, hs_auxk=0, m_h=32, k_z=4,
+                hs_bandwidth=1e-3, hs_init_threshold=1e-3, fast_stats=True)
+    return spec
+
+
+@pytest.mark.parametrize("signed,concat", [(False, False), (True, True)])
+def test_a_headline_spec_rebuilds(signed, concat):
+    """The headline branch names signed and block-diagonal heads
+    `signed_dict` and `private_heads`, and carries fields this branch lacks.
+    Its private heads are ConcatDictBlock under another name (same
+    `(h, k, d // h)` weights), so the spec maps onto `concat`."""
+    model = Ontologizer(**{**KW, "signed": signed, "concat": concat})
+    spec = headline_spec(model)
+    with pytest.raises(TypeError):
+        Ontologizer(**spec)                    # the failure being migrated
+    assert Ontologizer(**migrate_spec(spec)) == model
+
+
+@pytest.mark.parametrize("field,value", [("direct", True), ("resid_first", True),
+                                         ("logit_norm", True), ("gain_clip", True),
+                                         ("head_sparse", "jumprelu")])
+def test_an_active_headline_feature_refuses(field, value):
+    """Dropping a headline-only field is safe only at its no-op value; a
+    model that used the feature cannot be built here."""
+    spec = headline_spec(Ontologizer(**KW))
+    spec[field] = value
+    with pytest.raises(ValueError, match=field):
+        migrate_spec(spec)
