@@ -322,6 +322,19 @@ class DictEnc(nn.Module):
         K = self.classifier(U)
         return self.dict.cluster(K, *args, **kwargs)
 
+    def head_outputs(self, U: Float[Array, "... d_in"],
+                     P: Float[Array, "... h k"]) -> Float[Array, "... h e"]:
+        """Per-head dictionary output for a given classification `P` of the
+        shaped input `U`, with the router gain and fiber coordinates applied
+        as `withClusts` applies them, and the layer gain not yet applied.
+
+        For analyses that hold or force a classification and need what the
+        layer then writes: rebuilding it as `dict.hfwd(P)` drops the router
+        and the fibers, and silently computes a different model's output
+        once either is on."""
+        S = self.scale(U) if self.scaled else None
+        return self.dict.hfwd(P, S, C=self.fiber_coords(U))
+
     def scale(self, E: Float[Array, "... d_in"]) -> Float[Array, "... h"]:
         """Forward pass for `self.router`, which returns the router vector for the output of
         `self.dict`. If `self.scaled=False`, returns vector of all 1s.

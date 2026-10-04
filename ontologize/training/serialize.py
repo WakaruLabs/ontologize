@@ -26,7 +26,6 @@ LEGACY_SPEC_KEYS = {
 HEADLINE_INERT_SPEC_KEYS = {
     "resid_first": False,
     "logit_norm": False,
-    "direct": False,
     "gain_clip": False,
     "head_sparse": "none",
 }

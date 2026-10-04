@@ -110,7 +110,7 @@ def headline_spec(model):
             if f.name not in ("parent", "name")}
     spec["signed_dict"] = spec.pop("signed")
     spec["private_heads"] = spec.pop("concat")
-    spec.update(resid_first=False, logit_norm=False, direct=False,
+    spec.update(resid_first=False, logit_norm=False,
                 gain_clip=False, head_sparse="none", hs_shared=False,
                 hs_decoder=False, hs_auxk=0, m_h=32, k_z=4,
                 hs_bandwidth=1e-3, hs_init_threshold=1e-3, fast_stats=True)
@@ -130,7 +130,15 @@ def test_a_headline_spec_rebuilds(signed, concat):
     assert Ontologizer(**migrate_spec(spec)) == model
 
 
-@pytest.mark.parametrize("field,value", [("direct", True), ("resid_first", True),
+def test_a_headline_direct_spec_rebuilds():
+    """`direct` is ported, so a headline model that used it is no longer
+    refused: it maps onto this branch's field of the same name."""
+    kw = {**KW, "signed": True, "direct": True, "e_dec": KW["d_out"]}
+    model = Ontologizer(**kw)
+    assert Ontologizer(**migrate_spec(headline_spec(model))) == model
+
+
+@pytest.mark.parametrize("field,value", [("resid_first", True),
                                          ("logit_norm", True), ("gain_clip", True),
                                          ("head_sparse", "jumprelu")])
 def test_an_active_headline_feature_refuses(field, value):

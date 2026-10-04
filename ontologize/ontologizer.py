@@ -156,6 +156,12 @@ class Ontologizer(nn.Module):
     # decoder (Linear) args
     activation_dec: str = "none"
     biased_dec: bool = False
+    # no latent space and no decoder: dictionary entries live in output
+    # space (needs e_dec == d_out), so every entry is directly a direction
+    # in activation space and `decode` is the identity. Needs `signed`: an
+    # abs()'d entry in output space could only add along the positive
+    # orthant, which a residual's sign does not respect.
+    direct: bool = False
 
     # encoder (Linear) args
     encoded: bool = False
@@ -296,19 +302,36 @@ class Ontologizer(nn.Module):
 
         self.dictencs = dictencs
 
-        self.decoder = Linear(
-            d_in=self.e_dec, 
-            d_out=self.d_out, 
-            biased=self.biased_dec, 
-            activation=self.activation_dec,
-            dtype_str=self.dtype_str,
-            dtype_p_str=self.dtype_p_str
-        )
+        if self.direct:
+            if self.e_dec != self.d_out:
+                raise ValueError(
+                    f"direct entries live in output space, so e_dec must "
+                    f"equal d_out; got e_dec={self.e_dec}, d_out={self.d_out}")
+            if not self.signed:
+                raise ValueError(
+                    "direct needs signed=True: abs()'d entries in output "
+                    "space can only add along the positive orthant")
+            if self.biased_dec or self.activation_dec != "none":
+                raise ValueError(
+                    "direct has no decoder to carry biased_dec or "
+                    "activation_dec")
+            self.decoder = None
+        else:
+            self.decoder = Linear(
+                d_in=self.e_dec,
+                d_out=self.d_out,
+                biased=self.biased_dec,
+                activation=self.activation_dec,
+                dtype_str=self.dtype_str,
+                dtype_p_str=self.dtype_p_str
+            )
 
         self.interventions = [OntologizerIntervention(i, []) for i in range(self.l+1)]
 
     def fwd_dec(self, F: Float[Array, "... e_dec"]) -> Float[Array, "... d_out"]:
         """Forward decoder pass without applying bias or activation function"""
+        if self.direct:
+            return F.astype(self.dtype)
         return self.decoder.fwd(F)
 
     def prefix(self, R: Float[Array, "... e_dec"],
@@ -413,7 +436,10 @@ class Ontologizer(nn.Module):
         return R, jnp.stack(Ps)
 
     def decode(self, E: Float[Array, "... e_dec"]) -> Float[Array, "... d_out"]:
-        """`self.decoder` forward pass. Unembeds a reconstructed output of `self.dict`."""
+        """`self.decoder` forward pass. Unembeds a reconstructed output of
+        `self.dict`; the identity under `direct`."""
+        if self.direct:
+            return E.astype(self.dtype)
         return self.decoder(E)
 
     def __call__(self, X: Float[Array, "... d_in"],
@@ -481,6 +507,10 @@ class Ontologizer(nn.Module):
             raise NotImplementedError(
                 "base_aux is implemented in withStats only; the ghost path "
                 "would train without the base-only loss (set ghost=False)")
+        if self.direct:
+            raise NotImplementedError(
+                "the ghost path composes through the decoder's weights, and "
+                "direct has no decoder (set ghost=False)")
         E, rng_K = self.encode(X, sd_in, rng)
         E_g = self.encoder.ghost(X, E)
 

@@ -158,7 +158,7 @@ def atoms_and_codes(ckpt: str, step: int, T: float,
     if model.scaled or model.fiber_rank:
         # a head's contribution is then gain x router(x) x atom (plus a
         # fiber term), so "gain x atom" no longer decomposes it exactly
-        raise SystemExit(
+        raise ValueError(
             f"{ckpt}: the atom decomposition assumes contribution = gain x "
             f"atom, which the router (scaled) and fibers break")
 
@@ -417,10 +417,14 @@ def main() -> None:
                               w_sqrt, cfg)
     size_report(v, layer, share)
     Xw = X * w_sqrt
-    atom_report(v, layer, share,
-                *decompose(cfg.a, cfg.step_a, cfg.temperature, X, w_sqrt,
-                           cfg.batch),
-                ((Xw - Xw.mean(0)) ** 2).sum() / len(X))
+    try:
+        parts = decompose(cfg.a, cfg.step_a, cfg.temperature, X, w_sqrt,
+                          cfg.batch)
+    except ValueError as e:
+        print(f"\n(atom report skipped: {e})")
+    else:
+        atom_report(v, layer, share, *parts,
+                    ((Xw - Xw.mean(0)) ** 2).sum() / len(X))
     if cfg.ref_a:
         print(f"\n=== reference pair")
         rv, _, rshare = compare(cfg.ref_a, 0, cfg.ref_b, 0, X, w_sqrt, cfg)

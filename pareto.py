@@ -176,7 +176,7 @@ def onto_points(cfg, X_eval, w, base_w):
             else:
                 P = tophead(dictenc.dict.cluster(K, T), origin[i], m, h)
             R = R + dictenc.gained(
-                    dictenc.dict.combine(dictenc.dict.hfwd(P)), G)
+                    dictenc.dict.combine(dictenc.head_outputs(U, P)), G)
             if i < module.l - 1:
                 E_in = module.nextinput(X, R, P.reshape(P.shape[0], -1))
         return module.decode(R)
@@ -191,7 +191,7 @@ def onto_points(cfg, X_eval, w, base_w):
             P = dictenc.dict.cluster(dictenc.classifier(U), T)
             Ps.append(P.mean(0))
             R = R + dictenc.gained(
-                    dictenc.dict.combine(dictenc.dict.hfwd(P)), G)
+                    dictenc.dict.combine(dictenc.head_outputs(U, P)), G)
             if i < module.l - 1:
                 E_in = module.nextinput(X, R, P.reshape(P.shape[0], -1))
         return jnp.stack(Ps)  # (l, h, k)
