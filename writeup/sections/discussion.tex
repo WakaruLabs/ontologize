@@ -172,11 +172,12 @@ usage stays near-uniform. The flat arm shows the same pattern, so it
 belongs to classifying the raw input.
 \item \textbf{Heads follow what the embedding encodes: meaning before
 language.} The strongest head encodes topic and genre, as a
-language-agnostic semantic embedding should be organized. Language, the
+language-agnostic semantic embedding should be organized, and it is the
+one head that recurs across seeds. Language, the
 one factor with free labels, was a probe rather than an expected
 variable: it is carried as neighbourhoods across heads, never by one
 head, consistent with languages being weakly separated regions of SONAR
-space. On that probe the hard code carries six times what the softmax
+space. On that probe the hard code carries four times what the softmax
 reference does, so partitions do align with known factors; a test of
 whether heads are natural variables needs topic or genre labels.
 \item \textbf{Per-latent lenses mis-measure classifier codes.} $k$-sparse
@@ -207,8 +208,7 @@ reproducible or establish which are. Candidates: partition-level seed
 stability on the softmax Ontologizer and \texttt{g160softmax}; whether
 large-atom heads' reproducibility can be extended by training pressure;
 whether the $k{=}2$ arm's one-bit heads reproduce better than 32-way ones;
-whether SONAR's head 54 at the fixed initialization is the shipped-init
-run's topic head (same seed, same index); and a GPT-2 flat arm, so the
+what lets the topic head recur when no other head does; and a GPT-2 flat arm, so the
 matched-size comparison of Section~\ref{sec:l0size} has a second
 dataset.
 \item \textbf{Bring the GPT-2 hard code onto this branch, then to SONAR.}
@@ -224,8 +224,8 @@ not been measured.
 exact and matched unconstrained fibers' reconstruction; it should be the
 default, scored at matched continuous capacity against SAEs (rank-1
 radial fibers already sit at 160 numbers per token).
-\item \textbf{Remeasure on the fixed initialization.} Steering, language,
-gain and blend ablations all ran on the shipped initialization, which
+\item \textbf{Remeasure on the fixed initialization.} Entanglement and
+the gain and blend ablations ran on the shipped initialization, which
 was $1.84\times10^8$ off at step 0 and left 10\% of the code unused.
 \item \textbf{The steering overlay at scale.} \texttt{steerembed.py} with
 SAE decoder rows, bilinear eigenfeatures and supervised diff-of-means

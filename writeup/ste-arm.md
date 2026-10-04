@@ -369,6 +369,37 @@ collateral 0.57), above it the hard code does (0.663 against 0.520 at
 not a regime any steering claim wants. In the clean regime the soft
 model is several times better.
 
+### On the fixed initialization
+
+The tables above are `ste_h76`, the shipped initialization. Rerun on
+`ste_h76_init01` and its seed-43 twin (60 entries, 32 rows each):
+
+| direction | shipped @0.25 / 1.0 | init01 @0.25 / 1.0 | i01_s43 @0.25 / 1.0 |
+|---|---|---|---|
+| decode | 0.289 / 0.591 | 0.364 / 0.607 | 0.372 / 0.598 |
+| grad | 0.236 / 0.113 | 0.304 / 0.103 | 0.308 / 0.106 |
+| margin | 0.118 / 0.201 | 0.158 / 0.275 | 0.108 / 0.231 |
+| adjoint, oriented | 0.008 / 0.021 | 0.001 / 0.001 | 0.000 / 0.000 |
+| random | 0.023 / 0.030 | 0.018 / 0.024 | 0.022 / 0.032 |
+| collateral | 0.58 / 0.81 | 0.657 / 0.877 | 0.658 / 0.877 |
+
+**The fixed initialization realizes more and disturbs more, and the
+conclusion stands.** Decode realization at 0.25 rises from 0.289 to
+0.36-0.37, but collateral at the same strength rises from 0.58 to 0.66,
+and the decode direction still saturates near 0.65 by strength 4. At
+matched collateral the hard code remains several times less steerable
+than softmax's 0.824. The adjoint direction is now dead outright, below
+random at every strength in both seeds.
+
+**The two seeds agree to within 0.015 at every strength for decode,
+grad, adjoint and random, and to 0.002 in collateral** -- another aggregate that reproduces where individual
+heads do not.
+
+```bash
+uv run python experiments/ste-arm/steerembed.py \
+    --model data/out/sonar/multilingual/ste_h76_init01 --temperature 0.00015
+```
+
 ### The aggregate hides a reversal: it is all about depth
 
 Steering is applied to the INPUT, so a direction derived from layer i's
@@ -1721,9 +1752,9 @@ the largest atom (Spearman 0.62) and how peaked the head's profile is
 effect of the section above, resolved: it is a few heads with outsized
 atoms. It is not the layer-0 lift, though -- without head 54 the
 layer-0 mean falls only from 0.080 to 0.070, still twenty times the deep
-layers. Head 54 is also the index of the topic/genre head in the
-shipped-init `ste_h76`, which shares its seed; that suggests the same
-head recurring, unverified.
+layers. Head 54 is also the topic/genre head: the same partition as the
+shipped-init `ste_h76`'s h54, and the counterpart of seed 43's top head
+(see "The topic head recurs across seeds" below).
 
 The large atoms are distinct directions: different heads' largest atoms
 are near orthogonal (median |cos| 0.022, below random atom pairs). On
@@ -1763,6 +1794,16 @@ chance of 0.012:
 | flat | 1x380 | 0.277 | 0.276 | 0.102 | 0.257 |
 | flat + kcos | 1x380 | 0.247 | 0.246 | 0.080 | 0.271 |
 | softmax reference | 5x32 | 0.055 | 0.043 | 0.036 | 0.275 |
+| ste_h76_init01 (fixed init) | 5x76 | 0.180 | 0.170 | 0.103 | 0.423 |
+| ste_h76_i01_s43 (fixed init, seed 43) | 5x76 | 0.165 | 0.155 | 0.089 | 0.428 |
+
+The first seven rows are on the shipped initialization. **The fixed
+initialization concentrates language less in any one head and carries
+more of it across heads**: best-head NMI falls from 0.269 to 0.17-0.18
+while the 32-head probe rises from 0.378 to 0.42-0.43, consistently
+across both seeds. Their best language heads are L0 h46 and L0 h14 --
+the latter seed 43's topic head (below), which picks up language as a
+side effect of partitioning by topic.
 
 **As expected, no head encodes language outright.** The best reaches an
 NMI of 0.28 against an attainable ceiling of 0.875, and none of the
@@ -1783,9 +1824,9 @@ though there is no reason to expect one to. `headlang.py` had the same error in 
 (`min(1, H_l/H_h)`, which prints 1.00 for these arms and is wrong in
 both regimes); it is fixed.
 
-**The hard code carries more of the known factor**, six times the
-softmax reference on null-corrected best-head NMI, consistently across
-arms.
+**The hard code carries more of the known factor**: six times the
+softmax reference on null-corrected best-head NMI on the shipped
+initialization, and about four times (3.6-4.0) on the fixed one.
 
 ### Per-label tags, script, and conjunctions (`headscript.py`)
 
@@ -1874,6 +1915,12 @@ variance, and at 0.30 sd those cuts pass through the clusters rather than
 around them, which is what produces tags that fire on a language plus its
 neighbours with confusions shared across heads.
 
+The baseline uses the nominal 32 groups for every head. Dividing by the
+groups a head actually uses instead promotes shipped-init heads that use
+few entries (L0 h44, 10 of 32, reads 584x against h54's 251x at 65,536
+rows), so the ranking to read is raw eta^2, on which h54 leads (0.111
+against h44's 0.080).
+
 Two asides from the same table. The heads are radically unequal, 235x for
 the best against 5x for the median. And the layer-4 heads are
 near-random partitions at 2x, which is `lastlayer.py`'s workless final
@@ -1917,6 +1964,39 @@ embeddings, and the lowest language NMI among structured heads, because
 topic is near-orthogonal to language. Monosemantic features are there and
 the labeled variable we had was the wrong one -- but "a topic head" was
 too clean a summary.
+
+### The topic head recurs across seeds (`topichead.py`)
+
+Everything above is one head of one run, and the seed section says no
+per-head result survives a seed change. This one does. Partition NMI of
+h54 against its best match in each other run, against the median NMI of
+the other heads at the same index, on 65,536 held-out rows:
+
+| run | top layer-0 head by eta^2 | eta^2 | next head | h54 matched in it |
+|---|---|---|---|---|
+| ste_h76 (shipped init, seed 42) | h54 | 0.111 | 0.080 | -- |
+| ste_h76_init01 (seed 42) | h54 | 0.117 | 0.062 | h54, NMI 0.355 (others 0.024) |
+| ste_h76_i01_s43 (seed 43) | h14 | 0.122 | 0.068 | h14, NMI 0.413 (others 0.010) |
+
+**The topic head is the one head found in every run.** Fixing the
+initialization kept it at the same index (same seed, so the same
+classifier initialization); a different seed grows it at a different
+index, and there too it is the strongest head by nearly a factor of two.
+It agrees with the large-atom analysis, where head 54 alone reproduced
+at 0.844 on matched contributions. So the head
+the language-agnostic embedding should be organized by is both its
+strongest partition and the only one the architecture finds reliably --
+the first per-head result here that does not inherit the seed caveat.
+Its NMI across seeds (0.41) is still well short of the run-to-own-
+checkpoint control on layer 0 (0.87), so it is the same variable carved
+differently, not the same partition.
+
+```bash
+uv run python experiments/ste-arm/topichead.py --model \
+    data/out/sonar/multilingual/ste_h76 \
+    data/out/sonar/multilingual/ste_h76_init01 \
+    data/out/sonar/multilingual/ste_h76_i01_s43
+```
 
 **Entries must be decoded as deviations from the head mean.** An entry's
 cosine to that mean is 0.849, so decoding entries raw returns one shared

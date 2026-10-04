@@ -195,32 +195,37 @@ and the measurement below is taken in embedding space instead.
 \begin{table}[h]\centering\small
 \begin{tabular}{@{}lrr@{}}
 \toprule
-direction & \texttt{ste\_h76} @0.25 / 1.0 & softmax @0.25 / 1.0 \\
+direction & hard code @0.25 / 1.0 & softmax @0.25 / 1.0 \\
 \midrule
-decode                       & 0.289 / 0.591 & \textbf{0.824} / 0.569 \\
-grad                         & 0.236 / 0.113 & 0.453 / 0.477 \\
-adjoint, before sign fix     & 0.007 / 0.016 & 0.224 / 0.329 \\
-adjoint, oriented            & 0.008 / 0.021 & 0.427 / 0.501 \\
-adjoint, oriented per sample & 0.026 / 0.026 & 0.446 / 0.512 \\
-random                       & 0.023 / 0.030 & 0.020 / 0.037 \\
+decode                       & 0.364 / 0.607 & \textbf{0.824} / 0.569 \\
+grad                         & 0.304 / 0.103 & 0.453 / 0.477 \\
+margin                       & 0.158 / 0.275 & --- \\
+adjoint, before sign fix     & ---           & 0.224 / 0.329 \\
+adjoint, oriented            & 0.001 / 0.001 & 0.427 / 0.501 \\
+adjoint, oriented per sample & ---           & 0.446 / 0.512 \\
+random                       & 0.018 / 0.024 & 0.020 / 0.037 \\
+\midrule
+collateral                   & 0.66 / 0.88   & 0.58 / --- \\
 \bottomrule
 \end{tabular}
-\caption{Realization rate (target entry newly selected), 64 entries
+\caption{Realization rate (target entry newly selected), 60--64 entries
 $\times$ 32 held-out rows, chance 0.031. Collateral agrees within 0.01
-across directions at a given strength, so rows compare at equal budget.}
+across directions at a given strength, so rows within a column compare
+at equal budget. Hard code: \texttt{ste\_h76\_init01}; its seed-43 twin
+agrees within 0.015 in every decode, grad and random cell.}
+\label{tab:steerembed}
 \end{table}
 
 \textbf{Steering works, and the text cycle was hiding it.} The decode
 direction realizes the target entry on 82\% of rows for the softmax model
 at strength 0.25, where the text cycle put every model within noise of
-random. \textbf{The hard code is the less steerable of the two}: at
-matched collateral ($\sim$0.58) softmax realizes 0.82 against the hard
-code's 0.28, and does so at the lowest strength while the hard code needs
-the largest --- a hard argmax has margins a small nudge cannot cross.
-Sweeping strength on the hard code, its decode direction saturates at
-$\sim$0.66 (a third of interventions are unrealizable at any strength),
-and it overtakes the soft model only past collateral 0.85, where most
-other heads have moved too.
+random. \textbf{The hard code is the less steerable of the two}: softmax
+realizes 0.82 at collateral 0.58, where the hard code realizes 0.36
+while already disturbing more (0.66) --- a hard argmax has margins a
+small nudge cannot cross. Sweeping strength on the hard code, its decode
+direction saturates at $\sim$0.65 (a third of interventions are
+unrealizable at any strength), and it overtakes the soft model only past
+collateral 0.85, where most other heads have moved too.
 
 \textbf{\texttt{BilinearBlock.rev} had a sign bug}: \texttt{eigh} fixes
 eigenvectors only up to sign, so \texttt{rev} returned a direction whose
@@ -234,8 +239,8 @@ convention should not be able to supply. It can here because SONAR is
 anisotropic --- $x\cdot v$ is dominated by $\mathbb{E}[x]\cdot v$, which
 has a consistent sign --- whereas on isotropic Gaussian inputs (the unit
 test) a weight-only direction raises the logit on about half the samples.
-The hard code is unmoved by either orientation. The depth decomposition
-of these numbers, which reverses the aggregate ranking of
+On the hard code the oriented eigendirection is dead, below random at
+every strength. The depth decomposition of steering, which reverses the aggregate ranking of
 \texttt{decode} and \texttt{grad}, is in Appendix~\ref{sec:steerlayer}.
 
 Still not run: SAE decoder-row addition and supervised diff-of-means
@@ -383,10 +388,9 @@ A third off the held-out error and the code essentially full, from one
 scalar --- the largest single effect in the straight-through work. It
 subsumes two earlier corrections: the utilization gap that the
 entropy-pressure rescale and input whitening were each partly recovering
-\emph{was} the initialization. \textbf{The steering, language, gain and
-blend measurements below were made on the shipped initialization} and
-have not been remeasured; the seed-reproducibility and entry-share
-measurements of Section~\ref{sec:seeds} use the fixed one.
+\emph{was} the initialization. Hard-code results below use the fixed
+initialization except the entanglement measurements of
+Section~\ref{sec:entangle}.
 
 \paragraph{A purely discrete code beats a sparse linear one.} Scored on
 one frontier of converged SAEs (the structural ladder plus an L1 sweep
@@ -411,8 +415,7 @@ At matched index bits ($\sim$2{,}000) the discrete code is 40\% below
 SAEs that additionally transmit 160 continuous coefficients, and it is
 30\% below an L1 SAE spending 3.4$\times$ the bits plus 519
 coefficients. Truncation rows (\texttt{dev} $m$) are
-\emph{worse} than the hard row on this arm ($0.259$ at $m{=}1$; $0.343$
-on the shipped initialization): pinning entries toward the origin adds mass
+\emph{worse} than the hard row on this arm ($0.259$ at $m{=}1$): pinning entries toward the origin adds mass
 the model was never trained to decode, so for a hard model the honest
 capacity axis is $l\cdot h\log_2 k$ itself. Against each code's own
 floor, depth is the less rate-efficient use of bits:
@@ -521,10 +524,10 @@ the same run's earlier checkpoint, being close to a fixed property of the
 configuration (Appendix~\ref{sec:seedsdetail}).
 
 \textbf{What reproduces is aggregate or layer-level; what identifies an
-individual head does not.} Feature-level claims about individual heads
-have no foundation in this architecture as it currently trains, and
-every per-head result in this document --- the topic head below, the
-Burmese head, the per-head steering tables --- inherits that. Three of
+individual head, with one exception, does not.} Feature-level claims
+about individual heads have no general foundation in this architecture as
+it currently trains: the Burmese head and the per-head steering tables
+describe one seed. Three of
 the four measures reversed under a control before they said anything
 (containment, uncentered contributions, subspaces), and an earlier Gram
 comparison read 35$\times$ against a whole-model random pairing, entirely
@@ -534,6 +537,10 @@ so a result without a null of the same shape is not a result.}
 
 Layer 0 is the exception in every head-level measure, consistent with it
 being the only layer whose input does not depend on upstream choices.
+The one head that reproduces is in layer 0: the topic head of
+Section~\ref{sec:lang}, the strongest layer-0 partition in both seeds at
+different indices, matched across them at NMI 0.41 against a 0.01 median
+for other heads.
 
 \subsubsection{Replication on GPT-2}
 
@@ -608,33 +615,55 @@ The measurement is a probe of whether head partitions line up with a
 known factor at all, and of how much of one a head can carry.
 
 As expected, no head encodes language outright: the best reaches a
-partition NMI of 0.28 against an attainable 0.875, and no head-health
-lever changes that (Table~\ref{tab:headlang}). Partitions do carry the
-factor well above chance, and \textbf{the hard code carries more of it}:
-six times the softmax reference on null-corrected best-head NMI. Tags and
-conjunctions of tags detect language \emph{neighbourhood} rather than
-identity --- Finnish with Estonian, Japanese with Korean --- which matches
-the embedding's geometry, where languages are weakly separated regions
-rather than directions (Appendix~\ref{sec:langdetail}).
+partition NMI of 0.18 against an attainable 0.875 (0.165 on the second
+seed), and no head-health lever changes that
+(Table~\ref{tab:headlang}). Partitions do carry the factor well above
+chance, and \textbf{the hard code carries more of it}: four times the
+softmax reference on null-corrected best-head NMI, and 0.42 against 0.28
+in a 32-head probe. Tags and conjunctions of tags detect language
+\emph{neighbourhood} rather than identity --- Finnish with Estonian,
+Japanese with Korean --- which matches the embedding's geometry, where
+languages are weakly separated regions rather than directions
+(Appendix~\ref{sec:langdetail}).
 
 \paragraph{What the strongest head holds: topic and genre.} What a
 semantic, language-agnostic embedding should be organized by is meaning,
-and its strongest head is. L0 h54, the 235$\times$ head, mixes languages
-freely (NMI 0.149; 16.1 distinct languages among an entry's top-20 rows).
-Decoded as deviations from the head mean, its entries read as topic and
-genre --- crime news, geopolitics and
-parliament, encyclopedic place description, manufacturing, marketing,
-legislative text, entertainment. Contrastive auto-interp (\texttt{cacts},
-null 0.273) agrees and adds to it: genre/topic descriptions (16 entries)
-score F1 0.523, multilingual or code-switched passages (8) 0.476, text
-artifacts such as duplication and mojibake (3) 0.395, script or region
-(5) 0.394. All four beat the null. Topic dominating sentence-embedding
-variance explains both the head's top $\eta^2$ and its low language NMI.
-A labelled test of whether heads are natural variables therefore wants
-topic or genre labels, which this corpus does not carry.
-Per Section~\ref{sec:seeds}, this describes one head of one seed --- though
-index 54 is also the fixed-init stack's one strongly reproducible head
-(Appendix~\ref{sec:entries}).
+and its strongest head is. \texttt{topichead.py} ranks layer-0 heads by
+$\eta^2$ and matches partitions across runs (65{,}536 held-out rows):
+
+\begin{center}\small
+\begin{tabular}{@{}llrrl@{}}
+\toprule
+run & top head & $\eta^2$ & next head & match across runs \\
+\midrule
+\texttt{ste\_h76\_init01} (seed 42) & h54 & 0.117 & 0.062 & --- \\
+\texttt{ste\_h76\_i01\_s43} (seed 43) & h14 & 0.122 & 0.068 & NMI 0.413 (other heads 0.010) \\
+\texttt{ste\_h76} (unfixed init, seed 42) & h54 & 0.111 & 0.080 & NMI 0.355 (other heads 0.024) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{The topic head is the one head found in every run}, the strongest
+partition in each by nearly a factor of two. A different seed grows it
+at a different index; the same seed keeps it at the same index across
+the initialization fix. It is also the head that reproduces on
+contributions (0.844 against 0.249 for the next;
+Appendix~\ref{sec:entries}), the exception to Section~\ref{sec:seeds}'s
+rule that heads do not reproduce --- though at NMI 0.41 against a 0.87
+same-run control it is the same variable carved differently, not the same
+partition. It mixes languages freely (NMI 0.155). Decoded as deviations
+from the head mean, its entries read as topic and genre --- crime news,
+geopolitics and parliament, encyclopedic place description,
+manufacturing, marketing, legislative text, entertainment. Contrastive
+auto-interp (\texttt{cacts}, null 0.273) agrees and adds to it:
+genre/topic descriptions (16 entries) score F1 0.523, multilingual or
+code-switched passages (8) 0.476, text artifacts such as duplication and
+mojibake (3) 0.395, script or region (5) 0.394. All four beat the null.
+(Decoding and auto-interp were run on \texttt{ste\_h76}'s h54.) Topic
+dominating sentence-embedding variance explains both the head's top
+$\eta^2$ and its low language NMI. A labelled test of whether heads are
+natural variables therefore wants topic or genre labels, which this
+corpus does not carry.
 
 \section{Hard codes on GPT-2 small: entries in activation space}
 \label{sec:gpt2hard}

@@ -116,7 +116,7 @@ verified to force Burmese output. The partition-level instrument
 (\texttt{headlang.py}) was later run on a config-matched softmax
 reference and on the hard-code arms (Section~\ref{sec:lang}): the softmax
 reference's best head reaches a null-corrected NMI of only $0.043$, a
-sixth of the hard code's. Language factors are carried by a \emph{few}
+quarter of the hard code's. Language factors are carried by a \emph{few}
 heads' partitions, weakly, and most heads classify something else.
 
 \subsection{Shrinkage decomposition}
@@ -671,9 +671,8 @@ for the next head; across heads, agreement tracks the largest atom
 typical atom ($-0.14$). That resolves the within-layer-0 atom effect into
 a few heads with outsized atoms --- but not the layer-0 lift: without head
 54 the layer-0 mean falls only from 0.080 to 0.070, still twenty times
-the deep layers. Head 54 is also the index of the topic/genre head of
-the shipped-init \texttt{ste\_h76} (Section~\ref{sec:lang}), which shares
-its seed; the same head may be recurring, unverified.
+the deep layers. Head 54 is the topic/genre head of
+Section~\ref{sec:lang}, which recurs across seeds.
 
 \begin{table}[h]\centering\small
 \begin{tabular}{@{}lrrrrr@{}}
@@ -732,28 +731,37 @@ chance 0.012):
 \toprule
 arm & shape & best-head NMI & less null & probe $m{=}1$ & $m{=}32$ \\
 \midrule
+\texttt{ste\_h76\_init01} & $5\times76$ & 0.180 & 0.170 & 0.103 & 0.423 \\
+\quad seed 43 & $5\times76$ & 0.165 & 0.155 & 0.089 & 0.428 \\
+softmax reference & $5\times32$ & 0.055 & 0.043 & 0.036 & 0.275 \\
+\midrule
+\multicolumn{6}{@{}l}{\emph{unfixed initialization}} \\
 \texttt{ste\_h76} & $5\times76$ & 0.269 & 0.261 & 0.165 & 0.378 \\
 \quad + collinearity setpoint & $5\times76$ & 0.287 & 0.279 & 0.139 & 0.318 \\
 \quad $-$ mean-entropy bonus & $5\times76$ & 0.085 & 0.078 & 0.038 & 0.322 \\
 \quad + head independence & $5\times76$ & 0.199 & 0.189 & 0.097 & 0.383 \\
 flat & $1\times380$ & 0.277 & 0.276 & 0.102 & 0.257 \\
 \quad + collinearity setpoint & $1\times380$ & 0.247 & 0.246 & 0.080 & 0.271 \\
-softmax reference & $5\times32$ & 0.055 & 0.043 & 0.036 & 0.275 \\
 \bottomrule
 \end{tabular}
-\caption{\texttt{headlang.py}, shipped initialization. The attainable NMI
-for a 5-bit head against the 6.43-bit label is 0.875.}
+\caption{\texttt{headlang.py}. The attainable NMI for a 5-bit head
+against the 6.43-bit label is 0.875. Head-health levers and the flat arm
+were measured only at the unfixed initialization.}
 \label{tab:headlang}
 \end{table}
 
 As expected of a language-agnostic embedding, no head encodes language
-outright: the best reaches 0.28 of an attainable 0.875, and no head-health
-lever changes that (a $k{=}32$ head could not hold 86 languages anyway,
-$\log_2 32 = 5 < 6.43$ bits). What the probe does show is that partitions
-carry a known factor well above chance, and that \textbf{the hard code
-carries more of it}: six times the softmax reference on null-corrected
-best-head NMI. The stack beats the flat arm on probe accuracy at every
-head budget (0.378 vs.\ 0.257 at $m{=}32$). (\texttt{summary.json}'s
+outright: the best reaches 0.18 of an attainable 0.875, and no head-health
+lever lifts any arm past 0.29 (a $k{=}32$ head could not hold 86
+languages anyway, $\log_2 32 = 5 < 6.43$ bits). What the probe does show
+is that partitions carry a known factor well above chance, and that
+\textbf{the hard code carries more of it}: four times the softmax
+reference on null-corrected best-head NMI, and 0.42--0.43 against 0.28
+in a 32-head probe, consistently across seeds. The fixed initialization
+spreads language over more heads than the unfixed one did (best head
+0.17 against 0.26, 32-head probe 0.42 against 0.38). The stack beats the
+flat arm on probe accuracy at every head budget (0.378 vs.\ 0.257 at
+$m{=}32$, both unfixed). (\texttt{summary.json}'s
 \texttt{info\_share\_best} favours the flat arm, but it divides by summed
 plug-in MI whose per-head bias differs eightfold between the shapes; do
 not read it across architectures.)
