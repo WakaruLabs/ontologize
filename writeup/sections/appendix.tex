@@ -507,6 +507,261 @@ the time --- the same order as the hit rates the instrument reports.
 Reconstruction into embedding space is fine; generation is where the
 signal goes.
 
+\section{Supplementary results: training, reproducibility and steering of the softmax Ontologizer}
+\label{app:softdyn}
+
+These results come from the project proposal's evaluation and concern the
+softmax Ontologizer. Two models recur. \texttt{resid\_nc} (372{,}600 steps)
+is the reference model behind the softmax tables above.
+\texttt{resid\_nc\_hm} is the same configuration plus the batch
+mean-entropy bonus $s_{\mathrm{KL}_m}$, trained to 4.38M steps; results
+here use its final checkpoint unless stated otherwise.
+
+\subsection{Head freezing and the mean-entropy bonus}
+\label{sec:freeze}
+
+A head is counted frozen when its top classification share is at least
+$0.95$ and its churn at most $0.02$. In \texttt{resid\_nc} the top layer
+(layer 4 of 0--4) begins freezing near step 190k, well after the
+temperature anneal, reaches 27 of 32 heads by step 210k and 28 at its
+peak, and is still frozen at the last checkpoint
+(Figure~\ref{fig:freeze}). Section~\ref{sec:lastlayer} shows the same
+layer to be inert once the prefix error is small, which is why the freeze
+costs so little reconstruction. In \texttt{resid\_nc\_hm} the late freeze
+never occurs. What remains is an early annealing transient --- 22 of 32
+heads at layer 1 at step 10k, with 16, 11 and 4 of 32 at layers 2, 3 and 0
+--- that recovers completely by step 30k, leaving the final checkpoint
+unfrozen everywhere. \textbf{The mean-entropy bonus prevents the late
+freeze.}
+
+\begin{figure}[h]\centering
+\includegraphics[width=\linewidth]{figures/fig-freeze.pdf}
+\caption{Frozen heads per layer over training. Left:
+\texttt{resid\_nc\_hm}, with the mean-entropy bonus, has only an early
+annealing transient, peaking at 22/32 in layer 1 at step 10k and
+recovering to zero everywhere by step 30k. Right: \texttt{resid\_nc}
+develops a post-anneal layer-4 freeze from ${\sim}$190k that persists
+through its last checkpoint.}
+\label{fig:freeze}
+\end{figure}
+
+Four retrains of the \texttt{resid\_nc\_hm} configuration (372k steps
+each) isolate the transient: a zero-change control and three single-knob
+variants. The control reproduces it head for head (22/32 at layer 1 at step
+10k, zero everywhere by 30k) and shows no late freeze. Stretching the
+temperature anneal from 50k to 150k steps attenuates and spreads it (peak
+14/32 at layer 1 at step 30k, clear by 50k). Raising winner dropout from
+$0.1$ to $0.25$ tracks the control to within two heads at the peak, and
+holding the classification-noise floor at its starting value changes
+nothing (Figure~\ref{fig:variants}). The transient belongs to the
+temperature schedule alone, and every retrain ends unfrozen.
+
+\begin{figure}[h]\centering
+\includegraphics[width=\linewidth]{figures/fig-variants.pdf}
+\caption{The early transient under the four retrains, layer-1 frozen
+count. The noise-floor variant overlaps the control exactly and the
+dropout variant tracks it to within two heads at the peak; only
+stretching the temperature anneal moves the curve, trading peak height
+for duration.}
+\label{fig:variants}
+\end{figure}
+
+\paragraph{An HSIC bottleneck in place of the auxiliary losses.} The
+candidate objective maximizes dependence with the reconstruction target
+while penalizing dependence between heads. It is distinct from the
+pairwise head-CKA penalty of Section~\ref{sec:hsic}, which was added to the
+straight-through arm's losses rather than replacing them. Both arms were
+retrained on the \texttt{resid\_nc\_hm} configuration to 372k steps.
+Replacing the four auxiliary terms with the HSIC objective destroys head
+health: a late, persistent freeze takes 77 of 160 heads by the final
+checkpoint, one layer entirely (layer 3, 32/32 from step 80k), while
+reconstruction lands slightly behind the control (tail-mean training MSE
+$3.7\times10^{-5}$ against $3.4\times10^{-5}$). Adding HSIC on top of the
+auxiliary terms is worse on both counts: MSE $4.4\times10^{-5}$, and 41 of
+160 heads still frozen at the end, layer 3 fully frozen by 80k with only
+partial thaw (Figure~\ref{fig:hsicbottleneck}). The failure is
+\texttt{resid\_nc}'s late freeze rather than the transient, which puts the
+bottleneck in direct opposition to the mean-entropy bonus: the bonus
+prevents exactly what HSIC induces. As formulated it is neither a
+replacement nor an addition.
+
+\begin{figure}[h]\centering
+\includegraphics[width=\linewidth]{figures/fig-hsic.pdf}
+\caption{Total frozen heads over training for the three loss
+configurations, all on the \texttt{resid\_nc\_hm} configuration at 372k
+steps. The auxiliary-loss control's freeze is the early transient and
+resolves; both HSIC arms develop the late, persistent freeze instead, and
+the auxiliary terms only partially thaw it.}
+\label{fig:hsicbottleneck}
+\end{figure}
+
+\subsection{Development over training}
+\label{sec:devinterp}
+
+Tracking \texttt{resid\_nc\_hm}'s full 448-checkpoint history applies the
+$z$-score machinery of Section~\ref{sec:prelim-orth} to the refit
+end-to-end direction matrix rather than to raw dictionary decode
+directions. The two are not directly comparable: raw decode directions on
+\texttt{resid\_nc} repel ($z{=}{-}17.6$), while refit directions on
+\texttt{resid\_nc\_hm}'s final checkpoint cohere ($z{=}{+}72$); they differ
+in both instrument and substrate, and the refit frame folds in the shared
+decoder and cross-layer interactions. On that statistic the shape is rise,
+peak and partial relaxation (Figure~\ref{fig:devinterp}): mean within-head
+$z_{\cos}$ climbs from $1.8$ at step 10k to a peak of $119$ near step 370k
+(median $123$, every head above $z{=}2$), then relaxes over the remaining
+4M steps to $72$ at the final checkpoint (median $105$, $0.79$ above
+$z{=}2$). The code itself moves the other way after the annealing
+transient: per-sample entropy returns to $4.5$ of a 5-bit maximum and usage
+KL falls toward uniform. Relative to initialization, the consolidation is
+in the geometry the classifications write, while the classifications stay
+soft.
+
+\begin{figure}[h]\centering
+\includegraphics[width=\linewidth]{figures/fig-devinterp.pdf}
+\caption{The 448-checkpoint training history of \texttt{resid\_nc\_hm}.
+Left: within-head coherence of refit end-to-end directions, $z$-scored
+against size-matched nulls; rise, peak near step 370k, partial
+relaxation. Right: mean per-sample classification entropy returns toward
+the 5-bit maximum after the annealing transient.}
+\label{fig:devinterp}
+\end{figure}
+
+\subsection{Scaling: a star sweep}
+\label{sec:starsweep}
+
+Seven configurations around the shared $h{=}32$, $k{=}32$, $l{=}5$ shape,
+varying one axis at a time, each trained 4 epochs (62k steps against the
+retrain recipe's 372k), test whether head coherence rises with parameter
+count. No measured axis delivers the rise: coherence shows no positive
+relation to parameter count (Spearman $+0.14$ for mean $z_{\cos}$, $-0.54$
+for the fraction above $z{=}2$), usage imbalance grows with size ($+0.86$),
+and the cleanest per-axis trend runs opposite to the prediction, coherence
+falling monotonically as entries per head grow ($k{=}16/32/64$: mean
+$z_{\cos}$ $20.2/6.3/3.7$). The widest model ($h{=}64$) has not converged at
+this budget (tail MSE $20\times$ the others), so its collapse is not
+evidence (Figure~\ref{fig:scaling}). Seven points at short training are
+weak evidence either way; full-length retrains are the missing control.
+
+\begin{figure}[h]\centering
+\includegraphics[width=\linewidth]{figures/fig-scaling.pdf}
+\caption{Head coherence against each parameter axis of the star sweep,
+all runs at 4 epochs (62k steps). No axis delivers the predicted rise;
+the entries axis falls monotonically. The open marker is the unconverged
+$h{=}64$ run.}
+\label{fig:scaling}
+\end{figure}
+
+\subsection{Seed stability of soft partitions}
+\label{sec:softseed}
+
+A second run of the \texttt{resid\_nc\_hm} configuration from a different
+seed, compared at matched training (370k steps on both sides), matches
+essentially nothing (Figure~\ref{fig:softseed}): no head pair and at most
+$0.3\%$ of entries clear a $0.3$ cosine threshold on dictionary geometry,
+and activation-frame containment over a shared evaluation batch is at most
+$0.001$ at any threshold, against $0.31/0.24/0.15/0.03$ for the k32 SAE and
+its seed replica across the four thresholds ($0.3$--$0.9$). The metric has
+headroom: the same run against itself $2{,}600$ steps apart scores $1.000$
+on geometry at every threshold and $0.65$ at the loosest activation
+threshold ($0.20$ at the strictest). At matched training the softmax
+Ontologizer's partitions are less reproducible across seeds than SAE
+latents, the same verdict Section~\ref{sec:seeds} reaches for the
+straight-through arm with partition and contribution measures. A replica
+carried to the full 4.4M steps is the remaining control.
+
+\begin{figure}[h]\centering
+\includegraphics[width=\linewidth]{figures/fig-seed.pdf}
+\caption{Cross-seed matched-entry fraction on the activation frame by
+threshold. The same-run pair bounds what the metric can detect ($0.65$
+at $\tau{=}0.3$); the k32 SAE pair reproduces partially; the softmax
+Ontologizer's partitions reproduce not at all.}
+\label{fig:softseed}
+\end{figure}
+
+\subsection{Steering against supervised baselines}
+\label{sec:steeroverlay}
+
+A matched-budget overlay on \texttt{resid\_nc\_hm}'s final checkpoint
+compares forced classifications against difference-of-means and
+linear-probe directions on language steering, with a random-direction
+floor (Table~\ref{tab:steer-overlay}). Each arm wins its own effect frame,
+as expected. On the shared difference-of-means frame, forcing a
+classification moves decodes along the target direction $0.43\times$ as
+far as supervised steering does, and well ahead of probe directions. Every
+arm's collateral, supervised steering included, sits at the
+random-direction floor ($0.72$--$0.78$), the same floor the text round
+trip shows for SAE steering (Section~\ref{sec:steertext}). On naturalness the arms are so far indistinguishable
+(Figure~\ref{fig:naturalness}): chrF against unsteered decodes falls from
+${\sim}0.35$ at magnitude $0.25$ to ${\sim}0.15$ at $1.0$ for the
+difference-of-means and forced-classification arms, with probe and random
+decaying in parallel from ${\sim}0.38$ to ${\sim}0.20$. A blinded
+human-rating sheet (120 items) is prepared but unscored.
+
+\begin{table}[h]\centering\small
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+arm & effect (native) & effect (dm frame) & hit rate & collateral \\
+\midrule
+difference of means    & 0.337 & 0.337 & 0.250 & 0.757 \\
+classification forcing & 0.394 & 0.146 & 0.125 & 0.778 \\
+linear probe           & 0.293 & 0.028 & 0.000 & 0.720 \\
+random direction       & ---   & ---   & ---   & 0.721 \\
+\bottomrule
+\end{tabular}
+\caption{Language steering under matched intervention budgets on
+\texttt{resid\_nc\_hm}'s final checkpoint; medians over 24
+language--magnitude cells per arm. Effect is displacement along the arm's
+own direction (native) and along the shared difference-of-means direction
+(dm frame); hit rate is the fraction of steered decodes reaching the
+median projection of genuine target-language rows on the shared frame;
+collateral is content change on unrelated dimensions.}
+\label{tab:steer-overlay}
+\end{table}
+
+\begin{figure}[h]\centering
+\includegraphics[width=\linewidth]{figures/fig-naturalness.pdf}
+\caption{chrF between steered and unsteered decodes by intervention
+magnitude. All four arms, the random direction included, damage the
+decode at nearly the same rate; no arm buys naturalness at matched
+magnitude.}
+\label{fig:naturalness}
+\end{figure}
+
+\paragraph{A classification as a training objective.} A REINFORCE policy
+over steering directions on frozen \texttt{resid\_nc\_hm}, rewarded by one
+classification's quantile-normalized score at a matched intervention
+budget, converges cleanly in the differentiable in-embedding tier,
+saturating within roughly 40 steps at flat collateral
+(Figure~\ref{fig:rl}). Neither the decode-cycle tier nor a convergence
+race against paired steering has been run.
+
+\begin{figure}[h]\centering
+\includegraphics[width=\linewidth]{figures/fig-rl.pdf}
+\caption{REINFORCE against a single frozen classification's
+quantile-normalized score, in-embedding tier. The policy saturates the
+reward within roughly 40 steps while collateral stays at its starting
+level.}
+\label{fig:rl}
+\end{figure}
+
+\subsection{Head-level auto-interpretability}
+\label{sec:headautointerp}
+
+The per-latent lenses of the description-specificity results mis-measure
+classifier codes, whose content lives in partitions, so a head-level pass
+over \texttt{resid\_nc} (step 372{,}600) tests the claim directly; its
+frozen top layer (Section~\ref{sec:freeze}) is a caveat for any layer-4
+heads in the sample. Descriptions decoded from dictionary parameters fail
+at the partition level as they do per latent (median self accuracy
+$0.02$). Activation-grounded head descriptions do no better than a null
+pairing at this sample size ($n{=}20$ heads per condition, median accuracy
+$0.083$ against $0.125$), and a head's detection accuracy is uncorrelated
+with the mean describability of its latents (Spearman $+0.07$ over 30
+head--lens pairs, 15 heads under each lens; neither per-lens value
+distinguishable from zero). The two lenses disagree and neither shows
+above-chance head-level signal, so the mis-measurement argument predicts
+an advantage this sample does not deliver.
+
 \section{Supplementary results: the straight-through arm}
 \label{app:ste}
 

@@ -1,13 +1,8 @@
 \documentclass[11pt]{article}
-\usepackage[margin=1.1in]{geometry}
-\usepackage{booktabs}
-\usepackage{amsmath}
-\usepackage{amssymb}
-\usepackage{graphicx}
-\usepackage[hidelinks]{hyperref}
-\usepackage{xcolor}
-\usepackage{authblk}
-\usepackage{tikz}
+% flockpaper loads geometry, hyperref, xcolor, graphicx, booktabs, amsmath,
+% tikz and the newpx fonts (whose math symbols replace amssymb's); load
+% biblatex after it
+\usepackage[biblatex]{flockpaper}
 \usetikzlibrary{arrows.meta}
 \usepackage[ruled]{algorithm2e}
 \usepackage[backend=biber,style=numeric,sorting=none]{biblatex}
