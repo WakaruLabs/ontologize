@@ -1,0 +1,113 @@
+\section{Motivation}
+
+\subsection{Threat Model}
+
+\subsubsection{The ontology identification problem}
+We can't currently look inside a model and make any conclusions about its goals or world model.
+This is a major limitation on almost all proposed alignment agendas.
+
+\paragraph{Inner misalignment}
+We don't currently know how to specify a \href{https://arbital.com/p/diamond_maximizer/}{robust goal for a model}.
+Because goal space is large, we should expect
+\href{https://www.lesswrong.com/s/r9tYkB2a8Fp4DN8yB/p/FkgsxrGf3QxhfLWHG}{goal misgeneralization as the default outcome}
+\footnote{The most straightforward path to doom is for a goal-driven superintelligence to seize power to prevent its optimization target from being changed.
+In slow takeoff or multipolar scenarios, there is also a ``decoherence'' risk, 
+where comparably weak specialist optimizers disempower humanity without any coherent strategy.
+Consider for instance superpersuaders which fall short of superintelligence.
+A viral chatbot might have very simple objectives to optimize engagement and distribution of itself.
+While such a scenario would be an especially 
+\href{https://www.lesswrong.com/posts/mSF4KTxAGRG3EHmhb/ai-x-risk-approximately-ordered-by-embarrassment}{undignified} 
+end for humanity,
+it broadly fits with both natural language being much easier than anyone expected and
+AI labs being much less safety conscious than anyone expected.}.
+
+
+\subsubsection{Limits of natural abstractions}
+To some extent, deep learning models seem to learn universal features irrespective of architecture\cite{chughtai2023}.
+This implies the existence of at least a weak version of
+natural abstractions\cite{lang2023},
+which would be a very convenient shortcut for auditing a model.
+
+Natural abstractions could be considered the set of concepts we could use to communicate with aliens. 
+They should consistently emerge through unsupervised learning (in the limit given some constraints).
+If any neural network is considered a fuzzy generalization of a finite state machine, 
+natural abstractions are the latent states.
+
+Unfortunately, the abstractions a model learns seem highly sensitive to choice of training data, and are thus not necessarily universal in the limit.
+\footnote{The same applies to those that seem most natural to humans.}
+Assuming that model capabilities will continue to primarily be driven by access to more data and more modalities, we cannot expect the abstractions learned by a weak model to remain robust in a more powerful model.
+
+Even if we could fully characterise a model's state space in terms of natural abstractions,
+that still doesn't mean we can reconstruct the latent FSM, 
+as the transition rules can be arbitrarily complex.
+
+
+\subsection{Theory of change}
+Conditional on the underlying model of ontology being true, the
+techniques proposed here would be a substantial interpretability
+advance. The agenda also has a case for counterfactual impact: its
+theoretical basis consists of nonobvious applications of obscure
+techniques from niche fields of bioinformatics, and similar research
+is unlikely to be done soon otherwise.
+
+\subsubsection{What a solution would look like}
+Mechinterp plausibly offers the best path to a robust alignment
+solution despite
+\href{https://www.lesswrong.com/posts/tEPHGZAb63dfq2v8n/how-useful-is-mechanistic-interpretability}{criticisms}.
+The case rests on
+\begin{enumerate}
+    \item \textbf{decomposability} Mechinterp allows alignment to be
+    broken into manageable subproblems.
+    \item \textbf{parallelizability} Decomposable subproblems can be
+    worked on independently.
+    \item \textbf{robustness} Mechinterp offers direct causal
+    explanations of model behavior.
+\end{enumerate}
+The most straightforward mechinterp alignment solutions are
+\begin{enumerate}
+    \item \href{https://www.alignment.org/blog/arcs-first-technical-report-eliciting-latent-knowledge/}{eliciting latent knowledge (ELK)}
+    Directly inferring a model's ontology.
+    \label{it:elk}
+    \item \href{https://www.alignment.org/blog/mechanistic-anomaly-detection-and-elk/}{mechanistic anomaly detection (MAD)}
+    Detecting when a model has ``unusual'' thoughts.
+    \label{it:mad}
+\end{enumerate}
+Both of these can be considered
+\href{https://arbital.greaterwrong.com/p/ontology_identification/}{ontology identification}
+subproblems. MAD requires mapping between the model's activations and
+the model's ontology. ELK requires mapping between the model's ontology
+and human ontology. These are hard but not intractable problems.
+Recently, \href{https://devinterp.com/}{developmental interpretability}
+(devinterp) techniques have enabled identification of ``developmental
+stages'' corresponding to learning specific
+tasks\cite{hoogland2024developmental}. This is strong evidence that
+learning consists primarily of the network
+grokking\cite{nanda2023progress} discrete concepts. While these results
+are promising for MAD, locating these emergent capabilities in the
+model's activations remains an open problem.
+
+Interpretability glosses broadly as ``let humans understand AI''. The
+alternative is to get AI to understand humans better, and that scales
+badly: making the model smarter leads to subtler and subtler issues
+with larger and larger effects. And what we're doing is not just
+letting humans understand AI. Because an LLM reflects humanity from its
+training data, high quality conceptual interpretability provides
+machine-comprehensible mathematical representations of every concept
+that humanity cares about. We work on interp for the usual
+corrigibility reasons, and also because feature representation is one
+of the most challenging parts of outer alignment. This attacks both.
+
+\subsubsection{Macro-scale strategy}
+Broadly, the goals are to
+\begin{enumerate}
+  \item formalize the notion of a model's latent concept space
+  \item distill a model's latent concept space
+  \item enforce decomposability of latent concept space
+  \item enforce robustness of existing concepts as the dimensionality of
+  the latent concept space increases
+\end{enumerate}
+A prerequisite for all of these is the ability to express a
+\href{https://plato.stanford.edu/entries/ontological-commitment/}{metaontology}
+which can identify latent concepts in activation space.
+
+

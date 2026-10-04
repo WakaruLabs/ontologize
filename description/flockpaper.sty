@@ -1,0 +1,320 @@
+%% flockpaper.sty — the Flock Capital paper design language.
+%%
+%% The house system, translated to print and to arXiv's constraints:
+%%   - pdflatex only (arXiv compiles sources itself; \pdfoutput=1 is set
+%%     in the document's first lines, per their detection rules)
+%%   - two colours: pine on paper. Body text stays black for print; pine
+%%     carries rules, labels, links and numbers. No third hue exists.
+%%   - the book voice is newpx (Palatino lineage, oldstyle figures, true
+%%     small caps, full math) — Literata has no pdflatex support, so the
+%%     web face translates rather than copies.
+%%   - IBM Plex Mono is the label voice: eyebrows, captions, headers.
+%%   - no bold display: headings are regular-weight small caps.
+%%   - rules are hairlines; the 3pt-equivalent left rule marks quotations
+%%     and the abstract, nothing else.
+%%
+%% Usage: \usepackage{flockpaper} on top of \documentclass{article}.
+%% Ship this file with every arXiv submission.
+
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{flockpaper}[2026/08/23 v1.1 Flock Capital paper style]
+
+%% Option [biblatex]: the document manages its own bibliography with
+%% biblatex/biber (load biblatex AFTER this package); without the option,
+%% natbib with plainnat is configured here.
+\newif\if@flockbiblatex
+\@flockbiblatexfalse
+\DeclareOption{biblatex}{\@flockbiblatextrue}
+\ProcessOptions\relax
+
+%% ---- colour: pine, paper, and mixes. nothing else. -----------------------
+
+\RequirePackage[table]{xcolor}
+\definecolor{pine}{HTML}{0B5132}
+\definecolor{flockink}{HTML}{232329}
+\definecolor{inkmuted}{HTML}{666769}
+\definecolor{flockwell}{HTML}{EBEDE9}
+\definecolor{flockrule}{HTML}{CED1CE}
+
+%% ---- type ----------------------------------------------------------------
+
+\RequirePackage[T1]{fontenc}
+\RequirePackage[utf8]{inputenc}
+% amsmath and amsthm must precede newpxmath, which supplies the AMS
+% symbol set itself (loading amssymb after it clashes on \Bbbk, and
+% amsthm after it clashes on \openbox).
+\RequirePackage{amsmath}
+\RequirePackage{amsthm}
+\RequirePackage{newpxtext}
+\RequirePackage{newpxmath}
+\useosf % oldstyle figures in text, as the site does; lining in math
+
+% IBM Plex Mono if present in the TeX distribution, Bera Mono otherwise.
+% Both are stock TeX Live, so either way arXiv has the fonts.
+\IfFileExists{plex-mono.sty}%
+  {\RequirePackage[scale=0.82]{plex-mono}}%
+  {\RequirePackage[scaled=0.82]{beramono}}
+
+\RequirePackage[final,tracking=true]{microtype}
+
+%% ---- page ----------------------------------------------------------------
+
+% A reading measure, not a wall of text: ~72 characters per line.
+\RequirePackage[
+  letterpaper,
+  textwidth=5.4in,
+  textheight=8.6in,
+  hcentering,
+  top=1.1in,
+]{geometry}
+
+\linespread{1.08}
+\setlength{\parskip}{0pt}
+\setlength{\parindent}{1.2em}
+
+%% ---- the mark ------------------------------------------------------------
+
+\RequirePackage{tikz}
+
+% The sheep, from the site's footer pasture, in pine.
+% Scale: 1 unit = 1pt at \flocksheep{1}.
+\newcommand{\flocksheep}[1]{%
+  \begin{tikzpicture}[scale=#1, baseline=-2pt]
+    \fill[pine] (4.5pt,10pt)  circle [radius=5.2pt];
+    \fill[pine] (11pt,12.7pt) circle [radius=6pt];
+    \fill[pine] (17pt,10pt)   circle [radius=5pt];
+    \fill[pine, rounded corners=3.4pt] (0.5pt,5.7pt) rectangle (20.5pt,12.5pt);
+    \fill[pine, rounded corners=1.2pt] (4.3pt,1.2pt) rectangle (6.7pt,7.5pt);
+    \fill[pine, rounded corners=1.2pt] (15.1pt,1.2pt) rectangle (17.5pt,7.5pt);
+    \fill[pine, rotate around={-22:(21.5pt,13.1pt)}] (21.5pt,13.1pt) ellipse [x radius=3.3pt, y radius=2.8pt];
+    \fill[pine, rotate around={35:(19.2pt,15.6pt)}] (19.2pt,15.6pt) ellipse [x radius=1.5pt, y radius=0.9pt];
+  \end{tikzpicture}%
+}
+
+% Wordmark: sheep + small-caps lab name.
+\newcommand{\flockmark}{%
+  \raisebox{-1.5pt}{\flocksheep{0.62}}\hspace{0.55em}%
+  {\normalfont\scshape\color{flockink} flock capital}%
+}
+
+%% ---- labels: the mono voice ----------------------------------------------
+
+% \monolabel{...}: tiny, letterspaced, uppercase, the site's .m class.
+\newcommand{\monolabel}[1]{%
+  {\ttfamily\fontsize{7.5}{9}\selectfont\textls[120]{\MakeUppercase{#1}}}%
+}
+\newcommand{\pinelabel}[1]{{\color{pine}\monolabel{#1}}}
+\newcommand{\mutedlabel}[1]{{\color{inkmuted}\monolabel{#1}}}
+
+%% ---- title block ----------------------------------------------------------
+
+% \eyebrow{NOTE 002 . 2026-09-01 . EVALUATIONS} above the title.
+\newcommand{\@flockeyebrow}{}
+\newcommand{\eyebrow}[1]{\renewcommand{\@flockeyebrow}{#1}}
+
+% \credits{Names line}{mono detail line}: a credits block set inside the
+% masthead, below the author block and above the rule. Deliberately
+% labelled CREDITS, distinct from authorship.
+\newcommand{\@flockcreditnames}{}
+\newcommand{\@flockcreditdetail}{}
+\newcommand{\credits}[2]{%
+  \renewcommand{\@flockcreditnames}{#1}%
+  \renewcommand{\@flockcreditdetail}{#2}%
+}
+
+\renewcommand{\maketitle}{%
+  \begingroup
+  \thispagestyle{firstpage}%
+  \begin{flushleft}
+    \flocksheep{0.85}\par
+    \vspace{10pt}
+    \ifx\@flockeyebrow\empty\else
+      {\pinelabel{// \@flockeyebrow}}\par\vspace{14pt}%
+    \fi
+    {\normalfont\fontsize{20}{25}\selectfont\@title\par}
+    \vspace{14pt}
+    {\normalfont\normalsize\@author\par}
+    \vspace{4pt}
+    {\normalfont\small\itshape\color{inkmuted}\@date\par}
+    \ifx\@flockcreditnames\empty\else
+      \vspace{14pt}
+      {\pinelabel{Credits}}\par\vspace{4pt}
+      {\normalfont\normalsize\@flockcreditnames\par}
+      \vspace{3pt}
+      {\mutedlabel{\@flockcreditdetail}\par}
+    \fi
+  \end{flushleft}
+  \vspace{6pt}
+  \noindent{\color{flockrule}\rule{\textwidth}{0.5pt}}
+  \vspace{12pt}
+  \endgroup
+}
+
+% Abstract: standfirst treatment, the house left rule.
+\renewenvironment{abstract}{%
+  \vspace{2pt}\noindent
+  \begin{list}{}{%
+    \setlength{\leftmargin}{0pt}%
+    \setlength{\rightmargin}{0pt}%
+  }\item[]%
+  \begin{minipage}{\linewidth}
+    \setlength{\fboxsep}{0pt}%
+    \noindent\hspace{-14pt}%
+    {\color{pine}\rule[-\dp\strutbox]{2.2pt}{0pt}}%
+    \begin{minipage}[t]{\dimexpr\linewidth-2pt\relax}
+      \pinelabel{Abstract}\par\vspace{5pt}
+      \itshape
+}{%
+    \end{minipage}
+  \end{minipage}
+  \end{list}
+  \vspace{10pt}
+}
+
+%% ---- sections: regular-weight small caps, pine mono numbers ---------------
+
+\RequirePackage{titlesec}
+
+\titleformat{\section}
+  {\normalfont\large\scshape}
+  {{\color{pine}\ttfamily\upshape\small\thesection}}
+  {0.9em}{}
+\titlespacing*{\section}{0pt}{22pt plus 4pt minus 2pt}{9pt}
+
+\titleformat{\subsection}
+  {\normalfont\normalsize\scshape}
+  {{\color{pine}\ttfamily\footnotesize\thesubsection}}
+  {0.8em}{}
+\titlespacing*{\subsection}{0pt}{16pt plus 3pt minus 2pt}{6pt}
+
+\titleformat{\subsubsection}[runin]
+  {\normalfont\normalsize\itshape}
+  {}{0pt}{}[.\hspace{0.6em}]
+\titlespacing*{\subsubsection}{0pt}{12pt plus 2pt}{0pt}
+
+%% ---- running heads ---------------------------------------------------------
+
+\RequirePackage{fancyhdr}
+
+% First-page imprint line; override per document with \imprint{...}.
+\newcommand{\@flockimprint}{Flock Capital, LLC \textperiodcentered{}
+  Seattle, Washington \textperiodcentered{} contact@flock.holdings}
+\newcommand{\imprint}[1]{\renewcommand{\@flockimprint}{#1}}
+
+\fancypagestyle{firstpage}{%
+  \fancyhf{}%
+  \renewcommand{\headrulewidth}{0pt}%
+  \fancyfoot[L]{\mutedlabel{\@flockimprint}}%
+  \fancyfoot[R]{\mutedlabel{\thepage}}%
+}
+\fancypagestyle{flock}{%
+  \fancyhf{}%
+  \renewcommand{\headrulewidth}{0pt}%
+  \fancyhead[L]{\mutedlabel{Flock Capital}}%
+  \fancyhead[R]{\mutedlabel{\@flockrunning}}%
+  \fancyfoot[R]{\mutedlabel{\thepage}}%
+}
+\newcommand{\@flockrunning}{}
+\newcommand{\runningtitle}[1]{\renewcommand{\@flockrunning}{#1}}
+\pagestyle{flock}
+
+%% ---- figures, tables, captions --------------------------------------------
+
+\RequirePackage{graphicx}
+\RequirePackage{booktabs}
+\RequirePackage[
+  format=plain,
+  labelsep=none,
+  justification=raggedright,
+  singlelinecheck=false,
+]{caption}
+
+% Label in the mono voice; caption TEXT in small serif. Paragraph-length
+% technical captions (and any math in them) must stay readable, so the
+% site's all-mono figcaption translates to label-only mono in print.
+\DeclareCaptionLabelFormat{flock}{\pinelabel{#1~#2}~~{\color{inkmuted}\textperiodcentered}~}
+\DeclareCaptionTextFormat{flock}{\normalfont\small\color{flockink}#1}
+\captionsetup{labelformat=flock, textformat=flock}
+\captionsetup[table]{position=above, skip=7pt}
+
+% Hairline frame for plates, as the site's .plate class.
+\newcommand{\plate}[1]{%
+  {\setlength{\fboxsep}{0pt}\setlength{\fboxrule}{0.4pt}%
+   \textcolor{flockrule}{\fbox{\normalcolor #1}}}%
+}
+
+%% ---- quotations: the 3px-equivalent left rule ------------------------------
+
+\RequirePackage{mdframed}
+\newmdenv[
+  linewidth=0pt,
+  leftline=true, linecolor=pine, linewidth=2.2pt,
+  topline=false, bottomline=false, rightline=false,
+  innerleftmargin=12pt, innerrightmargin=0pt,
+  innertopmargin=4pt, innerbottommargin=4pt,
+  leftmargin=0pt, skipabove=12pt, skipbelow=12pt,
+]{pinequote}
+\newenvironment{flockquote}
+  {\begin{pinequote}\itshape}
+  {\end{pinequote}}
+
+%% ---- code: listings on the well, never minted (arXiv: no shell-escape) -----
+
+\RequirePackage{listings}
+\lstset{
+  basicstyle=\ttfamily\footnotesize\color{flockink},
+  keywordstyle=\color{pine},
+  commentstyle=\color{inkmuted}\itshape,
+  stringstyle=\color{flockink},
+  numberstyle=\tiny\color{inkmuted},
+  backgroundcolor=\color{flockwell},
+  frame=leftline, framerule=2.2pt, rulecolor=\color{pine},
+  framexleftmargin=8pt, xleftmargin=12pt,
+  aboveskip=12pt, belowskip=12pt,
+  breaklines=true, showstringspaces=false,
+  columns=fullflexible, keepspaces=true,
+}
+
+%% ---- theorems --------------------------------------------------------------
+
+\newtheoremstyle{flock}
+  {10pt}{10pt}
+  {\itshape}
+  {}
+  {\scshape}
+  {.}
+  {0.6em}
+  {}
+\theoremstyle{flock}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{remark}[theorem]{Remark}
+
+%% ---- links & bibliography ---------------------------------------------------
+
+\if@flockbiblatex\else
+  \RequirePackage[numbers,sort&compress]{natbib}
+  \bibliographystyle{plainnat}
+  \renewcommand{\bibfont}{\small}
+\fi
+
+\RequirePackage[
+  colorlinks=true,
+  linkcolor=pine,
+  citecolor=pine,
+  urlcolor=pine,
+  pdfcreator={flockpaper v1.1},
+]{hyperref}
+\urlstyle{tt}
+
+%% ---- the end mark: a small sheep closes the paper ---------------------------
+
+\newcommand{\flockend}{%
+  \par\vspace{16pt}
+  \noindent\hfill\flocksheep{0.45}\hfill\null
+  \par
+}
+
+\endinput

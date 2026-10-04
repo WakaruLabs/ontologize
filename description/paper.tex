@@ -1,0 +1,92 @@
+\pdfoutput=1
+% ^ arXiv detects a pdflatex submission from this line; keep it within
+%   the first five lines of the file.
+\documentclass[10pt]{article}
+
+\usepackage[biblatex]{flockpaper}
+
+\usepackage{subcaption}
+\usepackage{nicefrac}
+\usepackage{algorithm2e}
+
+\usepackage[backend=biber]{biblatex}
+\addbibresource{refs.bib}
+\renewcommand*{\bibfont}{\normalfont\small}
+
+% allow long URLs in the bibliography to break across lines
+\setcounter{biburlnumpenalty}{9000}
+\setcounter{biburlucpenalty}{9000}
+\setcounter{biburllcpenalty}{9000}
+
+\usetikzlibrary{arrows.meta, bending, positioning}
+
+\input{vars.tex}
+
+\title{Dictionary learning is all you need}
+\author{Keira Wiechecki\\[2pt]
+  \mutedlabel{Wakaru \textperiodcentered{} kaw504@nyu.edu}\\[9pt]
+  Jade Zaslavsky\\[2pt]
+  \mutedlabel{Wakaru \textperiodcentered{} jadeofnameless@gmail}\\[9pt]
+  Lamb Wakefield\\[2pt]
+  \mutedlabel{Flock Capital \textperiodcentered{} lamb@flock.holdings}\\[9pt]
+  vmfunc\\[2pt]
+  \mutedlabel{Flock Capital \textperiodcentered{} celeste@linux.com}}
+\date{\today}
+\eyebrow{proposal \textperiodcentered{} preliminary results \textperiodcentered{} mechanistic interpretability}
+\runningtitle{Dictionary learning is all you need}
+\begin{document}
+\maketitle
+
+% Frontispiece: decorative, deliberately not a numbered float.
+\noindent\plate{\includegraphics[width=\textwidth]{figures/frontis-orbit.png}}\\[3pt]
+\mutedlabel{orbit \textperiodcentered{} seed 1024 \textperiodcentered{} floyd--steinberg error diffusion}
+\vspace{16pt}
+
+\begin{abstract}
+Ideally, mechanistic interpretability would provide guarantees about the
+computational process used by a model: features should be causal,
+composable, and closed-form. Most existing techniques, such as sparse
+autoencoders, can perform arbitrarily badly on all three. Arguably the
+simplest interpretability technique is a linear probe, and the simplest
+control technique is a steering vector. They are remarkably robust
+compared to unsupervised techniques such as SAEs, but require labeled
+contrastive datasets. We propose a MoEfication
+technique that decomposes a representation space into a set of
+contrastive classifiers. Each classification corresponds to a
+representative vector; inputs are encoded as classifier outputs and
+reconstructed from a weighted average of the representative vectors.
+Steering effectively comes for free, outputs are bounded, the
+representative vectors admit static interpretation in principle, and
+feature space is structured. An evaluation against SAE baselines is
+reported: forced classifications steer causally, compose additively,
+and reach $0.43\times$ the supervised steering effect on a shared
+frame, but reconstruction pays roughly $40\times$ for the contrastive
+structure, head-level descriptions do not beat a null at the current
+sample size, and partitions do not reproduce across seeds. Training diagnostics,
+single-knob retrains, an HSIC-bottleneck ablation, a scaling sweep,
+and a reinforcement-learning probe of classification rewards are
+included.
+\end{abstract}
+
+\input{sections/introduction.tex}
+\input{sections/motivation.tex}
+\input{sections/background.tex}
+
+\input{sections/methods.tex}
+\input{sections/results.tex}
+\input{sections/conclusion.tex}
+
+\section*{Acknowledgements}
+Design, typesetting, and editorial production of this preprint are by
+The Flock Capital Research Department, whose error-diffusion pipeline
+also printed the plates.
+
+\printbibliography
+
+%\input{sections/appendix.tex}
+
+\vspace{20pt}
+\noindent\plate{\includegraphics[width=\textwidth]{figures/end-ridge.png}}\\[3pt]
+\mutedlabel{ridge \textperiodcentered{} seed 32 \textperiodcentered{} the same pipeline, closing the file}
+
+\end{document}

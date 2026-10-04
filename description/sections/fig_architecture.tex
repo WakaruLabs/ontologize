@@ -1,0 +1,138 @@
+% Ontologizer architecture figures.
+%
+% Requires only what paper.tex already loads:
+%   tikz + \usetikzlibrary{arrows.meta, positioning}, amsmath,
+%   caption, subcaption.
+%
+% Values annotated on the diagrams are the live SONAR configuration
+% (sonar.py): d = 1024, e_dec = 2048, k = 32, h = 32, l = 5, n = 2
+% (bilinear), forward = "resid", deepsup = True, resid_norm = True,
+% resid_const = True, encoded = False, scaled = False.
+
+% =====================================================================
+% (1) the layer stack
+% =====================================================================
+\begin{figure}[tp]
+\centering
+\resizebox{\linewidth}{!}{\input{tikz/ontologizer}}
+\caption[\texttt{Ontologizer} architecture]{\textbf{\texttt{Ontologizer} architecture.}
+	An \texttt{Ontologizer} consists of $l$ stacked \texttt{DictEnc} layers.
+	Each returns a feature vector $F_i\in\mathbb{R}^{e}$,
+	which is written to a residual accumulator $R$.
+	For each layer $i$, $R_i = R_{i-1} + F_i$; a stop-gradient variant
+	($\mathrm{sg}$ on $R_{i-1}$, available but off in the live
+	configuration) would prevent gradient communication between layers.
+	$\mathrm{dec}$ is a linear decoder with shape $\mathbb{R}^{d \times e}$.
+	It uses deep supervision to obtain a coarse-to-fine representation where
+	the component encoded by previous layers is inaccessible to later layers.
+	At each layer $i$, $\hat{\mathbf{x}}_i = \mathrm{dec}(R_i)$.
+	The same decoder is shared by all layers.
+	The component left unexplained after layer $i$ is given by
+	$\mathbf{y}_i = \mathbf{x} - \hat{\mathbf{x}}_i$.
+	The input to layer $i+1$ is given by
+	$\tilde{\mathbf{y}}_i
+	  = \mathbf{y}_i / \mathrm{L2}(\mathbf{y}_i) \oplus [1]$
+	where $\mathrm{L2}$ is the unit norm. This prevents exploding gradients from repeated
+	application of bilinear layers, as each scales its input by $\lVert\cdot\rVert^{2}$.
+	A constant coordinate $[1]$ is appended, giving a dimension of $d+1$.
+	This prevents the sign information of $\mathbf{y}_i$ from being lost
+	by the bilinear transformation.
+	Effectively, it adds a bias to an otherwise unbiased linear form
+	while preserving eigendecomposition.
+
+	$\mathrm{MSE}(\mathbf{x},\mathrm{dec}(R_i))$ is computed separately for each layer.
+
+	The input-noise hook drawn on $\mathbf{x}$ is available but disabled
+	in the live configuration.
+}
+\label{fig:onto-stack}
+\end{figure}
+
+% =====================================================================
+% (2) inside one DictEnc, and the per-head geometry
+% Split into two floats: the combined float (with both long captions)
+% overflowed the page by ~74pt, and its wrapper label was never
+% referenced.
+% =====================================================================
+\begin{figure}[tp]
+\centering
+\resizebox{\linewidth}{!}{\input{tikz/dictenc}}
+\caption[\texttt{DictEnc} architecture]{\textbf{\texttt{DictEnc} architecture.}
+	Dashed lines above indicate perturbations to the data,
+	including noising and causal interventions.
+	Dashed lines below indicate statistics used as tuneable auxiliary loss functions.
+	Each \texttt{DictEnc} consists of a multihead bilinear classifier
+	($\bilinearblock$) with weights
+	$[\mathsf{W}, \mathsf{V}] \in \mathbb{R}^{2 \times h \times k \times d}$
+	($d+1$ after the first layer, per the appended constant coordinate)
+	and a multihead linear dictionary ($\dictblock$)
+	with weights $\mathsf{D} \in \mathbb{R}^{h \times k \times e}$.
+	It accepts a vector $\mathbf{x} \in \mathbb{R}^{d}$,
+	which may be a residual from a previous layer.
+	A $\bilinearblock$ accepts inputs $\mathbf{x} \in \mathbb{R}^d$.
+	It returns logits $K \in \mathbb{R}^{h \times k}$ given by
+	$K = \left(\sum^{d}_{j=1}W_{\cdot,\cdot,j}x_j\right)
+	     \odot \left(\sum^{d}_{j=1}V_{\cdot,\cdot,j}x_j\right)$.
+	An optional noise term $\varepsilon_K$ may be added.
+	Winner dropout sets $\mathrm{argmax}_k(K_{h,\cdot})$ to $-\infty$
+	with probability $p_{\mathrm{drop}}$, ramped $0 \to 0.1$ over the
+	annealing horizon.
+
+	Soft labels $P$ are given by $\mathrm{softmax}_{k}(K/T)$
+	where $T$ is a temperature hyperparameter. It is annealed
+	geometrically from $1.0$ to $0.03$ over the first 50k steps, then
+	held, giving progressively sharper classifications.
+	The architecture provides methods for causal interventions on labels.
+	From $P$ we collect per-sample entropy $H$,
+	between-sample similarity $\mathrm{cossim}_b$,
+	and batch mean entropy $\mathrm{KL}_m$.
+	In practice $H$ is not needed, as including a
+	$\mathrm{cossim}_b$ loss also minimizes $H$.
+	$\mathrm{KL}_m$ serves to anchor the batch mean of each label vector
+	$\mathbf{p}_{i,\cdot}$ to a uniform distribution.
+	This results in a uniform $\mathbf{p}_{i,\cdot}$ code corresponding
+	to a maximally generic feature vector.
+
+	A $\dictblock$ accepts labels 
+	$P \in \mathbb{R}^{h \times k}$
+	and returns features $F \in \mathbb{R}^{h \times e}$ given by
+	$F = \sum^{k}_{j=1}\lvert D_{\cdot,j,\cdot}\rvert \, P_{\cdot,j}$.
+	Because $\lvert D_{\cdot,j,\cdot}\rvert$ is an absolute value
+	and $P_{hj} \in [0,1]$, features are strictly additive.
+	From $F$ we collect between-head similarity $\mathrm{cossim}_h$ on
+	the clean features, and the sparsity penalty $\mathrm{L1}$ after the
+	noise $\varepsilon_F$ is added.
+	Both $\mathrm{L1}$ and $\mathrm{cossim}_h$ tend to decrease with only
+	$\mathrm{MSE}$ loss, but incorporating them into the loss speeds up convergence.
+	$\mathrm{cossim}_h$ is of particular interest because it measures
+	the extent to which heads encode nonoverlapping geometries.
+
+	We add noise $\varepsilon_F$ to $F$, then sum over the head dimension to obtain
+	pooled features $F' \in \mathbb{R}^{e}$, which are added to $R$.
+}
+\label{fig:dictenc}
+\end{figure}
+
+\begin{figure}[tp]
+\centering
+\input{tikz/dict}
+\caption[Per-head geometry]{\texttt{DictBlock} \textbf{head geometry} for $h=2$; $k=3$.
+	The output space of a head $i$ forms a simplex with the rows of the matrix
+	$D_{i,\cdot,\cdot}$ as the vertices.
+	The row vectors $\mathbf{d}_{i,j,\cdot}$ form the spanning set of the
+	feature space. Any $F_i$ must be a linear combination of the rows of
+	$D_{i,\cdot,\cdot}$.
+	As $F$ becomes sparser, these vectors become more approximately
+	orthogonal, allowing them to be treated as a basis.
+	The label code $P$ corresponds to soft assignments to mutually
+	contrastive categories rather than independently firing features.
+	Because elements of $P$, $p_{ij} \in [0,1]$,
+	outputs must be within the convex hull of $D_{i,\cdot,\cdot}$.
+	Because $\lvert D\rvert\geq0$ and $P\geq0$, $F\geq0$;
+	therefore $\cos(F_i, F_j) \in [0,1]$, and driving
+	$\mathrm{cossim}_h(F)$ to zero demands \emph{disjoint support}
+	between heads, strictly stronger than orthogonality of signed
+	vectors. This is the sense in which the architecture is built to
+	seek an orthogonal decomposition.}
+\label{fig:head-simplex}
+\end{figure}

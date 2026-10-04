@@ -1,0 +1,68 @@
+\section{Background}
+Mechanistic interpretability currently can do supervised steering well
+or unsupervised steering poorly. This has prompted the Google Deep Mind
+interpretability team to pivot to a pragmatic steering
+agenda\cite{gdmprogress2025}. Compared to unsupervised interpretability,
+supervised steering is highly robust. However it can only distinguish
+what the experimenter is looking for and does not account for the actual
+computations performed by a model\cite{makelov2023}. The dominant
+unsupervised paradigm is the sparse autoencoder (SAE). A model's hidden
+state is approximated as a finite state machine consisting of discrete
+features. The initial implementation used a $\relu$ activation and
+sparsity loss\cite{bricken2023}, though more recent implementations have
+used a $\topk$ activation function without a sparsity loss\cite{gao2024}.
+
+\subsection{Common problems with SAEs}
+The motivation is to decompile a model to a finite state machine (FSM).
+The limitation is that such an FSM is only as interpretable as an
+enumeration of all possible states.
+
+\subsubsection{Features are not composable}
+A persistent problem with SAEs is feature absorption\cite{chanin2025}.
+Instead of representing an input as a composition of monosemantic
+features, an SAE will often instead use a single separate feature. This
+is a problem for interpretability, as we would like features to
+generalize. One attempt to address this problem is Matryoshka
+SAEs\cite{bussmann2025}, which use multiple layers to build a
+hierarchical coarse-to-fine representation.
+
+\subsubsection{Features are not causal}
+Sparsity trades off against reconstruction fidelity. Using features for
+steering often results in inconsistent, context-sensitive
+behavior\cite{duan2026}.
+
+\subsubsection{Features are not closed-form}
+A major concern is how well an interpretability technique generalizes
+out-of-distribution. Ideally we would like to infer behavior by looking
+solely at model weights, which can be achieved with bilinear
+MLPs\cite{pearce2025}.
+
+\subsubsection{Forward passes are expensive}
+Efficiency is also a problem. Although the sparsity constraint means
+that only a handful of features are active for a given input, the
+entire feature space needs to be computed for each sample.
+Mixture-of-experts (MoE) SAE variants reduce compute costs by dividing
+feature space between smaller submodules. Examples include Switch
+SAEs\cite{mudide2025} and Tree SAEs\cite{cao2026}.
+
+Less explored is the effect of the structure imposed by the MoEfied
+architecture on the interpretability of feature space. A common approach
+to scalably interpreting features is using an LLM to predict activations
+from examples\cite{paulo2025}. With an unstructured feature space, it
+quickly becomes intractable to interpret all permutations of features
+this way. It is however possible to instead apply this technique to
+expert routings. The MLPs of a transformer can themselves be converted
+to an MoE architecture\cite{zhang2022}. Language models seem to organize
+contrastive concepts into orthogonal simplices\cite{park2025}. This is
+suggestive of MoEfication revealing latent contrastive steering vectors.
+Imposing an orthogonality constraint has been shown to significantly
+reduce feature absorption\cite{korznikov2025}.
+
+Existing attempts to route activations to expert SAEs focus on routing
+similar inputs to the same expert. Contrastive learning wants the
+opposite: training on things at opposite ends of a shared axis. We don't
+just want to find similar features, we want to find contrastive vectors
+in feature space that correspond to what a model considers a natural
+category.
+
+

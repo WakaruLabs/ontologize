@@ -1,0 +1,69 @@
+\section{Theory of change}
+Conditional on the underlying model of ontology being true, the
+techniques proposed here would be a substantial interpretability
+advance. The agenda also has a case for counterfactual impact: its
+theoretical basis consists of nonobvious applications of obscure
+techniques from niche fields of bioinformatics, and similar research
+is unlikely to be done soon otherwise.
+
+\subsection{What a solution would look like}
+Mechinterp plausibly offers the best path to a robust alignment
+solution despite
+\href{https://www.lesswrong.com/posts/tEPHGZAb63dfq2v8n/how-useful-is-mechanistic-interpretability}{criticisms}.
+The case rests on
+\begin{enumerate}
+    \item \textbf{decomposability} Mechinterp allows alignment to be
+    broken into manageable subproblems.
+    \item \textbf{parallelizability} Decomposable subproblems can be
+    worked on independently.
+    \item \textbf{robustness} Mechinterp offers direct causal
+    explanations of model behavior.
+\end{enumerate}
+The most straightforward mechinterp alignment solutions are
+\begin{enumerate}
+    \item \href{https://www.alignment.org/blog/arcs-first-technical-report-eliciting-latent-knowledge/}{eliciting latent knowledge (ELK)}
+    Directly inferring a model's ontology.
+    \label{it:elk}
+    \item \href{https://www.alignment.org/blog/mechanistic-anomaly-detection-and-elk/}{mechanistic anomaly detection (MAD)}
+    Detecting when a model has ``unusual'' thoughts.
+    \label{it:mad}
+\end{enumerate}
+Both of these can be considered
+\href{https://arbital.greaterwrong.com/p/ontology_identification/}{ontology identification}
+subproblems. MAD requires mapping between the model's activations and
+the model's ontology. ELK requires mapping between the model's ontology
+and human ontology. These are hard but not intractable problems.
+Recently, \href{https://devinterp.com/}{developmental interpretability}
+(devinterp) techniques have enabled identification of ``developmental
+stages'' corresponding to learning specific
+tasks\cite{hoogland2024developmental}. This is strong evidence that
+learning consists primarily of the network
+grokking\cite{nanda2023progress} discrete concepts. While these results
+are promising for MAD, locating these emergent capabilities in the
+model's activations remains an open problem.
+
+Interpretability glosses broadly as ``let humans understand AI''. The
+alternative is to get AI to understand humans better, and that scales
+badly: making the model smarter leads to subtler and subtler issues
+with larger and larger effects. And what we're doing is not just
+letting humans understand AI. Because an LLM reflects humanity from its
+training data, high quality conceptual interpretability provides
+machine-comprehensible mathematical representations of every concept
+that humanity cares about. We work on interp for the usual
+corrigibility reasons, and also because feature representation is one
+of the most challenging parts of outer alignment. This attacks both.
+
+\subsection{Macro-scale strategy}
+Broadly, the goals are to
+\begin{enumerate}
+  \item formalize the notion of a model's latent concept space
+  \item distill a model's latent concept space
+  \item enforce decomposability of latent concept space
+  \item enforce robustness of existing concepts as the dimensionality of
+  the latent concept space increases
+\end{enumerate}
+A prerequisite for all of these is the ability to express a
+\href{https://plato.stanford.edu/entries/ontological-commitment/}{metaontology}
+which can identify latent concepts in activation space.
+
+
