@@ -119,7 +119,7 @@ def contributions(ckpt: str, step: int, T: float,
         for i, de in enumerate(module.dictencs):
             U, G = de.gainshape_in(Ein)
             P = de.dict.cluster(de.classifier(U), T)
-            Y = de.dict.hfwd(P)                                # (b, h, dh)
+            Y = de.head_outputs(U, P)                          # (b, h, dh)
             h = Y.shape[1]
             # one copy of the layer output per head, every other head
             # zeroed, so `combine` places it as the layer itself would
@@ -155,6 +155,12 @@ def atoms_and_codes(ckpt: str, step: int, T: float,
     model, raw, used = load_onto(ckpt, step)
     params = {"params": raw}
     k = model.k
+    if model.scaled or model.fiber_rank:
+        # a head's contribution is then gain x router(x) x atom (plus a
+        # fiber term), so "gain x atom" no longer decomposes it exactly
+        raise SystemExit(
+            f"{ckpt}: the atom decomposition assumes contribution = gain x "
+            f"atom, which the router (scaled) and fibers break")
 
     def atoms(module) -> Float[Array, "lh k d_out"]:
         zero = module.decode(jnp.zeros((1, module.e_dec), module.dtype))
@@ -182,7 +188,7 @@ def atoms_and_codes(ckpt: str, step: int, T: float,
             idx.append(jnp.argmax(P, -1))
             gains.append(jnp.ones(Xb.shape[:1], module.dtype) if G is None
                          else G[:, 0])
-            R = R + de.gained(de.dict.combine(de.dict.hfwd(P)), G)
+            R = R + de.gained(de.dict.combine(de.head_outputs(U, P)), G)
             if i < module.l - 1:
                 Ein = module.nextinput(Xb, R, P.reshape(Xb.shape[0], -1))
         return jnp.stack(idx), jnp.stack(gains)

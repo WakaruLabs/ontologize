@@ -1,0 +1,110 @@
+\section{Introduction}
+
+\subsection{Evaluation frame}
+
+The comparisons below were largely built on SAE-native terms ---
+per-feature monosemanticity, sparse probing, reconstruction at matched
+sparsity --- and we report them unchanged. But the Ontologizer's goal is
+not a monosemantic dictionary. It is an \emph{unsupervised generator of
+steering vectors}: each head is a $k$-way classifier over its input,
+trained only by reconstruction pressure, and the hope is that a series of
+such classifiers finds the most natural contrastive clusters in the
+embedding space. Interpretability value is then expected from
+\emph{MoEfication}: decomposing the space into small classification tasks
+--- one per head --- each nameable in isolation, with within-head entry
+swaps as the steering primitive (forcing head $h$ from its argmax entry to
+entry $k'$ moves the decode along exactly the dimension head $h$
+classifies).
+
+Under this frame the evaluation questions are: (a)~what does contrast-set
+structure cost in reconstruction (the Pareto and ladder); (b)~do trained
+heads actually behave as contrastive classifiers (categorical form,
+semantic anti-coherence); (c)~are the learned tasks \emph{natural} ---
+nameable, stable across runs, aligned with generative factors of the data
+(seed reproducibility, language and topic alignment); and (d)~is the
+steering primitive good --- consistent effect, low collateral, at least
+matching supervised diff-of-means vectors and SAE decoder-row addition
+(steering fidelity). Metrics that ask whether \emph{individual latents}
+are concept-aligned remain informative about the SAE side but are the
+wrong lens for classifier codes, and we flag them as such where they
+appear.
+
+Question (c) has a prerequisite that the original battery took for
+granted: a head can only be named if it is the same head on every run.
+Section~\ref{sec:seeds} tests that directly and finds it holds only
+partly, and only in the first layer, which conditions every per-head
+result in this document.
+
+
+\subsection{Related work}
+
+No single line of prior work covers this combination; each commitment has
+a nearest neighbour.
+
+\paragraph{Discrete and routed dictionaries.}
+A \texttt{DictBlock} head --- a softmax over $k$ entries, summed across
+heads --- is soft product quantization~\cite{jegou2011}, and the residual
+layer stack is soft residual VQ, the codec lineage of
+SoundStream~\cite{zeghidour2021}; that literature treats codes as
+compression and does not read codebooks as features. The straight-through
+arm (Section~\ref{sec:ste}) makes the analogy literal: with an argmax
+forward and a softmax surrogate gradient~\cite{bengio2013} it is a
+residual product quantizer with non-negative atoms. Codebook
+Features~\cite{tamkin2023} is the closest interpretability ancestor (VQ
+bottlenecks finetuned into a network, hidden state a sum of a few
+discrete codes), but its codes are read per-code, not as classifiers, and
+there is no intervention grammar over within-codebook swaps. Switch
+SAEs~\cite{mudide2025} route activations among expert SAEs purely as a
+compute optimization; notably their experts collapse into redundant
+ensembles that duplicate features --- exactly the failure mode
+\texttt{headstruct.py}/\texttt{headcoh.py} instrument, and the opposite of
+what trained heads show here (within-head directions repel).
+MoEfication~\cite{zhang2022} supplies the frame's name but decomposes
+already-trained MLPs post hoc; here the partition is the training
+objective's own discovery.
+
+\paragraph{Structured SAEs.}
+The field's main structure axis is nesting by scale: Matryoshka
+SAEs~\cite{bussmann2025} train nested dictionaries to curb feature
+absorption~\cite{chanin2025}, and Tree SAE~\cite{cao2026} learns explicit
+hierarchies. Rung 3 (\texttt{k32\_p5}) imports exactly the matryoshka
+commitment into the ladder; the Ontologizer's axis is instead
+\emph{partition into exhaustive, mutually exclusive heads}. Both lines ask
+whether an architectural commitment buys interpretability that code
+density alone does not explain --- the auto-interp results below answer
+``not per-latent describability,'' while the description-coherence view is
+where the partition begins to pay.
+
+\paragraph{Embedding-space substrate.}
+SAEs over dense text embeddings became a subfield in 2025--2026:
+discretizing retrieval embeddings~\cite{park2025decodingdenseembeddingssparse}, data-analysis
+toolkits~\cite{jiang2026interpretableembeddingssparseautoencoders},
+human-concept alignment~\cite{shin2026aligningsentenceembeddingshuman}. All
+are single-layer top-$k$ SAEs, and none address SONAR, where the stakes
+are higher --- Large Concept Models generate directly in SONAR
+space~\cite{lcmteam2024largeconceptmodelslanguage} --- and where the paired M2M100 decoder supplies a
+semantic oracle: where embedding-inversion work must train an
+inverter~\cite{morris2023textembeddingsrevealalmost}, \texttt{textfid.py} and \texttt{steerfid.py}
+decode reconstructions and interventions through the pretrained decoder
+itself.
+
+\paragraph{Evaluation stance.}
+SAEBench~\cite{karvonen2025} is the template for the multi-instrument
+battery (\texttt{langprobe.py} is deliberately SAEBench-style), and the
+blinded detection scoring follows the scaled auto-interp
+line~\cite{paulo2025}. AxBench~\cite{wu2025axbenchsteeringllmssimple} found that prompting and
+finetuning beat every representation-based steering method, with SAEs
+uncompetitive even at concept detection --- independent support for
+judging dictionaries by steering utility rather than per-latent
+monosemanticity, and the niche \texttt{steerfid.py}'s
+effect-vs-collateral-at-matched-magnitude design targets. Song et
+al.~\cite{song2025positionmechanisticinterpretabilityprioritize} argue seed-to-seed feature consistency should be a
+first-class SAE metric; \texttt{splitting.py}'s match fractions and
+\texttt{partition.py}'s head matching measure precisely that. Without
+close analog, to our knowledge: reading grouped routing as contrastive
+classification with a causal intervention interface; quota-free
+coherence tests against size-matched nulls, including over judge-written
+description texts; and decoding parameter directions through the paired
+decoder as a test of whether features can name themselves from weights
+alone --- a test the weights fail.
+

@@ -167,7 +167,7 @@ def codes(ckpt: str, step: int, T: float, X: Float[np.ndarray, "n d_in"],
             U, G = de.gainshape_in(Ein)
             P = de.dict.cluster(de.classifier(U), T)
             A.append(jnp.argmax(P, -1))
-            R = R + de.gained(de.dict.combine(de.dict.hfwd(P)), G)
+            R = R + de.gained(de.dict.combine(de.head_outputs(U, P)), G)
             if i < module.l - 1:
                 Ein = module.nextinput(X, R, P.reshape(X.shape[0], -1))
         return jnp.concatenate(A, -1)

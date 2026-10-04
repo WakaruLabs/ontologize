@@ -1,5 +1,314 @@
 \appendix
 
+\section{Supplementary methods}
+
+\subsection{Data and objective}
+
+\paragraph{Embedding space and data.}
+All SONAR models are trained on a fixed cache of $N{=}4{,}000{,}000$
+SONAR sentence embeddings ($d{=}1024$, unit-norm) computed from an
+interleaved 86-language mC4 sample, with a language label sidecar. The
+stream order is deterministic, so raw text is recoverable by row index
+(verified against the language sidecar per row). The cloud is unit-normed
+but not centred: $\lVert\mathbb{E}[x]\rVert = 0.564$, so it is a
+spherical cap and $0.318$ of every squared norm is one shared direction.
+It is dense without being isotropic --- effective dimension 108 of 1024
+(participation ratio 268 on the whitened eval tail), yet 943 principal
+components for 99\% of variance --- and samples average a pairwise cosine
+of $0.31$. Sections~\ref{sec:gpt2} and~\ref{sec:seeds} additionally use
+GPT-2~\cite{radford2019} layer-8 residual-stream activations ($d{=}768$,
+harvested by \texttt{encode\_acts.py}) as a substrate where sparse
+dictionary learning is known to work. Section~\ref{sec:gpt2hard} uses a
+separate GPT-2 setup from the \texttt{headline} branch --- the residual
+stream entering block 8 on FineWeb, unwhitened, scored also by GPT-2 loss
+recovered --- whose numbers compare only within that section.
+
+\paragraph{Evaluation.}
+All models minimize the whitened MSE of Equation~\ref{eq:mse}. We report
+$\fvu$: whitened MSE divided by the whitened variance of a constant
+predictor, on the final 32{,}768 cache rows. This tail is excluded from
+SAE training and from the training of every straight-through arm.
+\emph{Caveat: the softmax Ontologizers (\texttt{resid\_nc} and the
+selection sweep) predate the holdout and trained on the full cache
+including the tail, so their scores are in-sample; a fresh-encoded
+evaluation set is future work.} Where activations are needed, Ontologizer
+features are the flattened per-head classification probabilities
+$P \in \Delta^{k}{}^{\,l\cdot h}$ at the run's final temperature (feature
+$f = (l\cdot h + h_i)k + k_i$; fire threshold $2/k$), and SAE features are
+latent activations (fire threshold $0$; grouped-softmax runs use the
+above-uniform threshold $2/(m/G)$, matching the tag convention). Scoring a
+softmax run at the default temperature $1.0$ rather than its annealed
+$0.03$ puts a healthy checkpoint at $\fvu \approx 0.91$, which is
+indistinguishable from a broken one; every number here uses the run's own
+temperature.
+
+\subsection{Models and baselines}
+
+\paragraph{Softmax Ontologizers.}
+The reference Ontologizer (\texttt{resid\_nc}, step 372{,}600) is the
+architecture of Section~\ref{sec:arch}: $l{=}5$ residual layers, $h{=}32$
+heads, $k{=}32$ entries per head, bilinear classifiers with residual
+normalization and a constant input coordinate, deep supervision, and a
+shared linear decoder from an $e{=}2048$ dictionary space; $\approx$23.1M
+parameters and $l\cdot h\cdot k = 5{,}120$ dictionary entries. Layers
+0--3 trained healthily (prefix $\fvu$ $0.129 \to 0.0051$); layer 4 froze
+22/32 heads late in temperature annealing and is mildly harmful
+(Section~\ref{sec:lastlayer} explains why). A later \emph{selection sweep}
+holds that shape fixed and varies only the \texttt{DictBlock} selection
+rule --- \texttt{top1}, \texttt{top2}, \texttt{top4}, \texttt{top8},
+\texttt{top16}, \texttt{softmax} --- each with and without the
+mean-entropy bonus raised to $s_{\mathrm{KL}_m}{=}3\times10^{-5}$
+(\texttt{\_shm}), at 369{,}500 steps.
+
+\paragraph{The straight-through arm.}
+\texttt{train\_ste.py} imports \texttt{sonar.py}'s configuration and
+overrides only \texttt{select="ste"}: the forward pass selects the argmax
+one-hot, and the backward pass uses $\mathrm{softmax}(K/T)$ as its
+surrogate. Its shape, calibration and initialization are described with
+its results in Section~\ref{sec:ste}.
+
+\paragraph{SAEs.}
+SAEs follow Gao et al.~\cite{gao2024}: pre-activation
+$\mathrm{relu}((x-b_{dec})W_{enc}+b_{enc})$ with top-$k$ selection,
+unit-norm decoder rows, tied initialization, aux-$k$ dead-latent revival,
+trained with Adam at $4\times10^{-4}$ for $\sim$144k steps at batch 4096
+(converged; convergence is optimizer-step--limited, not epoch-limited, at
+this batch size).
+
+\paragraph{The structural-ablation ladder.}
+To attribute differences to specific architectural commitments rather than
+to whole architectures, we train SAE variants that each add one
+Ontologizer-style constraint (all $m{=}5120$, same data and objective):
+
+\begin{center}
+\begin{tabular}{@{}llll@{}}
+\toprule
+rung & run & added structure & analogue \\
+\midrule
+1  & \texttt{k32} & none (top-$k{=}32$) & baseline \\
+2a & \texttt{g160top1} & 160 groups, hard winner per group & heads (hard) \\
+2b & \texttt{g160softmax} & 160 groups, softmax per group & heads (soft) \\
+3  & \texttt{k32\_p5} & 5 nested prefix losses (matryoshka) & deepsup layers \\
+--- & \texttt{k32\_bl} & bilinear encoder, $[x{-}b_{dec};1]$ factors & bilinear classifier \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Controls at width $m{=}11{,}264$ (parameter-matched to the Ontologizer):
+\texttt{k32}, \texttt{k160} (coefficient-matched to one deviation per
+head), and \texttt{k5120} (coefficient-matched to the full soft code; the
+top-$k$ constraint never binds --- measured $L_0 \approx 1520$ --- so it is
+effectively a dense ReLU autoencoder). A seed replica \texttt{k32\_s43}
+supports stability analysis. The bilinear encoder's latents admit
+closed-form ``eigenfeature'' analysis: each latent's symmetric form
+$\mathrm{sym}(w_1 w_2^\top)$ is rank~2, with top-$|\lambda|$ eigenvector
+$w_1/\|w_1\| \pm w_2/\|w_2\|$ (Pearce et al.~\cite{pearce2025}). Rung 2b
+(\texttt{g160softmax}) is the load-bearing control under the steering
+frame: it isolates the ``series of softmax classifiers'' idea from the
+residual stack, bilinear classifiers, and shared dictionary.
+
+\subsection{Evaluation protocols}
+
+Each protocol is a standalone script sharing the eval split and activation
+conventions; the root-level ones are unit-tested against planted-structure
+synthetic data.
+
+\paragraph{Capacity Pareto (\texttt{pareto.py}).}
+Capacity is continuous coefficients transmitted per sample, plus index
+bits. Ontologizer code points are \emph{top-$m$ deviation truncations}:
+per head, keep the $m$ entries with largest $|p - \mathrm{origin}|$, pin
+the rest to the origin distribution, renormalize. The origin is the
+corpus-mean classification $\mathbb{E}[p]$ --- measured, not uniform: the
+model output is jointly \emph{linear} in the flattened classifications
+(zero residual seed, linear decoder), so $\mathrm{decode}(\mathbb{E}[p]) =
+\mathbb{E}[Y]$, which decodes to the corpus-mean generic text, while the
+uniform code lands off-manifold (cosine $0.067$ to $\mathbb{E}[X]$) ---
+despite $\mathrm{KL}_m$ being included in the loss precisely to make the
+uniform code the generic one (Section~\ref{sec:labels}). Endpoints:
+$m{=}0$ (input-independent origin), $m{=}k$ (exact soft model), and
+end-to-end argmax (``hard''). An alternative head-level code mean-ablates
+all but the $m$ lowest-entropy heads per layer. SAE points use measured
+eval $L_0$. A hard code's index bits are $l\cdot h\log_2 k$; we compare
+each against the reverse water-filling bound~\cite{cover2006} on the
+whitened eval-tail covariance, the best distortion \emph{any} code of
+that rate can reach under a Gaussian model.
+
+\paragraph{Categorical form (\texttt{headstruct.py}).}
+An Ontologizer head is exhaustive (always fires) and exclusive (one
+winner). We test whether SAE latents form such units: discovery clusters
+latents by \emph{paradigmatic} affinity --- similar co-fire profiles with
+the rest of the dictionary $\times$ anti-correlation with each other
+(PMI${}<1$) --- under a group-size cap, on one half of the rows; scoring
+on the held-out half computes per-group exhaustiveness $P(\text{any
+fires})$, exclusivity $\mathbb{E}[\#\text{firing} \mid \geq 1]$, and the
+CV of summed activation, against size-matched random partitions of the
+live-latent pool. Head-like structure requires exhaustiveness \emph{above}
+null with exclusivity \emph{below} null; topical co-firing clusters show
+the opposite signature. \texttt{--trained-groups} scores a grouped run's
+own partition.
+
+\paragraph{Semantic coherence vs.\ contrast (\texttt{headcoh.py}).}
+The complement to categorical form: do a head's entries \emph{mean}
+similar things, or do they form a contrast set? Every entry has an exact
+decode direction in SONAR output space --- for the Ontologizer, the rows
+of the linear map $G$ with $Y = P_{\text{flat}}G$; for SAEs, decoder rows
+--- and SONAR space is a semantic sentence space, so within-head direction
+similarity is semantic similarity of what entries decode to. Per head we
+report mean pairwise cosine and top-singular-value energy fraction,
+$z$-scored against size-matched random subsets of the same pool (same
+layer for Ontologizer heads); as a metric-hygiene control the same
+statistics are recomputed under the training objective's inverse-variance
+inner product (\texttt{--metric whitened}). $z \gg 0$ means a head clusters
+semantically; $z \ll 0$ means its entries repel --- the signature of a
+\emph{contrastive classifier}, whose class decoders are pushed apart. A
+second view SONAR-encodes auto-interp description texts and tests pooled
+within-head similarity against a label-permutation null.
+\texttt{--assignment} scores discovered (post-hoc) groups.
+
+\paragraph{Feature splitting and seed stability (\texttt{splitting.py},
+\texttt{partition.py}, \texttt{headcontrib.py}).}
+For models $A$ (coarse) and $B$ (fine) on shared rows, each $B$-latent is
+classified per $A$-parent by two-way firing containment at threshold
+$\tau$: a \emph{child} satisfies $P(A_i \mid B_j) \geq \tau$,
+$P(B_j \mid A_i) < \tau$; a \emph{match} satisfies both. Splits
+($\geq 2$ children) are scored by union coverage of the parent's firing
+set and pairwise child overlap. Decoder geometry adds absorption
+candidates (decoder-cosine twins that do not co-fire) and each model's
+nearest-neighbour decoder-cosine distribution vs.\ a random baseline. For
+two same-architecture runs differing only in seed, the match fractions
+are the reproducible-feature fractions. For hard-code Ontologizers,
+\texttt{partition.py} matches heads across runs by the NMI of their
+partitions (what a head separates), and \texttt{headcontrib.py} by the
+cosine of their contributions (what a head writes): each head's decoded
+output contribution in the whitened frame, less $\mathrm{decode}(0)$,
+centered over rows --- uncentered, the non-negative dictionary's shared
+offset reads as agreement. Both use Hungarian matching, a row-shuffled
+null, and the same run against an earlier checkpoint as the positive
+control. \texttt{headcontrib.py} also splits each head's contribution
+size into its layer's input gain and its own decoded atoms, and with a
+reference seed pair (a flat arm) compares agreement at matched head size.
+
+\paragraph{Text fidelity (\texttt{textfid.py}).}
+The ``loss recovered'' analogue: decode $x$ and $\mathrm{recon}(x)$
+through M2M100 (forced \texttt{eng\_Latn}, both rescaled to the reference
+SONAR norm, so the metric sees direction error) and report
+chrF~\cite{popovic-2015-chrf} and exact-match between the decodes, plus the
+decoder's teacher-forced per-token NLL of the \emph{original's} decode
+under the original (ceiling), the reconstruction, and the corpus-mean
+embedding (floor --- which decodes to the generic text). Under the
+steering frame this doubles as the collateral ceiling: a code that cannot
+preserve text cannot steer text with low collateral.
+
+\paragraph{Language probing (\texttt{langprobe.py}, \texttt{headlang.py},
+\texttt{headscript.py}).}
+SAEBench-style $k$-sparse probing with the free 86-language labels: top
+latents per language by two-sample $t$-statistic on training rows;
+held-out one-vs-rest F1 at $k{=}1$ (single latent, fitted threshold),
+$k{=}4,16$ (logistic probes), and a dense probe on the raw embedding as
+ceiling. Macro-F1 over languages. \emph{Frame caveat: this measures
+whether a factor lives in individual latent magnitudes. A classifier head
+carries its factor in its assignment (partition), which single-latent
+probes cannot see.} \texttt{headlang.py} is the matching instrument: per
+head, the NMI between its partition and the label, null-corrected by a
+label shuffle, plus a held-out probe on the best $m$ heads' one-hot
+codes against a dense ridge ceiling. NMI here normalizes by the
+arithmetic mean of the two entropies, so its attainable maximum is
+$2\min(H_h,H_\ell)/(H_h+H_\ell)$ --- $0.875$ for a 5-bit head against the
+6.43-bit language label. \texttt{headscript.py} repeats this for script
+and scores per-label tag cells and cross-head conjunctions;
+\texttt{headeta.py} measures each partition's $\eta^2$ in embedding
+space, corrected by the $(g-1)/(n-1)$ a random $g$-way partition scores.
+
+\paragraph{Shrinkage (\texttt{refit.py}).}
+Gao-style refinement: freeze each sample's support, solve the whitened
+least-squares coefficients (masked normal equations; silent group slots
+forced to zero), and compare $\fvu$. Raw$-$refit is magnitude (shrinkage)
+error; refit is selection error. The Ontologizer shares the machinery via
+its exact linearity $Y = P_{\text{flat}} G$, with $G$ measured by decoding
+one-hot constant codes; its supports are the top-$m$ deviation entries.
+Points with support $\geq d$ are excluded (underdetermined). Note the raw
+convention: \texttt{refit.py} truncates the soft forward's $P$
+(non-adaptive), whereas \texttt{pareto.py} truncates inside the forward,
+letting later layers reclassify against the truncated prefix residual.
+
+\paragraph{Steering fidelity in text (\texttt{steerfid.py}).}
+Unit-normalized native steering directions --- SAE decoder rows, bilinear
+eigenfeatures, or the Ontologizer's \texttt{withArgs} set-intervention
+delta --- applied at matched embedding magnitudes. Effect is cycle
+consistency: the steered decode is re-encoded through SONAR and the target
+feature's activation gain is normalized by its firing-conditioned
+quantiles, with the baseline taken from the \emph{cycled} base decode so
+both sides share roundtrip degradation. Collateral is $1 - \mathrm{chrF}$
+against the base decode. Random unit directions give the control curve,
+and \emph{net} effect is feature effect minus that control.
+
+\paragraph{Steering fidelity in embedding space (\texttt{steerembed.py}).}
+Drops the text round trip and asks the causal question directly: move
+the input along a direction, re-run the model, and record whether the
+intended entry is now selected (\emph{realization}) and what fraction of
+the \emph{other} heads changed their selection (\emph{collateral}).
+Directions: \texttt{decode} (the decode delta of forcing the entry),
+\texttt{grad} (the gradient of the target logit), \texttt{margin} (the
+gradient of the target's margin over the head's current winner),
+\texttt{adjoint} (the bilinear classifier's top eigenvector via
+\texttt{BilinearBlock.rev}), and \texttt{random}. 64 entries, 32 held-out
+rows each, steered only where the entry was not already selected.
+
+\paragraph{Intervention composition (\texttt{compose.py}).}
+Treating heads as candidate causal variables: for pairs of forced
+assignments $(l_1,h_1){\to}k_1$, $(l_2,h_2){\to}k_2$ (8 random heads per
+layer, one random entry each; all same-layer pairs plus 60 cross-layer
+pairs), compare the joint intervention's decode delta $D_{12}$ against
+the sum $D_1{+}D_2$ of the single-intervention deltas on 512 held-out
+rows: median per-row cosine and relative error
+$\|D_{12}-(D_1{+}D_2)\|/\|D_1{+}D_2\|$, raw and whitened. Because the
+decode is exactly linear in the flattened classification, final-layer
+pairs compose exactly by construction; that stratum doubles as the
+measured numerical floor (the $\|R\|{\approx}31 \to \|Y\|{\approx}1$
+decoder cancellation amplifies float32 rounding to ${\sim}0.02$ relative
+error between differently-compiled variants --- verified exact in
+float64). All other non-additivity is downstream reclassification:
+later layers re-reading the intervened residual.
+
+\paragraph{Auto-interpretability (\texttt{autointerp.py}).}
+Four stages: harvest (top-activating rows, negatives, frequency-stratified
+feature selection, parameter-based decode embeddings), texts
+(deterministic mC4 stream replay recovers text by row index, verified
+against the language sidecar), describe, and score. Description modes:
+\texttt{params}, the M2M100 decode of a parameter-derived embedding (for
+tags, the $\mathbb{E}[p]$-origin code with one head forced one-hot; for
+SAE latents, $b_{dec} + \alpha W_{dec,j}$); \texttt{pdev}, the same decode
+with the pure-origin decode subtracted; \texttt{eig}, the bilinear
+eigenfeature decode; \texttt{acts}, an LLM summary of top-activating
+snippets; and \texttt{cacts}, a \emph{contrastive} summary --- the judge
+sees top snippets next to random corpus draws and must name what
+distinguishes them, blocking the degenerate corpus-level answer that
+plain summaries invite on noisy multilingual web text. Scoring is blinded
+detection over held-out positives and negatives, identical for all
+modes; per-feature F1, to be read against the always-match null of
+$\mathrm{F1} \approx 0.67$ on balanced items. The judge is Haiku
+(\texttt{claude-haiku-4-5}) via the Anthropic Messages API, rate-metered,
+with bounded reply length; failed judgements are never recorded (an
+earlier outage mode scored empty replies as $\mathrm{F1}=0$). Six models:
+the Ontologizer, rungs \texttt{k32}/\texttt{k32\_bl}/\texttt{g160top1}/%
+\texttt{g160softmax}, and the dense control \texttt{k5120}.
+
+\paragraph{Diagnostic scripts (\texttt{experiments/ste-arm/}).}
+The straight-through and geometry results rest on further single-purpose
+instruments, described where used: \texttt{inputgeom.py} (geometry of the
+vector each classifier sees), \texttt{blendablate.py} (severing the
+pairing between a layer's input and the sample's own earlier
+reconstruction), \texttt{gainablate.py} (the norm side-channel),
+\texttt{dictgeom.py} (row collinearity and effective rank read from the
+weights), \texttt{lastlayer.py} (final-layer ablations against the
+deep-supervision prefixes), \texttt{decodehead.py} (decoding a head's
+entries as deviations from its mean), \texttt{embedgeom.py} (SONAR
+cloud geometry), \texttt{entryshare.py} (how evenly a layer's entries
+contribute to the output, and whether usage, gain or atom norm drives the
+inequality), and \texttt{bigatoms.py} (how a layer's large atoms are
+distributed among its heads, and whether the heads holding them
+reproduce).
+
 \section{Supplementary results: the softmax Ontologizer against SAEs}
 \label{app:soft}
 

@@ -1,0 +1,11 @@
+[00:39:45] SKIP  verify-mse-weights (missing data/sonar_embeddings/mc4_4M.npy or data/out/sonar/mse_weights.npy)
+[00:39:45] SKIP  freeze-diag (resid_nc) (missing data/out/sonar/multilingual/resid_nc)
+[00:39:45] SKIP  freeze-diag (resid_nc_hm) (missing data/out/sonar/multilingual/resid_nc_hm)
+[00:39:45] SKIP  fresh-eval (missing data/sonar_embeddings/mc4_4M.npy)
+[00:39:45] SKIP  steering-overlay + naturalness (missing data/out/sonar/multilingual/resid_nc_hm or data/sonar_embeddings/mc4_4M.npy)
+[00:39:45] SKIP  devinterp-tracking (missing data/out/sonar/multilingual/resid_nc_hm)
+[00:39:45] SKIP  partition-autointerp (missing data/out/sonar/multilingual/resid_nc or data/sonar_embeddings/mc4_4M.npy)
+[00:39:45] SKIP  long training phases (missing data/sonar_embeddings/mc4_4M.npy or data/out/sonar/mse_weights.npy)
+[00:39:45] SKIP  rl-classifications (missing data/out/sonar/multilingual/resid_nc_hm or data/sonar_embeddings/mc4_4M.npy)
+[00:39:45] SKIP  transcoder (needs a paired target cache (second encode_corpus pass) + target-space mse_weights first; see experiments/transcoder/DESIGN.md)
+[00:39:45] DONE. Full log directory: experiments/logs/

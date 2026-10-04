@@ -304,6 +304,10 @@ def parse_args():
                         "dictionary costs h times fewer parameters at matched "
                         "e_dec. See --d-head. Orthogonality is in e_dec, not "
                         "after the decoder")
+    p.add_argument("--direct", action="store_true",
+                   help="no latent space and no decoder: entries live in "
+                        "output space (e_dec = d), each one a direction in "
+                        "embedding space. Needs --signed")
     p.add_argument("--biased-dec", action="store_true",
                    help="give the decoder a bias. The dictionary is "
                         "abs()'d, so the accumulated R is a sum of "
@@ -379,7 +383,13 @@ def main() -> None:
         f"embedding cache {cache} missing (encode_corpus.py builds it)"
     assert not (cfg.d_head and cfg.e_dec), \
         "--d-head fixes e_dec at h * d_head; pass one or the other"
-    if cfg.concat and cfg.d_head:
+    assert not cfg.direct or (cfg.signed and not cfg.concat and not cfg.e_dec
+                              and not cfg.d_head and not cfg.biased_dec), \
+        "--direct needs --signed and fixes e_dec at d: drop --concat, " \
+        "--e-dec, --d-head and --biased-dec"
+    if cfg.direct:
+        e_dec = base.d
+    elif cfg.concat and cfg.d_head:
         e_dec = h * cfg.d_head
     else:
         e_dec = cfg.e_dec or base.e_dec
@@ -392,7 +402,7 @@ def main() -> None:
     assert not (cfg.concat and h * d_head < base.d), \
         f"--concat with d_head={d_head} spans {h * d_head} of the " \
         f"{base.d}-dimensional output; the heads cannot reach the rest"
-    tag = f"_cat{d_head}" if cfg.concat else ""
+    tag = f"_cat{d_head}" if cfg.concat else "_direct" if cfg.direct else ""
     out = Path(cfg.out) if cfg.out else \
         Path(base.out).with_name(f"{cfg.select}_h{h}{tag}")
     assert out.resolve() != Path(base.out).resolve(), \
@@ -409,6 +419,9 @@ def main() -> None:
           f"p_drop={base.p_drop if cfg.p_drop is None else cfg.p_drop}")
     print(f"  hard code = {l * h} heads x log2({k}) = {bits:.0f} bits/sample "
           f"({bits / (base.l * base.h * math.log2(base.k)):.2f}x the live 800)")
+    if cfg.direct:
+        print(f"  direct: signed entries in the {base.d}-dim output, no "
+              f"decoder; dictionary {l * h * k * base.d / 1e6:.2f}M")
     if cfg.concat:
         null = max(d_head - base.d, 0)
         print(f"  concat: {d_head} dims per head, e_dec={e_dec}; dictionary "
@@ -523,7 +536,7 @@ def main() -> None:
         # model and costs a full run to discover that
         biased_enc=bool(cfg.zca) or _needs_encoder(
             cfg.biased_enc, cfg.encoded or base.encoded),
-        biased_dec=cfg.biased_dec,
+        biased_dec=cfg.biased_dec, direct=cfg.direct,
         forward=cfg.forward or base.fwd_mode, deepsup=base.deepsup,
         deepsup_sg=base.deepsup_sg,
         resid_norm=base.resid_norm, resid_const=base.resid_const,
