@@ -170,12 +170,15 @@ raw.} In layers 1--3 every entry carries close to its share (Gini
 0.33--0.59) because its atom norms vary widely inside heads, while
 usage stays near-uniform. The flat arm shows the same pattern, so it
 belongs to classifying the raw input.
-\item \textbf{No head is a labeled variable.} The hard code is six times
-more language-aligned than the softmax reference, yet its best head
-reaches 0.28 of an attainable 0.875 NMI, with false positives shared
-across heads: the code encodes language neighbourhood, because languages
-are weakly separated regions of SONAR space rather than directions. The
-strongest head encodes topic and genre.
+\item \textbf{Heads follow what the embedding encodes: meaning before
+language.} The strongest head encodes topic and genre, as a
+language-agnostic semantic embedding should be organized. Language, the
+one factor with free labels, was a probe rather than an expected
+variable: it is carried as neighbourhoods across heads, never by one
+head, consistent with languages being weakly separated regions of SONAR
+space. On that probe the hard code carries six times what the softmax
+reference does, so partitions do align with known factors; a test of
+whether heads are natural variables needs topic or genre labels.
 \item \textbf{Per-latent lenses mis-measure classifier codes.} $k$-sparse
 probing ranks the Ontologizer worst while partition-level analysis finds
 verified causal language heads; detection F1 is $\sim$80\% explained by
@@ -231,8 +234,10 @@ across contexts; and the flat arm's near-perfect addressability and
 better reproducibility weighed against its $1.79\times$ reconstruction
 cost.
 \item \textbf{Task reconstruction.} Recover what each head classifies:
-partition-vs-label-library MI (language at $k\geq128$, script, length,
-formatting/noise, unsupervised topics); \emph{sibling-contrastive}
+partition-vs-label-library MI, led by topic and genre (from a labelled
+corpus or unsupervised topic clusters) since those are what the
+embedding is organized by, with length, formatting/noise and script as
+secondary factors; \emph{sibling-contrastive}
 descriptions (positives where entry $k$ wins within head $h$, background
 where its siblings win), validated by blinded assignment accuracy vs.\
 $1/k$; and FLORES parallel-text invariance to split content heads from

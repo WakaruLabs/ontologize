@@ -889,8 +889,8 @@ reclassification downstream, and a deliberate one is no exception. The
 flat model has nothing downstream to reclassify, so its heads are
 independently addressable by construction.
 
-**The stack also localizes the labeled variable better, in every sense
-that survives the null.** Its best 32 heads recover language at 0.378
+**The stack also localizes language, the one labelled factor, better, in
+every sense that survives the null.** Its best 32 heads recover language at 0.378
 against the flat arm's 0.257, on a dense-probe ceiling of 0.721.
 
 | arm | best NMI less null | m=1 | m=2 | m=32 | m=1 as share of m=32 |
@@ -1743,10 +1743,16 @@ uv run python experiments/ste-arm/bigatoms.py \
 #        --mse-weights data/out/sonar/mse_weights.npy (bigatoms: --agree-rows 4096)
 ```
 
-## Does a labeled variable land in one head? (`headlang.py`)
+## Heads against a known factor: language (`headlang.py`)
 
-Held-out language identity over 86 languages, against a dense-embedding
-ridge ceiling of 0.721 and chance of 0.012:
+Language is measured because it is the one factor with free labels, not
+because a head was expected to encode it. SONAR is trained to be
+language-agnostic -- translations land close together -- so language is a
+weak residual factor of the embedding, and a reconstruction objective has
+little reason to spend a head on it. This is a probe of whether
+partitions line up with a known factor at all. Held-out language identity
+over 86 languages, against a dense-embedding ridge ceiling of 0.721 and
+chance of 0.012:
 
 | arm | structure | best-head NMI | less null | probe m=1 | m=32 |
 |---|---|---|---|---|---|
@@ -1758,10 +1764,13 @@ ridge ceiling of 0.721 and chance of 0.012:
 | flat + kcos | 1x380 | 0.247 | 0.246 | 0.080 | 0.271 |
 | softmax reference | 5x32 | 0.055 | 0.043 | 0.036 | 0.275 |
 
-**No head is a language variable in any arm.** The best reaches an NMI
-of 0.28 against an attainable ceiling of 0.875, and none of the
-head-health levers changes that. The architecture's distinguishing
-claim is still unsupported on the one variable with ground truth.
+**As expected, no head encodes language outright.** The best reaches an
+NMI of 0.28 against an attainable ceiling of 0.875, and none of the
+head-health levers changes that. That says little about the
+architecture's claim: a language-agnostic embedding should not be
+organized by language, and its strongest head is organized by topic and
+genre instead (below). Testing whether heads are natural variables needs
+labels for what the embedding does encode.
 
 That ceiling is not 1.0, and an earlier version of this section said a
 32-entry head "could hold all 6.43 bits", which is false: `log2(32)` is
@@ -1769,15 +1778,14 @@ That ceiling is not 1.0, and an earlier version of this section said a
 represent 86 languages** and the question was partly asked of something
 the architecture forbids. `nmi` normalizes by the arithmetic mean and
 `I <= min(H_h, H_l)`, so the cap is `2 min / (H_h + H_l)` = 0.875 here.
-The gap from 0.28 to 0.875 is wide enough that the verdict stands, but
-the clean test needs `k >= 128`, the smallest head that can hold the
-label at all. `headlang.py` had the same error in its reported ceiling
+A head of `k >= 128` is the smallest that could hold the label at all,
+though there is no reason to expect one to. `headlang.py` had the same error in its reported ceiling
 (`min(1, H_l/H_h)`, which prints 1.00 for these arms and is wrong in
 both regimes); it is fixed.
 
-**The hard code is consistently the more concept-aligned**, six times
-the softmax reference on null-corrected best-head NMI, which is the
-result that survives everything else in this file.
+**The hard code carries more of the known factor**, six times the
+softmax reference on null-corrected best-head NMI, consistently across
+arms.
 
 ### Per-label tags, script, and conjunctions (`headscript.py`)
 

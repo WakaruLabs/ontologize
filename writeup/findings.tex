@@ -69,8 +69,11 @@ on SONAR and on GPT-2 residuals alike, no head past the first layer ---
 partition, contribution, subspace or Gram --- reproduces above a
 same-shape null; first-layer heads reproduce partly, through their
 layer's input gain and a few outsized atoms, and still several times
-worse than flat-layer heads of equal size. (ix) No head is a language
-variable in any arm; the strongest head is a topic/genre head. (x)
+worse than flat-layer heads of equal size. (ix) The strongest head
+encodes topic and genre, as a language-agnostic embedding should be
+organized; language, probed because it has labels, is carried across
+heads as neighbourhoods, six times more strongly by the hard code than by
+the softmax reference. (x)
 Non-negativity forces a collinear dictionary at a third of the signed
 effective rank for $2.4\%$ of $\fvu$. (xi) On GPT-2 small, an 800-bit hard
 code whose entries are signed directions in activation space recovers

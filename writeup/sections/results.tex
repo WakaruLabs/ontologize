@@ -1151,11 +1151,21 @@ models (\texttt{bigatoms.py}):
 \toprule
 & GPT-2 concat, 20 heads & SONAR stack, 76 heads \\
 \midrule
-largest atom / head median & 3.7 (1.4--5.1) & 2.0 (1.5--4.4) \\
-atoms $>3\times$ layer median & 58, in \textbf{all 20} heads & 11, in \textbf{4} heads \\
-atoms $>5\times$ & 1 & 5, \textbf{all in head 54} \\
-largest head's energy share & 15.5\% (3$\times$ uniform) & 9.2\% (7$\times$ uniform) \\
-Spearman(atom norm, usage) in heads & $+0.81$ & $+0.27$ \\
+\multicolumn{3}{@{}l}{\emph{within a head} (atom norm $/$ the head's own median, mean over heads)} \\
+\quad largest & 3.7 (1.4--5.1 across heads) & 2.0 (1.5--4.3 across heads) \\
+\quad 2nd / 8th / 16th largest & 3.2 / 2.0 / 1.7 & 1.7 / 1.2 / 1.0 \\
+\quad largest entry's share of head energy & 6.1\% (uniform 0.4\%) & 9.9\% (uniform 3.1\%) \\
+\multicolumn{3}{@{}l}{\emph{across the layer} (atom norm $/$ the layer median)} \\
+\quad atoms $>2\times$ & 1030 (20\%), in all 20 heads & 63 (2.6\%), in 28 heads \\
+\quad atoms $>3\times$ & 58, in \textbf{all 20} heads (at most 15 each) & 11, in \textbf{4} heads \\
+\quad atoms $>5\times$ & 1 & 5, \textbf{all in head 54} \\
+\quad largest head's energy share & 15.5\% (3$\times$ uniform) & 9.2\% (7$\times$ uniform) \\
+\multicolumn{3}{@{}l}{\emph{usage}} \\
+\quad Spearman(atom norm, usage) in heads & $+0.81$ & $+0.27$ ($-0.04$ to $+0.58$) \\
+\quad usage of atoms $>3\times$ / of the rest & 0.0062 / 0.0037 ($1/k$ 0.0039) & 0.033 / 0.031 ($1/k$ 0.031) \\
+\multicolumn{3}{@{}l}{\emph{direction}} \\
+\quad $|\cos|$ between heads' largest atoms & 0.022 (random pairs 0.048) & 0.023 (random pairs 0.028) \\
+\quad energy in the data's top 10 PCs & 4\% (all atoms 13\%) & 9\% (all atoms 3\%) \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -1177,18 +1187,64 @@ the deep layers. Head 54 is also the index of the topic/genre head of
 the shipped-init \texttt{ste\_h76} (Section~\ref{sec:lang}), which shares
 its seed; the same head may be recurring, unverified.
 
-The large atoms are distinct directions: different heads' largest atoms
-are near orthogonal (median $|\cos|$ 0.022, below random atom pairs). On
-SONAR they lean into the data's top ten principal directions (9\% of
-their energy against 3\% for a typical atom), consistent with cross-seed
-agreement being the data's dominant directions; on GPT-2 they lean the
-other way (4\% against 13\%). One seed pair per dataset throughout.
+\begin{table}[h]\centering\small
+\begin{tabular}{@{}lrrrrr@{}}
+\toprule
+head & agreement & energy share & largest $/$ layer median & atoms $>3\times$ & largest $/$ head median \\
+\midrule
+\multicolumn{6}{@{}l}{\emph{SONAR stack, layer 0} (uniform share 1.3\%)} \\
+54 & \textbf{0.844} & 9.2\% & 6.81 & 8 & 3.41 \\
+46 & 0.249 & 2.5\% & 3.21 & 1 & 2.24 \\
+6  & 0.181 & 1.5\% & 2.76 & 0 & 2.83 \\
+18 & 0.150 & 1.9\% & 4.50 & 1 & 4.34 \\
+\quad lowest four & 0.008--0.021 & 1.0--1.1\% & 1.51--1.84 & 0 & 1.48--1.84 \\
+\midrule
+\multicolumn{6}{@{}l}{\emph{GPT-2 concat, layer 0} (uniform share 5\%)} \\
+6  & 0.235 & 3.1\% & 4.31 & 2 & 4.77 \\
+17 & 0.220 & 15.5\% & 4.99 & 5 & 1.90 \\
+19 & 0.215 & 3.4\% & 3.82 & 3 & 4.16 \\
+0  & 0.202 & 3.1\% & 3.95 & 1 & 4.19 \\
+\quad lowest four & 0.135--0.141 & 2.6--3.0\% & 3.13--4.17 & 1--2 & 3.45--4.56 \\
+\bottomrule
+\end{tabular}
+\caption{Layer-0 heads by seed agreement (\texttt{bigatoms.py}; matched
+centered contribution cosine against the seed-43 twin). Spearman of
+agreement across heads, SONAR / GPT-2: with energy share $+0.53$ /
+$+0.49$; with the largest atom $+0.62$ / $+0.34$; with the head's peakedness
+(largest $/$ head median) $+0.62$ / $+0.09$; with its median atom $-0.14$ /
+$+0.16$.}
+\label{tab:bigatoms}
+\end{table}
 
-\subsection{Does a labeled variable land in one head?}
+The two models differ in kind here. On SONAR one head stands out on every
+atom measure and alone reproduces strongly; the rest of layer 0 is a
+long, nearly flat tail, and agreement follows how peaked a head's atoms
+are. On GPT-2 no head stands out: every head has several large atoms, the
+spread of agreement is narrow, and the head with the largest share of the
+layer's energy (17) has a flat profile --- uniformly large atoms rather
+than a few outsized ones --- yet reproduces no better than its
+neighbours. Peakedness predicts nothing there ($+0.09$).
+
+The large atoms are distinct directions: different heads' largest atoms
+are near orthogonal (median $|\cos|$ 0.022--0.023, below random atom
+pairs). On SONAR they lean into the data's top ten principal directions
+(9\% of their energy against 3\% for a typical atom), consistent with
+cross-seed agreement being the data's dominant directions; on GPT-2 they
+lean the other way (4\% against 13\%). One seed pair per dataset
+throughout.
+
+\subsection{Heads against a known factor: language, and what they encode instead}
 \label{sec:lang}
 
-Held-out language identity over 86 languages (dense ridge ceiling 0.721,
-chance 0.012):
+Language is the one factor of the corpus with free labels, which is why it
+is measured here --- not because a head was expected to encode it. SONAR
+is trained to be language-agnostic, mapping translations to nearby
+points, so language should be a weak, residual factor of the embedding,
+and a reconstruction objective has little reason to spend a head on it.
+The measurement is a probe of whether head partitions line up with a
+known factor at all, and of how much of one a head can carry. Held-out
+language identity over 86 languages (dense ridge ceiling 0.721, chance
+0.012):
 
 \begin{table}[h]\centering\small
 \begin{tabular}{@{}llrrrr@{}}
@@ -1208,19 +1264,20 @@ softmax reference & $5\times32$ & 0.055 & 0.043 & 0.036 & 0.275 \\
 for a 5-bit head against the 6.43-bit label is 0.875.}
 \end{table}
 
-\textbf{No head is a language variable in any arm}: the best reaches 0.28
-of an attainable 0.875, and no head-health lever changes that. A $k{=}32$
-head cannot hold 86 languages at all ($\log_2 32 = 5 < 6.43$ bits), so the
-clean test needs $k\geq128$; the gap is wide enough that the verdict
-stands. \textbf{The hard code is consistently the more concept-aligned},
-six times the softmax reference on null-corrected best-head NMI. The
+As expected of a language-agnostic embedding, no head encodes language
+outright: the best reaches 0.28 of an attainable 0.875, and no head-health
+lever changes that (a $k{=}32$ head could not hold 86 languages anyway,
+$\log_2 32 = 5 < 6.43$ bits). What the probe does show is that partitions
+carry a known factor well above chance, and that \textbf{the hard code
+carries more of it}: six times the softmax reference on null-corrected
+best-head NMI. The
 stack beats the flat arm on probe accuracy at every head budget (0.378
 vs.\ 0.257 at $m{=}32$). (\texttt{summary.json}'s \texttt{info\_share\_best}
 favours the flat arm, but it divides by summed plug-in MI whose per-head
 bias differs eightfold between the shapes; do not read it across
 architectures.)
 
-\paragraph{Script, tags, conjunctions.} Script is not the variable either
+\paragraph{Script, tags, conjunctions.} Script behaves the same way
 (best-head NMI 0.191 of a 0.671 ceiling; the same head, L0 h50, is best
 for both). A single tag is a strong but permissive detector: the best
 cell per language reaches recall 0.74--0.98 at FPR 1.6--2.2\%, but no
@@ -1233,24 +1290,27 @@ the same confusable rows to the same wrong language --- Finnish with
 Estonian, Japanese with Korean. The code encodes language
 \emph{neighbourhood} rather than identity.
 
-\paragraph{Why, from the embedding geometry.} Language explains 6.51\% of
-embedding variance and script 2.26\%, and corrected for group count
-(\texttt{headeta.py}) language is a \emph{stronger} partition than 90\% of
-the heads (51$\times$ its random baseline, against 5$\times$ for the median
-head and 235$\times$ for the best). So neither salience nor capacity is
-the obstacle. Languages are weakly separated regions, not directions:
-within-language mean cosine is 0.3596 against 0.3160 between, and the
-shared mean direction accounts for 0.3178 of that, leaving a $+0.044$
-excess, 0.30 sd of the pair distribution. A partition code cuts along
-local residual variance, and at 0.30 sd those cuts pass through the
-clusters rather than around them. Layer-4 heads are near-random
+\paragraph{Why neighbourhoods, from the embedding geometry.} The
+language-agnostic training leaves exactly the residue this pattern
+implies. Language explains 6.51\% of embedding variance and script
+2.26\%; corrected for group count (\texttt{headeta.py}) language is still a
+stronger partition than 90\% of the heads (51$\times$ its random baseline,
+against 5$\times$ for the median head and 235$\times$ for the best), but its
+languages are weakly separated regions, not directions: within-language
+mean cosine is 0.3596 against 0.3160 between, and the shared mean
+direction accounts for 0.3178 of that, leaving a $+0.044$ excess, 0.30 sd
+of the pair distribution. A partition code cuts along local residual
+variance, and at 0.30 sd those cuts pass through the language clusters
+rather than around them. Layer-4 heads are near-random
 partitions (2$\times$ baseline), which is Section~\ref{sec:lastlayer}'s
 inert final layer seen from a different direction.
 
-\paragraph{What the strongest head holds.} L0 h54, the 235$\times$ head,
-is not a language head (NMI 0.149; 16.1 distinct languages among an
-entry's top-20 rows). Decoded as deviations from the head mean, its
-entries read as topic and genre --- crime news, geopolitics and
+\paragraph{What the strongest head holds: topic and genre.} What a
+semantic, language-agnostic embedding should be organized by is meaning,
+and its strongest head is. L0 h54, the 235$\times$ head, mixes languages
+freely (NMI 0.149; 16.1 distinct languages among an entry's top-20 rows).
+Decoded as deviations from the head mean, its entries read as topic and
+genre --- crime news, geopolitics and
 parliament, encyclopedic place description, manufacturing, marketing,
 legislative text, entertainment. Contrastive auto-interp (\texttt{cacts},
 null 0.273) agrees and adds to it: genre/topic descriptions (16 entries)
@@ -1258,6 +1318,8 @@ score F1 0.523, multilingual or code-switched passages (8) 0.476, text
 artifacts such as duplication and mojibake (3) 0.395, script or region
 (5) 0.394. All four beat the null. Topic dominating sentence-embedding
 variance explains both the head's top $\eta^2$ and its low language NMI.
+A labelled test of whether heads are natural variables therefore wants
+topic or genre labels, which this corpus does not carry.
 Per Section~\ref{sec:seeds}, this describes one head of one seed --- though
 index 54 is also the fixed-init stack's one strongly reproducible head
 (Section~\ref{sec:entries}).
