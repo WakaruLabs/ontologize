@@ -26,7 +26,7 @@ selected and whether anything else moved.
 Two directions, since they are not the same object and steerfid uses
 only the first:
 
-  decode    x + m * unit(Y_forced - Y_base): where the tag DECODES to.
+  decode    x + m * unit(Y_forced - Y_base): where the entry DECODES to.
   grad      the first-order direction that raises the target entry's
             logit and lowers the incumbent's. An unbiased bilinear logit
             is x'Bx, whose derivative is 2Bx, so this is the classifier's
@@ -46,20 +46,20 @@ An `sae.py` checkpoint (a `params.npz`) is scored the same way, with a
 latent in place of a (layer, head, entry). What "selected" and
 "collateral" mean depends on the code's form:
 
-  grouped   (--groups in sae.py) a group is a head: the latent is
-            selected when it wins its group, and collateral is the share
-            of OTHER groups whose winner changed. A top1 group whose
-            winner is not positive abstains, which counts as its own
-            outcome.
-  ungrouped the latent is selected when it is active, and collateral is
-            the share of the row's other active latents that dropped
-            out -- each of the k slots standing in for a head's choice.
+  heads     (--groups in sae.py) the latent is selected when it wins its
+            head, and collateral is the share of OTHER heads whose
+            winner changed. A top1 head whose winner is not positive
+            abstains, which counts as its own outcome.
+  no heads  (top-k, L1) the latent is selected when it is active, and
+            collateral is the share of the row's other active latents
+            that dropped out -- each of the k slots standing in for a
+            head's choice.
 
 and its directions are:
 
   decode    W_dec[j]: where the latent decodes to, the standard SAE
             steering vector, and the Ontologizer's `decode` with a
-            latent for a tag.
+            latent for an entry.
   grad      the gradient of latent j's pre-activation: W_enc[:, j]
             (W_gate for a gated SAE), per sample for a bilinear one.
   eig       a bilinear latent's top eigenfeature (`sae.eigenfeatures`).
@@ -436,8 +436,8 @@ def main_sae(cfg: argparse.Namespace) -> None:
     Xref = jnp.asarray(np.asarray(mm[-cfg.ref_rows:], np.float32))
 
     def select(X: Float[Array, "b d"]) -> Int[Array, "b c"]:
-        """The code's discrete outcome: per-group winner (-1 when a top1
-        group abstains), or each latent's active flag."""
+        """The code's discrete outcome: per-head winner (-1 when a top1
+        head abstains), or each latent's active flag."""
         z = sae.encode(params, X, topk, groups, group_fn)
         if not groups:
             return (z > 0).astype(jnp.int32)
@@ -461,8 +461,8 @@ def main_sae(cfg: argparse.Namespace) -> None:
 
     def grad_dir(X: Float[Array, "b d"], j: Int[Array, ""],
                  cur: Int[Array, "b"]) -> Float[Array, "b d"]:
-        """Ascent on latent j's logit, and for a grouped code descent on
-        the incumbent's, as the Ontologizer's `grad` does for a head.
+        """Ascent on latent j's logit, and for a code with heads descent on
+        the incumbent's, as the Ontologizer's `grad` does.
         `cur` < 0 means no incumbent."""
         def one(x, c):
             f = lambda x_: pre(x_)[j] - jnp.where(
@@ -501,7 +501,7 @@ def main_sae(cfg: argparse.Namespace) -> None:
     feats = rng.choice(live, min(cfg.n_features, len(live)), replace=False)
     eig = sae.eigenfeatures(params) if "W_enc1" in params else None
     W_dec = params["W_dec"]
-    form = (f"{groups} groups of {gs}, {group_fn}" if groups
+    form = (f"{groups} heads of {gs}, {group_fn}" if groups
             else f"top-{topk}" if topk else "unconstrained")
     print(f"sae {name}: m={m}, {form}")
     print(f"{len(live)} of {m} latents are selected on >= {cfg.min_rate:.1%} "
@@ -614,9 +614,9 @@ def _native_summary(rows: List[Dict[str, Any]]) -> Dict[str, Dict[str, float]]:
 
 def _collateral_sae(S: Int[np.ndarray, "b c"], S0: Int[np.ndarray, "b c"],
                     j: int, gs: int) -> float:
-    """Grouped (gs > 0): share of other groups whose winner changed.
-    Ungrouped: share of each row's other active latents that dropped out,
-    averaged over rows that had any."""
+    """With heads (gs > 0, entries per head): share of other heads whose
+    winner changed. Without: share of each row's other active latents that
+    dropped out, averaged over rows that had any."""
     if gs:
         ch = S != S0
         ch[:, j // gs] = False

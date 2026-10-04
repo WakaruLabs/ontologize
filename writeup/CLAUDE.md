@@ -111,6 +111,22 @@ A `\caption` containing a blank line needs the optional short argument
 
 `refs.bib`, biblatex with biber. Put URLs in a `url=` field, not `note=`.
 
+## Terminology
+
+- **head**: anything with a head axis, `sae.py --groups` included.
+- **entry**: the slot a head selects, index $k$ of head $h$. Not "tag", "label" or "class".
+- **atom**: the vector an entry writes; **decoded atom** once mapped into output space.
+- **cell**: the set of inputs a head assigns to one entry, one piece of its partition.
+- **assignment**: $P$, the soft or hard distribution over a head's entries. **label** is
+  reserved for ground truth (language, script, topic).
+- **arm**: a trained model variant, including sweep and factorial settings.
+- **condition**: a setting within one measurement on a fixed model (direction x strength,
+  language x magnitude).
+- **group**: only a post hoc discovered grouping (`headstruct.py`, co-firing clusters).
+
+Code identifiers keep their names (`tags()`, `decode_tags.py`, `forward="labels"`,
+`--groups`).
+
 ## Conventions
 
 - Run and script names are `\texttt{}` with escaped underscores

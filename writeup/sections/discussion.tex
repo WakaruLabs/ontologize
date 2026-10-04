@@ -44,8 +44,11 @@ solution changes what any downstream variable is \emph{about}. Even layer
 0, whose input is the data, is pinned only partly: its heads are trained
 jointly with everything downstream of them, so which partition of the raw
 input is best depends on what the later layers will do with the error.
-A flat layer has neither dependency, and its heads are both more
-reproducible at equal size and independently addressable.
+A flat layer has neither dependency: its heads are more reproducible at
+equal size and realize interventions far more reliably, with half the
+collateral. They are still not independently addressable --- the hard
+code's heads sit almost on their decision boundaries in either shape ---
+so the cascade compounds an entanglement that the code already has.
 
 \paragraph{Metric hygiene.}
 Claims about decode-direction geometry should not depend on an arbitrary
@@ -103,7 +106,7 @@ one.
 \begin{enumerate}
 \item \textbf{Contrast-set structure is real, and it is what the
 architecture buys.} Trained softmax heads' decode directions repel (96\%
-of heads below null), and hard-code heads' decoded entries are orthogonal
+of heads below null), and hard-code heads' decoded atoms are orthogonal
 to slightly repelling: each head holds well-separated alternatives. This
 is invisible to reconstruction metrics and to per-latent probes.
 \item \textbf{A discrete ontology is possible, but not at the softmax
@@ -118,9 +121,9 @@ within $3.1\times$ of its own rate floor. It needed a
 temperature matched to the logit scale, relative logit noise, a rescaled
 entropy bonus, and an initialization fix worth a third of its error.
 \item \textbf{The discrete code holds up downstream.} On GPT-2 small, an
-800-bit hard code with signed entries in activation space and gain-shape
+800-bit hard code with signed atoms in activation space and gain-shape
 on every layer recovers 97.6\% of GPT-2's loss, more than a $k{=}32$ SAE
-at nearly the same $\fvu$ (96.2\%), and 64 labels per head pass it on
+at nearly the same $\fvu$ (96.2\%), and 64 entries per head pass it on
 both measures. Across architectures $\fvu$ does not order downstream
 loss. Fibers on top of a frozen discrete base recover almost all the rest
 (99.9\%) while leaving the base exactly as it was, so a discrete ontology
@@ -128,19 +131,21 @@ and a near-lossless reconstruction need not trade against each other ---
 at the price of hundreds of continuous numbers per token.
 \item \textbf{Reconstruction is the price sheet, not the verdict, for
 soft codes.} Unstructured codes reconstruct $\sim$50$\times$ better at
-matched coefficient budgets, and the grouped-simplex constraint alone
+matched coefficient budgets, and the per-head simplex constraint alone
 costs $\sim$30$\times$; text fidelity is a monotone function of $\fvu$
 and adds no independent axis.
 \item \textbf{The residual cascade is measured on both sides of the
 ledger.} For: $1.79\times$ lower error than a flat layer at equal bits,
 parameters and 99.9\% utilization, sourced in the pairing of each stage's
 input with the sample's own error (not utilization, conditioning, or the
-gain side-channel). Against: any input perturbation, steering included,
-reclassifies $\sim$60\% of downstream heads, where a flat layer's heads
-are independently addressable (97\% realization at 9\% collateral); and
+gain side-channel). Against: an input-space intervention disturbs 66\%
+of the stack's other heads against 33\% of a flat layer's, and realizes
+its target on 37\% of rows against 99.6\% --- in both, collateral equals
+a random step's, because the hard code's heads sit almost on their
+decision boundaries; and
 at equal head size the stack's heads reproduce across seeds several
 times worse than flat heads at every layer, layer 0 included. The
-single-layer rival \texttt{g160softmax} matches \texttt{resid\_nc} on
+single-layer softmax variant \texttt{g160softmax} matches \texttt{resid\_nc} on
 reconstruction, but a config-matched softmax Ontologizer reaches
 $6\times$ lower error (in-sample), so the reconstruction verdict against
 the stack was checkpoint-specific.
@@ -156,7 +161,7 @@ layer 0 only partly.} Seeds agree on the error to four digits. Past layer
 0 they agree on nothing that identifies a head --- partitions,
 contributions, subspaces beyond the data's, or Grams --- each tested
 against a same-shape null, on SONAR and on GPT-2, and again under the
-direct-entry design of Section~\ref{sec:gpt2hard}. Layer 0 reproduces at
+direct-atom design of Section~\ref{sec:gpt2hard}. Layer 0 reproduces at
 under a fifth of a same-run control. Its lead over the deeper layers is
 not atom magnitude: its atoms are no larger, and its larger contributions
 are its gain, which is a property of the layer. Within layer 0, heads
@@ -216,7 +221,7 @@ Section~\ref{sec:gpt2hard}'s runs need \texttt{direct},
 \texttt{resid\_first} and \texttt{gain\_clip}, which only the
 \texttt{headline} branch has; porting them makes those results reproducible
 here and lets the same design run on SONAR, where its 800-bit code can be
-compared with the straight-through arm's 1900 bits. Direct entries also
+compared with the straight-through arm's 1900 bits. Direct atoms also
 make steering literal --- a set-intervention adds
 $\lVert n\rVert(g_{\rm new} - g_{\rm old})$ at one layer --- and that has
 not been measured.
@@ -230,9 +235,12 @@ was $1.84\times10^8$ off at step 0 and left 10\% of the code unused.
 \item \textbf{The steering overlay at scale.} \texttt{steerembed.py} with
 SAE decoder rows, bilinear eigenfeatures and supervised diff-of-means
 vectors alongside Ontologizer directions; per-entry effect consistency
-across contexts; and the flat arm's near-perfect addressability and
-better reproducibility weighed against its $1.79\times$ reconstruction
-cost.
+across contexts; and the flat arm's near-perfect realization, halved
+collateral and better reproducibility weighed against its $1.79\times$
+reconstruction cost. Collateral at the boundary itself needs a lever:
+the hard code's winner--runner-up margins are $\sim$$10^{-4}$, and binary
+heads, with margins a hundred times larger, flip the fewest other heads
+of any Ontologizer.
 \item \textbf{Task reconstruction.} Recover what each head classifies:
 partition-vs-label-library MI, led by topic and genre (from a labelled
 corpus or unsupervised topic clusters) since those are what the
@@ -241,8 +249,8 @@ secondary factors; \emph{sibling-contrastive}
 descriptions (positives where entry $k$ wins within head $h$, background
 where its siblings win), validated by blinded assignment accuracy vs.\
 $1/k$; and FLORES parallel-text invariance to split content heads from
-form heads. Run identically on Ontologizer heads and \texttt{g160softmax}
-groups, and only on heads that pass the identifiability bar.
+form heads. Run identically on Ontologizer heads and \texttt{g160softmax}'s
+heads, and only on heads that pass the identifiability bar.
 \item \textbf{Hierarchy as MoE routing.} Conditional MI between
 successive layers' partitions tests whether depth builds compositional
 tasks; \texttt{forward="labels"} at the fixed initialization tests the
@@ -260,12 +268,12 @@ that asymmetry.
 has top-$k$ points only at $k{=}32$ and $160$; a $k$ sweep through the
 1{,}900-bit region would pin the discrete-vs-linear comparison at
 exactly matched rate.
-\item \textbf{Winner dropout for grouped rungs.} \texttt{g160top1}'s
-28\% dead latents are within-group winner-take-all starvation.
+\item \textbf{Winner dropout for the one-layer variants.} \texttt{g160top1}'s
+28\% dead latents are within-head winner-take-all starvation.
 \item \textbf{Trained truncatability.} A deviation-sparsity penalty at
 training time would show whether the soft Pareto curve can shift left.
 \item \textbf{Rung composition and frontier fill.} \texttt{groups+prefixes}
-(2b+3), grouped variants at $m{=}11264$, the mid-range top-$k$ sweep
+(2b+3), the one-layer variants at $m{=}11264$, the mid-range top-$k$ sweep
 ($k \in \{512, 2048\}$); random-support and nonnegative-LS refit controls.
 \item \textbf{Closed.} HSIC head independence (heads are already
 independent), decoder sparsification and bias (no structure; $<1\%$),

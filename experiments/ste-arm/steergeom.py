@@ -29,8 +29,8 @@ cascade.
 Directions: `decode` (where forcing the entry moves the output), `grad`
 (the classifier's own ascent direction on target minus incumbent, the
 analogue of an SAE's encoder column), `random`. An `sae.py` params.npz is
-scored the same way, a group standing in for a head (top1 and softmax
-groups; ungrouped SAEs have no heads and are refused).
+scored the same way if it has heads (`sae.py --groups`, top1 or softmax);
+SAEs without a head axis have no other heads to flip and are refused.
 
   uv run python experiments/ste-arm/steergeom.py \\
       --model data/out/sonar/multilingual/ste_h76_init01 --temperature 0.00015
@@ -64,8 +64,8 @@ def parse_args() -> argparse.Namespace:
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--model", required=True,
-                   help="Ontologizer checkpoint dir, or a grouped sae.py "
-                        "params.npz")
+                   help="Ontologizer checkpoint dir, or an sae.py "
+                        "params.npz with heads (--groups)")
     p.add_argument("--temperature", type=float, default=0.00015,
                    help="Ontologizer only")
     p.add_argument("--cache", default="data/sonar_embeddings/mc4_4M.npy")
@@ -211,7 +211,8 @@ def sae_setup(cfg: argparse.Namespace):
     meta = json.loads((path.parent / "meta.json").read_text())
     G = meta["groups"]
     if not G or "W_enc" not in np.load(path):
-        raise SystemExit(f"{path}: needs a grouped SAE with a linear encoder")
+        raise SystemExit(f"{path}: needs an sae.py run with heads (--groups) "
+                         f"and a linear encoder")
     m = meta["m"]
     gs = m // G
     params = {k: jnp.asarray(v) for k, v in np.load(path).items()}

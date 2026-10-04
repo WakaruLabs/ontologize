@@ -40,10 +40,11 @@ Soft heads are contrast sets --- within-head decode directions repel ---
 but their argmax is not the model's code, and the plain-SAE frontier
 dominates them in reconstruction. The straight-through arm makes the
 discrete code the model: at 1900 index bits and no continuous
-coefficients it reaches $\fvu$ $0.154$, against $0.258$--$0.274$ for SAEs
-at matched bits that also transmit 160 coefficients. At fixed capacity
-the residual cascade is worth $1.79\times$ over a flat layer, but makes
-single-head interventions leak into $\sim$60\% of other heads, and two
+coefficients it reaches $\fvu$ $0.154$, against $0.258$ for a top-$k$ SAE
+at matched bits that also transmits 160 coefficients. At fixed capacity
+the residual cascade is worth $1.79\times$ over a flat layer, but doubles
+the collateral of a single-head intervention (66\% of other heads
+against 33\%), and two
 seeds reach identical error while no head past the first layer
 reproduces. The strongest head encodes topic and genre rather than
 language, as a language-agnostic embedding should be organized. On GPT-2,
@@ -152,7 +153,7 @@ effect-vs-collateral-at-matched-magnitude design targets. Song et
 al.~\cite{song2025positionmechanisticinterpretabilityprioritize} argue seed-to-seed feature consistency should be a
 first-class SAE metric; \texttt{splitting.py}'s match fractions and
 \texttt{partition.py}'s head matching measure precisely that. Without
-close analog, to our knowledge: reading grouped routing as contrastive
+close analog, to our knowledge: reading per-head routing as contrastive
 classification with a causal intervention interface; quota-free
 coherence tests against size-matched nulls, including over judge-written
 description texts; and decoding parameter directions through the paired
@@ -194,14 +195,16 @@ evaluation set is future work.} Where activations are needed, Ontologizer
 features are the flattened per-head classification probabilities
 $P \in \Delta^{k}{}^{\,l\cdot h}$ at the run's final temperature (feature
 $f = (l\cdot h + h_i)k + k_i$; fire threshold $2/k$), and SAE features are
-latent activations (fire threshold $0$; grouped-softmax runs use the
-above-uniform threshold $2/(m/G)$, matching the tag convention). Scoring a
+latent activations (fire threshold $0$; runs with softmax heads use the
+above-uniform threshold $2/(m/G)$, $G$ heads, matching the entry
+convention). Scoring a
 softmax run at the default temperature $1.0$ rather than its annealed
 $0.03$ puts a healthy checkpoint at $\fvu \approx 0.91$, which is
 indistinguishable from a broken one; every number here uses the run's own
 temperature.
 
 \subsection{Models and baselines}
+\label{sec:models}
 
 \paragraph{Softmax Ontologizers.}
 The reference Ontologizer (\texttt{resid\_nc}, step 372{,}600) is the
@@ -245,15 +248,25 @@ Ontologizer-style constraint (all $m{=}5120$, same data and objective):
 rung & run & added structure & analogue \\
 \midrule
 1  & \texttt{k32} & none (top-$k{=}32$) & baseline \\
-2a & \texttt{g160top1} & 160 groups, hard winner per group & heads (hard) \\
-2b & \texttt{g160softmax} & 160 groups, softmax per group & heads (soft) \\
+2a & \texttt{g160top1} & 160 heads, hard winner per head & heads (hard) \\
+2b & \texttt{g160softmax} & 160 heads, softmax per head & heads (soft) \\
 3  & \texttt{k32\_p5} & 5 nested prefix losses (matryoshka) & deepsup layers \\
 --- & \texttt{k32\_bl} & bilinear encoder, $[x{-}b_{dec};1]$ factors & bilinear classifier \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-Controls at width $m{=}11{,}264$ (parameter-matched to the Ontologizer):
+Rungs 2a and 2b go far enough that they are no longer SAEs in any
+established sense. Per-head competition over a shared decoder is a single
+layer of linear classifiers selecting dictionary entries: \texttt{g160top1}
+is a one-layer hard-code Ontologizer and \texttt{g160softmax} a one-layer
+softmax Ontologizer, each without the bilinear classifier, the residual
+stack or the non-negative dictionary. We present them as simplified
+Ontologizer variants, not as baselines. \texttt{k32\_bl}'s bilinear encoder
+likewise has no standard SAE counterpart, while rung~3 is a Matryoshka-style
+SAE.
+
+SAE baselines at width $m{=}11{,}264$ (parameter-matched to the Ontologizer):
 \texttt{k32}, \texttt{k160} (coefficient-matched to one deviation per
 head), and \texttt{k5120} (coefficient-matched to the full soft code; the
 top-$k$ constraint never binds --- measured $L_0 \approx 1520$ --- so it is
@@ -261,10 +274,11 @@ effectively a dense ReLU autoencoder). A seed replica \texttt{k32\_s43}
 supports stability analysis. The bilinear encoder's latents admit
 closed-form ``eigenfeature'' analysis: each latent's symmetric form
 $\mathrm{sym}(w_1 w_2^\top)$ is rank~2, with top-$|\lambda|$ eigenvector
-$w_1/\|w_1\| \pm w_2/\|w_2\|$ (Pearce et al.~\cite{pearce2025}). Rung 2b
-(\texttt{g160softmax}) is the load-bearing control under the steering
-frame: it isolates the ``series of softmax classifiers'' idea from the
-residual stack, bilinear classifiers, and shared dictionary.
+$w_1/\|w_1\| \pm w_2/\|w_2\|$ (Pearce et al.~\cite{pearce2025}). Under the
+steering frame the simplified variants are the load-bearing comparison:
+\texttt{g160softmax} isolates the ``series of softmax classifiers'' idea
+from the residual stack, bilinear classifiers and shared dictionary, and
+\texttt{g160top1} does the same for hard selection.
 
 \subsection{Evaluation protocols}
 
@@ -303,8 +317,8 @@ fires})$, exclusivity $\mathbb{E}[\#\text{firing} \mid \geq 1]$, and the
 CV of summed activation, against size-matched random partitions of the
 live-latent pool. Head-like structure requires exhaustiveness \emph{above}
 null with exclusivity \emph{below} null; topical co-firing clusters show
-the opposite signature. \texttt{--trained-groups} scores a grouped run's
-own partition.
+the opposite signature. \texttt{--trained-groups} scores a run's own
+trained heads instead.
 
 \paragraph{Semantic coherence vs.\ contrast (\texttt{headcoh.py}).}
 The complement to categorical form: do a head's entries \emph{mean}
@@ -318,8 +332,8 @@ $z$-scored against size-matched random subsets of the same pool (same
 layer for Ontologizer heads); as a metric-hygiene control the same
 statistics are recomputed under the training objective's inverse-variance
 inner product (\texttt{--metric whitened}). $z \gg 0$ means a head clusters
-semantically; $z \ll 0$ means its entries repel --- the signature of a
-\emph{contrastive classifier}, whose class decoders are pushed apart. A
+semantically; $z \ll 0$ means its atoms repel --- the signature of a
+\emph{contrastive classifier}, whose entries' atoms are pushed apart. A
 second view SONAR-encodes auto-interp description texts and tests pooled
 within-head similarity against a label-permutation null.
 \texttt{--assignment} scores discovered (post-hoc) groups.
@@ -374,13 +388,13 @@ codes against a dense ridge ceiling. NMI here normalizes by the
 arithmetic mean of the two entropies, so its attainable maximum is
 $2\min(H_h,H_\ell)/(H_h+H_\ell)$ --- $0.875$ for a 5-bit head against the
 6.43-bit language label. \texttt{headscript.py} repeats this for script
-and scores per-label tag cells and cross-head conjunctions;
+and scores per-label cells and cross-head conjunctions;
 \texttt{headeta.py} measures each partition's $\eta^2$ in embedding
 space, corrected by the $(g-1)/(n-1)$ a random $g$-way partition scores.
 
 \paragraph{Shrinkage (\texttt{refit.py}).}
 Gao-style refinement: freeze each sample's support, solve the whitened
-least-squares coefficients (masked normal equations; silent group slots
+least-squares coefficients (masked normal equations; silent head slots
 forced to zero), and compare $\fvu$. Raw$-$refit is magnitude (shrinkage)
 error; refit is selection error. The Ontologizer shares the machinery via
 its exact linearity $Y = P_{\text{flat}} G$, with $G$ measured by decoding
@@ -435,7 +449,7 @@ feature selection, parameter-based decode embeddings), texts
 (deterministic mC4 stream replay recovers text by row index, verified
 against the language sidecar), describe, and score. Description modes:
 \texttt{params}, the M2M100 decode of a parameter-derived embedding (for
-tags, the $\mathbb{E}[p]$-origin code with one head forced one-hot; for
+entries, the $\mathbb{E}[p]$-origin code with one head forced one-hot; for
 SAE latents, $b_{dec} + \alpha W_{dec,j}$); \texttt{pdev}, the same decode
 with the pure-origin decode subtracted; \texttt{eig}, the bilinear
 eigenfeature decode; \texttt{acts}, an LLM summary of top-activating
@@ -461,7 +475,7 @@ reconstruction), \texttt{gainablate.py} (the norm side-channel),
 \texttt{dictgeom.py} (row collinearity and effective rank read from the
 weights), \texttt{lastlayer.py} (final-layer ablations against the
 deep-supervision prefixes), \texttt{decodehead.py} (decoding a head's
-entries as deviations from its mean), \texttt{embedgeom.py} (SONAR
+atoms as deviations from their mean), \texttt{embedgeom.py} (SONAR
 cloud geometry), \texttt{entryshare.py} (how evenly a layer's entries
 contribute to the output, and whether usage, gain or atom norm drives the
 inequality), and \texttt{bigatoms.py} (how a layer's large atoms are

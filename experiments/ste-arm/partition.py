@@ -1,10 +1,10 @@
 """Do two models learn the same PARTITIONS, and in the same layers?
 
-`splitting.py` asks whether individual tags reproduce, by two-sided
+`splitting.py` asks whether individual entries reproduce, by two-sided
 containment of firing sets at a threshold. That is the right question
 for a sparse autoencoder latent, whose firing set is a half-space cut
 by a threshold on one direction. It is a harsh question for a one-hot
-code: a tag is one cell of a k-way partition, and the cell's boundaries
+code: an entry selects one cell of a k-way partition, and the cell's boundaries
 are set jointly by all k entries of its head plus the classifier, so
 two models can learn the same partition and still fail cell-wise
 containment.
@@ -12,7 +12,7 @@ containment.
 The natural unit here is the head. This scores every head of A against
 every head of B by the normalized mutual information between their
 partitions of the same rows, which is invariant to how either model
-happens to label its entries, then matches heads one-to-one by
+happens to index its entries, then matches heads one-to-one by
 maximizing total NMI (Hungarian). Reported against two nulls: rows of B
 shuffled, which breaks the pairing while keeping both marginals, and
 the same matching restricted within each layer.

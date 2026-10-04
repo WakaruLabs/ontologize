@@ -11,14 +11,15 @@ The model (Figure~\ref{fig:onto-stack}) consists of $l$ $\dictenc$
 layers writing into a shared residual accumulator, decoded by a single
 linear map. Each layer (Figure~\ref{fig:dictenc}) is composed of a
 classifier layer followed by a dictionary layer. 
-The classifier splits the input into $h$ independent soft label vectors.
-The dictionary maps these labels to representative vectors.
-Each layer writes a weighted average of these vectors to an accumulator.
+The classifier splits the input into $h$ independent soft assignment
+vectors, each over one head's $k$ entries.
+The dictionary maps each entry to an atom.
+Each layer writes a weighted average of these atoms to an accumulator.
 At each layer, the accumulator $R_i$ is decoded and the residual
 $X - \mathrm{dec}(R_i)$ is passed to the next layer.
 Deep supervision is used to constrain each layer to reconstructing the input.
 
-Because labels within a head are mutually exclusive rather than independent,
+Because entries within a head are mutually exclusive rather than independent,
 each dictionary head serves as a contrastive set.
 An auxiliary loss term minimizing $\mathrm{cossim}_h$ (Eq.~\ref{eq:cossim_h})
 pushes each head to represent an orthogonal subspace (Figure~\ref{fig:head-simplex}).
@@ -112,14 +113,14 @@ which may be a residual from a previous layer.
 	with probability $p_{\mathrm{drop}}$, ramped $0 \to 0.1$ over the
 	annealing horizon.
 
-	Soft labels $P$ are given by $\mathrm{softmax}_{k}(K/t)$
+	Soft assignments $P$ are given by $\mathrm{softmax}_{k}(K/t)$
 	(see §\ref{sec:labels}).
-	The architecture provides methods for causal interventions on labels.
+	The architecture provides methods for causal interventions on assignments.
 	From $P$ we collect per-sample entropy $H$ (Eq.~\ref{eq:entropy}),
 	between-sample similarity $\mathrm{cossim}_b$ (Eq.~\ref{eq:cossim_b}),
 	and batch mean entropy $\mathrm{KL}_m$ (Eq.~\ref{eq:KL}).
 
-	A $\dictblock$ accepts labels 
+	A $\dictblock$ accepts assignments
 	$P \in \mathbb{R}^{h \times k}$
 	and returns features $F \in \mathbb{R}^{h \times e}$ (Eq.~\ref{eq:dictblock}).
 	From $F$ we collect between-head similarity $\mathrm{cossim}_h$ (Eq.~\ref{eq:cossim_h})
@@ -146,13 +147,13 @@ An optional noise term $\varepsilon_K$ may be added.
 Winner dropout sets $\mathrm{argmax}_k(K_{h,\cdot})$ to $-\infty$
 with probability $p_{\mathrm{drop}}$, annealed from $0 \to 0.1$.
 
-\subsubsection{Labels}
+\subsubsection{Assignments}
 \label{sec:labels}
-Soft labels $P$ are given by $\mathrm{softmax}_{k}(K/t)$
+Soft assignments $P$ are given by $\mathrm{softmax}_{k}(K/t)$
 where $t$ is a temperature hyperparameter. It is annealed
 geometrically from $1.0$ to $0.03$ over the first 50k steps, then
 held, giving progressively sharper classifications.
-The architecture provides methods for causal interventions on labels.
+The architecture provides methods for causal interventions on assignments.
 From $P$ we collect per-sample entropy $H$, in bits, so a head
 saturates at $\log_2 k = 5$ bits,
 
@@ -187,11 +188,11 @@ $\mathbf{f}_n = \map_{i=1}^{h}\mathbf{f}_{n,i}$ is their concatenation,
 and
 $G_i = \lvert D_{i}\rvert \lvert D_{i}\rvert^{\top} \in \mathbb{R}^{k \times k}$
 is head $i$'s dictionary Gram. The implementation evaluates
-Equation~\ref{eq:cossim_b} in tag space through $G$ rather than
+Equation~\ref{eq:cossim_b} in entry space through $G$ rather than
 materializing $\mathsf{F}$; the two are identical in value and gradient,
 but $\mathcal{O}(hk^2e + b^2hk)$ instead of $\mathcal{O}(b^2he)$.
 
-Finally, $\mathrm{KL}_m$ is the divergence of the batch-mean label
+Finally, $\mathrm{KL}_m$ is the divergence of the batch-mean assignment
 vector from uniform, in bits, averaged over heads.
 
 \begin{equation}
@@ -202,14 +203,14 @@ vector from uniform, in bits, averaged over heads.
 
 In practice $H$ is not needed, as including a
 $\mathrm{cossim}_b$ loss also minimizes $H$.
-$\mathrm{KL}_m$ serves to anchor the batch mean of each label vector
+$\mathrm{KL}_m$ serves to anchor the batch mean of each assignment vector
 $\mathbf{p}_{i,\cdot}$ to a uniform distribution.
 This results in a uniform $\mathbf{p}_{i,\cdot}$ code corresponding
 to a maximally generic feature vector.
 
 \subsubsection{Dictionary}
 \label{sec:dict}
-A $\dictblock$ accepts labels 
+A $\dictblock$ accepts assignments
 $P \in \mathbb{R}^{h \times k}$
 and returns features $F \in \mathbb{R}^{h \times e}$ given by
 
@@ -255,7 +256,7 @@ $\mathrm{cossim}_h$ is of particular interest because on nonnegative
 features it is not a rotation constraint but a support-partition
 constraint. Every $\mathbf{f}_{n,i}$ lies in the nonnegative orthant of
 $\mathbb{R}^e$: the dictionary contributes $\lvert D \rvert \geq 0$ and
-the labels $P \geq 0$. For nonnegative $\mathbf{u}, \mathbf{v}$ the
+the assignments $P \geq 0$. For nonnegative $\mathbf{u}, \mathbf{v}$ the
 inner product $\langle \mathbf{u},\mathbf{v}\rangle = \sum_j u_j v_j$ is
 a sum of nonnegative terms, so it vanishes if and only if every term
 does,
@@ -287,23 +288,23 @@ Equation~\ref{eq:dictblock} gives
 	\label{eq:cross_head}
 \end{equation}
 
-a strictly positive combination of all $k^2$ cross-head entry overlaps.
+a strictly positive combination of all $k^2$ cross-head atom overlaps.
 A single sample on which heads $i$ and $j$ are orthogonal therefore
 forces $\langle \lvert \mathbf{d}_{i,a,\cdot}\rvert, \lvert
-\mathbf{d}_{j,b,\cdot}\rvert\rangle = 0$ for every pair of entries
+\mathbf{d}_{j,b,\cdot}\rvert\rangle = 0$ for every pair of atoms
 $(a,b)$: the two heads own disjoint blocks of coordinates as a property
 of $\mathsf{D}$, holding for all inputs rather than on the data that
 happened to be measured. That is the premise a static reading of the
 dictionary needs, and it is stronger than what any signed-feature
 architecture can ask for. The budget is not tight either. At the live
 configuration $h = 32$ heads partitioning $e = 2048$ coordinates leaves
-64 dimensions per head to hold $k = 32$ entries, which need not be
+64 dimensions per head to hold $k = 32$ atoms, which need not be
 disjoint from each other within a head; head-disjointness is most of
 what the width $e > d$ buys.
 
 Two different orthogonalities are in play and only the between-head one
 is architectural. Disjoint support assigns each head a block of
-coordinates; \emph{within} a head the $k$ entries are contrastive
+coordinates; \emph{within} a head the $k$ atoms are contrastive
 alternatives spread apart inside that block
 (Figure~\ref{fig:head-simplex}). Section~\ref{sec:prelim-orth} measures
 the second. Neither is guaranteed at convergence:
@@ -329,7 +330,7 @@ pooled features $F' \in \mathbb{R}^{e}$, which are added to $R$.
 	$D_{i,\cdot,\cdot}$.
 	As $F$ becomes sparser, these vectors become more approximately
 	orthogonal, allowing them to be treated as a basis.
-	The label code $P$ corresponds to soft assignments to mutually
+	The assignment code $P$ corresponds to soft assignments to mutually
 	contrastive categories rather than independently firing features.
 	Because elements of $P$, $p_{ij} \in [0,1]$,
 	outputs must be within the convex hull of $D_{i,\cdot,\cdot}$.
@@ -491,12 +492,12 @@ cannot co-adapt and ablating one to its origin stays in distribution.
 \centering
 \input{tikz/fiber}
 \caption[Fiber geometry]{\textbf{Fiber geometry} for one head, extending
-	Figure~\ref{fig:head-simplex}. The head selects entry
+	Figure~\ref{fig:head-simplex}. The head selects the entry with atom
 	$\lvert\mathbf{d}_{i2}\rvert$; its fiber is the plane spanned by
 	$U_{i2}$ at that point, and the coordinates $\mathbf{c}_i$ place the
 	output within it. The dashed circle is the per-head norm cap; the
 	dotted ray is the radial variant, which moves the output only along
-	the entry's own direction.}
+	the atom's own direction.}
 \label{fig:fiber}
 \end{figure}
 
@@ -571,7 +572,7 @@ through the dictionary Gram so it measures feature-space similarity of
 the per-head reconstructions, and which in practice also minimizes
 per-sample entropy $H$; the batch-mean term $\mathrm{KL}_m$, anchoring
 each head's mean
-label vector to a uniform distribution so that a uniform code
+assignment vector to a uniform distribution so that a uniform code
 corresponds to a maximally generic feature; an $\mathrm{L1}$ penalty on
 features; and between-head similarity $\mathrm{cossim}_h$, which
 measures the extent to which heads encode nonoverlapping geometries.

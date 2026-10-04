@@ -48,7 +48,7 @@ The main target is the [SONAR](https://github.com/facebookresearch/SONAR) multil
 
 ## Findings so far
 
-The working write-up is [`writeup/findings.tex`](writeup/findings.tex) (compiled: `writeup/findings.pdf`); the straight-through arm's full lab notebook, including superseded readings, is [`experiments/ste-arm/notes.md`](experiments/ste-arm/notes.md). In brief, and preliminary:
+The working write-up is [`writeup/findings.tex`](writeup/findings.tex) (compiled: `writeup/findings.pdf`); the straight-through arm's full lab notebook, including superseded readings, is [`experiments/ste-arm/notes.md`](experiments/ste-arm/notes.md), condensed in [`experiments/ste-arm/findings.md`](experiments/ste-arm/findings.md). In brief, and preliminary:
 
 - **Trained heads are contrast sets.** Within a softmax head, entries' decode directions *repel* (96% of heads below a random-group null) — well-separated alternatives rather than a semantic cluster.
 - **A soft code's argmax is not its code.** The softmax model reconstructs well, but its discrete reading is orders of magnitude worse. Training with hard, straight-through selection (`select="ste"`) makes the discrete code the model: on SONAR, 1900 index bits and no continuous coefficients reach whitened FVU 0.154, against 0.258–0.274 for converged SAEs at matched index bits that also send 160 coefficients. On GPT-2, an 800-bit hard code with signed entries in activation space recovers 97.6% of GPT-2's loss, against 96.2% for a k=32 SAE at nearly the same FVU.

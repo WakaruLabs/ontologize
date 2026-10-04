@@ -1,15 +1,15 @@
 """Is the strongest layer-0 head the same head across runs?
 
-For each run, rank layer-0 heads by eta^2 (between-group over total
-variance of the embedding, grouping rows by the head's argmax entry), and
+For each run, rank layer-0 heads by eta^2 (between-class over total
+variance of the embedding, partitioning rows by the head's argmax entry), and
 report language NMI for the head index given by --head. Then, for every
 pair of runs, compare that head's partition with the same index in the
 other run and with its best match there, against the median same-index NMI
 of the other heads.
 
 eta^2 is reported raw and against a random-partition baseline with the
-nominal k groups, (k-1)/(n-1), as `headeta.py` does. Dividing by the groups
-a head actually uses instead inflates heads that use few entries, which the
+nominal k entries, (k-1)/(n-1), as `headeta.py` does. Dividing by the
+entries a head actually uses instead inflates heads that use few, which the
 shipped initialization's layer 0 does (7--10 of 32), so raw eta^2 is the
 ranking to read.
 

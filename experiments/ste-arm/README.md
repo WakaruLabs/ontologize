@@ -1,12 +1,14 @@
 # ste-arm
 
 A straight-through (hard-code) Ontologizer arm, and the instruments built to
-measure it. Results and their history are in [`notes.md`](notes.md); the
-writeup's account is `writeup/sections/results.tex` and its appendix.
+measure it. The results, condensed, are in [`findings.md`](findings.md);
+the full lab notebook, with every measurement, superseded reading and
+command, is [`notes.md`](notes.md). The writeup's account is
+`writeup/sections/results.tex` and its appendix.
 
 ## Motivation
 
-The softmax Ontologizer's tags are not its code. `pareto.py`'s argmax row for
+The softmax Ontologizer's argmax entries are not its code. `pareto.py`'s argmax row for
 `sweep_softmax_shm` is whitened FVU 8.7e6 against 0.0007 for the same model's
 soft forward, so the tag assignment that interventions and `decode_tags.py`
 act on is not what reconstructs the embedding. Under `select="ste"` the
@@ -74,7 +76,7 @@ does.
 | is the strongest layer-0 head the same head across runs | `topichead.py` |
 | **what heads encode** | |
 | language identity, per head and per probe budget | `headlang.py` |
-| script, per-label tags, conjunctions | `headscript.py` |
+| script, per-label cells, conjunctions | `headscript.py` |
 | embedding variance explained by each head's partition | `headeta.py` |
 | language geometry of the SONAR embedding | `embedgeom.py` |
 | one head's entries decoded to text | `decodehead.py` |
