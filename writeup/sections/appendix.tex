@@ -45,25 +45,23 @@ temperature.
 
 \subsection{Models and baselines}
 
+Every model's configuration is tabulated in Appendix~\ref{app:configs}.
+
 \paragraph{Softmax Ontologizers.}
-The reference Ontologizer (\texttt{resid\_nc}, step 372{,}600) is the
-architecture of Section~\ref{sec:arch}: $l{=}5$ residual layers, $h{=}32$
-heads, $k{=}32$ entries per head, bilinear classifiers with residual
-normalization and a constant input coordinate, deep supervision, and a
-shared linear decoder from an $e{=}2048$ dictionary space; $\approx$23.1M
-parameters and $l\cdot h\cdot k = 5{,}120$ dictionary entries. Layers
-0--3 trained healthily (prefix $\fvu$ $0.129 \to 0.0051$); layer 4 froze
-22/32 heads late in temperature annealing and is mildly harmful
-(Section~\ref{sec:lastlayer} explains why). A later \emph{selection sweep}
-holds that shape fixed and varies only the \texttt{DictBlock} selection
-rule --- \texttt{top1}, \texttt{top2}, \texttt{top4}, \texttt{top8},
-\texttt{top16}, \texttt{softmax} --- each with and without the
-mean-entropy bonus raised to $s_{\mathrm{KL}_m}{=}3\times10^{-5}$
-(\texttt{\_shm}), at 369{,}500 steps.
+The reference Ontologizer (\texttt{resid\_nc}) is the architecture of
+Section~\ref{sec:arch} with softmax selection: $l{=}5$ residual layers of
+$h{=}32$ heads with $k{=}32$ entries each. Layers 0--3 trained healthily
+(prefix $\fvu$ $0.129 \to 0.0051$); layer 4 froze 22/32 heads late in
+temperature annealing and is mildly harmful (Section~\ref{sec:lastlayer}
+explains why). A later \emph{selection sweep} holds that shape fixed and
+varies only the \texttt{DictBlock} selection rule --- \texttt{top1},
+\texttt{top2}, \texttt{top4}, \texttt{top8}, \texttt{top16},
+\texttt{softmax} --- each with and without a raised mean-entropy bonus
+(\texttt{\_shm}).
 
 \paragraph{The straight-through arm.}
 \texttt{train\_ste.py} imports \texttt{sonar.py}'s configuration and
-overrides only \texttt{select="ste"}: the forward pass selects the argmax
+overrides \texttt{select="ste"}: the forward pass selects the argmax
 one-hot, and the backward pass uses $\mathrm{softmax}(K/T)$ as its
 surrogate. Its shape, calibration and initialization are described with
 its results in Section~\ref{sec:ste}.
@@ -71,10 +69,9 @@ its results in Section~\ref{sec:ste}.
 \paragraph{SAEs.}
 SAEs follow Gao et al.~\cite{gao2024}: pre-activation
 $\mathrm{relu}((x-b_{dec})W_{enc}+b_{enc})$ with top-$k$ selection,
-unit-norm decoder rows, tied initialization, aux-$k$ dead-latent revival,
-trained with Adam at $4\times10^{-4}$ for $\sim$144k steps at batch 4096
-(converged; convergence is optimizer-step--limited, not epoch-limited, at
-this batch size).
+unit-norm decoder rows, tied initialization and aux-$k$ dead-latent
+revival, trained to convergence; ReLU+L1 SAEs replace top-$k$ with an L1
+penalty and neuron resampling.
 
 \paragraph{The structural-ablation ladder.}
 To attribute differences to specific architectural commitments rather than
@@ -118,6 +115,69 @@ steering frame the simplified variants are the load-bearing comparison:
 \texttt{g160softmax} isolates the ``series of softmax classifiers'' idea
 from the residual stack, bilinear classifiers and shared dictionary, and
 \texttt{g160top1} does the same for hard selection.
+
+\subsection{Model configurations}
+\label{app:configs}
+
+Tables~\ref{tab:cfg-softmax}--\ref{tab:cfg-sae} list every reported
+model's configuration as its run recorded it: training hyperparameters
+from each run's final configuration record, any value that changed when
+a run was resumed, and the architecture from its checkpoint.
+
+\input{config/softmax}
+\input{config/ste_sonar}
+\input{config/ste_gpt2}
+\input{config/gpt2_headline}
+\input{config/sae}
+
+\subsection{The statistics row and its retired entries}
+\label{app:stats}
+
+The implementation logs each layer's statistics as a row whose layout is
+append-only: a new statistic goes on the end and a retired one keeps its
+slot, so a shorter row from an older run still aligns column for column
+and the positional loss weights keep pairing with the right quantity.
+The row of Equation~\ref{eq:stats} is therefore stored with two empty
+slots,
+\[
+	\big[\,
+	\mathrm{L1}_K \;\; \mathrm{L1} \;\; H \;\; \mathrm{cossim}_b \;\;
+	\mathrm{cossim}_h \;\; \mathbb{E}_h\kappa_h \;\; \max_h \kappa_h \;\;
+	\mathrm{KL}_m \;\; \mathrm{KL}_{\mathrm{pwak}} \;\; \mathrm{L2}_{\mathrm{pwak}}
+	\;\; \mathrm{cossim}_{\mathrm{flat}} \;\; \mathrm{L1}_S \;\; \sigma
+	\,\big],
+\]
+where the two retired statistics are logged as NaN and zeroed before the
+weighted sum.
+
+\emph{Between-head cosine} $\mathrm{cossim}_h$ was the mean absolute
+cosine over ordered pairs of heads within a sample,
+\[
+	\mathrm{cossim}_h(\mathsf{F}) :=
+	\mathbb{E}_{b}\,\mathbb{E}_{i \neq j}\left\lvert
+	\frac{\langle \mathbf{f}_{n,i}, \mathbf{f}_{n,j}\rangle}
+	     {\lVert \mathbf{f}_{n,i}\rVert \lVert \mathbf{f}_{n,j}\rVert}
+	\right\rvert,
+\]
+computed on the clean features. It stood in for disjoint support, which
+on non-negative features its zero implies (Section~\ref{sec:disjoint}),
+but it measured that indirectly and at $\mathcal{O}(bh^2e)$, and it
+says nothing about support under a signed dictionary, where orthogonal
+outputs can be cancellation rather than disjointness. It saw only the
+entries a sample selected, so a hard code's unselected entries were
+unconstrained. The support overlap $\sigma$ measures the property
+directly, for every used entry, under either sign, at $\mathcal{O}(hke +
+h^2e)$.
+
+\emph{Flattened row cosine} $\mathrm{cossim}_{\mathrm{flat}}$ was the mean
+off-diagonal cosine over every pair of atoms in the layer, between heads
+as well as within. It was added to catch heads whose atoms are
+individually diverse but parallel to another head's, which the
+within-head $\kappa_h$ cannot see. Its mean is dominated by between-head
+pairs ($k-1$ of a row's $hk-1$ partners share its head), and on
+non-negative atoms a between-head cosine of zero is again disjoint
+support, so $\sigma$, weighted by usage and computed per head pair,
+replaced it too.
 
 \subsection{Evaluation protocols}
 

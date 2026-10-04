@@ -1,0 +1,90 @@
+\begin{algorithm}[tp]
+	\caption{$\dictblock$ in training (\texttt{DictBlock.withStats}). At
+	inference the four stochastic steps (revival, winner dropout, head
+	dropout, fiber dropout) and the feature noise are skipped. Every
+	statistic is stop-gradiented unless its loss term is enabled.}
+	\label{alg:dictblock}
+	\DontPrintSemicolon
+
+	\KwIn{logits $\mathsf{K} \in \mathbb{R}^{b \times h \times k}$;
+		router scales $S \in \mathbb{R}_{\ge 0}^{b \times h}$ (all ones
+		without a router); fiber coordinates
+		$\mathsf{C} \in \mathbb{R}^{b \times h \times r}$ (none without
+		fibers)}
+	\KwData{dictionary $\mathsf{D} \in \mathbb{R}^{h \times k \times e}$;
+		fiber bases $U_{ij} \in \mathbb{R}^{e \times r}$}
+	\Hyper{temperature $t$; feature noise $\sigma_F$; winner dropout
+		$p_{\mathrm{drop}}$; revival rate $p_{\mathrm{rev}}$ and threshold
+		$\rho$; head dropout $p_{\mathrm{head}}$; fiber dropout
+		$p_{\mathrm{fib}}$; entries kept per head $k_{\mathrm{sel}}$
+		($1$ under \texttt{ste}/\texttt{argmax}, $m$ under
+		\texttt{top}$m$, $k$ under softmax)}
+	\KwOut{pooled features $F' \in \mathbb{R}^{b \times e}$; assignments
+		$\mathsf{P} \in \mathbb{R}^{b \times h \times k}$; statistics
+		$(\mathrm{L1}, H, \mathrm{cossim}_b, \mathbb{E}_i\kappa_i,
+		\max_i \kappa_i, \mathrm{KL}_m, \sigma)$}
+
+	\Begin{
+		$\mathbf{d}_{ij} \leftarrow \lvert \mathsf{D}_{ij\cdot} \rvert$
+			\tcp*{atoms; $\mathsf{D}_{ij\cdot}$ itself if signed}
+		\If(\tcp*[f]{revive starved entries}){$k_{\mathrm{sel}} < k$}{
+			$u_{ij} \leftarrow \mathbb{E}_n\,\mathbf{1}\{K_{nij}$ is among
+				head $i$'s top $k_{\mathrm{sel}}$ logits$\}$\;
+			\ForEach{$(n,i)$ with probability $p_{\mathrm{rev}}$}{
+				draw $j$ uniformly from $\{j : u_{ij} <
+					\rho\,k_{\mathrm{sel}}/k\}$, if any\;
+				$K_{nij} \leftarrow \max_{j'} K_{nij'}$
+					\tcp*{tie the leader}
+			}
+		}
+		\ForEach(\tcp*[f]{winner dropout}){$(n,i)$ with probability
+			$p_{\mathrm{drop}}$}{
+			$K_{n,i,\arg\max_j K_{nij}} \leftarrow -\infty$\;
+		}
+		$\mathsf{P} \leftarrow \mathrm{select}_k(\mathsf{K}/t)$
+			\tcp*{softmax, top-$m$ or straight-through}
+		$H \leftarrow \mathbb{E}_{n,i}\,\mathrm{entropy}_k(\mathbf{p}_{ni})$
+			\tcp*{Eq.~\ref{eq:entropy}}
+		$\bar{\mathbf{p}}_i \leftarrow \mathrm{sg}[\mathbb{E}_n\,
+			\mathbf{p}_{ni}]$ \tcp*{head origin}
+		\ForEach(\tcp*[f]{head dropout}){$(n,i)$}{
+			$\mathbf{p}'_{ni} \leftarrow \bar{\mathbf{p}}_i$ with
+				probability $p_{\mathrm{head}}$, else
+				$\bar{\mathbf{p}}_i + (\mathbf{p}_{ni} - \bar{\mathbf{p}}_i)
+				/ (1 - p_{\mathrm{head}})$\;
+		}
+		\ForEach(\tcp*[f]{fiber dropout}){$(n,i)$ with probability
+			$p_{\mathrm{fib}}$}{
+			$\mathbf{c}_{ni} \leftarrow \mathbf{0}$\;
+		}
+		$\mathbf{f}_{ni} \leftarrow S_{ni} \sum_{j} p'_{nij}\,
+			\mathbf{d}_{ij}$ \tcp*{Eq.~\ref{eq:dictblock}; interventions act
+			on $\mathbf{p}'$}
+		$\tilde{\mathsf{F}} \leftarrow \mathrm{noise}_{\mathrm{featvar}}
+			(\mathsf{F})$ \tcp*{Eq.~\ref{eq:noise_featvar}}
+		$\mathrm{cossim}_b \leftarrow \mathrm{cossim}_b(\mathsf{P})$
+			\tcp*{Eq.~\ref{eq:cossim_b}, through the Grams}
+		$\kappa_i \leftarrow \mathbb{E}_{j \ne j'}
+			\cos(\mathbf{d}_{ij}, \mathbf{d}_{ij'})$
+			\tcp*{within-head row cosine}
+		$\mathrm{KL}_m \leftarrow \mathbb{E}_i \left[\log_2 k -
+			\mathrm{entropy}_k(\bar{\mathbf{p}}_i)\right]$
+			\tcp*{Eq.~\ref{eq:KL}}
+		$\mathbf{s}_i \leftarrow \sum_j \bar{p}_{ij}\,
+			\lvert\mathbf{d}_{ij}\rvert$;\quad
+			$\sigma \leftarrow \mathbb{E}_{i \ne i'}
+			\cos(\mathbf{s}_i, \mathbf{s}_{i'})$
+			\tcp*{support overlap}
+		$\mathrm{L1} \leftarrow \mathbb{E}_n \sum_i
+			\lVert \tilde{\mathbf{f}}_{ni} \rVert_1$\;
+		$\mathbf{f}'_n \leftarrow \sum_i \tilde{\mathbf{f}}_{ni}$
+			\tcp*{concatenated, not summed, under $\mathtt{ConcatDictBlock}$}
+		\If(\tcp*[f]{Eq.~\ref{eq:fiber}, then any norm cap}){fibers}{
+			$\mathbf{f}'_n \leftarrow \mathbf{f}'_n + \sum_i S_{ni}
+				\sum_j p'_{nij}\,U_{ij}\,\mathbf{c}_{ni}$\;
+		}
+		\Return{$F'$, $\mathsf{P}$,
+			$(\mathrm{L1}, H, \mathrm{cossim}_b, \mathbb{E}_i\kappa_i,
+			\max_i \kappa_i, \mathrm{KL}_m, \sigma)$}\;
+	}
+\end{algorithm}

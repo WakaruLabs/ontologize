@@ -21,8 +21,9 @@ Deep supervision is used to constrain each layer to reconstructing the input.
 
 Because entries within a head are mutually exclusive rather than independent,
 each dictionary head serves as a contrastive set.
-An auxiliary loss term minimizing $\mathrm{cossim}_h$ (Eq.~\ref{eq:cossim_h})
-pushes each head to represent an orthogonal subspace (Figure~\ref{fig:head-simplex}).
+An auxiliary loss term minimizing the heads' support overlap $\sigma$
+(Eq.~\ref{eq:support}) pushes each head onto its own coordinates of the
+dictionary space (Figure~\ref{fig:head-simplex}).
 Because the dictionary returns a linear combination of representative vectors,
 subspaces are convex.
 
@@ -79,7 +80,7 @@ subspaces are convex.
 	$\mathrm{MSE}(\mathbf{x},\mathrm{dec}(R_i))$ is computed separately for each layer.
 
 	The input-noise hook drawn on $\mathbf{x}$ is available but disabled
-	in the live configuration.
+	in every model reported here.
 }
 \label{fig:onto-stack}
 \end{figure}
@@ -94,6 +95,10 @@ and a multihead linear dictionary ($\dictblock$)
 with weights $\mathsf{D} \in \mathbb{R}^{h \times k \times e}$.
 It accepts a vector $\mathbf{x} \in \mathbb{R}^{d}$,
 which may be a residual from a previous layer.
+Algorithm~\ref{alg:dictenc} gives one layer's training pass, and
+Algorithm~\ref{alg:ontologizer} the stack and its loss.
+
+\input{algorithms/dictenc}
 
 \begin{figure}[tp]
 \centering
@@ -110,8 +115,7 @@ which may be a residual from a previous layer.
 	Optional noise terms $\varepsilon_K$ and $\varepsilon_F$ may be added
 	(see §\ref{sec:noise}).
 	Winner dropout sets $\mathrm{argmax}_k(K_{h,\cdot})$ to $-\infty$
-	with probability $p_{\mathrm{drop}}$, ramped $0 \to 0.1$ over the
-	annealing horizon.
+	with probability $p_{\mathrm{drop}}$.
 
 	Soft assignments $P$ are given by $\mathrm{softmax}_{k}(K/t)$
 	(see §\ref{sec:labels}).
@@ -123,8 +127,9 @@ which may be a residual from a previous layer.
 	A $\dictblock$ accepts assignments
 	$P \in \mathbb{R}^{h \times k}$
 	and returns features $F \in \mathbb{R}^{h \times e}$ (Eq.~\ref{eq:dictblock}).
-	From $F$ we collect between-head similarity $\mathrm{cossim}_h$ (Eq.~\ref{eq:cossim_h})
-	on the clean features, and the sparsity penalty $\mathrm{L1}$ (Eq.~\ref{eq:L1}). 
+	From $P$ and the atoms we collect the heads' support overlap $\sigma$
+	(Eq.~\ref{eq:support}), and from $F$ the sparsity penalty $\mathrm{L1}$
+	(Eq.~\ref{eq:L1}).
 	$\mathsf{F}$ is summed over the head dimension to obtain
 	pooled features $F' \in \mathbb{R}^{e}$, which are added to $R$.
 }
@@ -145,14 +150,13 @@ It returns logits $K \in \mathbb{R}^{h \times k}$ given by
 
 An optional noise term $\varepsilon_K$ may be added.
 Winner dropout sets $\mathrm{argmax}_k(K_{h,\cdot})$ to $-\infty$
-with probability $p_{\mathrm{drop}}$, annealed from $0 \to 0.1$.
+with probability $p_{\mathrm{drop}}$.
 
 \subsubsection{Assignments}
 \label{sec:labels}
 Soft assignments $P$ are given by $\mathrm{softmax}_{k}(K/t)$
-where $t$ is a temperature hyperparameter. It is annealed
-geometrically from $1.0$ to $0.03$ over the first 50k steps, then
-held, giving progressively sharper classifications.
+where $t$ is a temperature hyperparameter. Annealing it sharpens the
+assignments; each model's schedule is in Appendix~\ref{app:configs}.
 The architecture provides methods for causal interventions on assignments.
 From $P$ we collect per-sample entropy $H$, in bits, so a head
 saturates at $\log_2 k = 5$ bits,
@@ -222,39 +226,53 @@ and returns features $F \in \mathbb{R}^{h \times e}$ given by
 
 Because $\lvert D_{\cdot,j,\cdot}\rvert$ is an absolute value
 and $P_{hj} \in [0,1]$, features are strictly additive.
-From $F$ we collect between-head similarity $\mathrm{cossim}_h$ on
-the clean features --- the mean absolute cosine similarity over all
-ordered pairs of heads \emph{within} a sample ---
+Algorithm~\ref{alg:dictblock} gives the full training pass, with the
+regularizing perturbations and statistics around this lookup.
+
+\input{algorithms/dictblock}
+
+From the assignments and the atoms we collect the heads' support overlap
+$\sigma$, the mean cosine over ordered pairs of distinct heads between
+their usage-weighted coordinate profiles,
 
 \begin{equation}
-	\mathrm{cossim}_h(\mathsf{F}) :=
-	\mathbb{E}_{b}\,\mathbb{E}_{i,j}\left[\left\lvert
-	\frac{\langle \mathbf{f}_{n,i}, \mathbf{f}_{n,j}\rangle}
-	     {\lVert \mathbf{f}_{n,i}\rVert \lVert \mathbf{f}_{n,j}\rVert}
-	\right\rvert\right]
-	\label{eq:cossim_h}
+	\mathbf{s}_i := \sum^{k}_{j=1} \bar{p}_{i,j}\,
+	\lvert \mathbf{d}_{i,j,\cdot}\rvert,
+	\qquad
+	\sigma := \mathbb{E}_{i \neq i'}\,
+	\frac{\langle \mathbf{s}_i, \mathbf{s}_{i'}\rangle}
+	     {\lVert \mathbf{s}_i\rVert \lVert \mathbf{s}_{i'}\rVert},
+	\qquad
+	\bar{\mathbf{p}}_i := \mathbb{E}_{b}\,[\mathbf{p}_{n,i}]
+	\label{eq:support}
 \end{equation}
 
-and the sparsity penalty $\mathrm{L1}$ after the noise
-$\varepsilon_F$ is added, $\tilde{\mathsf{F}} := \mathsf{F} + \varepsilon_F$.
-$\mathrm{L1}$ is a sum, not a mean, so it scales with $b$, $h$, and $e$;
-its loss weight is correspondingly small.
+which is zero exactly when no two heads share a coordinate of the
+dictionary space and one when every head uses the same coordinates in
+the same proportions (Section~\ref{sec:disjoint}). It costs
+$\mathcal{O}(hke + h^2e)$, independent of the batch. Weighting by usage
+keeps dead entries out of it and gives the classifier a gradient path.
+We also collect the sparsity penalty $\mathrm{L1}$ after the noise
+$\varepsilon_F$ is added, $\tilde{\mathsf{F}} := \mathsf{F} +
+\varepsilon_F$. $\mathrm{L1}$ is the batch mean of each sample's norm, so
+it does not change with $b$ but scales with $h$ and $e$; its loss weight
+is correspondingly small.
 
 \begin{equation}
 	\mathrm{L1}(\tilde{\mathsf{F}}) :=
-	\sum^{b}_{n=1}\sum^{h}_{i=1}\sum^{e}_{j=1}
+	\frac{1}{b}\sum^{b}_{n=1}\sum^{h}_{i=1}\sum^{e}_{j=1}
 	\lvert \tilde{\mathsf{F}}_{n,i,j}\rvert
 	\label{eq:L1}
 \end{equation}
 
-Both $\mathrm{L1}$ and $\mathrm{cossim}_h$ tend to decrease with only
-$\mathrm{MSE}$ loss, but incorporating them into the loss speeds up convergence.
+$\mathrm{L1}$ tends to decrease with only $\mathrm{MSE}$ loss, but
+incorporating it into the loss speeds up convergence.
 
 \paragraph{Disjoint support}
 \label{sec:disjoint}
-$\mathrm{cossim}_h$ is of particular interest because on nonnegative
-features it is not a rotation constraint but a support-partition
-constraint. Every $\mathbf{f}_{n,i}$ lies in the nonnegative orthant of
+Between heads, orthogonality of nonnegative features is not a rotation
+constraint but a support-partition constraint. Every $\mathbf{f}_{n,i}$
+lies in the nonnegative orthant of
 $\mathbb{R}^e$: the dictionary contributes $\lvert D \rvert \geq 0$ and
 the assignments $P \geq 0$. For nonnegative $\mathbf{u}, \mathbf{v}$ the
 inner product $\langle \mathbf{u},\mathbf{v}\rangle = \sum_j u_j v_j$ is
@@ -270,11 +288,12 @@ does,
 
 Signed vectors admit no such conclusion: there orthogonality is
 cancellation, and two vectors with identical support can be orthogonal.
-This is why $\mathrm{cossim}_h$ ranges over $[0,1]$ rather than
-$[-1,1]$, and why the absolute value in Equation~\ref{eq:cossim_h} is
-vacuous for $\mathrm{cossim}_h$ though not for $\mathrm{cossim}_b$. It
-is also why the statistic is collected before $\varepsilon_F$ is added:
-noised features leave the orthant and the argument with it.
+The support overlap of Equation~\ref{eq:support} sidesteps this. It
+compares the absolute values of the atoms, which have disjoint supports
+exactly when they are orthogonal whatever the atoms' signs, so it
+measures disjointness under a signed dictionary too; and it is computed
+from the atoms and the batch-mean assignment rather than from noised
+features, which leave the orthant and the argument with it.
 
 The constraint binds the dictionary, not merely one sample's features.
 Because $P$ is a softmax, $p_{i,a} > 0$ for every entry, and expanding
@@ -296,8 +315,9 @@ $(a,b)$: the two heads own disjoint blocks of coordinates as a property
 of $\mathsf{D}$, holding for all inputs rather than on the data that
 happened to be measured. That is the premise a static reading of the
 dictionary needs, and it is stronger than what any signed-feature
-architecture can ask for. The budget is not tight either. At the live
-configuration $h = 32$ heads partitioning $e = 2048$ coordinates leaves
+architecture can ask for. The budget is not tight either. In the softmax
+configuration (Table~\ref{tab:cfg-softmax}), $h = 32$ heads partitioning
+$e = 2048$ coordinates leaves
 64 dimensions per head to hold $k = 32$ atoms, which need not be
 disjoint from each other within a head; head-disjointness is most of
 what the width $e > d$ buys.
@@ -307,9 +327,10 @@ is architectural. Disjoint support assigns each head a block of
 coordinates; \emph{within} a head the $k$ atoms are contrastive
 alternatives spread apart inside that block
 (Figure~\ref{fig:head-simplex}). Section~\ref{sec:prelim-orth} measures
-the second. Neither is guaranteed at convergence:
-$\mathrm{cossim}_h$ is a penalty, and the geometry is built to make a
-support partition the cheap solution rather than to force one.
+the second. Neither is guaranteed at convergence: $\sigma$ is a penalty,
+and the geometry is built to make a support partition the cheap solution
+rather than to force one. Under $\mathtt{ConcatDictBlock}$ heads write
+disjoint slices by construction and $\sigma$ is identically zero.
 
 We add noise $\varepsilon_F$ to $F$, then sum over the head dimension to obtain
 pooled features $F' \in \mathbb{R}^{e}$, which are added to $R$.
@@ -335,8 +356,8 @@ pooled features $F' \in \mathbb{R}^{e}$, which are added to $R$.
 	Because elements of $P$, $p_{ij} \in [0,1]$,
 	outputs must be within the convex hull of $D_{i,\cdot,\cdot}$.
 	Because $\lvert D\rvert\geq0$ and $P\geq0$, $F\geq0$;
-	therefore $\cos(F_i, F_j) \in [0,1]$, and driving
-	$\mathrm{cossim}_h(F)$ to zero asks the heads to partition the
+	therefore $\cos(F_i, F_j) \in [0,1]$, and driving the support
+	overlap $\sigma$ to zero asks the heads to partition the
 	coordinates of $\mathbb{R}^e$ between them
 	(Section~\ref{sec:disjoint}).
 }
@@ -345,11 +366,19 @@ pooled features $F' \in \mathbb{R}^{e}$, which are added to $R$.
 
 \subsubsection{Decoder}
 \label{sec:decoder}
-Each $\dictenc$ output $F'_i$ is added to an accumulator $R$.
+Each $\dictenc$ output $F'_i$, scaled by its input's gain $g_i$, is
+added to an accumulator $R$.
 
 \begin{equation}
-	R_i = \sum_{j=1}^i F'_j
+	R_i = \sum_{j=1}^i g_j\,F'_j,
+	\qquad
+	g_j := \mathrm{sg}\!\left[\mathrm{L2}(\mathbf{y}_{j-1})\right]
 \end{equation}
+
+Under \texttt{resid\_gain} a layer classifies only the direction of its
+input, so the gain carries the magnitude it cannot see; without it
+$g_j = 1$. Layer 0's input is the encoded input itself, whose gain is
+identically 1 on unit-norm SONAR embeddings.
 
 A single-layer unbiased linear decoder $\mathrm{dec}$ projects $R_i$ back
 to the input space $\mathbb{R}^d$. Weights
@@ -429,17 +458,18 @@ Equation~\ref{eq:L2}, broadcast over $d$. Both scales are
 stop-gradiented: without $\mathrm{sg}$ the model could evade its own
 noise by shrinking feature variance, and the $\epsilon$ inside the root
 guards the $0/0$ gradient where a feature's batch variance underflows to
-exactly zero. Live values are $\sigma_X = 0$ (input noise off),
-$\sigma_K = 0.02$ annealed geometrically to $0.2\,t_{\mathrm{end}}$, and
-$\sigma_F = 0.1$. Because $\sigma_K$ enters the softmax as
-$\sigma_K/t$, holding it constant under the falling temperature would
-grow effective exploration rather than hold it.
+exactly zero. Because $\sigma_K$ enters the softmax as $\sigma_K/t$,
+holding it constant under a falling temperature would grow effective
+exploration rather than hold it, so models with an annealed temperature
+anneal $\sigma_K$ with it. Each model's noise settings are in
+Appendix~\ref{app:configs}.
 
 \subsubsection{Router and fibers}
 \label{sec:router-fiber}
 Two optional branches read the same shaped input $\mathbf{u}$ as the
 classifier and meet it in the dictionary lookup
-(Figure~\ref{fig:dictenc-full}). Neither is on in the live configuration.
+(Figure~\ref{fig:dictenc-full}). Both are optional; the models that use
+them are listed in Appendix~\ref{app:configs}.
 
 The \emph{router} (\texttt{scaled}) is a second bilinear map, from
 $\mathbf{u}$ to one scale per head, made non-negative by an absolute value
@@ -541,20 +571,33 @@ auxiliary statistics, each weighted by a scalar. Statistics are
 	\label{eq:loss_total}
 \end{equation}
 
+Each layer contributes the statistics (Algorithms~\ref{alg:dictblock}
+and~\ref{alg:dictenc})
+
 \begin{equation}
-	\mathbf{m}_i = \begin{bmatrix}
-	\mathrm{L1}(K_i) & \mathrm{L1}(\tilde{\mathsf{F}}_i) & H_i &
-	\mathrm{cossim}_b^{(i)} & \mathrm{cossim}_h^{(i)} & \mathrm{KL}_m^{(i)}
-	\end{bmatrix}^{\top}
+	\mathbf{m}_i = \big[\,
+	\mathrm{L1}_K \;\; \mathrm{L1} \;\; H \;\; \mathrm{cossim}_b \;\;
+	\mathbb{E}_h\kappa_h \;\; \max_h \kappa_h \;\;
+	\mathrm{KL}_m \;\; \mathrm{KL}_{\mathrm{pwak}} \;\; \mathrm{L2}_{\mathrm{pwak}}
+	\;\; \mathrm{L1}_S \;\; \sigma
+	\,\big]^{\top}_i
 	\label{eq:stats}
 \end{equation}
 
-Live weights are $s_{\mathrm{L1}F} = 10^{-9}$,
-$s_{\mathrm{cossim}_b} = 10^{-5}$, $s_{\mathrm{cossim}_h} = 10^{-6}$ and
-$s_{\mathrm{KL}_m} = 10^{-6}$, with $s_{\mathrm{L1}K} = s_H = 0$; the
-ghost path is disabled, since $\hat{X}_g$ fires only on features that
+where $\mathrm{L1}_K$ is the L1 of the classifier's gate, $\kappa_h$ the
+mean within-head cosine between a head's atoms,
+$\mathrm{KL}_{\mathrm{pwak}}$ and $\mathrm{L2}_{\mathrm{pwak}}$ the two
+partition-consensus statistics, and $\mathrm{L1}_S$ the router's L1. The
+max of $\kappa_h$ is logged for a setpoint controller and never itself
+penalized. Appendix~\ref{app:stats} gives the implementation's row
+layout.
+
+Each model's weights are in Appendix~\ref{app:configs}. The ghost path
+is disabled throughout, since $\hat{X}_g$ fires only on features that
 are exactly zero across the whole batch, which bilinear classifiers with
 softmax selection and absolute-valued dictionaries never produce.
+
+\input{algorithms/ontologizer}
 
 Reconstruction is trained with deep supervision:
 $\mathrm{MSE}(X, \mathrm{dec}(R_i))$ is computed separately at
@@ -565,8 +608,8 @@ Equation~\ref{eq:mse} is the per-dimension inverse variance, normalized
 to mean one, the same whitening the evaluation applies. The
 implementation applies $\sqrt{\mathbf{w}}$ to $X$ and
 $\mathrm{dec}(R_i)$ before the squared error, which is equivalent.
-Four auxiliary statistics are active as loss terms,
-of six the implementation exposes (Figure~\ref{fig:dictenc}):
+Four statistics are active as loss terms in the reported models
+(Figure~\ref{fig:dictenc}; Appendix~\ref{app:configs}):
 between-sample similarity $\mathrm{cossim}_b$, computed from $P$
 through the dictionary Gram so it measures feature-space similarity of
 the per-head reconstructions, and which in practice also minimizes
@@ -574,13 +617,13 @@ per-sample entropy $H$; the batch-mean term $\mathrm{KL}_m$, anchoring
 each head's mean
 assignment vector to a uniform distribution so that a uniform code
 corresponds to a maximally generic feature; an $\mathrm{L1}$ penalty on
-features; and between-head similarity $\mathrm{cossim}_h$, which
-measures the extent to which heads encode nonoverlapping geometries.
-$\mathrm{L1}$ and $\mathrm{cossim}_h$ tend to fall under MSE alone;
-including them in the loss speeds up convergence. Classification
-sharpness is controlled by annealing the softmax temperature
-geometrically from $1.0$ to $0.03$ over the first 50k steps, then
-holding it. Winner dropout and the noise terms
+features; and a between-head disjointness term, the support overlap
+$\sigma$, which measures the extent to which heads use nonoverlapping
+coordinates of the dictionary space. Most reported models trained before
+$\sigma$ existed and used its predecessor (Appendix~\ref{app:stats}).
+$\mathrm{L1}$ tends to fall under MSE alone; including it in the loss
+speeds up convergence. Classification sharpness is controlled by the
+temperature. Winner dropout and the noise terms
 $\varepsilon_K$ and $\varepsilon_F$ regularize classifications and
 features respectively.
 

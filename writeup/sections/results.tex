@@ -351,10 +351,8 @@ Making the classifier train under a hard forward takes three settings,
 all following from the argmax being scale-invariant so that nothing
 pushes the logits up: relative logit noise (\texttt{--noise-k
 batchnorm}), a surrogate temperature matched to the logit scale, and a
-rescaled $s_{\mathrm{KL}_m}$ (Appendix~\ref{sec:calib}). The shipped arm
-is $T{=}1.5\times10^{-4}$, lr $10^{-5}$, \texttt{--noise-k batchnorm
---sd-k 0.3}, $s_{\mathrm{KL}_m}{=}10^{-4}$, trained 24 epochs
-(369{,}500 steps).
+rescaled $s_{\mathrm{KL}_m}$ (Appendix~\ref{sec:calib}). Every arm's
+configuration is in Table~\ref{tab:cfg-ste-sonar}.
 
 \subsection{Initialization: a third of the error}
 
@@ -560,7 +558,9 @@ being the only layer whose input does not depend on upstream choices.
 The one head that reproduces is in layer 0: the topic head of
 Section~\ref{sec:lang}, the strongest layer-0 partition in both seeds at
 different indices, matched across them at NMI 0.41 against a 0.01 median
-for other heads.
+for other heads. The softmax Ontologizer's partitions fare no better: a
+seed replica at matched training matches at most 0.1\% of entries, where
+the k32 SAE pair matches 3--31\% (Figure~\ref{fig:softseed}).
 
 \subsubsection{Replication on GPT-2}
 
@@ -716,9 +716,10 @@ layer 0 too classifies the unit direction of what it corrects
 (\texttt{resid\_first}), and each layer's contribution is scaled by the
 observed residual norm, clipped at $\lVert X\rVert$, which makes the model
 positively homogeneous, $f(cX) = c\,f(X)$. \emph{Annealed straight-through
-selection}: argmax forward, softmax backward, the temperature annealed $1
-\to 0.03$ over the first 60k of 156k steps. With $5\times32$ heads of 32
-entries the code is 800 bits per token with no continuous coefficients.
+selection}: argmax forward, softmax backward, with the temperature
+annealed early in training (Table~\ref{tab:cfg-gpt2-headline}). With
+$5\times32$ heads of 32 entries the code is 800 bits per token with no
+continuous coefficients.
 
 \begin{table}[h]\centering\small
 \begin{tabular}{@{}lllrr@{}}

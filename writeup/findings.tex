@@ -29,9 +29,14 @@ Ontologizers vs.\ Sparse Autoencoders on SONAR Sentence Embeddings}
 \begin{document}
 \maketitle
 
+% Frontispiece: decorative, deliberately not a numbered float.
+\noindent\plate{\includegraphics[width=\textwidth]{figures/frontis-orbit.png}}\\[3pt]
+\mutedlabel{orbit \textperiodcentered{} seed 1024 \textperiodcentered{} floyd--steinberg error diffusion}
+\vspace{16pt}
+
 \begin{abstract}
 % flockpaper sets the abstract in an unbreakable minipage, so it must fit
-% under the title block or it moves to page 2 whole
+% on the page it starts on or it moves to the next one whole
 \small
 The Ontologizer is a multihead, multilayer dictionary-learning
 architecture whose design goal is \emph{unsupervised steering-vector
@@ -86,7 +91,25 @@ matching supervised diff-of-means vectors and SAE decoder-row addition
 (steering fidelity). Metrics that ask whether \emph{individual latents}
 are concept-aligned remain informative about the SAE side but are the
 wrong lens for classifier codes, and we flag them as such where they
-appear.
+appear. Figure~\ref{fig:teaser} shows the softmax Ontologizer on three
+of question (d)'s criteria.
+
+\begin{figure}[tp]\centering
+\includegraphics[width=\linewidth]{figures/fig-teaser.pdf}
+\caption[The steering primitive, measured]{The softmax Ontologizer's
+steering primitive, measured. Left: forcing an entry moves decodes along
+the supervised difference-of-means direction $0.43\times$ as far as
+supervised steering itself and $5\times$ further than probe directions
+(\texttt{resid\_nc\_hm}; Table~\ref{tab:steer-overlay}). Centre: joint
+two-head interventions point where the summed single interventions point,
+exactly in the final layer (\texttt{resid\_nc}; Section~\ref{sec:formal}).
+Right: the sparse SAEs' codes lose most text before any intervention
+(round-trip chrF 0.23--0.28 against a 0.20 corpus floor) while the soft
+code keeps it (0.54); the dense \texttt{k5120} keeps more but is not a
+sparse code (Appendix~\ref{sec:textfid}). The hard code steers less
+reliably than the soft one (Section~\ref{sec:steer}).}
+\label{fig:teaser}
+\end{figure}
 
 Question (c) has a prerequisite that the original battery took for
 granted: a head can only be named if it is the same head on every run.
@@ -212,25 +235,23 @@ temperature.
 \subsection{Models and baselines}
 \label{sec:models}
 
+Every model's configuration is tabulated in Appendix~\ref{app:configs}.
+
 \paragraph{Softmax Ontologizers.}
-The reference Ontologizer (\texttt{resid\_nc}, step 372{,}600) is the
-architecture of Section~\ref{sec:arch}: $l{=}5$ residual layers, $h{=}32$
-heads, $k{=}32$ entries per head, bilinear classifiers with residual
-normalization and a constant input coordinate, deep supervision, and a
-shared linear decoder from an $e{=}2048$ dictionary space; $\approx$23.1M
-parameters and $l\cdot h\cdot k = 5{,}120$ dictionary entries. Layers
-0--3 trained healthily (prefix $\fvu$ $0.129 \to 0.0051$); layer 4 froze
-22/32 heads late in temperature annealing and is mildly harmful
-(Section~\ref{sec:lastlayer} explains why). A later \emph{selection sweep}
-holds that shape fixed and varies only the \texttt{DictBlock} selection
-rule --- \texttt{top1}, \texttt{top2}, \texttt{top4}, \texttt{top8},
-\texttt{top16}, \texttt{softmax} --- each with and without the
-mean-entropy bonus raised to $s_{\mathrm{KL}_m}{=}3\times10^{-5}$
-(\texttt{\_shm}), at 369{,}500 steps.
+The reference Ontologizer (\texttt{resid\_nc}) is the architecture of
+Section~\ref{sec:arch} with softmax selection: $l{=}5$ residual layers of
+$h{=}32$ heads with $k{=}32$ entries each. Layers 0--3 trained healthily
+(prefix $\fvu$ $0.129 \to 0.0051$); layer 4 froze 22/32 heads late in
+temperature annealing and is mildly harmful (Section~\ref{sec:lastlayer}
+explains why). A later \emph{selection sweep} holds that shape fixed and
+varies only the \texttt{DictBlock} selection rule --- \texttt{top1},
+\texttt{top2}, \texttt{top4}, \texttt{top8}, \texttt{top16},
+\texttt{softmax} --- each with and without a raised mean-entropy bonus
+(\texttt{\_shm}).
 
 \paragraph{The straight-through arm.}
 \texttt{train\_ste.py} imports \texttt{sonar.py}'s configuration and
-overrides only \texttt{select="ste"}: the forward pass selects the argmax
+overrides \texttt{select="ste"}: the forward pass selects the argmax
 one-hot, and the backward pass uses $\mathrm{softmax}(K/T)$ as its
 surrogate. Its shape, calibration and initialization are described with
 its results in Section~\ref{sec:ste}.
@@ -238,10 +259,9 @@ its results in Section~\ref{sec:ste}.
 \paragraph{SAEs.}
 SAEs follow Gao et al.~\cite{gao2024}: pre-activation
 $\mathrm{relu}((x-b_{dec})W_{enc}+b_{enc})$ with top-$k$ selection,
-unit-norm decoder rows, tied initialization, aux-$k$ dead-latent revival,
-trained with Adam at $4\times10^{-4}$ for $\sim$144k steps at batch 4096
-(converged; convergence is optimizer-step--limited, not epoch-limited, at
-this batch size).
+unit-norm decoder rows, tied initialization and aux-$k$ dead-latent
+revival, trained to convergence; ReLU+L1 SAEs replace top-$k$ with an L1
+penalty and neuron resampling.
 
 \paragraph{The structural-ablation ladder.}
 To attribute differences to specific architectural commitments rather than
@@ -528,5 +548,9 @@ also printed the plates.
 \printbibliography
 
 \input{sections/appendix}
+
+\vspace{20pt}
+\noindent\plate{\includegraphics[width=\textwidth]{figures/end-ridge.png}}\\[3pt]
+\mutedlabel{ridge \textperiodcentered{} seed 32 \textperiodcentered{} the same pipeline, closing the file}
 
 \end{document}

@@ -1,0 +1,37 @@
+% Hard-code runs from the headline branch (experiments/gpt2/train_onto.py).
+% Values from experiments/gpt2/results/*/config.json.
+\begin{table}[tp]\centering\small
+\begin{tabular}{@{}ll@{}}
+\toprule
+\multicolumn{2}{@{}l}{\emph{shared by the headline-branch runs of Section~\ref{sec:gpt2hard}}} \\
+\midrule
+input & GPT-2 small, residual entering block 8, $d = 768$; mean-centred, scaled to unit mean square; FineWeb \\
+shape & $l = 5$ layers $\times$ $h = 32$ heads, $k = 32$ entries per head (800 bits) unless noted \\
+selection & straight-through, temperature $1 \to 0.03$ over the first 60k steps \\
+classifier & bilinear ($n = 2$) \\
+forward & residual; \texttt{resid\_first}, \texttt{resid\_gain}, \texttt{gain\_clip}, \texttt{resid\_norm}, \texttt{resid\_const}; joint deep supervision \\
+optimizer & Adam, lr $2\times10^{-4}$, batch 256 \\
+noise & logits normal, $\sigma_K = 0.02 \to 0.006$; features featvar, $\sigma_F = 0.1$ \\
+winner dropout & $p_{\mathrm{drop}} = 0 \to 0.1$ \\
+loss & unwhitened MSE; $s_{\mathrm{L1}} = 10^{-9}$, $s_{\mathrm{cossim}_b} = 10^{-5}$,
+$s_{\mathrm{cossim}_h} = 10^{-6}$, $s_{\mathrm{KL}_m} = 10^{-6}$ \\
+seed & 42 unless noted \\
+\bottomrule
+\end{tabular}
+
+\vspace{8pt}
+\begin{tabular}{@{}lll@{}}
+\toprule
+run & dictionary & data \\
+\midrule
+direct + gain + STE & signed atoms in $\mathbb{R}^{768}$, no decoder & 40M tokens, one pass (156k steps) \\
+private heads + gain + STE & non-negative, $e = 1536$ in 48-dim blocks, shared decoder & 40M tokens, one pass \\
+one-epoch ablations & as in Appendix~\ref{sec:gpt2ablation} & 10M tokens \\
+\bottomrule
+\end{tabular}
+\caption{Configurations of the headline-branch GPT-2 runs
+(\texttt{experiments/gpt2/results/D40\_*/config.json}). Fiber variants
+add \texttt{fiber\_rank} $r$ with the dropout, cap or freezing given in
+Section~\ref{sec:gpt2hard}'s table.}
+\label{tab:cfg-gpt2-headline}
+\end{table}

@@ -1,0 +1,54 @@
+\begin{algorithm}[tp]
+	\caption{$\dictenc$, one layer, in training (\texttt{DictEnc.withStats}).
+	Without the router, $S$ is all ones and $\mathrm{L1}_S = 0$; without
+	fibers there are no coordinates $\mathsf{C}$; without
+	\texttt{resid\_gain} the input is not split and $g = 1$.}
+	\label{alg:dictenc}
+	\DontPrintSemicolon
+
+	\KwIn{accumulator $R \in \mathbb{R}^{b \times e}$; layer input
+		$E \in \mathbb{R}^{b \times d'}$, whose last $c$ coordinates are
+		constant (\texttt{resid\_const})}
+	\KwData{bilinear classifier (Eq.~\ref{eq:bilinearblock}); router
+		(\texttt{scaled}); fiber readouts $A_i \in \mathbb{R}^{r \times d'}$;
+		$\dictblock$ (Algorithm~\ref{alg:dictblock})}
+	\Hyper{logit noise $\sigma_K$; fiber bound $\beta$; the
+		$\dictblock$ hyperparameters}
+	\KwOut{accumulator $R$; assignments
+		$\mathsf{P} \in \mathbb{R}^{b \times h \times k}$; statistics
+		row $\mathbf{m}$ (Eq.~\ref{eq:stats})}
+
+	\Begin{
+		$g_n \leftarrow \mathrm{sg}\big[\lVert E_{n,1:d'-c}\rVert\big]$;\quad
+			$\mathbf{u}_n \leftarrow \big[E_{n,1:d'-c}/g_n;\,
+			E_{n,d'-c+1:d'}\big]$
+			\tcp*{gain and shape}
+		$\mathsf{K}, \mathrm{L1}_K \leftarrow
+			\mathrm{classifier}(\mathbf{u})$
+			\tcp*{L1 of the gate factor}
+		$\mathsf{K} \leftarrow \mathrm{noise}_K(\mathsf{K})$
+			\tcp*{Eq.~\ref{eq:noise_normal} or~\ref{eq:noise_batchnorm}}
+		\eIf{router}{
+			$S, \mathrm{L1}_S \leftarrow \mathrm{router}(\mathbf{u})$;\quad
+				$S \leftarrow \lvert S \rvert$
+				\tcp*{unless \texttt{router\_signed}}
+		}{
+			$S \leftarrow \mathbf{1}$;\quad $\mathrm{L1}_S \leftarrow 0$\;
+		}
+		$\mathbf{c}_{ni} \leftarrow \beta \tanh(A_i \mathbf{u}_n / \beta)$
+			\tcp*{fiber coordinates, Eq.~\ref{eq:fiber}}
+		$F', \mathsf{P}, (\mathrm{L1}, H, \mathrm{cossim}_b,
+			\mathbb{E}\kappa, \max\kappa, \mathrm{KL}_m, \sigma)
+			\leftarrow \dictblock(\mathsf{K}, S, \mathsf{C})$\;
+		$\mathrm{KL}_{\mathrm{pwak}}, \mathrm{L2}_{\mathrm{pwak}}
+			\leftarrow \mathrm{pwak}(\mathsf{P}, \mathbf{u})$
+			\tcp*{zero unless enabled}
+		$R_n \leftarrow R_n + g_n\,\mathbf{f}'_n$
+			\tcp*{the contribution, at the input's gain}
+		\Return{$R$, $\mathsf{P}$,
+			$\mathbf{m} = (\mathrm{L1}_K, \mathrm{L1}, H, \mathrm{cossim}_b,
+			\mathbb{E}\kappa, \max\kappa, \mathrm{KL}_m,
+			\mathrm{KL}_{\mathrm{pwak}}, \mathrm{L2}_{\mathrm{pwak}},
+			\mathrm{L1}_S, \sigma)$}\;
+	}
+\end{algorithm}

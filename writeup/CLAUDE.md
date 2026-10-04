@@ -70,6 +70,15 @@ findings.tex
 └── sections/appendix.tex      starts with \appendix: supplementary methods and results
 ```
 
+`algorithms/` holds the `DictBlock`, `DictEnc` and `Ontologizer` training passes
+(`algorithm2e` floats, `\input` from `sections/methods.tex`). `config/` holds one table per
+model family (softmax, SONAR straight-through, GPT-2 straight-through, `headline`-branch
+GPT-2, SAEs), `\input` from the appendix's "Model configurations" (`app:configs`). Model
+configurations live there, not in the main body: the body names a model's shape where an
+argument needs it and points to the table for hyperparameters. The tables are built from
+each run's recorded configuration (`log.jsonl`'s last `env_config`, the checkpoint spec,
+`config.json`/`meta.json`), never from defaults, and flag values that changed at a resume.
+
 `sections/introduction.tex` is a restructured draft of the inline evaluation frame and
 related work under a single Introduction heading. It is not `\input` yet, so
 `findings.tex`'s inline copy is the live one; edit both or switch over.

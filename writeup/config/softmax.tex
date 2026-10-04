@@ -1,0 +1,42 @@
+% Softmax Ontologizers on SONAR. Values from each run's log.jsonl
+% (final env_config) and checkpoint spec.
+\begin{table}[tp]\centering\small
+\begin{tabular}{@{}ll@{}}
+\toprule
+\multicolumn{2}{@{}l}{\emph{shared by every softmax run}} \\
+\midrule
+input & SONAR mC4 embeddings, $d = 1024$, unit norm \\
+shape & $l = 5$ layers $\times$ $h = 32$ heads, $k = 32$ entries per head \\
+classifier & bilinear ($n = 2$), no gate \\
+forward & residual; \texttt{resid\_norm}, \texttt{resid\_const}, \texttt{resid\_gain}; joint deep supervision \\
+optimizer & Adam, lr $5\times10^{-5}$, gradient clip 1.0, batch 256, 24 epochs \\
+temperature & $1 \to 0.03$, geometric over 50k steps, then held \\
+noise & logits normal, $\sigma_K = 0.02 \to 0.006$; features featvar, $\sigma_F = 0.1$; input off \\
+winner dropout & $p_{\mathrm{drop}} = 0 \to 0.1$ over the anneal \\
+loss & whitened MSE; $s_{\mathrm{cossim}_b} = 10^{-5}$; ghost path off \\
+seed & 42 \\
+\bottomrule
+\end{tabular}
+
+\vspace{8pt}
+\begin{tabular}{@{}lllllr@{}}
+\toprule
+run & selection & $e$ & $s_{\mathrm{KL}_m}$ & other & steps \\
+\midrule
+\texttt{resid\_nc} & softmax & 4096 & $10^{-6}$$^\dagger$ & $s_{\mathrm{L1}} = 10^{-9}$, $s_{\mathrm{cossim}_h} = 0 \to 10^{-5}$$^\dagger$ & 372.6k \\
+\texttt{resid\_nc\_hm} & softmax & 2048 & $10^{-6}$ & $s_{\mathrm{L1}} = 10^{-9}$, $s_{\mathrm{cossim}_h} = 10^{-5} \to 10^{-6}$$^\dagger$ & 8.27M$^\ddagger$ \\
+\texttt{sweep\_softmax} & softmax & 2048 & $10^{-6}$ & $s_{\mathrm{cossim}_h} = 10^{-6}$ & 369.5k \\
+\texttt{sweep\_top}$m$ & top-$m$, $m \in \{1, 2, 8, 16\}$ & 2048 & $10^{-6}$ & $s_{\mathrm{cossim}_h} = 10^{-6}$ & 369.5k \\
+\texttt{sweep\_top8\_relu} & top-8 & 2048 & $10^{-6}$ & ReLU gate on the classifier & 369.5k \\
+\texttt{sweep\_*\_shm} & softmax, top-$m$, $m \in \{2, 4, 8, 16\}$ & 2048 & $3\times10^{-5}$ & $s_{\mathrm{cossim}_h} = 10^{-6}$ & 369.5k \\
+\bottomrule
+\end{tabular}
+\caption{Softmax Ontologizer configurations. $^\dagger$Changed at a resume:
+\texttt{resid\_nc} acquired $s_{\mathrm{KL}_m}$ and its $s_{\mathrm{cossim}_h}$
+mid-run, and \texttt{resid\_nc\_hm} lowered $s_{\mathrm{cossim}_h}$.
+$^\ddagger$Latest checkpoint; results attributed to \texttt{resid\_nc\_hm}
+in Appendix~\ref{app:softdyn} use its 4.38M-step checkpoint.
+$\mathrm{cossim}_h$ is the retired between-head cosine
+(Appendix~\ref{app:stats}).}
+\label{tab:cfg-softmax}
+\end{table}
