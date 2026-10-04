@@ -133,6 +133,25 @@ class Ontologizer(nn.Module):
     # see ConcatDictBlock: heads take disjoint slices of e_dec
     # instead of summing into all of it. Needs e_dec % h == 0.
     concat: bool = False
+    # see `DictBlock.p_head_drop`
+    p_head_drop: float = 0.0
+    # see `DictBlock.fiber_rank` and the fields after it, and
+    # `DictEnc.fiber_shared`
+    fiber_rank: int = 0
+    fiber_drop: float = 0.0
+    fiber_bound: float = 0.0
+    fiber_eps: float = 0.0
+    fiber_eps_layer: float = 0.0
+    fiber_radial: bool = False
+    fiber_shared: bool = False
+    # base-only auxiliary loss: `withStats` also accumulates a fiber-free
+    # residual and appends its decode to the deep-supervision stack, so the
+    # base is trained to reconstruct on its own and the fiber can only be a
+    # correction. Needs deepsup and fibers. The value is the number of
+    # copies appended, so the base loss has weight
+    # base_aux / (l + base_aux); `withStats`'s `Y` then has l + base_aux
+    # rows, the base decodes last.
+    base_aux: int = 0
 
     # decoder (Linear) args
     activation_dec: str = "none"
@@ -190,6 +209,11 @@ class Ontologizer(nn.Module):
             activation_dict=self.activation_dict,
             norm_rows=self.norm_rows, concat=self.concat,
             signed=self.signed,
+            p_head_drop=self.p_head_drop,
+            fiber_rank=self.fiber_rank, fiber_drop=self.fiber_drop,
+            fiber_bound=self.fiber_bound, fiber_eps=self.fiber_eps,
+            fiber_eps_layer=self.fiber_eps_layer,
+            fiber_radial=self.fiber_radial, fiber_shared=self.fiber_shared,
             scaled=self.scaled, n_sc=self.n_sc,
             activation_router=self.activation_router, gate_router=self.gate_router, 
             biased_router=self.biased_router,
@@ -223,6 +247,10 @@ class Ontologizer(nn.Module):
                 "sense with a residual-carrying forward mode ('resid' or "
                 "'resid_labels'); labels forwarding hands the next layer a "
                 "probability vector, whose norm is not a gain")
+        if self.base_aux and not (self.fiber_rank and self.deepsup):
+            raise ValueError(
+                "base_aux appends a fiber-free decode to the deep-supervision "
+                "stack, so it needs fiber_rank > 0 and deepsup")
 
         if self.encoded and self.e_enc > 0:
             d_enc = self.e_enc
@@ -410,16 +438,24 @@ class Ontologizer(nn.Module):
         E, rng_K = self.encode(X, sd_in, rng)
         R = self.resid(E)
         E = self.constinput(E)
+        aux = bool(self.base_aux)
+        R_b = R
         stats, Ys = [], []
         for i, dictenc in enumerate(self.dictencs):
             R_0 = R
-            R, K, stat, rng_K = dictenc.withStats(R, E, rng=rng_K, *args, **kwargs)
+            out = dictenc.withStats(R, E, rng=rng_K, *args,
+                                    return_base=aux, **kwargs)
+            R, K, stat, rng_K = out[:4]
+            if aux:  # the same selections, without the fiber
+                R_b = R_b + out[4]
             stats.append(stat)
             if self.deepsup:
                 Ys.append(self.decode(self.prefix(R, R_0)))
             if i < self.l - 1:
                 E = self.nextinput(X, R, K)
 
+        if aux:
+            Ys.extend([self.decode(R_b)] * int(self.base_aux))
         Y = jnp.stack(Ys) if self.deepsup else self.decode(R)
         return Y, jnp.stack(stats), rng_K
 
@@ -439,6 +475,10 @@ class Ontologizer(nn.Module):
         residual would leave `Y_g` a single `(..., d_out)` array that
         broadcasts silently against every prefix, scoring the last layer's
         ghost output against reconstruction errors it did not produce."""
+        if self.base_aux:
+            raise NotImplementedError(
+                "base_aux is implemented in withStats only; the ghost path "
+                "would train without the base-only loss (set ghost=False)")
         E, rng_K = self.encode(X, sd_in, rng)
         E_g = self.encoder.ghost(X, E)
 

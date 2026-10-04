@@ -46,6 +46,40 @@ class DictBlock(Sparse):
     # the sign of one entry.
     signed: bool = False
 
+    # head dropout: in training, with this probability per sample and head,
+    # replace the head's classification by its batch-mean classification
+    # (the head's origin), so heads cannot rely on co-adaptation and
+    # ablating a head to its origin stays in distribution. Inverted: kept
+    # heads' deviations from the origin are scaled by 1/(1-p), so the
+    # expected output matches inference.
+    p_head_drop: float = 0.0
+
+    # fibers: each entry (h, k) carries a local basis U_hk of `fiber_rank`
+    # directions in its head's output, and the head adds U_hk @ c_h to its
+    # output, where c_h (`C`, read linearly from the layer input by
+    # `DictEnc`) are the entry's local coordinates. Signed, unlike the
+    # entries. The statistics (L1, cosines) describe the base output only.
+    fiber_rank: int = 0
+    # in training, zero a head's fiber coordinates with this probability
+    # per sample, so the base entry must reconstruct on its own and the
+    # fiber can only be a correction
+    fiber_drop: float = 0.0
+    # bound each fiber coordinate to (-fiber_bound, fiber_bound) via tanh
+    # (0 = unbounded); an unbounded fiber can run away with the gain
+    fiber_bound: float = 0.0
+    # cap each head's fiber output norm at fiber_eps (0 = no cap). Under
+    # `resid_gain` the layer's output is then scaled by the residual norm,
+    # so this caps the correction at fiber_eps of what is left to explain
+    fiber_eps: float = 0.0
+    # joint cap: the sum over heads of the fiber output norms is capped at
+    # fiber_eps_layer (a group-lasso ball: L2 within a head, L1 across
+    # heads)
+    fiber_eps_layer: float = 0.0
+    # radial fiber (needs fiber_rank == 1): no basis parameters; the single
+    # coordinate rescales the selected entry, F_h *= 1 + c_h (a per-head
+    # gain)
+    fiber_radial: bool = False
+
     sparse: bool = False
     entropy_loss: bool = False
     cossim_loss: bool = False
@@ -97,6 +131,17 @@ class DictBlock(Sparse):
             (self.h, self.k, self.d_head),
             dtype=self.dtype_p
         )
+        if self.fiber_radial and self.fiber_rank != 1:
+            raise ValueError("fiber_radial needs fiber_rank == 1")
+        if self.fiber_rank and not self.fiber_radial:
+            # in the head's own output width, so a `ConcatDictBlock` head's
+            # basis lives in its slice; same per-element scale as the
+            # entries, spread over the rank
+            self.fiber = self.param(
+                'fiber',
+                nn.initializers.normal(stddev=(self.d_head * self.fiber_rank) ** -0.5),
+                (self.h, self.k, self.d_head, self.fiber_rank),
+                dtype=self.dtype_p)
 
     def head_width(self) -> int:
         """Output width of one head. The whole of `d` here, since heads sum
@@ -133,32 +178,97 @@ class DictBlock(Sparse):
         K = K.astype(self.dtype)
         return self.fn_sel(K / temperature)
 
+    def fiber_out(self, P: Float[Array, "... h k"],
+                  C: Optional[Float[Array, "... h r"]], per_head: bool
+                  ) -> Optional[Array]:
+        """Fiber term sum_k P_hk U_hk c_h, per head `(..., h, d_head)` or
+        combined over heads `(..., d)` as the layer combines its heads. None
+        when there is no fiber (or no `C`)."""
+        if not self.fiber_rank or C is None:
+            return None
+        C = C.astype(self.dtype)
+        if self.fiber_bound:
+            C = self.fiber_bound * jnp.tanh(C / self.fiber_bound)
+        if self.fiber_radial:
+            Fb = jnp.einsum("...hk,hkd->...hd", P, self.dicts()) * C[..., :1]
+        else:
+            Fb = jnp.einsum("...hk,hkdr,...hr->...hd",
+                            P, self.fiber.astype(self.dtype), C)
+        if self.fiber_eps or self.fiber_eps_layer:
+            Fb = self._cap(Fb)
+        return Fb if per_head else self.combine(Fb)
+
+    def _cap(self, Fb: Float[Array, "... h d"]) -> Float[Array, "... h d"]:
+        """Rescale fiber vectors: each head's norm <= fiber_eps, and/or the
+        sum of the heads' norms <= fiber_eps_layer."""
+        n = jnp.linalg.norm(Fb, axis=-1, keepdims=True)
+        if self.fiber_eps:
+            Fb = Fb * jnp.minimum(1.0, self.fiber_eps / (n + 1e-12))
+            n = jnp.linalg.norm(Fb, axis=-1, keepdims=True)
+        if self.fiber_eps_layer:
+            tot = n.sum(-2, keepdims=True)
+            Fb = Fb * jnp.minimum(1.0, self.fiber_eps_layer / (tot + 1e-12))
+        return Fb
+
+    def fiber_dropout(self, C: Optional[Float[Array, "... h r"]],
+                      rng: Optional[PRNGKeyArray]
+                      ) -> Tuple[Optional[Float[Array, "... h r"]],
+                                 Optional[PRNGKeyArray]]:
+        """Zero a head's fiber coordinates with probability `fiber_drop`
+        per sample. No-op at inference (rng None), and draws no key when
+        off, so models without fibers keep their random streams."""
+        if C is None or not self.fiber_drop or rng is None:
+            return C, rng
+        rng, r = jax.random.split(rng)
+        drop = jax.random.bernoulli(r, self.fiber_drop, C.shape[:-1])[..., None]
+        return jnp.where(drop, 0.0, C), rng
+
+    def head_drop(self, P: Float[Array, "... h k"],
+                  rng: Optional[PRNGKeyArray]
+                  ) -> Tuple[Float[Array, "... h k"], Optional[PRNGKeyArray]]:
+        """Head dropout (see `p_head_drop`). No-op at inference (rng None),
+        and draws no key when off."""
+        if not self.p_head_drop or rng is None:
+            return P, rng
+        rng, r = jax.random.split(rng)
+        drop = jax.random.bernoulli(r, self.p_head_drop, P.shape[:-1])[..., None]
+        origin = jax.lax.stop_gradient(P.reshape(-1, self.h, self.k).mean(0))
+        # inverted: kept heads' deviations from the origin are scaled by
+        # 1/(1-p), so the expected output matches inference (no dropout)
+        kept = origin + (P - origin) / (1.0 - self.p_head_drop)
+        return jnp.where(drop, origin, kept), rng
+
     def fwd(self, P_0: Float[Array, "... h k"],
-                S: Optional[Float[Array, "... h"]] = None, *args, **kwargs
+                S: Optional[Float[Array, "... h"]] = None, *args,
+                C: Optional[Float[Array, "... h r"]] = None, **kwargs
                ) -> Float[Array, "... d"]:
         """Forward pass. Input `P_0` is expected to be probabilites from a multihead classifier.
         Accepts an optional scaling vector `S`, which should apply a scalar multiple
-        to each slice along the `h` axis. Allows causal interventions on ontofeatures
-        by passing arguments to `DictBlock.intervene`."""
+        to each slice along the `h` axis, and optional fiber coordinates `C`.
+        Allows causal interventions on ontofeatures by passing arguments to
+        `DictBlock.intervene`."""
         P = P_0.astype(self.dtype)
         P = self.intervene(P, *args, **kwargs)
-        if S is None:
-            return jnp.einsum("...hk,hkd->...d", P, self.dicts())
-        S = S.astype(self.dtype)
-        return jnp.einsum("...hk,hkd,...h->...d", P, self.dicts(), S)
+        if S is not None:
+            P = P * S.astype(self.dtype)[..., None]
+        F = jnp.einsum("...hk,hkd->...d", P, self.dicts())
+        Fb = self.fiber_out(P, C, per_head=False)
+        return F if Fb is None else F + Fb
 
     def hfwd(self, P_0: Float[Array, "... h k"],
              S: Optional[Float[Array, "... h"]] = None,
-             *args, **kwargs) -> Float[Array, "... h d"]:
+             *args, C: Optional[Float[Array, "... h r"]] = None,
+             **kwargs) -> Float[Array, "... h d"]:
         """As `DictBlock.fwd`, but returns the output without summing the `h` axis.
-        This allows calculation of summary statistics and interventions on specific 
+        This allows calculation of summary statistics and interventions on specific
         heads."""
         P = P_0.astype(self.dtype)
         P = self.intervene(P, *args, **kwargs)
-        if S is None:
-            return jnp.einsum("...hk,hkd->...hd", P, self.dicts())
-        S = S.astype(self.dtype)
-        return jnp.einsum("...hk,hkd,...h->...hd", P, self.dicts(), S)
+        if S is not None:
+            P = P * S.astype(self.dtype)[..., None]
+        Fs = jnp.einsum("...hk,hkd->...hd", P, self.dicts())
+        Fb = self.fiber_out(P, C, per_head=True)
+        return Fs if Fb is None else Fs + Fb
 
     def combine(self, Y: Float[Array, "... h d"]) -> Float[Array, "... d"]:
         """Sum over `h` axis."""
@@ -428,7 +538,9 @@ class DictBlock(Sparse):
                   S: Optional[Float[Array, "... b h"]] = None,
                   sd: float=0.0, rng: Optional[PRNGKeyArray]=None,
                   *args, p_drop: float=0.0, p_revive: float=0.0,
-                  revive_frac: float=0.5, **kwargs
+                  revive_frac: float=0.5,
+                  C: Optional[Float[Array, "... b h r"]] = None,
+                  return_base: bool = False, **kwargs
                   ) -> Tuple[Float[Array, "... b d"], Float[Array, "... b h k"],
                              Float[Array, "7"],
                              PRNGKeyArray]:
@@ -437,12 +549,22 @@ class DictBlock(Sparse):
         the result. If `p_drop` is specified, applies `drop_winners` to
         `K` first. The pwak stats are not here: they are functions of the
         classifications and the layer INPUT, which is `DictEnc`'s, so
-        `DictEnc.withStats` appends them to this row."""
+        `DictEnc.withStats` appends them to this row.
+
+        Head dropout acts between the classification, which the stats
+        describe, and the lookup. The fiber term (coordinates `C`) is added
+        after the statistics, which describe the base output; with
+        `return_base` the fiber-free output is returned as a fifth value."""
         # revive first: deadness is read off the logits the classifier
         # produced, before drop_winners masks a winner out of them
         K, rng = self.revive_dead(K, p_revive, revive_frac, rng)
         K, rng = self.drop_winners(K, p_drop, rng)
-        Fs, P, H = self.withEntropy(K, S, *args, **kwargs)
+        temperature = kwargs.pop("temperature", 1.0)
+        P = self.cluster(K, temperature)
+        H = self.entropy(P, S)
+        P_used, rng = self.head_drop(P, rng)
+        C, rng = self.fiber_dropout(C, rng)
+        Fs = self.hfwd(P_used, S, *args, **kwargs)
 
         Fs_n, rng_next = self.addnoise(Fs, sd, rng)
         cossim_b = self.bcossim_tags(P, S)
@@ -457,6 +579,14 @@ class DictBlock(Sparse):
         # lets a few hide among healthy ones) and carries weight 0
         stats = [L1, H, cossim_b, cossim_h, cossim_k.mean(),
                  cossim_k.max(), KL_m, cos_flat]
+        F_base = F
+        if self.fiber_rank and C is not None:
+            Q = self.intervene(P_used.astype(self.dtype), *args, **kwargs)
+            if S is not None:
+                Q = Q * S.astype(self.dtype)[..., None]
+            F = F + self.fiber_out(Q, C, per_head=False)
+        if return_base:
+            return F, P, jnp.stack(stats), rng_next, F_base
         return F, P, jnp.stack(stats), rng_next
 
     def tags(self) -> Float[Array, "n_tags d"]:

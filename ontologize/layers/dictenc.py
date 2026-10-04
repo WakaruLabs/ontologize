@@ -58,6 +58,23 @@ class DictEnc(nn.Module):
     # let a head's gain go negative; see `scale`
     router_signed: bool = False
 
+    # see `DictBlock.p_head_drop`
+    p_head_drop: float = 0.0
+    # see `DictBlock.fiber_rank` and the fields after it. The per-head
+    # coordinates are a linear read of the classifier's input,
+    # c_h = A_h U: the shaped input under `gainshape`, so the fiber, like
+    # the entry it corrects, is scaled by the layer's gain afterwards
+    fiber_rank: int = 0
+    fiber_drop: float = 0.0
+    fiber_bound: float = 0.0
+    fiber_eps: float = 0.0
+    fiber_eps_layer: float = 0.0
+    fiber_radial: bool = False
+    # one coordinate vector per layer, shared by all heads (each selected
+    # entry still has its own basis), so the continuous channel is only
+    # fiber_rank numbers per layer
+    fiber_shared: bool = False
+
     sparse_K: bool = False
     sparse_F: bool = False
     sparse_S: bool = False
@@ -120,9 +137,20 @@ class DictEnc(nn.Module):
             flatcos_loss=self.flatcos_loss,
             hmean_loss=self.hmean_loss,
             noise=self.noise_F, sd=self.sd_F,
+            p_head_drop=self.p_head_drop,
+            fiber_rank=self.fiber_rank, fiber_drop=self.fiber_drop,
+            fiber_bound=self.fiber_bound, fiber_eps=self.fiber_eps,
+            fiber_eps_layer=self.fiber_eps_layer,
+            fiber_radial=self.fiber_radial,
             dtype_str=self.dtype_str,
             dtype_p_str=self.dtype_p_str
         )
+        if self.fiber_rank:
+            self.fiber_read = self.param(
+                'fiber_read',
+                nn.initializers.lecun_normal(in_axis=-1, out_axis=-2, batch_axis=(0,)),
+                (1 if self.fiber_shared else self.h, self.fiber_rank, self.d_in),
+                dtype=self.dtype_p)
 
         if self.scaled:
             self.router = ScType(
@@ -260,6 +288,18 @@ class DictEnc(nn.Module):
                        self.pwak_in(E).astype(self.dtype),
                        pwak_s, pwak_tau)
 
+    def fiber_coords(self, U: Float[Array, "... d_in"]
+                     ) -> Optional[Float[Array, "... h r"]]:
+        """Per-head fiber coordinates c_h = A_h U, read from the classifier's
+        input (None without fibers)."""
+        if not self.fiber_rank:
+            return None
+        C = jnp.einsum("...i,hri->...hr", U.astype(self.dtype),
+                       self.fiber_read.astype(self.dtype))
+        if self.fiber_shared:
+            C = jnp.broadcast_to(C, C.shape[:-2] + (self.h, self.fiber_rank))
+        return C
+
     def gained(self, Y: Array, G: Optional[Float[Array, "... 1"]]) -> Array:
         """Scale a layer contribution by the measured input gain. A zero
         gain (perfectly reconstructed residual) zeroes the contribution,
@@ -304,10 +344,11 @@ class DictEnc(nn.Module):
         """
         U, G = self.gainshape_in(E)
         P = self.dict.cluster(self.classifier(U))
+        C = self.fiber_coords(U)
         if self.scaled:
             S = self.scale(U)
-            return self.gained(self.dict.fwd(P, S, *args, **kwargs), G)
-        return self.gained(self.dict.fwd(P, *args, **kwargs), G)
+            return self.gained(self.dict.fwd(P, S, *args, C=C, **kwargs), G)
+        return self.gained(self.dict.fwd(P, *args, C=C, **kwargs), G)
 
     def tags(self) -> Float[Array, "n_tags d_out"]:
         """Flattens `sel.dict.dicts()` to shape `(h * k, d)`. This allows the weights to be
@@ -330,11 +371,12 @@ class DictEnc(nn.Module):
         `R` and passes `K` to the next `DictEnc`."""
         U, G = self.gainshape_in(E)
         K_0 = self.classifier(U)
+        C = self.fiber_coords(U)
         if self.scaled:
             S = self.scale(U)
-            F, K = self.dict.withClusts(K_0, S, *args, **kwargs)
+            F, K = self.dict.withClusts(K_0, S, *args, C=C, **kwargs)
         else:
-            F, K = self.dict.withClusts(K_0, *args, **kwargs)
+            F, K = self.dict.withClusts(K_0, *args, C=C, **kwargs)
         Y = self.dict.combine(F)
         return R + self.gained(Y, G), einops.rearrange(K, "... h k -> ... (h k)")
     
@@ -343,7 +385,8 @@ class DictEnc(nn.Module):
                   rng: Optional[PRNGKeyArray]=None,
                   *args, p_drop: float=0.0, p_revive: float=0.0,
                   revive_frac: float=0.5,
-                  pwak_s: int = 0, pwak_tau: float = 0.2, **kwargs
+                  pwak_s: int = 0, pwak_tau: float = 0.2,
+                  return_base: bool = False, **kwargs
                   ) -> Tuple[Float[Array, "... d_out"],
                              Float[Array, "... (h k)"],
                              Float[Array, "11"], PRNGKeyArray]:
@@ -354,7 +397,9 @@ class DictEnc(nn.Module):
         noise to `K` before passing it to `self.dict`.
         Splits `rng` so `noisefn_K` and `noisefn_F` use different seeds.
         The two pwak stats are appended here rather than in `DictBlock`
-        because both read the layer input `U` alongside `P`."""
+        because both read the layer input `U` alongside `P`. With
+        `return_base`, also returns this layer's gained fiber-free
+        contribution, for `Ontologizer.base_aux`."""
         U, G = self.gainshape_in(E)
         K, L1_K = self.classifier.withL1(U)
 
@@ -368,12 +413,17 @@ class DictEnc(nn.Module):
         else:
             S, L1_S = None, 0.0
 
-        F, P, stats, rng_next = self.dict.withStats(
+        out = self.dict.withStats(
                 K_n, S, *args, **kwargs, sd=sd_F, rng=rng_F, p_drop=p_drop,
-                p_revive=p_revive, revive_frac=revive_frac)
+                p_revive=p_revive, revive_frac=revive_frac,
+                C=self.fiber_coords(U), return_base=return_base)
+        F, P, stats, rng_next = out[:4]
 
         stats = self.withPWAK(stats, L1_K, P, U, pwak_s, pwak_tau, L1_S)
         K = einops.rearrange(P, "... h k -> ... (h k)")
+        if return_base:
+            return (R + self.gained(F, G), K, stats, rng_next,
+                    self.gained(out[4], G))
         return R + self.gained(F, G), K, stats, rng_next
 
     def withGhost(self, R: Float[Array, "... d_out"], R_g: Float[Array, "... d_out"],
@@ -414,7 +464,9 @@ class DictEnc(nn.Module):
         F, P, stats, rng_next = self.dict.withStats(
                 K_n, S, sd=sd_F, rng=rng_F, temperature=temperature,
                 p_drop=p_drop, p_revive=p_revive, revive_frac=revive_frac,
-                *args, **kwargs)
+                C=self.fiber_coords(U), *args, **kwargs)
+        # the ghost path is the linear surrogate of the base lookup and
+        # carries no fiber
         F_R = self.dict.fwd(K_g, S_g, *args, **kwargs)
         F_g = self.dict.ghost(K, F, S) + F_R
 
@@ -450,7 +502,7 @@ class DictEnc(nn.Module):
             S = None
         # P_int is already intervened; do not pass *args again or additive/
         # router interventions would be applied twice.
-        Fs = self.dict.hfwd(P_int, S)
+        Fs = self.dict.hfwd(P_int, S, C=self.fiber_coords(U))
         F = self.dict.combine(Fs)
         return self.gained(F, G), einops.rearrange(P_int, "... h k -> ... (h k)"), E_int
 
