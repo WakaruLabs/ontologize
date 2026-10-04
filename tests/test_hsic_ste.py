@@ -15,7 +15,7 @@ from hsic_ste import HSICSteHyperparams, probe_with_codes   # noqa: E402
 from ontologize.ontologizer import Ontologizer
 from ontologize.training.ontostate import update
 
-from conftest import KW, B
+from conftest import KW, B, N_STATS, RETIRED_LOSS, finite_live
 
 d = KW["d_in"]
 STEP = dict(temperature=0.5, p_drop=0.1, sd_K=0.02, sd_in=0.0, sd_F=0.1,
@@ -44,7 +44,7 @@ def test_probe_matches_withstats(X):
                             method=Ontologizer.withStats, **kw)
     Y1, P, S1, _ = model.apply(state.params, X, 0.0, rng,
                                method=probe_with_codes, **kw)
-    assert jnp.array_equal(Y0, Y1) and jnp.array_equal(S0, S1)
+    assert jnp.array_equal(Y0, Y1) and jnp.array_equal(S0, S1, equal_nan=True)
     assert P.shape == (KW["l"], B, KW["h"] * KW["k"])
     # ste codes are one-hot per head, noise and dropout included
     assert jnp.allclose(P.reshape(KW["l"], B, KW["h"], KW["k"]).sum(-1), 1.0)
@@ -55,7 +55,7 @@ def test_row_layout_and_penalty_column(X):
     state, L, _ = update(state, hyper.loss, jax.random.PRNGKey(2), X, X,
                          **STEP)
     row = state.stats[0]
-    assert row.shape == (18,) and jnp.all(jnp.isfinite(row))
+    assert row.shape == (N_STATS,) and finite_live(row, RETIRED_LOSS)
     # raw CKA rides the ghost column. The unbiased estimator is signed --
     # near-independent heads sit around zero from either side -- so the
     # test is that the column is populated and finite, not positive.
@@ -80,7 +80,7 @@ def test_off_equals_parent_loss(X):
                              method=probe_with_codes, temperature=0.5)
     L0, r0 = hyper0.loss(Y, X, P, S)
     L1, r1 = parent.loss(Y, X, None, S)
-    assert jnp.array_equal(r0, r1) and L0 == L1
+    assert jnp.array_equal(r0, r1, equal_nan=True) and L0 == L1
 
 
 def test_constant_head_is_zero_with_finite_gradient():

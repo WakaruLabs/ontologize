@@ -180,6 +180,7 @@ class Ontologizer(nn.Module):
     bcossim_loss: bool = False
     kcossim_loss: bool = False
     flatcos_loss: bool = False
+    support_loss: bool = False
     hmean_loss: bool = False
     pwak_loss: bool = False
     l2pwak_loss: bool = False
@@ -224,6 +225,7 @@ class Ontologizer(nn.Module):
             cossim_loss=self.cossim_loss, bcossim_loss=self.bcossim_loss,
             kcossim_loss=self.kcossim_loss,
             flatcos_loss=self.flatcos_loss,
+            support_loss=self.support_loss,
             hmean_loss=self.hmean_loss,
             pwak_loss=self.pwak_loss, l2pwak_loss=self.l2pwak_loss,
             noise_K=self.noise_K, noise_F=self.noise_F,

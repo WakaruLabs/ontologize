@@ -11,7 +11,7 @@ from ontologize.ontologizer import Ontologizer
 from ontologize.training.config import Hyperparams
 from ontologize.training.ontostate import update
 
-from conftest import KW, B
+from conftest import KW, B, LAYER_WIDTH, N_STATS, RETIRED_LOSS, finite_live
 
 T = 0.5
 
@@ -55,7 +55,7 @@ def test_stat_matches_manual_kl(model_params, X):
     model, params = model_params
     _, stats, _ = model.apply(params, X, temperature=T,
                               method=Ontologizer.withStats)
-    assert stats.shape == (KW["l"], 12)
+    assert stats.shape == (KW["l"], LAYER_WIDTH)
     for i, P in enumerate(classifications(model, params, X)):
         Pm = np.asarray(P).reshape(-1, KW["h"], KW["k"]).mean(0)
         Pm = Pm / Pm.sum(-1, keepdims=True)
@@ -106,12 +106,12 @@ def test_update_step_row_layout(X):
     assert model.entropy_loss is False
 
     state = hyper.init(model, save_each=10)
-    assert state.stats.shape == (10, 18)
+    assert state.stats.shape == (10, N_STATS)
     state, L, _ = update(state, hyper.loss, jax.random.PRNGKey(2), X, X,
                          temperature=T, sd_in=0.0, sd_K=0.01, sd_F=0.01,
                          p_drop=0.1, grad_clip=1.0)
     row = np.asarray(state.stats[0])
-    assert np.all(np.isfinite(row)) and np.isfinite(float(L))
+    assert finite_live(row, RETIRED_LOSS) and np.isfinite(float(L))
     assert row[10] > 0.0  # KL_m
     assert row[11] == 0.0  # KL_pwak with pwak_loss off
     assert row[12] == 0.0  # L2_pwak with l2pwak_loss off

@@ -8,7 +8,7 @@ import pytest
 
 from ontologize.ontologizer import Ontologizer
 
-from conftest import KW, B
+from conftest import KW, B, RETIRED_LAYER, finite_live
 
 HK = KW["h"] * KW["k"]
 
@@ -92,7 +92,7 @@ def test_forward_and_stats_finite(both, X):
     Y, stats, _ = model.apply(params, X, temperature=0.5,
                               method=Ontologizer.withStats)
     assert Y.shape == (KW["l"], B, KW["d_out"])   # deepsup prefixes
-    assert jnp.all(jnp.isfinite(Y)) and jnp.all(jnp.isfinite(stats))
+    assert jnp.all(jnp.isfinite(Y)) and finite_live(stats, RETIRED_LAYER)
 
 
 def test_resid_mode_unchanged(build, X):

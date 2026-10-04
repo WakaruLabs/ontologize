@@ -18,10 +18,10 @@ import pytest
 from ontologize.ontologizer import Ontologizer
 from ontologize.training.config import Hyperparams
 
-from conftest import KW, B
+from conftest import KW, B, LAYER_WIDTH, N_STATS
 
 L1_S_COL = 17          # csv column; 0..16 are the historical layout
-N_STATS = 18
+L1_S_LAYER = 11        # its position in the per-layer row
 
 
 def build(s_L1S=0.0, scaled=True, **over):
@@ -39,21 +39,24 @@ def run(hp, model, params, X):
     return hp.loss(Y, X, None, jnp.asarray(stats)), np.asarray(stats)
 
 
-def test_weight_vector_and_isloss_gained_one_entry_each_at_the_end():
+def test_weight_vector_and_isloss_keep_the_position_it_was_appended_at():
+    # appended after cossim_flat's slot when it was added; later stats
+    # (support) go after it, never before
     hp = Hyperparams(KW["d_in"], KW["d_out"], B, s_L1S=1e-3)
     s, isloss = hp.s_loss()
-    assert s.shape == (13,) and len(isloss) == 12
-    assert float(s[-1]) == pytest.approx(1e-3)     # last, not inserted
-    assert isloss[-1] is True
+    assert float(s[L1_S_LAYER + 1]) == pytest.approx(1e-3)
+    assert isloss[L1_S_LAYER] is True              # isloss has no kmax entry
+    assert sum(isloss) == 1
 
 
 def test_the_stat_lands_in_the_new_last_column(X):
     hp, model, params = build(s_L1S=0.0)
     (_, row), stats = run(hp, model, params, X)
-    assert stats.shape[1] == 12                    # per-layer row, was 11
+    assert stats.shape[1] == LAYER_WIDTH
     assert np.asarray(row).shape == (N_STATS,)
     # the column is the layer-summed statistic
-    assert float(row[L1_S_COL]) == pytest.approx(stats[:, -1].sum(), rel=1e-5)
+    assert float(row[L1_S_COL]) == pytest.approx(
+        stats[:, L1_S_LAYER].sum(), rel=1e-5)
     assert float(row[L1_S_COL]) > 0.0
 
 

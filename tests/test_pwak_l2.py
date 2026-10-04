@@ -13,7 +13,7 @@ from ontologize.ontologizer import Ontologizer
 from ontologize.training.config import Hyperparams
 from ontologize.training.ontostate import update
 
-from conftest import KW, B
+from conftest import KW, B, RETIRED_LOSS, finite_live
 
 T = 0.5
 L2P = 9  # stats column: [L1_K, L1_F, H, cossim_b, cossim_h,
@@ -171,5 +171,5 @@ def test_training_steps_finite(X):
                              pwak_s=2, pwak_tau=1.0)
         assert jnp.isfinite(L), f"step {step}"
     rows = np.asarray(state.stats[:10])
-    assert np.all(np.isfinite(rows))
+    assert finite_live(rows, RETIRED_LOSS)
     assert np.all(rows[:, 12] > 0.0)   # L2_pwak column, live every step

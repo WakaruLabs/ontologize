@@ -102,7 +102,8 @@ def test_fiber_stats_describe_the_base():
                  return_base=True, method=DictBlock.withStats)
     b = plain.apply(pp, K, None, 0.0, None, temperature=0.7,
                     method=DictBlock.withStats)
-    assert jnp.allclose(a[2], b[2], rtol=1e-5, atol=1e-6)    # stats: base only
+    assert jnp.allclose(a[2], b[2], rtol=1e-5, atol=1e-6,
+                        equal_nan=True)                      # stats: base only
     assert jnp.allclose(a[4], b[0], rtol=1e-5, atol=1e-6)    # base output
     assert not jnp.allclose(a[0], b[0])                       # F has the fiber
 

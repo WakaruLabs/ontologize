@@ -61,7 +61,7 @@ class OntoState(TrainState):
     model: Ontologizer = struct.field(pytree_node=False)
     b: int = struct.field(pytree_node=False)
     save_each: int = struct.field(pytree_node=False, default=1000)
-    n_stats: int = struct.field(pytree_node=False, default=18)
+    n_stats: int = struct.field(pytree_node=False, default=19)
     noise_in: str = struct.field(pytree_node=False, default="none")
     noise_K: str = struct.field(pytree_node=False, default="none")
     noise_F: str = struct.field(pytree_node=False, default="none")
@@ -118,7 +118,7 @@ class OntoState(TrainState):
         return self.stats[(self.step - 1) % self.save_each]
 
 def state_init(model: Ontologizer, b: int, tx, rng: PRNGKeyArray,
-               save_each: int = 1000, n_stats: int=18, step: int=0,
+               save_each: int = 1000, n_stats: int=19, step: int=0,
                ghost: bool=True) -> OntoState:
     """Initialize an `OntoState` from an `Ontologizer`, optimiser, and `PRNGKeyArray`.
     When `ghost=False`, `apply_fn` runs `withStats` instead of `withGhost`

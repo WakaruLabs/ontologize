@@ -63,14 +63,14 @@ from pareto import load_onto
 
 # statistic -> the Hyperparams weight that scales it. The gate names
 # differ from the weight names in two places, so they are spelled out:
-# cossim_b is gated by `bcossim_loss` and cossim_h by `cossim_loss`.
+# cossim_b is gated by `bcossim_loss` and support by `support_loss`.
 TERMS = [("L1_K", "s_L1K"), ("L1_F", "s_L1F"), ("entropy", "s_H"),
-         ("cossim_b", "s_bcossim"), ("cossim_h", "s_hcossim"),
-         ("cossim_k", "s_kcossim"), ("flatcos", "s_flatcos"),
+         ("cossim_b", "s_bcossim"), ("support", "s_support"),
+         ("cossim_k", "s_kcossim"),
          ("KL_m", "s_Hm"), ("hsic_heads", "s_hsic_heads")]
 GATES = dict(sparse_K=True, sparse_F=True, entropy_loss=True,
-             bcossim_loss=True, cossim_loss=True, kcossim_loss=True,
-             flatcos_loss=True, hmean_loss=True)
+             bcossim_loss=True, support_loss=True, kcossim_loss=True,
+             hmean_loss=True)
 
 
 def parse_args() -> argparse.Namespace:
@@ -139,9 +139,8 @@ def main() -> None:
                 acc["L1_F"] += de.dict.l1(Fs)
                 acc["entropy"] += de.dict.entropy(P)
                 acc["cossim_b"] += de.dict.bcossim_tags(P)
-                acc["cossim_h"] += de.dict.cossim(Fs)
+                acc["support"] += de.dict.support_overlap(P)
                 acc["cossim_k"] += de.dict.rowcos().mean()
-                acc["flatcos"] += de.dict.flatcos()
                 acc["KL_m"] += de.dict.hmean_kl(P)
                 # the head-independence penalty is computed in the loss
                 # rather than the layer, so it has no gate to force on

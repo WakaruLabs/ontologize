@@ -13,7 +13,7 @@ from ontologize.layers.dictblock import DictBlock
 from ontologize.training.config import Hyperparams
 from ontologize.training.ontostate import update
 
-from conftest import KW, B
+from conftest import KW, B, RETIRED_LOSS, finite_live
 
 H, K_TAGS, D, NB = 2, 8, 4, 16
 LIVE = 2   # select="top2": only tags 0 and 1 ever make the support below
@@ -162,7 +162,7 @@ def test_training_steps_finite_with_revival(X):
                              p_drop=0.1, p_revive=0.05, sd_K=0.02,
                              sd_in=0.0, sd_F=0.1, grad_clip=1.0)
         assert jnp.isfinite(L), f"step {step}"
-    assert jnp.all(jnp.isfinite(state.stats[:10]))
+    assert finite_live(state.stats[:10], RETIRED_LOSS)
 
 
 def test_live_under_ste_because_ste_is_not_dense_for_the_dictionary():

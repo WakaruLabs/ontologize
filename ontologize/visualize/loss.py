@@ -15,15 +15,20 @@ from pathlib import Path
 #   0-2    `Hyperparams.loss` itself -- total loss, the MSE term, and the
 #          ghost-path MSE (0 when the ghost path is off)
 #   3-12   the per-layer `DictEnc.withStats` row SUMMED OVER LAYERS. That
-#          row is 12 wide (`DictEnc.withPWAK` builds it: `L1_K` in front
+#          row is 13 wide (`DictEnc.withPWAK` builds it: `L1_K` in front
 #          of `DictBlock.withStats`'s first seven, the two pwak stats
-#          next, then its eighth, then `L1_S`), so only its first ten land
-#          here; the last two are appended at 16-17.
+#          next, then its eighth, then `L1_S`, then its ninth), so only
+#          its first ten land here; the last three are appended at 16-18.
 #   13-15  the two setpoint-controlled multipliers AS APPLIED this step,
 #          and the max of `cossim_k` over heads *and* layers
 #   16+    later additions, appended so a shorter row from an older run
 #          still aligns column for column (`read_loss` reads the missing
 #          tail as NaN)
+#
+# Retired columns keep their slot and read NaN in new runs: `cossim_h`
+# (7) and `cossim_flat` (16), both superseded by `support` (18), the
+# heads' support overlap in the dictionary space
+# (`DictBlock.support_overlap`).
 #
 # Two columns are easy to confuse, and the names are the only thing
 # separating them:
@@ -41,7 +46,7 @@ from pathlib import Path
 COLUMNS = ["loss", "MSE", "MSE_ghost", "L1_K", "L1_F", "entropy",
            "cossim_b", "cossim_h", "cossim_k", "cossim_k_hmax",
            "KL_m", "KL_pwak", "L2_pwak", "s_L1F", "s_kcossim",
-           "cossim_k_max", "cossim_flat", "L1_S"]
+           "cossim_k_max", "cossim_flat", "L1_S", "support"]
 
 
 def read_loss(path):

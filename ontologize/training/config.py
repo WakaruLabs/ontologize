@@ -64,7 +64,7 @@ class Hyperparams:
     # left alone and revival is a no-op on a healthy head.
     revive_frac: float = 0.5
 
-    n_stats: int = 18
+    n_stats: int = 19
     lossfn: str = "mse"
     # optional path to a (d_out,) npy of per-dim MSE weights (e.g.
     # inverse-variance for target whitening, normalized to mean 1). Applied
@@ -113,6 +113,7 @@ class Hyperparams:
     L1F_max: float = 1e-3
     s_H: float = 0.0
     s_bcossim: float = 0.0
+    # retired with `cossim_h` (see `s_support`); must stay 0
     s_hcossim: float = 0.0
     # within-head dictionary row collinearity (`DictBlock.rowcos`): the
     # mean off-diagonal cosine between a head's entries, summed over
@@ -128,7 +129,15 @@ class Hyperparams:
     # so blind to heads whose rows duplicate another head's. Neither
     # substitutes for the other: only `k-1` of a row's `h*k-1` partners
     # share its head, so this one is dominated by the between-head pairs.
+    # Retired with `cossim_flat` (see `s_support`); must stay 0.
     s_flatcos: float = 0.0
+    # disjoint support between heads (`DictBlock.support_overlap`): the
+    # mean cosine between heads' usage-weighted coordinate profiles in the
+    # dictionary space, summed over layers. Replaces both `cossim_h`, whose
+    # per-sample head-output cosine stood in for this, cost O(b h^2 d) and
+    # reads cancellation as disjointness for signed dictionaries, and
+    # `cossim_flat`, whose between-head pairs measured the same partition.
+    s_support: float = 0.0
     # setpoint control for `s_kcossim`, the counterpart of `L1F_target`. A
     # fixed weight has the same non-stationarity: |grad MSE| decays ~25x
     # over a run while |grad cossim_k| does not, so any constant is
@@ -212,6 +221,20 @@ class Hyperparams:
     pwak_s_start: int = 0
     pwak_tau: float = 0.2
 
+    #: positions in `s_loss`'s weight vector (and so in the summed stats
+    #: row it pairs with) whose stat is retired and logged as NaN; `loss`
+    #: zeroes them before the dot product so NaN * 0 cannot reach the loss
+    RETIRED_STATS = (5, 11)   # cossim_h, cossim_flat
+
+    def __post_init__(self):
+        retired = {k: getattr(self, k) for k in ("s_hcossim", "s_flatcos")
+                   if getattr(self, k)}
+        if retired:
+            raise ValueError(
+                f"{sorted(retired)} weighted cossim_h / cossim_flat, which "
+                f"are retired; disjoint support between heads is now "
+                f"`s_support` (DictBlock.support_overlap)")
+
     def s_loss(self, *args, **kwargs) -> Tuple[Float[Array, "11"],
                                                Tuple[bool, bool, bool, bool,
                                                      bool, bool, bool, bool,
@@ -224,13 +247,13 @@ class Hyperparams:
         s = jnp.array([self.s_g, self.s_L1K, self.s_L1F, self.s_H,
                        self.s_bcossim, self.s_hcossim, self.s_kcossim, 0.0,
                        self.s_Hm, self.s_pwak, self.s_L2pwak,
-                       self.s_flatcos, self.s_L1S],
+                       self.s_flatcos, self.s_L1S, self.s_support],
                       *args, **kwargs)
         isloss = (self.s_g != 0.0, self.s_L1K != 0.0, self.s_L1F != 0.0,
                   self.s_H != 0.0, self.s_bcossim != 0.0, self.s_hcossim != 0.0,
                   self.s_kcossim != 0.0, self.s_Hm != 0.0, self.s_pwak != 0.0,
                   self.s_L2pwak != 0.0, self.s_flatcos != 0.0,
-                  self.s_L1S != 0.0)
+                  self.s_L1S != 0.0, self.s_support != 0.0)
         return s, isloss
 
     def rng(self) -> PRNGKeyArray:
@@ -250,8 +273,9 @@ class Hyperparams:
 
         The row is append-only: a new stat goes on the end so a shorter
         row still aligns column for column (`visualize.loss` reads the
-        missing tail as NaN). Column 16 is the flattened row cosine and
-        17 the router's L1.
+        missing tail as NaN). Column 16 is the retired flattened row
+        cosine, 17 the router's L1 and 18 the heads' support overlap;
+        retired columns (7 `cossim_h`, 16 `cossim_flat`) are NaN.
 
         `s_L1F` and `s_kcossim` override the fields of the same name with
         traced scalars, so a setpoint controller can vary them per step
@@ -281,13 +305,17 @@ class Hyperparams:
         # X_g is None when the ghost path is disabled (see `ghost`)
         L2_g = f(X_g, Y - X) if X_g is not None else jnp.zeros_like(L2)
         stats = jnp.append(L2_g, stats)
-        L = L2 + jnp.dot(stats, s)
+        # retired stats are logged as NaN; zero them for the loss, since
+        # their weight being 0 would still give NaN * 0 = NaN
+        live = jnp.ones_like(s).at[jnp.array(self.RETIRED_STATS)].set(0.0)
+        L = L2 + jnp.dot(jnp.where(live > 0, stats, 0.0), s)
         # the controlled multipliers and the max trail the row, so a loop's
         # trajectory is recoverable from loss.csv and a resume can pick it
         # back up there
         # column order is append-only: 0..15 are the historical layout,
-        # so every reader and every older loss.csv still lines up, and
-        # the flattened row cosine lands at 16
+        # so every reader and every older loss.csv still lines up; 16 is
+        # the retired flattened row cosine, 17 the router's L1 and 18 the
+        # heads' support overlap
         stats = jnp.append(jnp.stack([L, L2]),
                            jnp.concatenate([stats[:11],
                                             jnp.stack([s[2], s[6],
@@ -305,12 +333,14 @@ class Hyperparams:
     def ontologizer(self, *args, **kwargs):
         _, (ghost_loss, sparse_K, sparse_F, entropy_loss, bcossim_loss,
             cossim_loss, kcossim_loss, hmean_loss, pwak_loss,
-            l2pwak_loss, flatcos_loss, sparse_S) = self.s_loss()
+            l2pwak_loss, flatcos_loss, sparse_S,
+            support_loss) = self.s_loss()
         return Ontologizer(
                 *args, **kwargs, sparse_K=sparse_K, sparse_F=sparse_F,
                 sparse_S=sparse_S,
                 entropy_loss=entropy_loss, cossim_loss=cossim_loss, bcossim_loss=bcossim_loss,
                 kcossim_loss=kcossim_loss, flatcos_loss=flatcos_loss,
+                support_loss=support_loss,
                 hmean_loss=hmean_loss, pwak_loss = pwak_loss,
                 l2pwak_loss=l2pwak_loss,
                 noise_in=self.noise_in, noise_K=self.noise_K, noise_F=self.noise_F,)
@@ -528,7 +558,10 @@ class TrainingEnv:
                     # to the configured value in that case.
                     if lines:
                         cols = lines[-1].strip().split(",")
-                        if len(cols) >= self.hyper.n_stats:
+                        # the multipliers sit at 13 and 14, so any row
+                        # that reaches them carries them -- including rows
+                        # written before later columns were appended
+                        if len(cols) > 14:
                             for attr, tgt, i in (
                                     ("s_L1F", self.hyper.L1F_target, 13),
                                     ("s_kcossim", self.hyper.KCOS_target, 14)):

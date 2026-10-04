@@ -86,6 +86,7 @@ class DictBlock(Sparse):
     bcossim_loss: bool = False
     kcossim_loss: bool = False
     flatcos_loss: bool = False
+    support_loss: bool = False
     hmean_loss: bool = False
 
     noise: str = "none"
@@ -408,6 +409,36 @@ class DictBlock(Sparse):
         tot = jnp.sum(jnp.square(jnp.sum(U, 0))) - n
         return tot / (n * (n - 1))
 
+    def support_overlap(self, P_0: Float[Array, "... h k"]
+                        ) -> Float[Array, ""]:
+        """Mean off-diagonal cosine between the heads' coordinate-usage
+        profiles `s_h = sum_k pbar_hk |W_hk|`, with `pbar` the batch-mean
+        classification. Zero exactly when no two heads share a coordinate
+        of the dictionary space, one when every head uses the same
+        coordinates in the same proportions.
+
+        Disjoint support is the property `cossim_h` was standing in for,
+        measured directly: two vectors have disjoint supports exactly when
+        their absolute values have zero inner product, whatever their
+        signs, so this holds for `signed` dictionaries where the
+        per-sample cosine of head outputs does not (orthogonality there is
+        cancellation, not disjointness). It also constrains every used
+        entry, not just the ones a hard code selected on this batch.
+        Weighting by usage keeps dead entries out of it and gives the
+        classifier a gradient path, which a weights-only profile would not.
+
+        Measured in the dictionary space, which is where the partition is
+        defined; decoding does not preserve it. O(h k d + h^2 d), weights
+        and a batch mean only, against the per-sample cosine's O(b h^2 d)."""
+        P = P_0.astype(self.dtype).reshape(-1, self.h, self.k).mean(0)
+        W = jnp.abs(self.dicts())
+        if not self.support_loss:
+            P, W = jax.lax.stop_gradient(P), jax.lax.stop_gradient(W)
+        S = jnp.einsum("hk,hkd->hd", P, W)
+        S = S * recip_norm(jnp.sum(S * S, -1))[:, None]
+        C = S @ S.T
+        return (C.sum() - jnp.trace(C)) / (self.h * (self.h - 1))
+
     def hmean_kl(self, P_0: Float[Array, "... h k"]) -> Float[Array, ""]:
         """KL(batch-mean classification ‖ uniform) in bits, averaged over
         heads. Zero exactly when each head's E_batch[p] is uniform;
@@ -568,17 +599,19 @@ class DictBlock(Sparse):
 
         Fs_n, rng_next = self.addnoise(Fs, sd, rng)
         cossim_b = self.bcossim_tags(P, S)
-        cossim_h = self.cossim(Fs)
         cossim_k = self.rowcos()      # (h,) per-head
-        cos_flat = self.flatcos()     # every row pair, within and between
         KL_m = self.hmean_kl(P)
 
         F, L1 = self.withL1(Fs_n)
         # the mean is the penalty (every head gets gradient); the max is
         # the constraint (a head is collapsed or it is not, and averaging
-        # lets a few hide among healthy ones) and carries weight 0
-        stats = [L1, H, cossim_b, cossim_h, cossim_k.mean(),
-                 cossim_k.max(), KL_m, cos_flat]
+        # lets a few hide among healthy ones) and carries weight 0.
+        # `cossim_h` and `cossim_flat` are retired in favour of
+        # `support_overlap` (appended last, since the row is append-only):
+        # their slots stay so older rows still align, and read NaN.
+        retired = jnp.full((), jnp.nan, self.dtype)
+        stats = [L1, H, cossim_b, retired, cossim_k.mean(),
+                 cossim_k.max(), KL_m, retired, self.support_overlap(P)]
         F_base = F
         if self.fiber_rank and C is not None:
             Q = self.intervene(P_used.astype(self.dtype), *args, **kwargs)
@@ -844,6 +877,13 @@ class ConcatDictBlock(DictBlock):
         n = self.k * self.h
         within = jnp.sum(self.rowcos()) * self.k * (self.k - 1)
         return within / (n * (n - 1))
+
+    def support_overlap(self, P_0: Float[Array, "... h k"]
+                        ) -> Float[Array, ""]:
+        """Exactly 0: heads occupy disjoint slices, so their usage
+        profiles share no coordinate. The parent would compare the slices'
+        local coordinates as though they were the same ones."""
+        return jnp.zeros((), self.dtype)
 
     def tags(self) -> Float[Array, "n_tags d"]:
         """Atoms embedded in the layer's full output space, zero outside

@@ -83,6 +83,7 @@ class DictEnc(nn.Module):
     bcossim_loss: bool = False
     kcossim_loss: bool = False
     flatcos_loss: bool = False
+    support_loss: bool = False
     hmean_loss: bool = False
     pwak_loss: bool = False
     l2pwak_loss: bool = False
@@ -135,6 +136,7 @@ class DictEnc(nn.Module):
             cossim_loss=self.cossim_loss, bcossim_loss=self.bcossim_loss,
             kcossim_loss=self.kcossim_loss,
             flatcos_loss=self.flatcos_loss,
+            support_loss=self.support_loss,
             hmean_loss=self.hmean_loss,
             noise=self.noise_F, sd=self.sd_F,
             p_head_drop=self.p_head_drop,
@@ -223,31 +225,35 @@ class DictEnc(nn.Module):
             return U
         return U[..., :U.shape[-1] - self.n_const]
 
-    def withPWAK(self, stats: Float[Array, "8"], L1_K: Float[Array, ""],
+    def withPWAK(self, stats: Float[Array, "9"], L1_K: Float[Array, ""],
                  P: Float[Array, "... h k"], U: Float[Array, "... d_in"],
                  pwak_s: int = 0, pwak_tau: float = 0.2,
                  L1_S: Float[Array, ""] = 0.0
-                 ) -> Float[Array, "12"]:
+                 ) -> Float[Array, "13"]:
         """Completes a `DictBlock.withStats` row into the `DictEnc` one:
-        the classifier's `L1_K` in front, the two pwak stats behind, and
-        anything `DictBlock` carries past its seventh entry on the end.
+        the classifier's `L1_K` in front, the two pwak stats after the
+        seventh `DictBlock` entry, `cossim_flat`'s slot, `L1_S`, and then
+        whatever `DictBlock` appended after that slot.
 
         `Hyperparams.s_loss`'s weight vector pairs against this order
         positionally, so a stat inserted anywhere but the end makes every
-        weight beyond it multiply the wrong quantity.
+        weight beyond it multiply the wrong quantity. Each stat therefore
+        keeps the position it had when it was added: `L1_S` stays at 11
+        and `support_overlap`, added after it, goes at 12.
 
-        `L1_S` goes last for that reason. It is the router's own L1, which
-        `L1_F` cannot stand in for: `L1_F` reduces `hfwd(P, S)`, so it sees
-        the product `S * |W| * c` and shrinking either factor pays it down.
-        Penalising `S` alone is the separation a gated architecture is
-        built around -- the router decides how much each head speaks, the
-        dictionary decides what it says. Zero when `scaled` is off, where
-        there is no router to read."""
+        `L1_S` is the router's own L1, which `L1_F` cannot stand in for:
+        `L1_F` reduces `hfwd(P, S)`, so it sees the product `S * |W| * c`
+        and shrinking either factor pays it down. Penalising `S` alone is
+        the separation a gated architecture is built around -- the router
+        decides how much each head speaks, the dictionary decides what it
+        says. Zero when `scaled` is off, where there is no router to
+        read."""
         return jnp.concatenate([
             jnp.stack([L1_K]), stats[:7],
             jnp.stack([self.pwak_kl(P, U, pwak_s, pwak_tau),
                        self.pwak_l2(P, U, pwak_s, pwak_tau)]),
-            stats[7:], jnp.stack([jnp.asarray(L1_S, stats.dtype)])])
+            stats[7:8], jnp.stack([jnp.asarray(L1_S, stats.dtype)]),
+            stats[8:]])
 
     def pwak_kl(self, P: Float[Array, "... h k"],
                 E: Optional[Float[Array, "... d_in"]] = None,

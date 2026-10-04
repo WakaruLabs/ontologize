@@ -71,48 +71,13 @@ def test_collapse_saturates_rowcos_but_barely_moves_flatcos(dictblock):
     assert abs(f1 - f0) < 0.2 * max(f0, 1e-9)
 
 
-def test_gradient_gate(build, X):
-    """Logged either way; differentiable only when weighted."""
-    def summed(model, params):
-        return lambda p: model.apply(
-            p, X, temperature=0.5, method=Ontologizer.withStats)[1][:, 10].sum()
-
-    off, p_off = build(flatcos_loss=False)
-    g = jax.grad(summed(off, p_off))(p_off)
-    assert sum(float(jnp.abs(v).sum())
-               for v in jax.tree_util.tree_leaves(g)) == 0.0
-    on, p_on = build(flatcos_loss=True)
-    g = jax.grad(summed(on, p_on))(p_on)
-    assert sum(float(jnp.abs(v).sum())
-               for v in jax.tree_util.tree_leaves(g)) > 0.0
-
-
-def test_row_position_is_last(X):
-    """The weight vector pairs against the row positionally, so the new
-    stat must sit at the end of both the per-layer and the logged row."""
-    d = KW["d_in"]
-    s_flat = 1e-3
-    hyper = Hyperparams(d, d, B, s_flatcos=s_flat, ghost=False,
-                        noise_K="normal", noise_F="featvar")
-    model = hyper.ontologizer(
-        d, d, KW["e_dec"], KW["k"], KW["h"], KW["l"], n=2, gate="none",
-        select="ste", forward="resid", deepsup=True, resid_const=True,
-        dtype_str="float32", dtype_p_str="float32")
-    assert model.flatcos_loss is True
-    state = hyper.init(model, save_each=10)
-    assert state.stats.shape == (10, 18)
-    params = state.params
-    state, L, _ = update(state, hyper.loss, jax.random.PRNGKey(2), X, X,
-                         temperature=0.5, sd_in=0.0, sd_K=0.01, sd_F=0.01,
-                         p_drop=0.1, grad_clip=1.0)
-    row = np.asarray(state.stats[0])
-    # column 16 is the layer sum of the per-layer entry, both last
-    direct = 0.0
-    for li in range(KW["l"]):
-        W = np.asarray(model.apply(
-            params, method=lambda m: m.dictencs[li].dict.dicts()))
-        direct += explicit(W.reshape(-1, W.shape[-1]))
-    assert abs(row[16] - direct) < 1e-3
-    # the pwak columns keep their places, so older rows still align
-    assert row[11] == 0.0 and row[12] == 0.0
-    assert abs(float(L) - row[0]) < 1e-6
+def test_retired_from_the_training_row(X, build):
+    """`cossim_flat` is no longer a training statistic: its slot reads NaN
+    and its weight is refused (`support_overlap` replaces it). The method
+    itself stays, for analysis and for `ConcatDictBlock`."""
+    model, params = build()
+    _, stats, _ = model.apply(params, X, temperature=0.5,
+                              method=Ontologizer.withStats)
+    assert np.all(np.isnan(np.asarray(stats)[:, 10]))
+    with pytest.raises(ValueError, match="s_flatcos"):
+        Hyperparams(KW["d_in"], KW["d_in"], B, s_flatcos=1e-3)

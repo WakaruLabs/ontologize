@@ -9,7 +9,7 @@ import pytest
 from ontologize.training.config import Hyperparams
 from ontologize.training.ontostate import update, schedules
 
-from conftest import KW, B
+from conftest import KW, B, RETIRED_LOSS, finite_live
 
 CONFIGS = {
     "resid_joint": {},
@@ -25,7 +25,7 @@ def test_thirty_steps_finite_and_decreasing(flags, X):
     hyper = Hyperparams(
         d, d, B, 1, 5e-5, 0.0, 1.0,
         "batchnorm", "normal", "featvar", 0.0, 0.02, 0.1,
-        s_g=1e-4, s_L1F=1e-9, s_bcossim=1e-5, s_hcossim=1e-5, s_Hm=1e-6,
+        s_g=1e-4, s_L1F=1e-9, s_bcossim=1e-5, s_support=1e-5, s_Hm=1e-6,
         p_drop=0.1, temperature_end=0.03, anneal_steps=100,
         p_drop_start=0.0, sd_K_end=0.006, ghost=False)
     model = hyper.ontologizer(
@@ -45,4 +45,4 @@ def test_thirty_steps_finite_and_decreasing(flags, X):
         assert jnp.isfinite(L), f"step {step}"
         losses.append(float(L))
     assert losses[-1] < losses[0]
-    assert jnp.all(jnp.isfinite(state.stats[:10]))
+    assert finite_live(state.stats[:10], RETIRED_LOSS)

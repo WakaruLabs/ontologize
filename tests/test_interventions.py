@@ -92,7 +92,7 @@ def test_withargs_set_changes_output_not_earlier_layers(conditioned, X):
                                    method=Ontologizer.withArgs)
     assert not jnp.allclose(Y0, Y1, atol=1e-5)
     # the intervention is at layer 1: layer 0's stats must be untouched
-    assert jnp.array_equal(stats0[0], stats1[0])
+    assert jnp.array_equal(stats0[0], stats1[0], equal_nan=True)
 
 
 @pytest.mark.parametrize("flags", [

@@ -13,7 +13,7 @@ import pytest
 from ontologize.layers.dictblock import DictBlock, ConcatDictBlock
 from ontologize.ontologizer import Ontologizer
 
-from conftest import KW, B, DB_KW
+from conftest import KW, B, DB_KW, RETIRED_LAYER, finite_live
 
 
 CAT_KW = dict(DB_KW)                      # d=16, h=4 -> 4 dims per head
@@ -257,28 +257,28 @@ def test_ontologizer_forward_differs_and_the_dictionary_shrinks(X):
     assert n_cat < n_sum
 
 
-COSSIM_H = 4  # stats column: [L1_K, L1_F, entropy, cossim_b, cossim_h, ...]
+SUPPORT = 12  # per-layer stats column of `support_overlap`
 
 
-def test_stats_row_is_finite_and_cossim_h_sits_at_its_floor(X):
+def test_stats_row_is_finite_and_support_overlap_is_zero(X):
     """`withStats` is the training path, and it is where the override's
-    value has to land: summed over layers, so the constant floor is
-    `l / h` rather than the `1 / h` of a single block."""
+    value has to land: heads own disjoint slices, so their support
+    overlap is exactly 0 in every layer."""
     model = Ontologizer(**{**KW, "concat": True})
     params = model.init(jax.random.PRNGKey(0), X)
     _, stats, _ = model.apply(params, X, 1.0, rng=jax.random.PRNGKey(2),
                               method=Ontologizer.withStats)
     stats = np.asarray(stats)
     assert stats.shape[0] == KW["l"]
-    assert np.isfinite(stats).all()
-    assert stats.sum(0)[COSSIM_H] == pytest.approx(KW["l"] / KW["h"], abs=1e-5)
+    assert finite_live(stats, RETIRED_LAYER)
+    assert np.all(stats[:, SUPPORT] == 0.0)
 
 
-def test_summing_cossim_h_is_not_at_that_floor(X):
-    """Guards the column above from being right by accident: the summing
-    form's heads are not orthogonal, so it sits above `l / h`."""
+def test_summing_support_overlap_is_not_zero(X):
+    """Guards the column above from being right by accident: summing heads
+    share the whole dictionary space, so their supports overlap."""
     model = Ontologizer(**{**KW, "concat": False})
     params = model.init(jax.random.PRNGKey(0), X)
     _, stats, _ = model.apply(params, X, 1.0, rng=jax.random.PRNGKey(2),
                               method=Ontologizer.withStats)
-    assert np.asarray(stats).sum(0)[COSSIM_H] > KW["l"] / KW["h"] + 1e-3
+    assert np.all(np.asarray(stats)[:, SUPPORT] > 0.1)

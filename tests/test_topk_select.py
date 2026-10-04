@@ -16,7 +16,8 @@ from ontologize.ontologizer import Ontologizer
 from ontologize.training.config import Hyperparams
 from ontologize.training.ontostate import update
 
-from conftest import KW, B, DB_KW
+from conftest import (KW, B, DB_KW, LAYER_WIDTH, RETIRED_LAYER,
+                      RETIRED_LOSS, finite_live)
 
 M = 3
 
@@ -101,8 +102,8 @@ def test_withstats_finite(topk_model, X):
     Y, stats, _ = model.apply(params, X, temperature=0.5,
                               method=Ontologizer.withStats)
     assert jnp.all(jnp.isfinite(Y))
-    assert stats.shape == (KW["l"], 12)
-    assert jnp.all(jnp.isfinite(stats))
+    assert stats.shape == (KW["l"], LAYER_WIDTH)
+    assert finite_live(stats, RETIRED_LAYER)
 
 
 def test_training_steps_finite(X):
@@ -126,4 +127,4 @@ def test_training_steps_finite(X):
                              temperature=0.5, p_drop=0.1, sd_K=0.02,
                              sd_in=0.0, sd_F=0.1, grad_clip=1.0)
         assert jnp.isfinite(L), f"step {step}"
-    assert jnp.all(jnp.isfinite(state.stats[:10]))
+    assert finite_live(state.stats[:10], RETIRED_LOSS)

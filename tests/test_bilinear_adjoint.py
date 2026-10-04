@@ -14,6 +14,8 @@ from ontologize.layers.nlinear import (NLinear, Bilinear,
 from ontologize.ontologizer import Ontologizer
 from ontologize.layers.dictenc import DictEnc
 
+from conftest import LAYER_WIDTH, RETIRED_LAYER, finite_live
+
 H, K, D, B = 4, 8, 16, 12
 BLK_KW = dict(d_in=D, d_out=K, h=H, n=2, biased=False, gate="none",
               dtype_str="float32", dtype_p_str="float32")
@@ -119,5 +121,5 @@ def test_scaled_stats_path(X, build):
     Y, stats, _ = model.apply(params, X, temperature=0.5,
                               method=Ontologizer.withStats)
     assert jnp.all(jnp.isfinite(Y))
-    assert stats.shape == (model.l, 12)
-    assert jnp.all(jnp.isfinite(stats))
+    assert stats.shape == (model.l, LAYER_WIDTH)
+    assert finite_live(stats, RETIRED_LAYER)

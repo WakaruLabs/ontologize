@@ -33,20 +33,22 @@ def test_documented_positions():
     # the controlled multipliers sit between the summed row and the tail
     assert COLUMNS[13:15] == ["s_L1F", "s_kcossim"]
     # appended later, so they trail rather than sit with the per-layer row
-    assert COLUMNS[-2:] == ["cossim_flat", "L1_S"]
+    assert COLUMNS[-3:] == ["cossim_flat", "L1_S", "support"]
 
 
 def test_s_loss_pairs_against_ghost_plus_layer_row():
-    """`Hyperparams.loss` prepends `MSE_ghost` to the 12-wide per-layer row
-    and dots that with `s_loss`, so the weight vector is 13 wide and its
+    """`Hyperparams.loss` prepends `MSE_ghost` to the 13-wide per-layer row
+    and dots that with `s_loss`, so the weight vector is 14 wide and its
     indices are NOT loss.csv's. `loss` overrides s[2] with the controlled
     `s_L1F` and s[6] with `s_kcossim`, which fixes those two positions."""
     s, isloss = Hyperparams(8, 8, 4).s_loss()
-    assert len(s) == 13, "one weight per [MSE_ghost] + 12 layer stats"
-    row = ["MSE_ghost"] + COLUMNS[3:13] + ["cossim_flat", "L1_S"]
+    assert len(s) == 14, "one weight per [MSE_ghost] + 13 layer stats"
+    row = ["MSE_ghost"] + COLUMNS[3:13] + ["cossim_flat", "L1_S", "support"]
     assert len(row) == len(s)
     assert row[2] == "L1_F", "s[2] is overridden by the s_L1F controller"
     assert row[6] == "cossim_k", "s[6] is overridden by the s_kcossim one"
+    assert [row[i] for i in Hyperparams.RETIRED_STATS] == ["cossim_h",
+                                                           "cossim_flat"]
 
 
 def test_tracking_script_uses_the_shared_list():

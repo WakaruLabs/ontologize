@@ -280,7 +280,10 @@ L1F_ramp = _env("L1F_RAMP", 0, int)
 
 s_H = 0.0 # classification entropy penalty
 s_bcossim = 1e-5 # sample similarity penalty
-s_hcossim = 1e-6 # head similarity penalty
+# disjoint support between heads in the dictionary space
+# (DictBlock.support_overlap); replaces the retired s_hcossim head-output
+# cosine. Same starting weight -- both are mean cosines in [0, 1].
+s_support = 1e-6
 # within-head dictionary row collinearity (DictBlock.rowcos), summed over
 # layers. Measures head liveness rather than usage balance: a head whose
 # entries all decode to one direction has an output independent of which
@@ -341,7 +344,7 @@ def main():
             noise_in, noise_K, noise_F, sd_in, sd_K, sd_F,
             s_g=s_g, s_L1K=s_L1K, s_L1F=s_L1F, s_H=s_H,
             L1F_target=L1F_target, L1F_eta=L1F_eta, L1F_ramp=L1F_ramp,
-            s_bcossim=s_bcossim, s_hcossim=s_hcossim,
+            s_bcossim=s_bcossim, s_support=s_support,
             s_kcossim=s_kcossim, KCOS_target=KCOS_target,
             KCOS_eta=KCOS_eta, KCOS_ramp=KCOS_ramp, s_Hm=s_Hm,
             p_drop=p_drop, p_revive=p_revive, revive_frac=revive_frac,

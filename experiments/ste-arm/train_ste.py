@@ -178,13 +178,11 @@ def parse_args():
                         "share: equal pull on the classifier is near 2e-4, "
                         "so the shipped value applies about a twentieth of "
                         "the objective's own force")
-    p.add_argument("--s-hcossim", type=float, default=None,
-                   help="head-similarity penalty (default sonar.py's "
-                        "1e-6, which is some 240x below equal pull)")
-    p.add_argument("--s-flatcos", type=float, default=None,
-                   help="flattened row-collinearity penalty "
-                        "(`DictBlock.flatcos`), the between-head "
-                        "complement of --s-kcossim; 0 = off")
+    p.add_argument("--s-support", type=float, default=None,
+                   help="disjoint-support penalty between heads "
+                        "(`DictBlock.support_overlap`; default sonar.py's "
+                        "1e-6). Replaces the retired --s-hcossim and "
+                        "--s-flatcos")
     p.add_argument("--s-l1k", type=float, default=None,
                    help="classifier L1 penalty (`NLinearBlock.withL1`), 0 = "
                         "off, which is sonar.py's setting and is marked "
@@ -301,8 +299,8 @@ def parse_args():
     p.add_argument("--concat", action="store_true",
                    help="heads write disjoint slices of e_dec instead of "
                         "summing into all of it (ConcatDictBlock), so "
-                        "between-head orthogonality holds by construction "
-                        "rather than by the s_hcossim penalty, and the "
+                        "between-head disjoint support holds by construction "
+                        "rather than by the s_support penalty, and the "
                         "dictionary costs h times fewer parameters at matched "
                         "e_dec. See --d-head. Orthogonality is in e_dec, not "
                         "after the decoder")
@@ -487,9 +485,8 @@ def main() -> None:
         else cfg.s_l1s,
         s_bcossim=(base.s_bcossim if cfg.s_bcossim is None
                    else cfg.s_bcossim),
-        s_hcossim=(base.s_hcossim if cfg.s_hcossim is None
-                   else cfg.s_hcossim),
-        s_flatcos=cfg.s_flatcos or 0.0,
+        s_support=(base.s_support if cfg.s_support is None
+                   else cfg.s_support),
         s_kcossim=(base.s_kcossim if cfg.s_kcossim is None
                    else cfg.s_kcossim),
         KCOS_target=cfg.kcos_target, KCOS_eta=cfg.kcos_eta,

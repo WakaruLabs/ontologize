@@ -22,7 +22,7 @@ import pytest
 from ontologize.ontologizer import Ontologizer
 from ontologize.training.config import Hyperparams
 
-from conftest import KW, B
+from conftest import KW, B, LAYER_WIDTH
 
 # relu-gated classifier: the regime where the ghost path is live at all
 # (with gate="none" bilinear classifiers it is inert, see Hyperparams.ghost).
@@ -114,7 +114,7 @@ def test_loss_pairs_prefix_with_prefix(deep, X):
     assert Y_g.shape == Y.shape  # else the comparisons below only broadcast
     hyper = Hyperparams(d_in=KW["d_in"], d_out=KW["d_out"], b=B, s_g=1e-4,
                         ghost=True)
-    stats = jnp.zeros((KW["l"], 12))
+    stats = jnp.zeros((KW["l"], LAYER_WIDTH))
 
     _, row = hyper.loss(Y, X, Y_g, stats)
     L2_g = row[2]

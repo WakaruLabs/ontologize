@@ -35,6 +35,32 @@ def X():
 DB_KW = dict(k=8, d=16, h=4, dtype_str="float32", dtype_p_str="float32")
 
 
+# Retired statistics keep their slots and read NaN (see
+# `Hyperparams.RETIRED_STATS`), so "the stats are finite" means the live
+# columns are. Positions in the per-layer `DictEnc.withStats` row, and in a
+# loss.csv row, derived from the authoritative layouts.
+from ontologize.training.config import Hyperparams
+from ontologize.visualize.loss import COLUMNS
+
+RETIRED_LAYER = tuple(i - 1 for i in Hyperparams.RETIRED_STATS)
+RETIRED_LOSS = tuple(COLUMNS.index(c) for c in ("cossim_h", "cossim_flat"))
+LAYER_WIDTH = len(Hyperparams(1, 1, 1).s_loss()[0]) - 1
+N_STATS = len(COLUMNS)
+
+
+def live(x, retired):
+    """`x` without its retired columns (last axis)."""
+    keep = [i for i in range(x.shape[-1]) if i not in retired]
+    return jnp.asarray(x)[..., jnp.array(keep)]
+
+
+def finite_live(x, retired) -> bool:
+    """Every live column finite, and every retired one NaN."""
+    x = jnp.asarray(x)
+    return (bool(jnp.all(jnp.isfinite(live(x, retired))))
+            and bool(jnp.all(jnp.isnan(x[..., jnp.array(retired)]))))
+
+
 @pytest.fixture(scope="session")
 def dictblock():
     """Standalone DictBlock with params and a batch of soft classifications."""
