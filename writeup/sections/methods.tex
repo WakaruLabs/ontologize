@@ -434,6 +434,72 @@ $\sigma_F = 0.1$. Because $\sigma_K$ enters the softmax as
 $\sigma_K/t$, holding it constant under the falling temperature would
 grow effective exploration rather than hold it.
 
+\subsubsection{Router and fibers}
+\label{sec:router-fiber}
+Two optional branches read the same shaped input $\mathbf{u}$ as the
+classifier and meet it in the dictionary lookup
+(Figure~\ref{fig:dictenc-full}). Neither is on in the live configuration.
+
+The \emph{router} (\texttt{scaled}) is a second bilinear map, from
+$\mathbf{u}$ to one scale per head, made non-negative by an absolute value
+(\texttt{router\_signed} drops it). It multiplies its head's whole output, so
+the classifier decides \emph{what} a head says and the router \emph{how
+much}; its own L1, $\mathrm{L1}_S$, prices the router alone, where
+$\mathrm{L1}$ on the output can be paid down by either factor.
+
+\emph{Fibers} (\texttt{fiber\_rank} $r$) give every entry a local basis
+$U_{ik} \in \mathbb{R}^{e \times r}$ (in its head's slice under
+$\mathtt{ConcatDictBlock}$), and each head reads $r$ coordinates
+$\mathbf{c}_i = b\tanh(A_i\mathbf{u}/b)$ from the input, so
+\begin{equation}
+	F_i = S_i \sum^{k}_{j=1} P_{ij}\,\big(\lvert\mathbf{d}_{ij}\rvert
+	      + U_{ij}\,\mathbf{c}_i\big).
+	\label{eq:fiber}
+\end{equation}
+Under a hard code the selected entry is a discrete base point and the
+fiber a continuous correction within the plane its basis spans
+(Figure~\ref{fig:fiber}). Unconstrained, the correction can take over and
+leave the base meaningless, so the base is kept honest by fiber dropout, a
+norm cap ($\lVert U_{ij}\mathbf{c}_i\rVert \le \varepsilon$ per head, or
+summed over heads), a base-only deep-supervision term (\texttt{base\_aux},
+which also decodes the fiber-free output), or training the fibers after
+freezing the base. A radial fiber ($r=1$, no basis) only rescales the
+selected entry. Statistics describe the base output. Head dropout
+(\texttt{p\_head\_drop}) is the third addition here: in training it
+replaces a head's classification by the batch mean, its origin, so heads
+cannot co-adapt and ablating one to its origin stays in distribution.
+
+\begin{figure}[tp]
+\centering
+\resizebox{\linewidth}{!}{\input{tikz/dictenc_full}}
+\caption[\texttt{DictEnc} with router and fibers]{\textbf{\texttt{DictEnc}
+	with router and fibers.} The gain--shape split hands the unit input
+	$\mathbf{u}$ to three branches: the classifier (which entry, $P$),
+	the router (how much, $S$, one non-negative scale per head) and the
+	fiber read (where within the entry's fiber, $\mathbf{c}$, $r$
+	coordinates per head). They meet in the lookup
+	(Equation~\ref{eq:fiber}); heads are summed, or concatenated under
+	$\mathtt{ConcatDictBlock}$, and the result is scaled by the measured
+	gain $G$. Dashed boxes above an arrow act on it during training;
+	dashed boxes below are statistics, which describe the fiber-free
+	base output. That output is also returned on its own for
+	\texttt{base\_aux}.}
+\label{fig:dictenc-full}
+\end{figure}
+
+\begin{figure}[tp]
+\centering
+\input{tikz/fiber}
+\caption[Fiber geometry]{\textbf{Fiber geometry} for one head, extending
+	Figure~\ref{fig:head-simplex}. The head selects entry
+	$\lvert\mathbf{d}_{i2}\rvert$; its fiber is the plane spanned by
+	$U_{i2}$ at that point, and the coordinates $\mathbf{c}_i$ place the
+	output within it. The dashed circle is the per-head norm cap; the
+	dotted ray is the radial variant, which moves the output only along
+	the entry's own direction.}
+\label{fig:fiber}
+\end{figure}
+
 \subsection{Training}
 \label{sec:training}
 
