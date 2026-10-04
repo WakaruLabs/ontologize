@@ -1,0 +1,18 @@
+{
+  "model": "gpt2",
+  "layer": 8,
+  "ctx": 128,
+  "d": 768,
+  "hook": "hidden_states[8] (entering block 8)",
+  "positions": "1..127 (position 0 = BOS dropped)",
+  "dataset": "HuggingFaceFW/fineweb/sample-10BT",
+  "normalization": "x' = (x - mean.npy) / scale; E||x'||^2 = 1",
+  "scale": 76.12240600585938,
+  "n_train_rows": 40000047,
+  "n_eval_rows": 520192,
+  "n_train_windows": 314961,
+  "n_eval_windows": 4096,
+  "dtype": "float16",
+  "extended_from": "data/gpt2_l8",
+  "layout": "[old train | new train | eval]"
+}
