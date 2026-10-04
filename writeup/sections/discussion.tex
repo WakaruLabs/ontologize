@@ -111,10 +111,10 @@ architecture's size or with its readout.} The softmax model's argmax is
 not its code (77$\times$ above the 800-bit floor for \texttt{resid\_nc},
 nine orders of magnitude on \texttt{softmax\_shm}). A straight-through arm
 with $2.4\times$ the heads makes the discrete code the model, and at 1900
-index bits and no coefficients beats an SAE spending 625 coefficients
-($0.154$ vs.\ $0.261$), within $3.1\times$ of its rate floor --- though
-that SAE was trained for an eighth of the converged schedule, so the
-margin is overstated. It needed a
+index bits and no coefficients beats converged SAEs at matched index
+bits that also send 160 coefficients ($0.154$ vs.\ $0.258$--$0.274$), and
+an L1 SAE spending 519 coefficients and 3.4$\times$ the bits ($0.220$),
+within $3.1\times$ of its own rate floor. It needed a
 temperature matched to the logit scale, relative logit noise, a rescaled
 entropy bonus, and an initialization fix worth a third of its error.
 \item \textbf{Reconstruction is the price sheet, not the verdict, for
@@ -228,10 +228,10 @@ in place of the hand-matched temperature.
 \item \textbf{Fresh-encoded eval set.} New runs hold the tail out; the
 softmax Ontologizers do not, and every comparison against them inherits
 that asymmetry.
-\item \textbf{A converged rate--distortion baseline.} The L1-SAE sweep
-the straight-through arm is compared against ran 19{,}240 steps and was
-still improving; rerun it to convergence (and a top-$k$ sweep at
-matched $L_0$) before quoting the discrete-beats-linear margin.
+\item \textbf{A top-$k$ sweep at matched bits.} The converged frontier
+has top-$k$ points only at $k{=}32$ and $160$; a $k$ sweep through the
+1{,}900-bit region would pin the discrete-vs-linear comparison at
+exactly matched rate.
 \item \textbf{Winner dropout for grouped rungs.} \texttt{g160top1}'s
 28\% dead latents are within-group winner-take-all starvation.
 \item \textbf{Trained truncatability.} A deviation-sparsity penalty at

@@ -58,10 +58,9 @@ reference Ontologizer's structure and text fidelity. (vi) The
 straight-through arm makes the discrete code the model: its argmax and
 soft rows agree to four decimals where the softmax model's differ by nine
 orders of magnitude, and at 1900 index bits and no continuous
-coefficients it reaches $\fvu$ $0.154$ against $0.261$ for an SAE spending
-625 coefficients (an undertrained baseline, so the margin is
-provisional) --- after an initialization fix worth a third of its
-error. (vii) At matched bits, parameters and code utilization the residual
+coefficients it reaches $\fvu$ $0.154$, against $0.258$--$0.274$ for
+converged SAEs at matched index bits that also transmit 160 coefficients
+--- after an initialization fix worth a third of its error. (vii) At matched bits, parameters and code utilization the residual
 cascade is worth $1.79\times$ over a flat layer, and the measured source
 is the pairing between each stage's input and the sample's own earlier
 error; the same cascade makes single-head interventions leak into

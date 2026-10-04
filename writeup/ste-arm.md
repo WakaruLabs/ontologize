@@ -95,9 +95,13 @@ Final, after the full 24 epochs (369,500 steps).
 | ste h76, soft forward | 1900 | 0 | 0.2293 |
 | live softmax h32, hard argmax | 800 | 0 | 8,690,470 |
 | top2 h32, hard argmax | 800 | 0 | 0.471 |
-| SAE, L0 = 73 | 895 | 73 | 0.633 |
-| SAE, L0 = 625 | 7699 | 625 | 0.261 |
+| SAE g160top1 | 1972 | 160 | 0.274 |
+| SAE m11264_k160 | 2154 | 160 | 0.258 |
+| SAE ReLU+L1, L0 = 519 | 6390 | 519 | 0.220 |
 | rate floor at 1900 bits | 1900 | 0 | 0.05 |
+
+(SAE rows from the converged frontier in `data/out/sonar/pareto_unified`:
+the structural ladder plus an L1 sweep, all at the ~144k-step schedule.)
 
 Three things to read off it.
 
@@ -108,20 +112,14 @@ interventions and `decode_tags.py` operate on is the thing that
 reconstructs. The live softmax model's two rows differ by nine orders
 of magnitude.
 
-**A purely discrete code beats a sparse linear one.** At 1900 bits and
-no continuous coefficients the arm scores 0.2293, against 0.261 for
-the SAE that spends 625 continuous coefficients plus 7699 index bits.
-That is the comparison raising the head count was for: the earlier
-800-bit hard codes could not get near it.
-
-The SAE side of that comparison is undertrained. The `data/out/sonar/sae`
-L1 sweep ran 19,240 steps against ~144k for the converged ladder SAEs,
-and was still improving when it stopped (the 625-coefficient run gained
-1.6% over its last 3k steps). A top-k SAE from the same sweep,
-`m5120_k32_s43`, reads 0.585 there against 0.497 for the converged
-ladder run of the same name, so these baselines may be 10-20%
-pessimistic. The ordering likely survives, the margin does not until a
-converged sweep is scored.
+**At matched bits, a purely discrete code beats a sparse linear one.**
+At 1900 bits and no continuous coefficients the arm scores 0.2293,
+against 0.258-0.274 for SAEs that spend about the same index bits plus
+160 continuous coefficients. That is the comparison raising the head
+count was for: the earlier 800-bit hard codes could not get near it. An
+L1 SAE spending 3.4x the bits plus 519 coefficients edges past it
+(0.220); the fixed initialization below takes the arm to 0.1535, under
+every one of these.
 
 Note the `dev m` truncation rows are *worse* than the hard row here
 (0.343 at m=1, 0.321 at m=4), the reverse of their behaviour on a
@@ -534,8 +532,9 @@ the blend ablation have not been remeasured, and the arms they ran on
 were all badly initialized.
 
 On the rate-distortion table, 1900 index bits and no continuous
-coefficients at 0.1535 beats the comparable SAE's 0.2610 at 7699 index
-bits plus 625 coefficients. Against each code's own reverse
+coefficients at 0.1535 beats every converged SAE near it: 0.258-0.274 at
+matched bits plus 160 coefficients, and 0.220 for the L1 SAE at 6390
+index bits plus 519 coefficients. Against each code's own reverse
 water-filling floor, though, depth is the less efficient use of bits:
 
 | code | floor | achieved | ratio |

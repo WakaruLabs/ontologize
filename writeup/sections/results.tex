@@ -602,18 +602,29 @@ blend measurements below were made on the shipped initialization} and
 have not been remeasured; the seed-reproducibility and entry-share
 measurements of Section~\ref{sec:seeds} use the fixed one.
 
-\paragraph{A purely discrete code beats a sparse linear one --- against an
-undertrained baseline.} At 1900 index bits and no continuous
-coefficients the fixed-init arm scores $0.1535$, against $0.261$ for an
-L1-penalized ReLU SAE spending 625 continuous coefficients plus 7699
-index bits (and $0.633$ for one at $L_0{=}73$, 895 bits). Those SAEs come
-from a short L1 sweep: 19{,}240 steps, against $\sim$144k for the
-converged ladder, and still improving when stopped (the 625-coefficient
-run gained 1.6\% over its last 3k steps). A top-$k$ SAE from the same
-sweep reads $0.585$ there against $0.497$ converged, so the baselines
-here may be 10--20\% pessimistic; the ordering is likely to survive a
-gap of $0.154$ against $0.261$, but the margin is overstated until a
-converged sweep is scored. Truncation rows (\texttt{dev} $m$) are
+\paragraph{A purely discrete code beats a sparse linear one.} Scored on
+one frontier of converged SAEs (the structural ladder plus an L1 sweep
+at the same $\sim$144k-step schedule; \texttt{pareto.py} into
+\texttt{data/out/sonar/pareto\_unified}):
+
+\begin{center}\small
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+code & coeffs & index bits & $\fvu$ \\
+\midrule
+\textbf{straight-through, $5\times76$} & \textbf{0} & \textbf{1900} & \textbf{0.154} \\
+SAE \texttt{g160top1} & 160 & 1972 & 0.274 \\
+SAE \texttt{m11264\_k160} & 160 & 2154 & 0.258 \\
+SAE ReLU+L1 $3\times10^{-5}$ & 519 & 6390 & 0.220 \\
+SAE ReLU+L1 $10^{-5}$ & 1438 & 17723 & 0.048 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+At matched index bits ($\sim$2{,}000) the discrete code is 40\% below
+SAEs that additionally transmit 160 continuous coefficients, and it is
+30\% below an L1 SAE spending 3.4$\times$ the bits plus 519
+coefficients. Truncation rows (\texttt{dev} $m$) are
 \emph{worse} than the hard row on this arm ($0.259$ at $m{=}1$; $0.343$
 on the shipped initialization): pinning entries toward the origin adds mass
 the model was never trained to decode, so for a hard model the honest
