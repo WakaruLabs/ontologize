@@ -34,52 +34,24 @@ architecture whose design goal is \emph{unsupervised steering-vector
 generation}: a stack of competitive classifier ``heads'' reconstructing an
 embedding space should discover the space's natural contrastive clusters,
 MoEfying the representation into small, nameable classification tasks
-whose within-head entry swaps are steering moves. We evaluate two forms of
-it --- the softmax (soft-code) Ontologizer and a straight-through
-(hard-code) arm whose forward pass \emph{is} the argmax --- against
-field-standard top-$k$ sparse autoencoders (SAEs) trained on identical
-cached SONAR multilingual sentence embeddings under an identical whitened
-reconstruction objective. The battery covers a reconstruction-vs-capacity
-Pareto, categorical-form and semantic-coherence tests of head structure,
-cross-model feature splitting and seed stability, downstream text
-fidelity through the paired M2M100 decoder, language probing, shrinkage,
-steering fidelity in text and embedding space, and blinded
-auto-interpretability; a \emph{structural-ablation ladder} of SAE variants
-attributes effects to specific structure. Preliminary findings:
-(i) for soft codes, contrast-set structure is expensive in reconstruction
---- the plain-SAE frontier dominates the Ontologizer's deviation code at
-every capacity; (ii) trained soft heads are contrast sets --- within-head
-decode directions \emph{repel} (96\% of heads below a random-group null);
-(iii) categorical form exists precisely when trained in as hard selection;
-(iv) per-latent lenses --- $k$-sparse probing, per-feature detection ---
-mis-measure classifier codes, and detection F1 is largely a measure of
-code density; (v) a single-layer grouped-softmax SAE reproduces the
-reference Ontologizer's structure and text fidelity. (vi) The
-straight-through arm makes the discrete code the model: its argmax and
-soft rows agree to four decimals where the softmax model's differ by nine
-orders of magnitude, and at 1900 index bits and no continuous
-coefficients it reaches $\fvu$ $0.154$, against $0.258$--$0.274$ for
-converged SAEs at matched index bits that also transmit 160 coefficients
---- after an initialization fix worth a third of its error. (vii) At matched bits, parameters and code utilization the residual
-cascade is worth $1.79\times$ over a flat layer, and the measured source
-is the pairing between each stage's input and the sample's own earlier
-error; the same cascade makes single-head interventions leak into
-$\sim$60\% of other heads. (viii) Two seeds reach identical error while,
-on SONAR and on GPT-2 residuals alike, no head past the first layer ---
-partition, contribution, subspace or Gram --- reproduces above a
-same-shape null; first-layer heads reproduce partly, through their
-layer's input gain and a few outsized atoms, and still several times
-worse than flat-layer heads of equal size. (ix) The strongest head
-encodes topic and genre, as a language-agnostic embedding should be
-organized; language, probed because it has labels, is carried across
-heads as neighbourhoods, six times more strongly by the hard code than by
-the softmax reference. (x)
-Non-negativity forces a collinear dictionary at a third of the signed
-effective rank for $2.4\%$ of $\fvu$. (xi) On GPT-2 small, an 800-bit hard
-code whose entries are signed directions in activation space recovers
-97.6\% of GPT-2's loss when spliced back in, more than a $k{=}32$ SAE at
-nearly the same $\fvu$ (96.2\%); per-entry fibers trained on the frozen
-code recover 99.9\% without changing it.
+whose within-head entry swaps are steering moves. We compare a softmax
+(soft-code) Ontologizer and a straight-through (hard-code) arm against
+top-$k$ sparse autoencoders (SAEs) on SONAR sentence embeddings under the
+same whitened objective, and the hard code on GPT-2 small residuals.
+Soft heads are contrast sets --- within-head decode directions repel ---
+but their argmax is not the model's code, and the plain-SAE frontier
+dominates them in reconstruction. The straight-through arm makes the
+discrete code the model: at 1900 index bits and no continuous
+coefficients it reaches $\fvu$ $0.154$, against $0.258$--$0.274$ for SAEs
+at matched bits that also transmit 160 coefficients. At fixed capacity
+the residual cascade is worth $1.79\times$ over a flat layer, but makes
+single-head interventions leak into $\sim$60\% of other heads, and two
+seeds reach identical error while no head past the first layer
+reproduces. The strongest head encodes topic and genre rather than
+language, as a language-agnostic embedding should be organized. On GPT-2,
+an 800-bit hard code of signed activation-space directions recovers
+97.6\% of the model's loss, more than a $k{=}32$ SAE at nearly the same
+$\fvu$.
 \end{abstract}
 
 \section{Evaluation frame}
