@@ -16,11 +16,28 @@ Each checkpoint also gives `c`, the mean within-head row cosine
 `dictgeom.py` reads from the weights; the sweep's logged `cossim_k`
 predates the current stats row and is not that statistic.
 
+Two further families read `loss.csv` directly, where the logged quantity
+is the one wanted, and need no GPU:
+
+  bits   realized code bits per sample of the straight-through arms,
+         h (l log2 k - KL_m). `KL_m` is a plug-in estimate on one batch of
+         b rows, which carries a sampling floor; on converged fixed-init
+         arms the logged value IS that floor. The first-order (Miller-Madow)
+         floor, (k - 1) / (2 b ln 2) bits per layer, is subtracted. It
+         assumes every entry is live, so it over-corrects heads that use
+         few entries (the shipped initialization).
+  kcos   the row-collinearity setpoint: `cossim_k_max`, the max over heads
+         and layers that `KCOS_target` watches, and the applied multiplier
+         `s_kcossim`, against the uncontrolled twin.
+
+Logged values are averaged over a trailing window and sampled every
+`every` steps.
+
 Resumable: rows already in an output CSV are skipped. Needs a GPU for the
 sharded restores; a small memory fraction leaves a training run alone.
 
   XLA_PYTHON_CLIENT_MEM_FRACTION=0.15 uv run python \\
-      writeup/figures/extract_curves.py [orthant|sweep|depth ...]
+      writeup/figures/extract_curves.py [orthant|sweep|depth|bits|kcos ...]
 """
 import os
 os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
@@ -42,6 +59,7 @@ from jaxtyping import Array, Float
 from dictgeom import geometry
 from ontologize.data.loaders import doc_holdout
 from ontologize.training.ontostate import schedules
+from ontologize.visualize.loss import read_loss
 from pareto import load_onto
 
 DATA = Path(__file__).resolve().parent / "data"
@@ -76,6 +94,22 @@ FAMILIES = {
         ("ste_l1_h380_i01", "1x380"),
         ("ste_l1_h380_i01_s43", "1x380, seed 43"),
     ]),
+}
+
+# read from loss.csv: (arm, label, l, h, k)
+LOGGED = {
+    # code filling over training: the initialization fix, and stack vs. flat
+    "bits": [
+        ("ste_h76", "5x76, shipped init", 5, 76, 32),
+        ("ste_h76_init01", "5x76", 5, 76, 32),
+        ("ste_h76_i01_s43", "5x76, seed 43", 5, 76, 32),
+        ("ste_l1_h380_i01_hm1e4", "1x380, s_Hm 1e-4", 1, 380, 32),
+    ],
+    # the row-collinearity setpoint and its uncontrolled twin
+    "kcos": [
+        ("ste_h76", "uncontrolled", 5, 76, 32),
+        ("ste_h76_kcos", "setpoint 0.5", 5, 76, 32),
+    ],
 }
 
 
@@ -173,6 +207,42 @@ def extract(family: str) -> None:
                 jax.clear_caches()
 
 
+def extract_logged(family: str, every: int = 1000) -> None:
+    """A `LOGGED` family from each arm's `loss.csv`, each value the mean
+    over the `every` steps ending at the sampled step. Rewrites its CSV."""
+    rows = []
+    for arm, label, l, h, k in LOGGED[family]:
+        run = SONAR / arm
+        L = read_loss(run)
+        ends = list(range(every, len(L) + 1, every))
+        if ends[-1] != len(L):
+            ends.append(len(L))
+        if family == "bits":
+            b = hyper(run)["b"]
+            nominal = l * h * np.log2(k)
+            floor = l * (k - 1) / (2 * b * np.log(2))
+            for s in ends:
+                kl = float(L["KL_m"].iloc[s - every:s].mean())
+                rows.append([arm, label, s, f"{h * (l * np.log2(k) - kl):.2f}",
+                             f"{h * (l * np.log2(k) - max(kl - floor, 0.0)):.2f}",
+                             f"{nominal:.0f}"])
+        else:
+            for s in ends:
+                w = L.iloc[s - every:s]
+                rows.append([arm, label, s, f"{w['cossim_k_max'].mean():.5f}",
+                             f"{w['s_kcossim'].mean():.4g}"])
+    head = {"bits": ["arm", "label", "step", "bits_raw", "bits", "nominal"],
+            "kcos": ["arm", "label", "step", "cossim_k_max", "s_kcossim"]}
+    with open(DATA / f"curves_{family}.csv", "w", newline="") as f:
+        wr = csv.writer(f)
+        wr.writerow(head[family])
+        wr.writerows(rows)
+    print(f"{family}: {len(rows)} rows")
+
+
 if __name__ == "__main__":
-    for family in sys.argv[1:] or list(FAMILIES):
-        extract(family)
+    for family in sys.argv[1:] or list(FAMILIES) + list(LOGGED):
+        if family in LOGGED:
+            extract_logged(family)
+        else:
+            extract(family)

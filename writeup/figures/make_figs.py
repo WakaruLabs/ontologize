@@ -454,3 +454,59 @@ ax.legend(loc="center right", bbox_to_anchor=(1.0, 0.52), ncols=2,
 logx(ax)
 eyebrow(ax, "depth leads at every checkpoint")
 save(fig, "fig-depth-curves")
+
+# ---- logged training statistics (loss.csv, not scored from checkpoints) -----
+
+def load_logged(family, *cols):
+    rows = list(csv.DictReader(open(os.path.join(RESULTS,
+                                                 f"curves_{family}.csv"))))
+    arms = {}
+    for r in rows:
+        arms.setdefault(r["arm"], []).append(
+            (int(r["step"]),) + tuple(float(r[c]) for c in cols))
+    return {k: sorted(v) for k, v in arms.items()}
+
+
+# realized code bits, floor-corrected, as a share of nominal
+cv = load_logged("bits", "bits", "nominal")
+BITS = [
+    ("ste_h76", "5×76, shipped init", INK, "-"),
+    ("ste_h76_init01", "5×76, fixed init", PINE, "-"),
+    ("ste_h76_i01_s43", "5×76, fixed init, seed 43", PINE50, DASH),
+    ("ste_l1_h380_i01_hm1e4", "1×380, fixed init", INKMUT, DOT),
+]
+fig, ax = plt.subplots(figsize=(5.4, 2.1))
+fig.subplots_adjust(bottom=0.21, top=0.86, left=0.10, right=0.99)
+for arm, label, col, ls in BITS:
+    pts = cv[arm]
+    ax.plot([p[0] for p in pts], [100 * p[1] / p[2] for p in pts],
+            color=col, ls=ls, lw=1.2, label=label)
+ax.set_xlabel("training step")
+ax.set_ylabel("realized bits (% of 1900)")
+ax.set_ylim(40, 101)
+ax.legend(loc="lower right", handlelength=1.8, fontsize=6.6)
+logx(ax)
+eyebrow(ax, "the fixed initialization fills the code at once")
+save(fig, "fig-realized-bits")
+
+# the row-collinearity setpoint: the watched max, and the applied multiplier
+cv = load_logged("kcos", "cossim_k_max", "s_kcossim")
+KCOS = [("ste_h76", "uncontrolled", INK, "-"),
+        ("ste_h76_kcos", "setpoint 0.5", PINE, "-")]
+fig, (a, b) = plt.subplots(1, 2, figsize=(5.4, 2.2))
+fig.subplots_adjust(wspace=0.34, bottom=0.20, top=0.87, left=0.09, right=0.99)
+for arm, label, col, ls in KCOS:
+    curve(a, cv[arm], 1, color=col, ls=ls, label=label)
+a.axhline(0.5, color=INKMUT, lw=0.6, ls=(0, (2, 2)))
+a.set_xlabel("training step")
+a.set_ylabel(r"max row cosine (heads, layers)")
+a.legend(loc="lower left", handlelength=1.8, fontsize=6.6)
+logx(a)
+eyebrow(a, "pulled to 0.5, it stays there")
+pts = cv["ste_h76_kcos"]
+b.plot([p[0] for p in pts], [1e3 * p[2] for p in pts], color=PINE, lw=1.0)
+b.set_xlabel("training step")
+b.set_ylabel(r"applied $s_{\mathrm{kcossim}}$ ($\times 10^{-3}$)")
+logx(b)
+eyebrow(b, "one burst, then idle")
+save(fig, "fig-kcos")

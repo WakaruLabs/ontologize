@@ -26,11 +26,20 @@ distribution, so
 
     realized bits = h * (l * log2(k) - KL_m)
 
-On `ste_h76` that reads 1694 against the 1714 measured here, and on
-`ste_l1_h380` 483 against 484; the residue is the training-time noise
-and winner dropout the logged statistic sees and a clean forward does
-not. The per-prefix FVU and the per-head distribution still need the
-forward pass.
+except that the logged `KL_m` is a plug-in estimate on one training
+batch of `b` rows, which overstates KL by about (m - 1) / (2 b ln 2) bits
+per head per layer for a head with `m` live entries (Miller-Madow),
+0.087 bits at m = k = 32, b = 256, even when usage is perfectly
+balanced. That floor is the residue. On the fixed-init arms, which use
+every entry, the log reads 1862 against the 1895 measured here for the
+5 x 76 stack and 1865 against 1898 for the 1 x 380 flat arm: 33 bits
+each, exactly `h * l * (k - 1) / (2 b ln 2)`. Arms with dead entries
+have a smaller floor: `ste_h76` reads 1694 against 1714, and
+`ste_l1_h380`, whose heads carry about 1.3 bits each, 483 against 484.
+Subtracting the all-live floor (as `writeup/figures/extract_curves.py`
+does) recovers the fixed-init arms to within a bit and over-corrects
+`ste_h76` by 14. The per-prefix FVU and the per-head distribution still
+need the forward pass.
 
 Utilization is measured on the argmax, so it is temperature-free and is
 exactly the code a `select="ste"` model emits. Under `deepsup` the

@@ -1021,12 +1021,33 @@ against 12{,}160). The binary arm gets within 17\% on $2.9\times$ fewer
 parameters, with features that are one bit each --- the form that is
 actually nameable.
 
-\paragraph{Training dynamics.} On the shipped arm, reconstruction
-converges early (MSE flat from step 237k) while within-head row
-collinearity keeps falling ($0.812 \to 0.686$, against $\sim$0.64 for
-random non-negative rows) and head-usage imbalance $\mathrm{KL}_m$ falls
-from a 14.8-bit peak near step 5k to 2.71. The $s_{\mathrm{KL}_m}$
-rescale is what turns the usage peak around.
+\paragraph{Training dynamics.} On the shipped arm the training-log MSE
+(the deep-supervision prefix mean) is flat from step 237k while
+within-head row collinearity keeps falling ($0.812 \to 0.686$, against
+$\sim$0.64 for random non-negative rows). Its code collapses early and
+never fills (Figure~\ref{fig:realized-bits}): realized bits fall to 43\%
+of nominal near step 6k, recover to 85\% by 20k as the $s_{\mathrm{KL}_m}$
+rescale turns the usage collapse around, and end at 90\%. At the fixed
+initialization the code is 99\% full by step 5k, in the stack and the
+flat arm alike, and stays there. Realized bits come from the logged
+$\mathrm{KL}_m$, $h(l\log_2 k - \mathrm{KL}_m)$, less its sampling floor:
+$\mathrm{KL}_m$ is a plug-in estimate on one batch of 256 rows, which
+reads $(k-1)/(2b\ln 2) = 0.087$ bits per layer even for perfectly
+balanced usage, and on the converged fixed-init arms the logged value is
+almost entirely that floor. Corrected, the endpoints match the held-out
+measurement of Table~\ref{tab:init} to within a bit; the correction
+assumes every entry is live, so it overstates the shipped arm by 14 bits.
+
+\begin{figure}[tp]\centering
+\includegraphics[width=\linewidth]{figures/fig-realized-bits.pdf}
+\caption{Realized code bits over training, as a share of the nominal 1900,
+from the logged $\mathrm{KL}_m$ less its one-batch sampling floor. The
+shipped initialization's code collapses to under half before recovering
+to 90\% (the curve's 91\% over-corrects heads with dead entries); at the
+fixed initialization stack and flat arm fill the code
+within 5k steps.}
+\label{fig:realized-bits}
+\end{figure}
 
 \subsection{Depth: eliminations and mechanism}
 \label{sec:depthdetail}
@@ -1197,9 +1218,13 @@ uncontrolled 0.774) improves embedding-space realization in every
 direction at lower collateral --- \texttt{decode} $+15\%$,
 \texttt{grad} $+17\%$, \texttt{margin} $+52\%$, oriented
 \texttt{adjoint} $+122\%$, collateral 0.591 $\to$ 0.552 --- with held-out
-$\fvu$ slightly better ($0.2157$ vs.\ $0.2293$). The controller holds its
-setpoint as a thermostat: the dual multiplier is projected to zero while
-the constraint is satisfied. Its mechanism is unexplained: the
+$\fvu$ slightly better ($0.2157$ vs.\ $0.2293$). The controller acts once
+(Figure~\ref{fig:kcos}): as the max row cosine over heads and layers
+climbs past 0.8, the multiplier rises to $4.9\times10^{-3}$ near step 35k
+and pulls it down to the setpoint by 50k; from about 60k the multiplier
+is projected to zero and the statistic stays at or below 0.5 without
+pressure, ending at 0.473 against the uncontrolled 0.774. Its mechanism
+is unexplained: the
 statistic is computed in the $e$-dimensional dictionary space, where
 74--78\% of each atom's energy is in the decoder's null space
 (Section~\ref{sec:rowcos}), and decoded the atoms were already
@@ -1207,6 +1232,16 @@ orthogonal. That the classifier-geometry directions gain most suggests
 an effect on the classifier rather than the dictionary, but nothing
 establishes it. The setpoint does not transport to the flat arm, whose
 steering is already saturated (0.992 vs.\ 0.966).
+
+\begin{figure}[tp]\centering
+\includegraphics[width=\linewidth]{figures/fig-kcos.pdf}
+\caption{The row-collinearity setpoint on the shipped stack, from the
+training log. Left: the max within-head row cosine over heads and layers,
+the statistic the controller watches, against the uncontrolled twin; the
+dotted line is the 0.5 setpoint. Right: the applied multiplier
+$s_{\mathrm{kcossim}}$, averaged over 1000-step windows.}
+\label{fig:kcos}
+\end{figure}
 
 \subsection{Head independence: a measurement artifact}
 \label{sec:hsic}

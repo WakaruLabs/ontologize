@@ -1,0 +1,749 @@
+arm,label,step,cossim_k_max,s_kcossim
+ste_h76,uncontrolled,1000,0.69313,0
+ste_h76,uncontrolled,2000,0.72495,0
+ste_h76,uncontrolled,3000,0.74698,0
+ste_h76,uncontrolled,4000,0.76095,0
+ste_h76,uncontrolled,5000,0.76952,0
+ste_h76,uncontrolled,6000,0.77334,0
+ste_h76,uncontrolled,7000,0.77588,0
+ste_h76,uncontrolled,8000,0.77821,0
+ste_h76,uncontrolled,9000,0.78114,0
+ste_h76,uncontrolled,10000,0.78701,0
+ste_h76,uncontrolled,11000,0.79242,0
+ste_h76,uncontrolled,12000,0.79731,0
+ste_h76,uncontrolled,13000,0.80215,0
+ste_h76,uncontrolled,14000,0.80582,0
+ste_h76,uncontrolled,15000,0.80873,0
+ste_h76,uncontrolled,16000,0.81214,0
+ste_h76,uncontrolled,17000,0.81488,0
+ste_h76,uncontrolled,18000,0.81680,0
+ste_h76,uncontrolled,19000,0.81816,0
+ste_h76,uncontrolled,20000,0.81914,0
+ste_h76,uncontrolled,21000,0.81984,0
+ste_h76,uncontrolled,22000,0.82033,0
+ste_h76,uncontrolled,23000,0.82067,0
+ste_h76,uncontrolled,24000,0.82090,0
+ste_h76,uncontrolled,25000,0.82104,0
+ste_h76,uncontrolled,26000,0.82111,0
+ste_h76,uncontrolled,27000,0.82114,0
+ste_h76,uncontrolled,28000,0.82112,0
+ste_h76,uncontrolled,29000,0.82107,0
+ste_h76,uncontrolled,30000,0.82101,0
+ste_h76,uncontrolled,31000,0.82102,0
+ste_h76,uncontrolled,32000,0.82103,0
+ste_h76,uncontrolled,33000,0.82101,0
+ste_h76,uncontrolled,34000,0.82095,0
+ste_h76,uncontrolled,35000,0.82086,0
+ste_h76,uncontrolled,36000,0.82076,0
+ste_h76,uncontrolled,37000,0.82064,0
+ste_h76,uncontrolled,38000,0.82050,0
+ste_h76,uncontrolled,39000,0.82035,0
+ste_h76,uncontrolled,40000,0.82020,0
+ste_h76,uncontrolled,41000,0.82005,0
+ste_h76,uncontrolled,42000,0.81989,0
+ste_h76,uncontrolled,43000,0.81977,0
+ste_h76,uncontrolled,44000,0.82019,0
+ste_h76,uncontrolled,45000,0.82059,0
+ste_h76,uncontrolled,46000,0.82081,0
+ste_h76,uncontrolled,47000,0.82091,0
+ste_h76,uncontrolled,48000,0.82097,0
+ste_h76,uncontrolled,49000,0.82100,0
+ste_h76,uncontrolled,50000,0.82100,0
+ste_h76,uncontrolled,51000,0.82131,0
+ste_h76,uncontrolled,52000,0.82218,0
+ste_h76,uncontrolled,53000,0.82283,0
+ste_h76,uncontrolled,54000,0.82327,0
+ste_h76,uncontrolled,55000,0.82355,0
+ste_h76,uncontrolled,56000,0.82380,0
+ste_h76,uncontrolled,57000,0.82421,0
+ste_h76,uncontrolled,58000,0.82463,0
+ste_h76,uncontrolled,59000,0.82489,0
+ste_h76,uncontrolled,60000,0.82500,0
+ste_h76,uncontrolled,61000,0.82504,0
+ste_h76,uncontrolled,62000,0.82502,0
+ste_h76,uncontrolled,63000,0.82496,0
+ste_h76,uncontrolled,64000,0.82489,0
+ste_h76,uncontrolled,65000,0.82481,0
+ste_h76,uncontrolled,66000,0.82471,0
+ste_h76,uncontrolled,67000,0.82460,0
+ste_h76,uncontrolled,68000,0.82449,0
+ste_h76,uncontrolled,69000,0.82438,0
+ste_h76,uncontrolled,70000,0.82427,0
+ste_h76,uncontrolled,71000,0.82414,0
+ste_h76,uncontrolled,72000,0.82401,0
+ste_h76,uncontrolled,73000,0.82389,0
+ste_h76,uncontrolled,74000,0.82377,0
+ste_h76,uncontrolled,75000,0.82364,0
+ste_h76,uncontrolled,76000,0.82351,0
+ste_h76,uncontrolled,77000,0.82338,0
+ste_h76,uncontrolled,78000,0.82324,0
+ste_h76,uncontrolled,79000,0.82311,0
+ste_h76,uncontrolled,80000,0.82297,0
+ste_h76,uncontrolled,81000,0.82283,0
+ste_h76,uncontrolled,82000,0.82270,0
+ste_h76,uncontrolled,83000,0.82257,0
+ste_h76,uncontrolled,84000,0.82244,0
+ste_h76,uncontrolled,85000,0.82230,0
+ste_h76,uncontrolled,86000,0.82216,0
+ste_h76,uncontrolled,87000,0.82202,0
+ste_h76,uncontrolled,88000,0.82187,0
+ste_h76,uncontrolled,89000,0.82173,0
+ste_h76,uncontrolled,90000,0.82159,0
+ste_h76,uncontrolled,91000,0.82144,0
+ste_h76,uncontrolled,92000,0.82130,0
+ste_h76,uncontrolled,93000,0.82116,0
+ste_h76,uncontrolled,94000,0.82102,0
+ste_h76,uncontrolled,95000,0.82087,0
+ste_h76,uncontrolled,96000,0.82072,0
+ste_h76,uncontrolled,97000,0.82057,0
+ste_h76,uncontrolled,98000,0.82042,0
+ste_h76,uncontrolled,99000,0.82028,0
+ste_h76,uncontrolled,100000,0.82013,0
+ste_h76,uncontrolled,101000,0.81998,0
+ste_h76,uncontrolled,102000,0.81983,0
+ste_h76,uncontrolled,103000,0.81968,0
+ste_h76,uncontrolled,104000,0.81953,0
+ste_h76,uncontrolled,105000,0.81938,0
+ste_h76,uncontrolled,106000,0.81922,0
+ste_h76,uncontrolled,107000,0.81907,0
+ste_h76,uncontrolled,108000,0.81892,0
+ste_h76,uncontrolled,109000,0.81877,0
+ste_h76,uncontrolled,110000,0.81861,0
+ste_h76,uncontrolled,111000,0.81846,0
+ste_h76,uncontrolled,112000,0.81830,0
+ste_h76,uncontrolled,113000,0.81815,0
+ste_h76,uncontrolled,114000,0.81800,0
+ste_h76,uncontrolled,115000,0.81784,0
+ste_h76,uncontrolled,116000,0.81768,0
+ste_h76,uncontrolled,117000,0.81753,0
+ste_h76,uncontrolled,118000,0.81737,0
+ste_h76,uncontrolled,119000,0.81722,0
+ste_h76,uncontrolled,120000,0.81706,0
+ste_h76,uncontrolled,121000,0.81691,0
+ste_h76,uncontrolled,122000,0.81675,0
+ste_h76,uncontrolled,123000,0.81660,0
+ste_h76,uncontrolled,124000,0.81645,0
+ste_h76,uncontrolled,125000,0.81629,0
+ste_h76,uncontrolled,126000,0.81613,0
+ste_h76,uncontrolled,127000,0.81597,0
+ste_h76,uncontrolled,128000,0.81581,0
+ste_h76,uncontrolled,129000,0.81566,0
+ste_h76,uncontrolled,130000,0.81551,0
+ste_h76,uncontrolled,131000,0.81534,0
+ste_h76,uncontrolled,132000,0.81519,0
+ste_h76,uncontrolled,133000,0.81503,0
+ste_h76,uncontrolled,134000,0.81487,0
+ste_h76,uncontrolled,135000,0.81471,0
+ste_h76,uncontrolled,136000,0.81456,0
+ste_h76,uncontrolled,137000,0.81440,0
+ste_h76,uncontrolled,138000,0.81424,0
+ste_h76,uncontrolled,139000,0.81408,0
+ste_h76,uncontrolled,140000,0.81392,0
+ste_h76,uncontrolled,141000,0.81376,0
+ste_h76,uncontrolled,142000,0.81360,0
+ste_h76,uncontrolled,143000,0.81344,0
+ste_h76,uncontrolled,144000,0.81328,0
+ste_h76,uncontrolled,145000,0.81312,0
+ste_h76,uncontrolled,146000,0.81296,0
+ste_h76,uncontrolled,147000,0.81280,0
+ste_h76,uncontrolled,148000,0.81264,0
+ste_h76,uncontrolled,149000,0.81248,0
+ste_h76,uncontrolled,150000,0.81231,0
+ste_h76,uncontrolled,151000,0.81215,0
+ste_h76,uncontrolled,152000,0.81199,0
+ste_h76,uncontrolled,153000,0.81183,0
+ste_h76,uncontrolled,154000,0.81167,0
+ste_h76,uncontrolled,155000,0.81151,0
+ste_h76,uncontrolled,156000,0.81135,0
+ste_h76,uncontrolled,157000,0.81118,0
+ste_h76,uncontrolled,158000,0.81102,0
+ste_h76,uncontrolled,159000,0.81086,0
+ste_h76,uncontrolled,160000,0.81070,0
+ste_h76,uncontrolled,161000,0.81053,0
+ste_h76,uncontrolled,162000,0.81036,0
+ste_h76,uncontrolled,163000,0.81020,0
+ste_h76,uncontrolled,164000,0.81004,0
+ste_h76,uncontrolled,165000,0.80988,0
+ste_h76,uncontrolled,166000,0.80972,0
+ste_h76,uncontrolled,167000,0.80956,0
+ste_h76,uncontrolled,168000,0.80940,0
+ste_h76,uncontrolled,169000,0.80923,0
+ste_h76,uncontrolled,170000,0.80905,0
+ste_h76,uncontrolled,171000,0.80889,0
+ste_h76,uncontrolled,172000,0.80872,0
+ste_h76,uncontrolled,173000,0.80857,0
+ste_h76,uncontrolled,174000,0.80841,0
+ste_h76,uncontrolled,175000,0.80824,0
+ste_h76,uncontrolled,176000,0.80808,0
+ste_h76,uncontrolled,177000,0.80791,0
+ste_h76,uncontrolled,178000,0.80775,0
+ste_h76,uncontrolled,179000,0.80758,0
+ste_h76,uncontrolled,180000,0.80742,0
+ste_h76,uncontrolled,181000,0.80726,0
+ste_h76,uncontrolled,182000,0.80708,0
+ste_h76,uncontrolled,183000,0.80692,0
+ste_h76,uncontrolled,184000,0.80675,0
+ste_h76,uncontrolled,185000,0.80659,0
+ste_h76,uncontrolled,186000,0.80641,0
+ste_h76,uncontrolled,187000,0.80625,0
+ste_h76,uncontrolled,188000,0.80608,0
+ste_h76,uncontrolled,189000,0.80591,0
+ste_h76,uncontrolled,190000,0.80574,0
+ste_h76,uncontrolled,191000,0.80558,0
+ste_h76,uncontrolled,192000,0.80541,0
+ste_h76,uncontrolled,193000,0.80523,0
+ste_h76,uncontrolled,194000,0.80507,0
+ste_h76,uncontrolled,195000,0.80490,0
+ste_h76,uncontrolled,196000,0.80474,0
+ste_h76,uncontrolled,197000,0.80457,0
+ste_h76,uncontrolled,198000,0.80440,0
+ste_h76,uncontrolled,199000,0.80424,0
+ste_h76,uncontrolled,200000,0.80406,0
+ste_h76,uncontrolled,201000,0.80389,0
+ste_h76,uncontrolled,202000,0.80372,0
+ste_h76,uncontrolled,203000,0.80356,0
+ste_h76,uncontrolled,204000,0.80339,0
+ste_h76,uncontrolled,205000,0.80323,0
+ste_h76,uncontrolled,206000,0.80305,0
+ste_h76,uncontrolled,207000,0.80289,0
+ste_h76,uncontrolled,208000,0.80271,0
+ste_h76,uncontrolled,209000,0.80254,0
+ste_h76,uncontrolled,210000,0.80237,0
+ste_h76,uncontrolled,211000,0.80219,0
+ste_h76,uncontrolled,212000,0.80202,0
+ste_h76,uncontrolled,213000,0.80185,0
+ste_h76,uncontrolled,214000,0.80168,0
+ste_h76,uncontrolled,215000,0.80151,0
+ste_h76,uncontrolled,216000,0.80134,0
+ste_h76,uncontrolled,217000,0.80116,0
+ste_h76,uncontrolled,218000,0.80099,0
+ste_h76,uncontrolled,219000,0.80082,0
+ste_h76,uncontrolled,220000,0.80066,0
+ste_h76,uncontrolled,221000,0.80049,0
+ste_h76,uncontrolled,222000,0.80031,0
+ste_h76,uncontrolled,223000,0.80014,0
+ste_h76,uncontrolled,224000,0.79997,0
+ste_h76,uncontrolled,225000,0.79979,0
+ste_h76,uncontrolled,226000,0.79962,0
+ste_h76,uncontrolled,227000,0.79945,0
+ste_h76,uncontrolled,228000,0.79928,0
+ste_h76,uncontrolled,229000,0.79910,0
+ste_h76,uncontrolled,230000,0.79893,0
+ste_h76,uncontrolled,231000,0.79875,0
+ste_h76,uncontrolled,232000,0.79858,0
+ste_h76,uncontrolled,233000,0.79840,0
+ste_h76,uncontrolled,234000,0.79821,0
+ste_h76,uncontrolled,235000,0.79804,0
+ste_h76,uncontrolled,236000,0.79787,0
+ste_h76,uncontrolled,237000,0.79769,0
+ste_h76,uncontrolled,238000,0.79751,0
+ste_h76,uncontrolled,239000,0.79734,0
+ste_h76,uncontrolled,240000,0.79717,0
+ste_h76,uncontrolled,241000,0.79699,0
+ste_h76,uncontrolled,242000,0.79682,0
+ste_h76,uncontrolled,243000,0.79664,0
+ste_h76,uncontrolled,244000,0.79646,0
+ste_h76,uncontrolled,245000,0.79628,0
+ste_h76,uncontrolled,246000,0.79610,0
+ste_h76,uncontrolled,247000,0.79592,0
+ste_h76,uncontrolled,248000,0.79574,0
+ste_h76,uncontrolled,249000,0.79556,0
+ste_h76,uncontrolled,250000,0.79539,0
+ste_h76,uncontrolled,251000,0.79521,0
+ste_h76,uncontrolled,252000,0.79504,0
+ste_h76,uncontrolled,253000,0.79486,0
+ste_h76,uncontrolled,254000,0.79468,0
+ste_h76,uncontrolled,255000,0.79450,0
+ste_h76,uncontrolled,256000,0.79432,0
+ste_h76,uncontrolled,257000,0.79413,0
+ste_h76,uncontrolled,258000,0.79395,0
+ste_h76,uncontrolled,259000,0.79377,0
+ste_h76,uncontrolled,260000,0.79361,0
+ste_h76,uncontrolled,261000,0.79343,0
+ste_h76,uncontrolled,262000,0.79324,0
+ste_h76,uncontrolled,263000,0.79305,0
+ste_h76,uncontrolled,264000,0.79288,0
+ste_h76,uncontrolled,265000,0.79270,0
+ste_h76,uncontrolled,266000,0.79252,0
+ste_h76,uncontrolled,267000,0.79235,0
+ste_h76,uncontrolled,268000,0.79216,0
+ste_h76,uncontrolled,269000,0.79198,0
+ste_h76,uncontrolled,270000,0.79180,0
+ste_h76,uncontrolled,271000,0.79163,0
+ste_h76,uncontrolled,272000,0.79144,0
+ste_h76,uncontrolled,273000,0.79126,0
+ste_h76,uncontrolled,274000,0.79108,0
+ste_h76,uncontrolled,275000,0.79090,0
+ste_h76,uncontrolled,276000,0.79071,0
+ste_h76,uncontrolled,277000,0.79052,0
+ste_h76,uncontrolled,278000,0.79035,0
+ste_h76,uncontrolled,279000,0.79017,0
+ste_h76,uncontrolled,280000,0.78999,0
+ste_h76,uncontrolled,281000,0.78980,0
+ste_h76,uncontrolled,282000,0.78963,0
+ste_h76,uncontrolled,283000,0.78945,0
+ste_h76,uncontrolled,284000,0.78926,0
+ste_h76,uncontrolled,285000,0.78908,0
+ste_h76,uncontrolled,286000,0.78890,0
+ste_h76,uncontrolled,287000,0.78872,0
+ste_h76,uncontrolled,288000,0.78854,0
+ste_h76,uncontrolled,289000,0.78836,0
+ste_h76,uncontrolled,290000,0.78817,0
+ste_h76,uncontrolled,291000,0.78799,0
+ste_h76,uncontrolled,292000,0.78782,0
+ste_h76,uncontrolled,293000,0.78763,0
+ste_h76,uncontrolled,294000,0.78744,0
+ste_h76,uncontrolled,295000,0.78726,0
+ste_h76,uncontrolled,296000,0.78707,0
+ste_h76,uncontrolled,297000,0.78689,0
+ste_h76,uncontrolled,298000,0.78671,0
+ste_h76,uncontrolled,299000,0.78653,0
+ste_h76,uncontrolled,300000,0.78634,0
+ste_h76,uncontrolled,301000,0.78616,0
+ste_h76,uncontrolled,302000,0.78599,0
+ste_h76,uncontrolled,303000,0.78580,0
+ste_h76,uncontrolled,304000,0.78562,0
+ste_h76,uncontrolled,305000,0.78543,0
+ste_h76,uncontrolled,306000,0.78525,0
+ste_h76,uncontrolled,307000,0.78507,0
+ste_h76,uncontrolled,308000,0.78489,0
+ste_h76,uncontrolled,309000,0.78471,0
+ste_h76,uncontrolled,310000,0.78453,0
+ste_h76,uncontrolled,311000,0.78434,0
+ste_h76,uncontrolled,312000,0.78416,0
+ste_h76,uncontrolled,313000,0.78397,0
+ste_h76,uncontrolled,314000,0.78380,0
+ste_h76,uncontrolled,315000,0.78362,0
+ste_h76,uncontrolled,316000,0.78344,0
+ste_h76,uncontrolled,317000,0.78325,0
+ste_h76,uncontrolled,318000,0.78307,0
+ste_h76,uncontrolled,319000,0.78288,0
+ste_h76,uncontrolled,320000,0.78270,0
+ste_h76,uncontrolled,321000,0.78253,0
+ste_h76,uncontrolled,322000,0.78235,0
+ste_h76,uncontrolled,323000,0.78217,0
+ste_h76,uncontrolled,324000,0.78197,0
+ste_h76,uncontrolled,325000,0.78179,0
+ste_h76,uncontrolled,326000,0.78160,0
+ste_h76,uncontrolled,327000,0.78142,0
+ste_h76,uncontrolled,328000,0.78123,0
+ste_h76,uncontrolled,329000,0.78105,0
+ste_h76,uncontrolled,330000,0.78087,0
+ste_h76,uncontrolled,331000,0.78069,0
+ste_h76,uncontrolled,332000,0.78050,0
+ste_h76,uncontrolled,333000,0.78032,0
+ste_h76,uncontrolled,334000,0.78014,0
+ste_h76,uncontrolled,335000,0.77996,0
+ste_h76,uncontrolled,336000,0.77978,0
+ste_h76,uncontrolled,337000,0.77960,0
+ste_h76,uncontrolled,338000,0.77942,0
+ste_h76,uncontrolled,339000,0.77923,0
+ste_h76,uncontrolled,340000,0.77904,0
+ste_h76,uncontrolled,341000,0.77885,0
+ste_h76,uncontrolled,342000,0.77867,0
+ste_h76,uncontrolled,343000,0.77848,0
+ste_h76,uncontrolled,344000,0.77831,0
+ste_h76,uncontrolled,345000,0.77813,0
+ste_h76,uncontrolled,346000,0.77794,0
+ste_h76,uncontrolled,347000,0.77777,0
+ste_h76,uncontrolled,348000,0.77758,0
+ste_h76,uncontrolled,349000,0.77740,0
+ste_h76,uncontrolled,350000,0.77722,0
+ste_h76,uncontrolled,351000,0.77703,0
+ste_h76,uncontrolled,352000,0.77683,0
+ste_h76,uncontrolled,353000,0.77664,0
+ste_h76,uncontrolled,354000,0.77646,0
+ste_h76,uncontrolled,355000,0.77628,0
+ste_h76,uncontrolled,356000,0.77610,0
+ste_h76,uncontrolled,357000,0.77591,0
+ste_h76,uncontrolled,358000,0.77572,0
+ste_h76,uncontrolled,359000,0.77554,0
+ste_h76,uncontrolled,360000,0.77536,0
+ste_h76,uncontrolled,361000,0.77518,0
+ste_h76,uncontrolled,362000,0.77499,0
+ste_h76,uncontrolled,363000,0.77481,0
+ste_h76,uncontrolled,364000,0.77464,0
+ste_h76,uncontrolled,365000,0.77444,0
+ste_h76,uncontrolled,366000,0.77425,0
+ste_h76,uncontrolled,367000,0.77406,0
+ste_h76,uncontrolled,368000,0.77388,0
+ste_h76,uncontrolled,369000,0.77370,0
+ste_h76,uncontrolled,369500,0.77361,0
+ste_h76_kcos,setpoint 0.5,1000,0.69317,1.006e-06
+ste_h76_kcos,setpoint 0.5,2000,0.72497,1.053e-06
+ste_h76_kcos,setpoint 0.5,3000,0.74729,1.154e-06
+ste_h76_kcos,setpoint 0.5,4000,0.76105,1.305e-06
+ste_h76_kcos,setpoint 0.5,5000,0.76947,1.508e-06
+ste_h76_kcos,setpoint 0.5,6000,0.77326,1.766e-06
+ste_h76_kcos,setpoint 0.5,7000,0.77578,2.091e-06
+ste_h76_kcos,setpoint 0.5,8000,0.77809,2.497e-06
+ste_h76_kcos,setpoint 0.5,9000,0.78086,3.011e-06
+ste_h76_kcos,setpoint 0.5,10000,0.78657,3.67e-06
+ste_h76_kcos,setpoint 0.5,11000,0.79208,4.536e-06
+ste_h76_kcos,setpoint 0.5,12000,0.79659,5.676e-06
+ste_h76_kcos,setpoint 0.5,13000,0.80112,7.187e-06
+ste_h76_kcos,setpoint 0.5,14000,0.80464,9.204e-06
+ste_h76_kcos,setpoint 0.5,15000,0.80730,1.191e-05
+ste_h76_kcos,setpoint 0.5,16000,0.81044,1.555e-05
+ste_h76_kcos,setpoint 0.5,17000,0.81298,2.05e-05
+ste_h76_kcos,setpoint 0.5,18000,0.81460,2.728e-05
+ste_h76_kcos,setpoint 0.5,19000,0.81556,3.657e-05
+ste_h76_kcos,setpoint 0.5,20000,0.81604,4.938e-05
+ste_h76_kcos,setpoint 0.5,21000,0.81609,6.71e-05
+ste_h76_kcos,setpoint 0.5,22000,0.81569,9.174e-05
+ste_h76_kcos,setpoint 0.5,23000,0.81480,0.0001261
+ste_h76_kcos,setpoint 0.5,24000,0.81331,0.0001741
+ste_h76_kcos,setpoint 0.5,25000,0.81105,0.0002414
+ste_h76_kcos,setpoint 0.5,26000,0.80776,0.0003356
+ste_h76_kcos,setpoint 0.5,27000,0.80306,0.0004671
+ste_h76_kcos,setpoint 0.5,28000,0.79642,0.0006498
+ste_h76_kcos,setpoint 0.5,29000,0.78706,0.0009007
+ste_h76_kcos,setpoint 0.5,30000,0.77397,0.001239
+ste_h76_kcos,setpoint 0.5,31000,0.75592,0.001681
+ste_h76_kcos,setpoint 0.5,32000,0.73169,0.002234
+ste_h76_kcos,setpoint 0.5,33000,0.70094,0.002879
+ste_h76_kcos,setpoint 0.5,34000,0.66477,0.00356
+ste_h76_kcos,setpoint 0.5,35000,0.62561,0.004188
+ste_h76_kcos,setpoint 0.5,36000,0.58653,0.004656
+ste_h76_kcos,setpoint 0.5,37000,0.55448,0.004893
+ste_h76_kcos,setpoint 0.5,38000,0.53909,0.00167
+ste_h76_kcos,setpoint 0.5,39000,0.53600,0.001097
+ste_h76_kcos,setpoint 0.5,40000,0.53274,0.001047
+ste_h76_kcos,setpoint 0.5,41000,0.52946,0.0008197
+ste_h76_kcos,setpoint 0.5,42000,0.52624,0.0009134
+ste_h76_kcos,setpoint 0.5,43000,0.52301,0.0007503
+ste_h76_kcos,setpoint 0.5,44000,0.51987,0.0007748
+ste_h76_kcos,setpoint 0.5,45000,0.51665,0.0007648
+ste_h76_kcos,setpoint 0.5,46000,0.51354,0.0006758
+ste_h76_kcos,setpoint 0.5,47000,0.51038,0.0008138
+ste_h76_kcos,setpoint 0.5,48000,0.50728,0.0006755
+ste_h76_kcos,setpoint 0.5,49000,0.50419,0.0006853
+ste_h76_kcos,setpoint 0.5,50000,0.50112,0.0006802
+ste_h76_kcos,setpoint 0.5,51000,0.49992,0.0003055
+ste_h76_kcos,setpoint 0.5,52000,0.49994,0.000202
+ste_h76_kcos,setpoint 0.5,53000,0.49988,0.0001675
+ste_h76_kcos,setpoint 0.5,54000,0.49992,0.0001231
+ste_h76_kcos,setpoint 0.5,55000,0.49994,0.0001477
+ste_h76_kcos,setpoint 0.5,56000,0.49992,7.878e-05
+ste_h76_kcos,setpoint 0.5,57000,0.49989,7.877e-05
+ste_h76_kcos,setpoint 0.5,58000,0.49988,0.0001034
+ste_h76_kcos,setpoint 0.5,59000,0.49985,4.429e-05
+ste_h76_kcos,setpoint 0.5,60000,0.49981,8.363e-05
+ste_h76_kcos,setpoint 0.5,61000,0.49990,7.376e-05
+ste_h76_kcos,setpoint 0.5,62000,0.49981,4.916e-05
+ste_h76_kcos,setpoint 0.5,63000,0.49986,4.915e-05
+ste_h76_kcos,setpoint 0.5,64000,0.49985,3.93e-05
+ste_h76_kcos,setpoint 0.5,65000,0.49988,3.438e-05
+ste_h76_kcos,setpoint 0.5,66000,0.49983,0
+ste_h76_kcos,setpoint 0.5,67000,0.49982,9.818e-05
+ste_h76_kcos,setpoint 0.5,68000,0.49971,0
+ste_h76_kcos,setpoint 0.5,69000,0.49991,3.433e-05
+ste_h76_kcos,setpoint 0.5,70000,0.49983,1e-09
+ste_h76_kcos,setpoint 0.5,71000,0.50012,8.129e-07
+ste_h76_kcos,setpoint 0.5,72000,0.50033,1e-06
+ste_h76_kcos,setpoint 0.5,73000,0.50055,1.001e-06
+ste_h76_kcos,setpoint 0.5,74000,0.50090,1.003e-06
+ste_h76_kcos,setpoint 0.5,75000,0.50121,1.005e-06
+ste_h76_kcos,setpoint 0.5,76000,0.50147,1.007e-06
+ste_h76_kcos,setpoint 0.5,77000,0.50170,1.01e-06
+ste_h76_kcos,setpoint 0.5,78000,0.50191,1.014e-06
+ste_h76_kcos,setpoint 0.5,79000,0.50207,1.018e-06
+ste_h76_kcos,setpoint 0.5,80000,0.50223,1.022e-06
+ste_h76_kcos,setpoint 0.5,81000,0.50236,1.027e-06
+ste_h76_kcos,setpoint 0.5,82000,0.50247,1.032e-06
+ste_h76_kcos,setpoint 0.5,83000,0.50257,1.037e-06
+ste_h76_kcos,setpoint 0.5,84000,0.50264,1.042e-06
+ste_h76_kcos,setpoint 0.5,85000,0.50268,1.048e-06
+ste_h76_kcos,setpoint 0.5,86000,0.50272,1.054e-06
+ste_h76_kcos,setpoint 0.5,87000,0.50275,1.059e-06
+ste_h76_kcos,setpoint 0.5,88000,0.50275,1.065e-06
+ste_h76_kcos,setpoint 0.5,89000,0.50273,1.071e-06
+ste_h76_kcos,setpoint 0.5,90000,0.50271,1.077e-06
+ste_h76_kcos,setpoint 0.5,91000,0.50270,1.083e-06
+ste_h76_kcos,setpoint 0.5,92000,0.50267,1.089e-06
+ste_h76_kcos,setpoint 0.5,93000,0.50264,1.094e-06
+ste_h76_kcos,setpoint 0.5,94000,0.50260,1.1e-06
+ste_h76_kcos,setpoint 0.5,95000,0.50257,1.106e-06
+ste_h76_kcos,setpoint 0.5,96000,0.50252,1.111e-06
+ste_h76_kcos,setpoint 0.5,97000,0.50247,1.117e-06
+ste_h76_kcos,setpoint 0.5,98000,0.50242,1.122e-06
+ste_h76_kcos,setpoint 0.5,99000,0.50235,1.128e-06
+ste_h76_kcos,setpoint 0.5,100000,0.50227,1.133e-06
+ste_h76_kcos,setpoint 0.5,101000,0.50219,1.138e-06
+ste_h76_kcos,setpoint 0.5,102000,0.50211,1.143e-06
+ste_h76_kcos,setpoint 0.5,103000,0.50202,1.148e-06
+ste_h76_kcos,setpoint 0.5,104000,0.50194,1.152e-06
+ste_h76_kcos,setpoint 0.5,105000,0.50183,1.157e-06
+ste_h76_kcos,setpoint 0.5,106000,0.50172,1.161e-06
+ste_h76_kcos,setpoint 0.5,107000,0.50161,1.165e-06
+ste_h76_kcos,setpoint 0.5,108000,0.50151,1.168e-06
+ste_h76_kcos,setpoint 0.5,109000,0.50141,1.172e-06
+ste_h76_kcos,setpoint 0.5,110000,0.50130,1.175e-06
+ste_h76_kcos,setpoint 0.5,111000,0.50119,1.178e-06
+ste_h76_kcos,setpoint 0.5,112000,0.50110,1.181e-06
+ste_h76_kcos,setpoint 0.5,113000,0.50097,1.183e-06
+ste_h76_kcos,setpoint 0.5,114000,0.50086,1.185e-06
+ste_h76_kcos,setpoint 0.5,115000,0.50073,1.187e-06
+ste_h76_kcos,setpoint 0.5,116000,0.50061,1.189e-06
+ste_h76_kcos,setpoint 0.5,117000,0.50050,1.19e-06
+ste_h76_kcos,setpoint 0.5,118000,0.50037,1.191e-06
+ste_h76_kcos,setpoint 0.5,119000,0.50024,1.192e-06
+ste_h76_kcos,setpoint 0.5,120000,0.50013,1.193e-06
+ste_h76_kcos,setpoint 0.5,121000,0.50001,7.681e-07
+ste_h76_kcos,setpoint 0.5,122000,0.49990,0
+ste_h76_kcos,setpoint 0.5,123000,0.49982,0
+ste_h76_kcos,setpoint 0.5,124000,0.49977,0
+ste_h76_kcos,setpoint 0.5,125000,0.49972,0
+ste_h76_kcos,setpoint 0.5,126000,0.49967,0
+ste_h76_kcos,setpoint 0.5,127000,0.49962,0
+ste_h76_kcos,setpoint 0.5,128000,0.49954,0
+ste_h76_kcos,setpoint 0.5,129000,0.49947,0
+ste_h76_kcos,setpoint 0.5,130000,0.49941,0
+ste_h76_kcos,setpoint 0.5,131000,0.49935,0
+ste_h76_kcos,setpoint 0.5,132000,0.49928,0
+ste_h76_kcos,setpoint 0.5,133000,0.49920,0
+ste_h76_kcos,setpoint 0.5,134000,0.49913,0
+ste_h76_kcos,setpoint 0.5,135000,0.49906,0
+ste_h76_kcos,setpoint 0.5,136000,0.49899,0
+ste_h76_kcos,setpoint 0.5,137000,0.49892,0
+ste_h76_kcos,setpoint 0.5,138000,0.49886,0
+ste_h76_kcos,setpoint 0.5,139000,0.49879,0
+ste_h76_kcos,setpoint 0.5,140000,0.49871,0
+ste_h76_kcos,setpoint 0.5,141000,0.49864,0
+ste_h76_kcos,setpoint 0.5,142000,0.49856,0
+ste_h76_kcos,setpoint 0.5,143000,0.49849,0
+ste_h76_kcos,setpoint 0.5,144000,0.49857,0
+ste_h76_kcos,setpoint 0.5,145000,0.49868,0
+ste_h76_kcos,setpoint 0.5,146000,0.49862,0
+ste_h76_kcos,setpoint 0.5,147000,0.49855,0
+ste_h76_kcos,setpoint 0.5,148000,0.49845,0
+ste_h76_kcos,setpoint 0.5,149000,0.49839,0
+ste_h76_kcos,setpoint 0.5,150000,0.49833,0
+ste_h76_kcos,setpoint 0.5,151000,0.49825,0
+ste_h76_kcos,setpoint 0.5,152000,0.49819,0
+ste_h76_kcos,setpoint 0.5,153000,0.49812,0
+ste_h76_kcos,setpoint 0.5,154000,0.49804,0
+ste_h76_kcos,setpoint 0.5,155000,0.49796,0
+ste_h76_kcos,setpoint 0.5,156000,0.49787,0
+ste_h76_kcos,setpoint 0.5,157000,0.49779,0
+ste_h76_kcos,setpoint 0.5,158000,0.49769,0
+ste_h76_kcos,setpoint 0.5,159000,0.49760,0
+ste_h76_kcos,setpoint 0.5,160000,0.49750,0
+ste_h76_kcos,setpoint 0.5,161000,0.49740,0
+ste_h76_kcos,setpoint 0.5,162000,0.49731,0
+ste_h76_kcos,setpoint 0.5,163000,0.49722,0
+ste_h76_kcos,setpoint 0.5,164000,0.49712,0
+ste_h76_kcos,setpoint 0.5,165000,0.49701,0
+ste_h76_kcos,setpoint 0.5,166000,0.49691,0
+ste_h76_kcos,setpoint 0.5,167000,0.49683,0
+ste_h76_kcos,setpoint 0.5,168000,0.49674,0
+ste_h76_kcos,setpoint 0.5,169000,0.49665,0
+ste_h76_kcos,setpoint 0.5,170000,0.49657,0
+ste_h76_kcos,setpoint 0.5,171000,0.49648,0
+ste_h76_kcos,setpoint 0.5,172000,0.49638,0
+ste_h76_kcos,setpoint 0.5,173000,0.49630,0
+ste_h76_kcos,setpoint 0.5,174000,0.49621,0
+ste_h76_kcos,setpoint 0.5,175000,0.49612,0
+ste_h76_kcos,setpoint 0.5,176000,0.49603,0
+ste_h76_kcos,setpoint 0.5,177000,0.49596,0
+ste_h76_kcos,setpoint 0.5,178000,0.49586,0
+ste_h76_kcos,setpoint 0.5,179000,0.49578,0
+ste_h76_kcos,setpoint 0.5,180000,0.49572,0
+ste_h76_kcos,setpoint 0.5,181000,0.49559,0
+ste_h76_kcos,setpoint 0.5,182000,0.49548,0
+ste_h76_kcos,setpoint 0.5,183000,0.49536,0
+ste_h76_kcos,setpoint 0.5,184000,0.49526,0
+ste_h76_kcos,setpoint 0.5,185000,0.49515,0
+ste_h76_kcos,setpoint 0.5,186000,0.49505,0
+ste_h76_kcos,setpoint 0.5,187000,0.49493,0
+ste_h76_kcos,setpoint 0.5,188000,0.49481,0
+ste_h76_kcos,setpoint 0.5,189000,0.49472,0
+ste_h76_kcos,setpoint 0.5,190000,0.49463,0
+ste_h76_kcos,setpoint 0.5,191000,0.49454,0
+ste_h76_kcos,setpoint 0.5,192000,0.49444,0
+ste_h76_kcos,setpoint 0.5,193000,0.49434,0
+ste_h76_kcos,setpoint 0.5,194000,0.49423,0
+ste_h76_kcos,setpoint 0.5,195000,0.49411,0
+ste_h76_kcos,setpoint 0.5,196000,0.49400,0
+ste_h76_kcos,setpoint 0.5,197000,0.49389,0
+ste_h76_kcos,setpoint 0.5,198000,0.49380,0
+ste_h76_kcos,setpoint 0.5,199000,0.49377,0
+ste_h76_kcos,setpoint 0.5,200000,0.49375,0
+ste_h76_kcos,setpoint 0.5,201000,0.49375,0
+ste_h76_kcos,setpoint 0.5,202000,0.49373,0
+ste_h76_kcos,setpoint 0.5,203000,0.49369,0
+ste_h76_kcos,setpoint 0.5,204000,0.49365,0
+ste_h76_kcos,setpoint 0.5,205000,0.49358,0
+ste_h76_kcos,setpoint 0.5,206000,0.49351,0
+ste_h76_kcos,setpoint 0.5,207000,0.49342,0
+ste_h76_kcos,setpoint 0.5,208000,0.49335,0
+ste_h76_kcos,setpoint 0.5,209000,0.49327,0
+ste_h76_kcos,setpoint 0.5,210000,0.49318,0
+ste_h76_kcos,setpoint 0.5,211000,0.49310,0
+ste_h76_kcos,setpoint 0.5,212000,0.49300,0
+ste_h76_kcos,setpoint 0.5,213000,0.49289,0
+ste_h76_kcos,setpoint 0.5,214000,0.49280,0
+ste_h76_kcos,setpoint 0.5,215000,0.49270,0
+ste_h76_kcos,setpoint 0.5,216000,0.49259,0
+ste_h76_kcos,setpoint 0.5,217000,0.49248,0
+ste_h76_kcos,setpoint 0.5,218000,0.49236,0
+ste_h76_kcos,setpoint 0.5,219000,0.49226,0
+ste_h76_kcos,setpoint 0.5,220000,0.49216,0
+ste_h76_kcos,setpoint 0.5,221000,0.49206,0
+ste_h76_kcos,setpoint 0.5,222000,0.49195,0
+ste_h76_kcos,setpoint 0.5,223000,0.49185,0
+ste_h76_kcos,setpoint 0.5,224000,0.49174,0
+ste_h76_kcos,setpoint 0.5,225000,0.49162,0
+ste_h76_kcos,setpoint 0.5,226000,0.49151,0
+ste_h76_kcos,setpoint 0.5,227000,0.49139,0
+ste_h76_kcos,setpoint 0.5,228000,0.49126,0
+ste_h76_kcos,setpoint 0.5,229000,0.49114,0
+ste_h76_kcos,setpoint 0.5,230000,0.49104,0
+ste_h76_kcos,setpoint 0.5,231000,0.49091,0
+ste_h76_kcos,setpoint 0.5,232000,0.49078,0
+ste_h76_kcos,setpoint 0.5,233000,0.49067,0
+ste_h76_kcos,setpoint 0.5,234000,0.49056,0
+ste_h76_kcos,setpoint 0.5,235000,0.49044,0
+ste_h76_kcos,setpoint 0.5,236000,0.49033,0
+ste_h76_kcos,setpoint 0.5,237000,0.49021,0
+ste_h76_kcos,setpoint 0.5,238000,0.49010,0
+ste_h76_kcos,setpoint 0.5,239000,0.48998,0
+ste_h76_kcos,setpoint 0.5,240000,0.48987,0
+ste_h76_kcos,setpoint 0.5,241000,0.48975,0
+ste_h76_kcos,setpoint 0.5,242000,0.48964,0
+ste_h76_kcos,setpoint 0.5,243000,0.48952,0
+ste_h76_kcos,setpoint 0.5,244000,0.48939,0
+ste_h76_kcos,setpoint 0.5,245000,0.48927,0
+ste_h76_kcos,setpoint 0.5,246000,0.48914,0
+ste_h76_kcos,setpoint 0.5,247000,0.48902,0
+ste_h76_kcos,setpoint 0.5,248000,0.48891,0
+ste_h76_kcos,setpoint 0.5,249000,0.48880,0
+ste_h76_kcos,setpoint 0.5,250000,0.48868,0
+ste_h76_kcos,setpoint 0.5,251000,0.48855,0
+ste_h76_kcos,setpoint 0.5,252000,0.48843,0
+ste_h76_kcos,setpoint 0.5,253000,0.48830,0
+ste_h76_kcos,setpoint 0.5,254000,0.48817,0
+ste_h76_kcos,setpoint 0.5,255000,0.48804,0
+ste_h76_kcos,setpoint 0.5,256000,0.48792,0
+ste_h76_kcos,setpoint 0.5,257000,0.48779,0
+ste_h76_kcos,setpoint 0.5,258000,0.48766,0
+ste_h76_kcos,setpoint 0.5,259000,0.48752,0
+ste_h76_kcos,setpoint 0.5,260000,0.48738,0
+ste_h76_kcos,setpoint 0.5,261000,0.48726,0
+ste_h76_kcos,setpoint 0.5,262000,0.48713,0
+ste_h76_kcos,setpoint 0.5,263000,0.48701,0
+ste_h76_kcos,setpoint 0.5,264000,0.48691,0
+ste_h76_kcos,setpoint 0.5,265000,0.48678,0
+ste_h76_kcos,setpoint 0.5,266000,0.48666,0
+ste_h76_kcos,setpoint 0.5,267000,0.48653,0
+ste_h76_kcos,setpoint 0.5,268000,0.48642,0
+ste_h76_kcos,setpoint 0.5,269000,0.48631,0
+ste_h76_kcos,setpoint 0.5,270000,0.48618,0
+ste_h76_kcos,setpoint 0.5,271000,0.48607,0
+ste_h76_kcos,setpoint 0.5,272000,0.48594,0
+ste_h76_kcos,setpoint 0.5,273000,0.48581,0
+ste_h76_kcos,setpoint 0.5,274000,0.48568,0
+ste_h76_kcos,setpoint 0.5,275000,0.48554,0
+ste_h76_kcos,setpoint 0.5,276000,0.48541,0
+ste_h76_kcos,setpoint 0.5,277000,0.48528,0
+ste_h76_kcos,setpoint 0.5,278000,0.48517,0
+ste_h76_kcos,setpoint 0.5,279000,0.48506,0
+ste_h76_kcos,setpoint 0.5,280000,0.48494,0
+ste_h76_kcos,setpoint 0.5,281000,0.48481,0
+ste_h76_kcos,setpoint 0.5,282000,0.48469,0
+ste_h76_kcos,setpoint 0.5,283000,0.48457,0
+ste_h76_kcos,setpoint 0.5,284000,0.48445,0
+ste_h76_kcos,setpoint 0.5,285000,0.48432,0
+ste_h76_kcos,setpoint 0.5,286000,0.48419,0
+ste_h76_kcos,setpoint 0.5,287000,0.48407,0
+ste_h76_kcos,setpoint 0.5,288000,0.48395,0
+ste_h76_kcos,setpoint 0.5,289000,0.48382,0
+ste_h76_kcos,setpoint 0.5,290000,0.48368,0
+ste_h76_kcos,setpoint 0.5,291000,0.48356,0
+ste_h76_kcos,setpoint 0.5,292000,0.48344,0
+ste_h76_kcos,setpoint 0.5,293000,0.48330,0
+ste_h76_kcos,setpoint 0.5,294000,0.48318,0
+ste_h76_kcos,setpoint 0.5,295000,0.48306,0
+ste_h76_kcos,setpoint 0.5,296000,0.48293,0
+ste_h76_kcos,setpoint 0.5,297000,0.48281,0
+ste_h76_kcos,setpoint 0.5,298000,0.48268,0
+ste_h76_kcos,setpoint 0.5,299000,0.48255,0
+ste_h76_kcos,setpoint 0.5,300000,0.48243,0
+ste_h76_kcos,setpoint 0.5,301000,0.48232,0
+ste_h76_kcos,setpoint 0.5,302000,0.48220,0
+ste_h76_kcos,setpoint 0.5,303000,0.48208,0
+ste_h76_kcos,setpoint 0.5,304000,0.48197,0
+ste_h76_kcos,setpoint 0.5,305000,0.48186,0
+ste_h76_kcos,setpoint 0.5,306000,0.48173,0
+ste_h76_kcos,setpoint 0.5,307000,0.48160,0
+ste_h76_kcos,setpoint 0.5,308000,0.48148,0
+ste_h76_kcos,setpoint 0.5,309000,0.48136,0
+ste_h76_kcos,setpoint 0.5,310000,0.48124,0
+ste_h76_kcos,setpoint 0.5,311000,0.48110,0
+ste_h76_kcos,setpoint 0.5,312000,0.48099,0
+ste_h76_kcos,setpoint 0.5,313000,0.48086,0
+ste_h76_kcos,setpoint 0.5,314000,0.48075,0
+ste_h76_kcos,setpoint 0.5,315000,0.48066,0
+ste_h76_kcos,setpoint 0.5,316000,0.48054,0
+ste_h76_kcos,setpoint 0.5,317000,0.48042,0
+ste_h76_kcos,setpoint 0.5,318000,0.48031,0
+ste_h76_kcos,setpoint 0.5,319000,0.48019,0
+ste_h76_kcos,setpoint 0.5,320000,0.48004,0
+ste_h76_kcos,setpoint 0.5,321000,0.47989,0
+ste_h76_kcos,setpoint 0.5,322000,0.47977,0
+ste_h76_kcos,setpoint 0.5,323000,0.47966,0
+ste_h76_kcos,setpoint 0.5,324000,0.47954,0
+ste_h76_kcos,setpoint 0.5,325000,0.47939,0
+ste_h76_kcos,setpoint 0.5,326000,0.47927,0
+ste_h76_kcos,setpoint 0.5,327000,0.47915,0
+ste_h76_kcos,setpoint 0.5,328000,0.47904,0
+ste_h76_kcos,setpoint 0.5,329000,0.47892,0
+ste_h76_kcos,setpoint 0.5,330000,0.47879,0
+ste_h76_kcos,setpoint 0.5,331000,0.47867,0
+ste_h76_kcos,setpoint 0.5,332000,0.47856,0
+ste_h76_kcos,setpoint 0.5,333000,0.47843,0
+ste_h76_kcos,setpoint 0.5,334000,0.47832,0
+ste_h76_kcos,setpoint 0.5,335000,0.47819,0
+ste_h76_kcos,setpoint 0.5,336000,0.47808,0
+ste_h76_kcos,setpoint 0.5,337000,0.47799,0
+ste_h76_kcos,setpoint 0.5,338000,0.47789,0
+ste_h76_kcos,setpoint 0.5,339000,0.47776,0
+ste_h76_kcos,setpoint 0.5,340000,0.47764,0
+ste_h76_kcos,setpoint 0.5,341000,0.47751,0
+ste_h76_kcos,setpoint 0.5,342000,0.47738,0
+ste_h76_kcos,setpoint 0.5,343000,0.47728,0
+ste_h76_kcos,setpoint 0.5,344000,0.47722,0
+ste_h76_kcos,setpoint 0.5,345000,0.47713,0
+ste_h76_kcos,setpoint 0.5,346000,0.47703,0
+ste_h76_kcos,setpoint 0.5,347000,0.47695,0
+ste_h76_kcos,setpoint 0.5,348000,0.47686,0
+ste_h76_kcos,setpoint 0.5,349000,0.47676,0
+ste_h76_kcos,setpoint 0.5,350000,0.47666,0
+ste_h76_kcos,setpoint 0.5,351000,0.47655,0
+ste_h76_kcos,setpoint 0.5,352000,0.47643,0
+ste_h76_kcos,setpoint 0.5,353000,0.47632,0
+ste_h76_kcos,setpoint 0.5,354000,0.47621,0
+ste_h76_kcos,setpoint 0.5,355000,0.47609,0
+ste_h76_kcos,setpoint 0.5,356000,0.47599,0
+ste_h76_kcos,setpoint 0.5,357000,0.47588,0
+ste_h76_kcos,setpoint 0.5,358000,0.47578,0
+ste_h76_kcos,setpoint 0.5,359000,0.47568,0
+ste_h76_kcos,setpoint 0.5,360000,0.47557,0
+ste_h76_kcos,setpoint 0.5,361000,0.47544,0
+ste_h76_kcos,setpoint 0.5,362000,0.47532,0
+ste_h76_kcos,setpoint 0.5,363000,0.47520,0
+ste_h76_kcos,setpoint 0.5,364000,0.47508,0
+ste_h76_kcos,setpoint 0.5,365000,0.47496,0
+ste_h76_kcos,setpoint 0.5,366000,0.47484,0
+ste_h76_kcos,setpoint 0.5,367000,0.47471,0
+ste_h76_kcos,setpoint 0.5,368000,0.47459,0
+ste_h76_kcos,setpoint 0.5,369000,0.47447,0
+ste_h76_kcos,setpoint 0.5,370000,0.47436,0
+ste_h76_kcos,setpoint 0.5,371000,0.47425,0
+ste_h76_kcos,setpoint 0.5,372000,0.47412,0
+ste_h76_kcos,setpoint 0.5,373000,0.47399,0
+ste_h76_kcos,setpoint 0.5,374000,0.47386,0
+ste_h76_kcos,setpoint 0.5,375000,0.47374,0
+ste_h76_kcos,setpoint 0.5,376000,0.47362,0
+ste_h76_kcos,setpoint 0.5,377000,0.47350,0
+ste_h76_kcos,setpoint 0.5,377300,0.47346,0
