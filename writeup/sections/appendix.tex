@@ -205,10 +205,9 @@ the rest to the origin distribution, renormalize,
 \begin{equation}
 	S_m := \operatorname*{top-}m_{\,j}\, \lvert p_{j} - o_{j}\rvert,
 	\qquad
-	\tilde{p}_{j} := \frac{p_{j}\,\mathbf{1}[j \in S_m]
-	                       + o_{j}\,\mathbf{1}[j \notin S_m]}
-	                      {\sum_{j'} \big(p_{j'}\,\mathbf{1}[j' \in S_m]
-	                       + o_{j'}\,\mathbf{1}[j' \notin S_m]\big)},
+	q_j := \begin{cases} p_j & j \in S_m \\ o_j & j \notin S_m \end{cases},
+	\qquad
+	\tilde{p}_{j} := \frac{q_j}{\sum_{j'} q_{j'}},
 	\qquad \mathbf{o} := \mathbb{E}_n[\mathbf{p}_n],
 	\label{eq:topdev}
 \end{equation}
@@ -230,7 +229,7 @@ whitened eval-tail covariance, the best distortion \emph{any} code of
 that rate can reach under a Gaussian model. With $\lambda_1, \dots,
 \lambda_d$ that covariance's eigenvalues, a rate of $B$ bits reaches
 \begin{equation}
-	\fvu_{\min}(B) = \frac{\sum_j \min(\theta, \lambda_j)}{\sum_j \lambda_j},
+	\mathrm{FVU}_{w,\min}(B) = \frac{\sum_j \min(\theta, \lambda_j)}{\sum_j \lambda_j},
 	\qquad
 	B = \sum_j \max\!\Big(0,\; \tfrac{1}{2}\log_2 \frac{\lambda_j}{\theta}\Big),
 	\label{eq:ratefloor}
