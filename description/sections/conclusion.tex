@@ -1,34 +1,34 @@
 \section{Future work}
+\label{sec:future}
 
-\subsection{Completing the evaluation}
-\label{sec:future-completing}
-The steering overlay, task naturalness, partition-level seed stability,
-and the training-history diagnostics are reported above; cross-model
-feature splitting and sparse language probing are covered in the notes
-and not repeated here. What remains of the deciding set: human scoring
-of the blinded naturalness sheet, the full-length seed replica, and the
-fresh-encoded evaluation set. The last is blocked: the deterministic
-mC4 stream is exhausted by the 4M-sample training cache, so no held-out
-tail exists and closing the train/eval asymmetry requires a different
-source (the C4 validation split is the leading candidate). The
-controlled retrains and the HSIC arms are reported above
-(Figures~\ref{fig:variants} and~\ref{fig:hsic}). Beyond the deciding
-set, three comparisons remain open: the grouped-softmax rival on
-steering quality, the RL decode-cycle tier and its convergence race,
-and full-length scaling retrains.
+\subsection{Identifiability first}
+Before heads are named they must be reproducible, or it must be known
+which are. The first layer partly is, and one head in it recurs in every
+run; what lets that head recur when no other does, and whether training
+pressure can extend it, are the first questions. The next training runs
+use 128 entries per head and atoms without a decoder, the configuration
+in which the GPT-2 hard codes were strongest, at two seeds each.
 
-\subsection{Change in interpretability over training}
-First numbers are in Section~\ref{sec:prelim-devinterp}. The remaining
-work is aligning the per-layer sharpening curves with independently
-estimated stage boundaries, which needs the boundary estimator rather
-than new tracking machinery.
+\subsection{Steering at scale}
+The embedding-space steering instrument with SAE decoder rows and
+supervised difference-of-means vectors alongside the Ontologizer's own
+directions; per-entry effect consistency across contexts; and a lever on
+collateral at the decision boundary, where the hard code's heads
+currently sit. The single-layer hard variant, the one Ontologizer that
+steers cleanly, is the reference to beat.
+
+\subsection{Task reconstruction}
+Recover what each reproducible head classifies: partition-against-label
+mutual information led by topic and genre, which are what the embedding
+is organized by; descriptions contrasting an entry with its siblings,
+validated by blinded assignment accuracy against $1/k$; and parallel-text
+invariance to separate content heads from form heads.
 
 \subsection{Transcoder adaptation}
 The architecture currently reconstructs an embedding. Adapting it to map
 between layers, as transcoders do, is the obvious next target.
 
-\subsection{HSIC bottleneck}
-The measured ablation is in Section~\ref{sec:prelim-hsic}. Whether a
-reformulated bottleneck can coexist with the load balancing the
-mean-entropy bonus provides is open.
-
+\subsection{A fresh evaluation set}
+The softmax Ontologizers trained on the evaluation tail, so every
+comparison against them is in-sample. Closing that needs a new source,
+since the deterministic mC4 stream is exhausted by the training cache.

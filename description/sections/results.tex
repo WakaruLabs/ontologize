@@ -1,200 +1,166 @@
 \section{Preliminary results}
 \label{sec:prelim}
-The evaluation is in progress. Results so far are mixed. The full
-methodology and numbers are in the working
-notes\footnote{K.~Wiechecki, \emph{Dictionary learning as unsupervised
-steering-vector generation: Ontologizers vs.\ sparse autoencoders on
-SONAR sentence embeddings}, working notes, in preparation; distributed
-with this proposal.}; the headlines are summarized here. Two models
-recur throughout and are named once now. The notes' reference model,
-\texttt{resid\_nc} (372{,}600 steps), is the model behind the notes'
-tables, including Tables~\ref{tab:prelim-pareto}
-and~\ref{tab:prelim-headcoh}. Its sibling \texttt{resid\_nc\_hm} is
-the same configuration plus the batch mean-entropy bonus the notes
-propose as the freeze fix, trained to 4.38M steps; the new experiments
-reported here use its final checkpoint unless stated otherwise.
+The evaluation is in progress, and its results are mixed. This section
+gives the headline of each line of work; the full methodology, the
+eliminations behind each result and the supplementary measurements are
+in the working notes\footnote{K.~Wiechecki et al., \emph{Dictionary
+learning as unsupervised steering-vector generation: Ontologizers vs.\
+sparse autoencoders on SONAR sentence embeddings}, working notes, in
+preparation; distributed with this proposal.}.
 
-The notes carry one caveat about the reference: ``layer 4 froze 22/32
-heads late in temperature annealing and is mildly harmful.'' A
-diagnostic over both training histories (frozen: top classification
-share ${\geq}0.95$ and churn ${\leq}0.02$) bears the caveat out and
-locates the fix (Figure~\ref{fig:freeze}). In \texttt{resid\_nc}, the
-top layer (layer 4 of 0--4) begins freezing near step 190k, well after
-the anneal, reaches 27 of 32 by step 210k and 28 at its peak, and is
-still frozen at the last checkpoint; the count differs from the notes'
-22 under this criterion, the layer and the persistence do not. In
-\texttt{resid\_nc\_hm} the late freeze never occurs: what remains is
-an early annealing transient (22 of 32 at layer 1 of 0--4 at step 10k,
-with 16, 11, and 4 of 32 at layers 2, 3, and 0) that recovers
-completely by step 30k, leaving the final checkpoint unfrozen
-everywhere. The mean-entropy bonus does what the notes proposed it
-for.
+Three models recur. The softmax Ontologizer \texttt{resid\_nc} has $l{=}5$
+layers of $h{=}32$ heads with $k{=}32$ entries, a soft code. The
+straight-through Ontologizer \texttt{ste\_h76\_init01} has $5\times76$
+heads at $k{=}32$, a hard code of 1900 bits. The SAEs are top-$k$ SAEs
+on the same cache and objective. Scores are $\mathrm{FVU}_w$ on the
+final 32{,}768 cache rows, which the SAEs and the straight-through arms
+never train on; the softmax Ontologizers predate that holdout, so their
+scores are in-sample.
 
-\begin{figure}[tp]\centering
-\includegraphics[width=\linewidth]{figures/fig-freeze.pdf}
-\caption{Frozen heads per layer over training (frozen: top
-classification share ${\geq}0.95$, churn ${\leq}0.02$). Left:
-\texttt{resid\_nc\_hm}, with the mean-entropy bonus, has only an early
-annealing transient, peaking at 22/32 in layer 1 at step 10k and
-recovering to zero everywhere by step 30k. Right: \texttt{resid\_nc},
-the notes' reference, carries the caveat: a post-anneal layer-4 freeze
-from ${\sim}$190k that persists through its last checkpoint.}
-\label{fig:freeze}
-\end{figure}
-
-Four retrains of the \texttt{resid\_nc\_hm} configuration, a
-zero-change control and three single-knob variants (372k steps each),
-close the question of what drives the remaining transient. The control
-reproduces it head-for-head (22/32 at layer 1 at step 10k, zero
-everywhere by 30k) and shows no late freeze over its horizon.
-Stretching the temperature anneal from 50k to 150k steps attenuates
-and spreads the transient (peak 14/32 at layer 1 at step 30k, clear by
-50k); raising winner dropout from $0.1$ to $0.25$ tracks the control
-to within two heads at the peak, and holding the classification-noise
-floor at its starting value changes nothing at all
-(Figure~\ref{fig:variants}). The transient belongs to the temperature
-schedule alone, and every retrain ends unfrozen everywhere.
-
-\begin{figure}[tp]\centering
-\includegraphics[width=\linewidth]{figures/fig-variants.pdf}
-\caption{The early transient under the four retrains, layer-1 frozen
-count. The noise-floor variant overlaps the control exactly and the
-dropout variant tracks it to within two heads at the peak; only
-stretching the temperature anneal moves the curve, trading peak height
-for duration.}
-\label{fig:variants}
-\end{figure}
-
-\subsection{Reconstruction quality}
-Contrast-set structure is expensive. The plain-SAE frontier dominates
-the Ontologizer's deviation code at every capacity tested
-(Table~\ref{tab:prelim-pareto}), and the grouped-simplex constraint
-alone costs roughly $40\times$ in weighted fraction of variance
-unexplained. Here $\mathrm{FVU}_w$ is whitened MSE over the whitened
-variance of a constant predictor, and the deviation code is a per-head
-top-$m$ truncation around the measured mean classification
-$\mathbb{E}[p]$. The train/eval asymmetry carries over from the notes: the
-Ontologizer trained on the full cache including the evaluation tail,
-while the SAEs excluded it; a fresh-encoded evaluation set is blocked
-on a data source (Section~\ref{sec:future-completing}).
+\subsection{The price of a soft code}
+\label{sec:prelim-pareto}
+Contrast-set structure is expensive in a soft code. The plain-SAE
+frontier dominates the softmax Ontologizer's deviation code (each head's
+$m$ entries furthest from the mean assignment kept, the rest pinned to
+it) at every capacity measured (Table~\ref{tab:prelim-pareto}): at
+$\mathrm{FVU}_w \approx 0.49$ the SAE transmits 32 coefficients where the
+Ontologizer needs 320, and at matched budgets an unstructured code
+reconstructs about $50\times$ better. The soft model's own discrete
+reading is not a code at all: its argmax lands $77\times$ above the best
+distortion any 800-bit code can reach under a Gaussian model, so the
+entries an intervention forces are not what carries the soft model's
+embedding. That is the motivation for the hard code.
 
 \begin{table}[tp]\centering\small
 \begin{tabular}{@{}lrrr@{}}
 \toprule
 point & coeffs & index bits & $\mathrm{FVU}_w$ \\
 \midrule
-onto $m{=}0$ ($\mathbb{E}[p]$ origin) & 0 & 0 & 1.001 \\
+onto $m{=}0$ (mean-assignment origin) & 0 & 0 & 1.001 \\
 onto hard (argmax)                  & 0 & 800 & 17.34 \\
-sae k32 tier ($m{=}5120/11264$, incl.\ p5, s43) & 32 & $\sim$400 & 0.494--0.509 \\
-sae k32 bilinear                    & 32 & 394 & 0.602 \\
+\emph{rate floor at 800 bits}       & 0 & 800 & \emph{0.226} \\
+SAE $k{=}32$ tier                   & 32 & $\sim$400 & 0.494--0.509 \\
 onto dev $m{=}1$                    & 160 & 800 & 0.677 \\
-sae g160top1                        & 160 & 1972 & 0.274 \\
-sae k160 ($m{=}11264$)              & 160 & 2154 & 0.258 \\
-onto dev $m{=}2$                    & 320 & 1600 & 0.497 \\
+SAE $k{=}160$                       & 160 & 2154 & 0.258 \\
 onto dev $m{=}4$                    & 640 & 3200 & 0.289 \\
 onto dev $m{=}8$                    & 1280 & 6400 & 0.094 \\
-sae k5120 ($m{=}11264$, $L_0{\approx}1520$) & 1520 & 20455 & \textbf{0.00011} \\
-onto dev $m{=}16$                   & 2560 & 12800 & 0.0082 \\
-sae g160softmax                     & 5120 & 0 & \textbf{0.00436} \\
+SAE $k{=}5120$ ($L_0{\approx}1520$) & 1520 & 20455 & \textbf{0.00011} \\
+1-layer soft variant \texttt{g160softmax} & 5120 & 0 & 0.00436 \\
 onto soft ($m{=}32$)                & 5120 & 0 & 0.00538 \\
 \bottomrule
 \end{tabular}
-\caption{Reconstruction against code capacity on the shared evaluation
-tail, reproduced from the working notes. Ontologizer points are
-top-$m$ deviation truncations around the measured $\mathbb{E}[p]$
-origin; SAE points use measured eval $L_0$. The plain-SAE frontier
-dominates the Ontologizer's deviation code at every measured capacity;
-the gap is the price of contrast-set structure.}
+\caption{Reconstruction against code capacity for the softmax
+Ontologizer \texttt{resid\_nc}. Ontologizer points truncate each head to
+its $m$ largest deviations from the mean assignment; SAE points use
+measured $L_0$. The rate floor is reverse water-filling on the
+evaluation tail's whitened covariance\cite{cover2006}.}
 \label{tab:prelim-pareto}
 \end{table}
 
-\subsection{Orthogonality}
+\subsection{Heads are contrast sets}
 \label{sec:prelim-orth}
-Trained heads carry the signature the steering goal predicts: within-head
-decode directions repel, with 96\% of Ontologizer heads below a
-random-group null (Table~\ref{tab:prelim-headcoh}). Heads form
-well-separated contrast sets rather than semantic clusters, in both the
-Ontologizer and its single-layer grouped-softmax analogue.
-This is the within-head axis: it says the $k$ entries of a head spread
-apart, not that distinct heads occupy disjoint coordinates. The
-between-head disjoint support of Section~\ref{sec:disjoint} is a
-separate claim and is not tested here.
+Trained heads carry the signature the steering goal predicts. Every
+entry has an exact decode direction in output space, and within a soft
+head those directions repel: in 96\% of the softmax Ontologizer's heads
+they are more dissimilar than size-matched random sets of atoms from the
+same pool (Table~\ref{tab:prelim-headcoh}). A head holds well-separated
+alternatives along one dimension, not a semantic cluster, and the
+repulsion strengthens under the training objective's whitened inner
+product. The hard code agrees from the weights: a head's decoded atoms
+are orthogonal to slightly repelling (mean cosine $0.023$ at layer 0,
+$-0.015$ to $-0.020$ below). Hard per-head selection in a single linear
+layer gives the opposite signature, heads that tile one region.
 
 \begin{table}[tp]\centering\small
 \begin{tabular}{@{}lrrrr@{}}
 \toprule
-grouping & groups & mean $z_{\cos}$ & frac $z{>}2$ & frac $z{<}{-}2$ \\
+heads or grouping & count & mean $z_{\cos}$ & frac $z{>}2$ & frac $z{<}{-}2$ \\
 \midrule
-g160top1 (trained, hard)      & 160 & $+161.3$ & 1.00 & 0.00 \\
-k32 discovered (\texttt{m11264}) & 359 & $+1.7$ & 0.36 & 0.02 \\
-onto heads (trained, soft)    & 160 & $-17.6$ & 0.04 & \textbf{0.96} \\
-g160softmax (trained, soft)   & 160 & $-14.7$ & 0.00 & \textbf{1.00} \\
+\texttt{g160top1} (trained, hard)   & 160 & $+161.3$ & 1.00 & 0.00 \\
+$k{=}32$ SAE, discovered groups     & 359 & $+1.7$ & 0.36 & 0.02 \\
+Ontologizer heads (trained, soft)   & 160 & $-17.6$ & 0.04 & \textbf{0.96} \\
+\texttt{g160softmax} (trained, soft) & 160 & $-14.7$ & 0.00 & \textbf{1.00} \\
 \bottomrule
 \end{tabular}
 \caption{Within-head decode-direction coherence, $z$-scored against
-size-matched same-pool nulls ($n_{\text{null}}{=}500$), reproduced from
-the working notes. Softmax-trained heads are anti-coherent: in
-96--100\% of heads the entries' decode directions repel, so heads hold
-well-separated contrastive alternatives rather than semantic clusters.
-Hard per-group selection shows the opposite signature.}
+size-matched same-pool nulls ($n_{\text{null}}{=}500$). Soft heads are
+anti-coherent: their atoms are pushed apart.}
 \label{tab:prelim-headcoh}
 \end{table}
 
-\subsection{Categorical structure}
-Categorical form, exhaustive and exclusive, exists precisely when it is
-trained in as hard selection. It never emerges spontaneously, and it is
-not recoverable post hoc.
+\subsection{A discrete code beats a sparse linear one}
+\label{sec:prelim-ste}
+Under straight-through selection the forward pass is the argmax, and the
+discrete code is the model. At 1900 index bits and no continuous
+coefficients the hard code reaches $\mathrm{FVU}_w$ $0.154$, $40\%$
+below a top-$k$ SAE at matched bits that also transmits 160
+coefficients, and $30\%$ below an L1 SAE spending $3.4\times$ the bits
+plus 519 coefficients (Table~\ref{tab:prelim-ste}). It sits at
+$3.1\times$ its own rate floor. A third of that error came from one
+scalar: the non-negative dictionary's atoms sum coherently, so the
+shipped initialization started the residual cascade at
+$1.84\times10^{8}$, and scaling the dictionary so each layer starts near
+the identity took the error from $0.229$ to $0.154$ and filled the code.
 
-\subsection{Automated interpretability}
-\label{sec:prelim-autointerp}
-Per-latent evaluation lenses systematically mis-measure classifier
-codes, whose content lives in partitions rather than latent magnitudes.
-Blinded describability tracks code density rather than architecture,
-and parameter-space decodes of feature directions fail as descriptions
-outright.
+\begin{table}[tp]\centering\small
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+code & coeffs & index bits & $\mathrm{FVU}_w$ \\
+\midrule
+\textbf{straight-through Ontologizer, $5\times76$} & \textbf{0} & \textbf{1900} & \textbf{0.154} \\
+SAE, top-$k$, $k{=}160$ & 160 & 2154 & 0.258 \\
+SAE, ReLU+L1 $3\times10^{-5}$ & 519 & 6390 & 0.220 \\
+SAE, ReLU+L1 $10^{-5}$ & 1438 & 17723 & 0.048 \\
+1-layer hard variant \texttt{g160top1} & 160 & 1972 & 0.274 \\
+\bottomrule
+\end{tabular}
+\caption{The hard code against converged SAEs on the held-out tail.
+\texttt{g160top1} shares the hard per-head selection but has one layer
+of linear classifiers and keeps a magnitude on each winner.}
+\label{tab:prelim-ste}
+\end{table}
 
-A head-level pass over \texttt{resid\_nc} (step 372{,}600) tests this
-directly; its frozen top layer is a caveat for any layer-4 heads in
-the sample. Decoding descriptions from dictionary parameters fails at
-the partition level as it does per latent (median self accuracy
-$0.02$).
-Activation-grounded head descriptions do no better than a null pairing
-at the current sample size ($n{=}20$ heads per condition, median
-accuracy $0.083$ against $0.125$), and a head's detection accuracy is
-uncorrelated with the mean describability of its latents (Spearman
-$+0.07$ over 30 head--lens pairs, 15 heads under each lens; neither
-per-lens value distinguishable from zero). The two lenses disagree and
-neither shows above-chance head-level signal, so the mis-measurement
-argument predicts an advantage the current sample fails to deliver.
+\subsection{Depth helps reconstruction and costs addressability}
+\label{sec:prelim-depth}
+Five layers of 76 heads and one layer of 380 have the same bits and
+exactly the same parameter count, and both fill their code. The stack's
+error is $1.79\times$ lower ($0.1535$ against $0.2750$), and the gain
+comes from pairing each stage's input with the sample's own earlier
+error: a flat layer is a product quantizer\cite{jegou2011}, where no head
+sees another's error, while the stack is a residual quantizer.
 
-\subsection{Steering fidelity}
-There is a causally verified existence proof: forcing a single
-classification in the first layer reliably steers decodes into Burmese
-while otherwise preserving content. Joint interventions compose
-approximately additively (median cosine between summed and joint decode
-deltas at least $0.95$, exact in the final layer). Text fidelity for
-soft codes sits near the likelihood ceiling, while the sparse SAE tier
-starts at roughly $0.75$ collateral, so low-collateral steering is
-currently exclusive to the soft architectures.
+The same cascade entangles the heads. A step in embedding space along a
+target entry's decode direction, a quarter of the input's norm long,
+realizes the target on 99.6\% of rows in the flat model while disturbing
+33\% of the other heads; in the stack it realizes 37\% while disturbing
+66\%. In both, every direction disturbs as many other heads as a random
+step of the same length: the hard code's heads sit almost on their
+decision boundaries (median winner--runner-up margin $1.5\times10^{-4}$),
+and the cascade adds downstream layers reclassifying a changed residual.
+The one Ontologizer whose decode direction avoids the other heads is
+the simplest, \texttt{g160top1}: it realizes 58\% of targets while
+disturbing $2.6\%$ of other heads, against $23\%$ for a random step.
 
-The matched-budget overlay against supervised baselines is now in
-(Table~\ref{tab:steer-overlay}): difference-of-means, linear-probe, and
-forced-classification arms with a random-direction floor, medians over
-24 language--magnitude cells per arm on language steering. Each arm
-wins its own effect frame, as expected. On the shared
-difference-of-means frame, classification forcing moves decodes along
-the target direction $0.43\times$ as far as supervised steering does,
-and lands well ahead of probe directions. The collateral column is the
-check on all of it: every arm's collateral, supervised steering
-included, sits at the random-direction floor ($0.72$--$0.78$), and none
-materially beats it. On task naturalness the arms are so far
-indistinguishable (Figure~\ref{fig:naturalness}): chrF against
-unsteered decodes falls from ${\sim}0.35$ at magnitude $0.25$ to
-${\sim}0.15$ at magnitude $1.0$ for the difference-of-means and
-forced-classification arms, with probe and random decaying in parallel
-from ${\sim}0.38$ to ${\sim}0.20$, and forced classifications tracking
-difference-of-means within noise throughout. A blinded human-rating
-sheet (120 items) is prepared but unscored.
+\subsection{Steering}
+\label{sec:prelim-steer}
+Steering works when it is measured where it acts. In the soft model a
+decode-direction step of a quarter of the input's norm realizes the
+target entry on 77--82\% of rows, against a $3\%$ chance rate; the text
+round trip had hidden this, since an unsteered decode--re-encode cycle
+preserves a head's choice on only about $12\%$ of rows. Interventions
+set directly on a head compose: the decode change of a joint two-head
+intervention points where the sum of the single interventions points
+(median cosine at least $0.95$ in every layer, exact in the last, where
+nothing downstream can reclassify). Forcing one first-layer entry of
+\texttt{resid\_nc} reliably steers decodes into Burmese while preserving
+their content, a causally verified existence proof on one seed.
+
+Against supervised steering on language, under matched intervention
+budgets (Table~\ref{tab:steer-overlay}), forcing an entry moves decodes
+along the supervised difference-of-means direction $0.43\times$ as far
+as supervised steering itself and $5\times$ further than linear-probe
+directions. Every arm's collateral, supervised steering included, sits
+at the random-direction floor.
 
 \begin{table}[tp]\centering\small
 \begin{tabular}{@{}lrrrr@{}}
@@ -202,147 +168,96 @@ sheet (120 items) is prepared but unscored.
 arm & eff (native) & eff (dm frame) & hit rate & collateral \\
 \midrule
 difference of means    & 0.337 & 0.337 & 0.250 & 0.757 \\
-classification forcing & 0.394 & 0.146 & 0.125 & 0.778 \\
+entry forcing          & 0.394 & 0.146 & 0.125 & 0.778 \\
 linear probe           & 0.293 & 0.028 & 0.000 & 0.720 \\
 random direction       & --    & --    & --   & 0.721 \\
 \bottomrule
 \end{tabular}
-\caption{Language steering under matched intervention budgets on
-\texttt{resid\_nc\_hm}'s final checkpoint; medians over 24
-language--magnitude cells per arm.
-Effect is displacement along the arm's own direction (native) and along
-the shared difference-of-means direction (dm frame); hit rate is the
-fraction of steered decodes reaching the median projection of genuine
-target-language rows on the shared frame; collateral is content change
-on unrelated dimensions, with the random-direction row as the floor. Each arm dominates its native frame; on the shared frame
-classification forcing reaches $0.43\times$ the supervised effect.
-Every arm's collateral sits at the random floor at these budgets.}
+\caption{Language steering under matched intervention budgets on the
+softmax Ontologizer \texttt{resid\_nc\_hm}; medians over 24
+language--magnitude conditions per arm. Effect is displacement along the
+arm's own direction (native) and along the shared difference-of-means
+direction (dm frame); hit rate is the fraction of steered decodes
+reaching the median projection of genuine target-language rows;
+collateral is content change elsewhere, with the random direction as its
+floor.}
 \label{tab:steer-overlay}
 \end{table}
 
-\begin{figure}[tp]\centering
-\includegraphics[width=\linewidth]{figures/fig-naturalness.pdf}
-\caption{chrF between steered and unsteered decodes by intervention
-magnitude. All four arms, the random direction included, damage the
-decode at nearly the same rate; no arm buys naturalness at matched
-magnitude.}
-\label{fig:naturalness}
-\end{figure}
-
-The decisive comparison, though, is architectural. A single-layer grouped-softmax
-SAE reproduces the Ontologizer's code structure, contrastive signature,
-and text fidelity at better reconstruction with half the parameters. It
-is the rival null hypothesis the full architecture must beat on
-steering quality and task naturalness, and that comparison is where the
-work currently sits.
-
-\subsection{Seed stability}
+\subsection{The function reproduces; the heads do not}
 \label{sec:prelim-seed}
-Partitions do not reproduce across seeds at matched training. A second
-run of the \texttt{resid\_nc\_hm} configuration from a different seed,
-compared at matched training (370k steps on both sides), matches
-essentially nothing
-(Figure~\ref{fig:seed}): no head pair and at most $0.3\%$ of entries
-clear a $0.3$ cosine threshold on dictionary geometry, and
-activation-frame containment over a shared evaluation batch is at most
-$0.001$ at any threshold, against $0.31$/$0.24$/$0.15$/$0.03$ for the
-k32 SAE and its own seed replica across the four match thresholds
-($0.3$--$0.9$). The metric itself has headroom: the same run compared
-against itself $2{,}600$ steps apart scores $1.000$ on geometry at
-every threshold, and $0.65$ at the loosest activation threshold
-(falling to $0.20$ at the strictest), so the activation frame has a
-self-ceiling well below one and the cross-seed numbers sit far below
-both ceilings. At matched training the Ontologizer's partitions are
-less reproducible across seeds than the SAE latents this proposal
-criticizes. A replica carried to \texttt{resid\_nc\_hm}'s full $4.4$M
-steps is the remaining control.
+Two hard-code runs differing only in seed reach identical held-out error,
+$0.1535$ and $0.1535$. Nothing that identifies an individual head
+agrees: matched head partitions score a mean NMI of $0.012$ against a
+$0.005$ null, and head contributions a centered cosine of $0.007$
+against $0.002$, while a run against its own earlier checkpoint scores
+$0.38$ on partitions. GPT-2 replicates the pattern: only the first
+layer reproduces, at under a fifth of a same-run control. The softmax
+Ontologizer fares no better, matching at most $0.1\%$ of entries across
+seeds where the $k{=}32$ SAE pair matches 3--31\%. The first layer is the
+only one whose input does not depend on upstream choices, and one head
+in it does recur: the strongest head in every run, found at different
+indices in different seeds, encodes topic and genre (its entries decode
+to crime news, geopolitics, encyclopedic description, manufacturing,
+marketing, legislation and entertainment, and contrastive descriptions
+of them are detected at F1 $0.52$ against a $0.27$ null). Language, the
+corpus's one labelled factor, is carried as neighbourhoods across heads
+and never by one, as a language-agnostic embedding should give.
 
-\begin{figure}[tp]\centering
-\includegraphics[width=\linewidth]{figures/fig-seed.pdf}
-\caption{Cross-seed matched-entry fraction on the activation frame by
-threshold. The same-run pair bounds what the metric can detect ($0.65$
-at $\tau{=}0.3$); the k32 SAE pair reproduces partially; Ontologizer
-partitions reproduce not at all.}
-\label{fig:seed}
-\end{figure}
+\subsection{Hard codes on GPT-2}
+\label{sec:prelim-gpt2}
+On GPT-2 small, with signed atoms in activation space and no decoder, an
+800-bit hard code recovers $97.6\%$ of the model's loss when its
+reconstruction is spliced back in, against $96.2\%$ for a $k{=}32$ SAE at
+nearly the same $\mathrm{FVU}_w$ (Table~\ref{tab:prelim-gpt2}); across
+architectures, $\mathrm{FVU}_w$ does not order downstream loss. Fibers
+trained on top of the frozen discrete code recover $99.9\%$ while leaving
+the code exactly as it was, at the price of 640 continuous numbers per
+token.
 
-\subsection{Development over training}
-\label{sec:prelim-devinterp}
-Tracking \texttt{resid\_nc\_hm}'s full 448-checkpoint history gives
-the devinterp question a first answer. The tracked statistic applies
-Table~\ref{tab:prelim-headcoh}'s $z$-score machinery to the refit
-end-to-end direction matrix rather than to raw dictionary decode
-directions, so the two are not directly comparable: the notes' raw
-decode directions repel ($z{=}{-}17.6$, measured on \texttt{resid\_nc}
-at 372.6k steps) while the refit directions on
-\texttt{resid\_nc\_hm}'s final checkpoint cohere ($z{=}{+}72$); the
-statistics differ in both instrument and substrate, and the refit
-frame folds in the shared decoder and cross-layer interactions. On that statistic the
-shape is rise, peak, and partial relaxation
-(Figure~\ref{fig:devinterp}): mean within-head $z_{\cos}$ climbs from
-$1.8$ at step 10k to a peak of $119$ near step 370k (median $123$,
-every head above $z{=}2$), then relaxes over the remaining $4$M steps
-to $72$ at the final checkpoint (median $105$, $0.79$ above $z{=}2$).
-The code itself moves the other way after the annealing transient:
-per-sample entropy returns to $4.5$ bits of a $5$-bit maximum and usage
-KL falls toward uniform: relative to initialization the consolidation
-is in the geometry the classifications write, while the classifications
-themselves stay soft.
+\begin{table}[tp]\centering\small
+\begin{tabular}{@{}llrr@{}}
+\toprule
+model & code per token & $\mathrm{FVU}$ & loss recovered \\
+\midrule
+\textbf{hard code, direct atoms} & 800 bits & 0.195 & \textbf{97.6\%} \\
+hard code, private heads, $k{=}64$ & 960 bits & \textbf{0.164} & \textbf{97.9\%} \\
+top-$k$ SAE, $k{=}32$ & 32 coeffs + $\sim$394 bits & 0.189 & 96.2\% \\
+top-$k$ SAE, $k{=}128$ & 128 coeffs + $\sim$1580 bits & 0.116 & 98.6\% \\
+\bottomrule
+\end{tabular}
+\caption{GPT-2 small, residual stream entering block 8, held-out
+documents. Loss recovered is
+$(\mathrm{CE}_{\mathrm{ablate}} - \mathrm{CE}_{\mathrm{recon}}) /
+(\mathrm{CE}_{\mathrm{ablate}} - \mathrm{CE}_{\mathrm{clean}})$ with the
+residual mean-ablated as the floor; FVU is unwhitened here. Private
+heads write disjoint 48-dimensional blocks through a shared decoder. One
+seed per Ontologizer.}
+\label{tab:prelim-gpt2}
+\end{table}
 
-\begin{figure}[tp]\centering
-\includegraphics[width=\linewidth]{figures/fig-devinterp.pdf}
-\caption{The 448-checkpoint training history. Left: within-head
-coherence of refit end-to-end directions, $z$-scored against
-size-matched nulls; rise, peak near step 370k, partial relaxation.
-Right: mean per-sample classification entropy returns toward the
-$5$-bit maximum after the annealing transient. Geometry consolidates
-while the code itself stays soft.}
-\label{fig:devinterp}
-\end{figure}
-
-\subsection{HSIC-bottleneck ablation}
-\label{sec:prelim-hsic}
-An HSIC bottleneck is a candidate replacement for the auxiliary
-losses: maximize dependence with the reconstruction target while
-penalizing dependence between heads. Both arms are in, retrained on
-the \texttt{resid\_nc\_hm} configuration to 372k steps. Replacing the
-four auxiliary terms with the HSIC objective destroys head health: a
-late, persistent freeze takes 77 of 160 heads by the final checkpoint,
-one layer entirely (layer 3, 32/32 from step 80k), while
-reconstruction lands slightly behind the control (tail-mean training
-MSE $3.7{\times}10^{-5}$ against $3.4{\times}10^{-5}$). Adding HSIC on
-top of the auxiliary terms is worse on both counts: reconstruction
-$4.4{\times}10^{-5}$, and 41 of 160 heads still frozen at the end,
-layer 3 fully frozen by 80k with only partial thaw
-(Figure~\ref{fig:hsic}). The failure mode is \texttt{resid\_nc}'s late
-freeze, not the transient, which places the bottleneck and the
-mean-entropy bonus in direct opposition: the bonus prevents exactly
-what HSIC induces. As formulated the bottleneck is not a replacement,
-and it is not an addition either.
-
-\begin{figure}[tp]\centering
-\includegraphics[width=\linewidth]{figures/fig-hsic.pdf}
-\caption{Total frozen heads over training for the three loss
-configurations, all on the \texttt{resid\_nc\_hm} configuration at
-372k steps. The auxiliary-loss control's freeze is the early transient
-and resolves; both HSIC arms develop the late, persistent freeze
-instead, and the auxiliary terms only partially thaw it.}
-\label{fig:hsic}
-\end{figure}
+\subsection{Automated interpretability}
+\label{sec:prelim-autointerp}
+Per-latent lenses mis-measure classifier codes, whose content lives in
+partitions rather than latent magnitudes. Blinded detection F1 of
+latent descriptions tracks code density, not architecture (correlation
+$-0.89$ with log density across six models), and the Ontologizer sits on
+the SAE trend. Descriptions decoded from parameters alone fail outright
+(F1 $0.02$ for the Ontologizer and at most $0.16$ for any model, against
+an always-match null of $0.67$): a decoded
+atom is an instance of what an entry writes, not a criterion for it, and
+naming an entry requires activation evidence.
 
 \subsection{Against the desiderata}
-Scored against the introduction: causal is currently positive (the
-forced-classification steering result is causally verified), composable
-is positive (interventions compose approximately additively), and
-closed-form is negative (parameter-space decodes fail as descriptions).
-Seed stability is measured on both sides: the k32 SAE pair matches at
-$0.31$ down to $0.03$ as the threshold tightens while Ontologizer
-partitions match at zero (Section~\ref{sec:prelim-seed}). The residual
-stack's one quantified credit remains roughly $3\times$ adaptive
-compensation under truncation (the shrinkage decomposition in the
-working notes). Of the outstanding comparisons, the
-steering overlay is a qualified positive, task naturalness is so far a
-wash, and seed stability is a clear negative; the reconstruction price
-Table~\ref{tab:prelim-pareto} puts on the architecture stands.
-
-
+Scored against the introduction. \emph{Causal}: positive with a
+qualification. Entries are realized by steps in embedding space and
+steer decodes, but an input-space step disturbs other heads exactly as
+much as a random step of its length, and the residual cascade doubles
+that. \emph{Composable}: positive for interventions set on heads
+directly, which add. \emph{Closed-form}: negative so far, since
+parameter-space decodes do not describe. Underneath all three sits
+identifiability, which the proposal took for granted: a head that is not
+the same head on the next run cannot be named, and past the first layer
+no head is. On reconstruction the verdict has turned: the soft code pays
+heavily for its structure, but the hard code beats sparse linear codes
+at matched bits on SONAR and in downstream loss on GPT-2.

@@ -10,7 +10,8 @@ Makefile, and this file. The essential list:
 - refs.bib             (inert on arXiv once .bbl ships; keep for humans)
 - flockpaper.sty, vars.tex
 - sections/*.tex, tikz/*.tex
-- figures/*.pdf        (8 result figures, vector)
+- figures/fig-teaser.pdf (the one result figure; the other PDFs in
+                        figures/ belong to the working notes)
 - figures/frontis-orbit.png, figures/end-ridge.png (plates)
 
 figures/make_figs.py + figures/data/ reproduce every result figure;

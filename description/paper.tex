@@ -52,20 +52,20 @@ control technique is a steering vector. They are remarkably robust
 compared to unsupervised techniques such as SAEs, but require labeled
 contrastive datasets. We propose a MoEfication
 technique that decomposes a representation space into a set of
-contrastive classifiers. Each classification corresponds to a
-representative vector; inputs are encoded as classifier outputs and
-reconstructed from a weighted average of the representative vectors.
-Steering effectively comes for free, outputs are bounded, the
-representative vectors admit static interpretation in principle, and
-feature space is structured. An evaluation against SAE baselines is
-reported: forced classifications steer causally, compose additively,
-and reach $0.43\times$ the supervised steering effect on a shared
-frame, but reconstruction pays roughly $40\times$ for the contrastive
-structure, head-level descriptions do not beat a null at the current
-sample size, and partitions do not reproduce across seeds. Training diagnostics,
-single-knob retrains, an HSIC-bottleneck ablation, a scaling sweep,
-and a reinforcement-learning probe of classification rewards are
-included.
+contrastive classifiers. Each class corresponds to a representative
+vector; inputs are encoded as classifications and reconstructed from the
+vectors they select. Steering effectively comes for free, outputs are
+bounded, the representative vectors admit static interpretation in
+principle, and feature space is structured. Preliminary results on SONAR
+sentence embeddings and GPT-2 residuals: trained heads are contrast
+sets; a hard code of 1900 bits with no continuous coefficients
+reconstructs 40\% better than a top-$k$ SAE at matched bits, and on
+GPT-2 an 800-bit code recovers more of the model's loss than a $k{=}32$
+SAE. Entries are realized by steps in embedding space, and interventions
+set on heads compose additively. But an input-space step disturbs other
+heads as much as a random step of its length, past the first layer no
+head reproduces across seeds, and parameter-space decodes do not
+describe what an entry does.
 \end{abstract}
 
 \input{sections/introduction.tex}
@@ -82,8 +82,6 @@ The Flock Capital Research Department, whose error-diffusion pipeline
 also printed the plates.
 
 \printbibliography
-
-%\input{sections/appendix.tex}
 
 \vspace{20pt}
 \noindent\plate{\includegraphics[width=\textwidth]{figures/end-ridge.png}}\\[3pt]
