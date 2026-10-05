@@ -476,16 +476,19 @@ arm at 0.5 with an explicit 50k ramp (the loop borrows its ramp from
 
 Unlike the HSIC penalty, the setpoint holds:
 
-| step | uncontrolled | controlled | applied `s_kcossim` |
+| step | uncontrolled | controlled | applied `s_kcossim` (200-step mean) |
 |---|---|---|---|
-| 10,000 | 0.790 | 0.790 | 4.1e-6 |
-| 50,000 | 0.821 | 0.500 | 0 |
+| 10,000 | 0.790 | 0.790 | 4.0e-6 |
+| 50,000 | 0.821 | 0.500 | 7.2e-4 |
 | 200,000 | 0.804 | 0.494 | 0 |
 | 377,300 | 0.774 | 0.473 | 0 |
 
-The multiplier reads 0 almost throughout because `dual_apply` projects
-it out while the constraint is satisfied: it is a thermostat that
-engages on drift, which is what the constraint being *held* looks like.
+The controller acts once (`writeup/figures/fig-kcos.pdf`): the
+multiplier rises to 4.9e-3 near step 35k and pulls the max row cosine
+from 0.82 to the setpoint by 50k, and from about 60k on `dual_apply`
+projects it to zero while the constraint is satisfied. No drift ever
+re-engages it: the statistic stays at or below 0.5 without pressure,
+ending at 0.473.
 
 **It improves steering in every direction, at lower collateral, for no
 reconstruction cost.** Held-out FVU_w is 0.2157 against 0.2293
@@ -1398,6 +1401,118 @@ survives to convergence: at 371,900 steps the signed arms sit at
 `c` +0.0009 and +0.0019 with effective rank 27, against +0.30 and +0.45
 at rank 9.15 and 5.41 under `abs`, and with 20% less held-out error at
 e_dec 1536.
+
+## Between-head disjoint support (`headsupport.py`): absent in every model
+
+The disjoint-support argument -- non-negative heads that are orthogonal
+own disjoint blocks of the dictionary space, as a property of the
+weights -- is the premise for reading a dictionary statically, and it had
+never been measured: every reported model trained before the support
+overlap `sigma` existed, most with its predecessor `cossim_h` penalized
+(`s_hcossim` 1e-6). `headsupport.py` computes `sigma` from the final
+checkpoints: the mean off-diagonal cosine between heads' usage-weighted
+coordinate profiles `s_h = sum_k pbar_hk |W_hk|`, `pbar` the mean
+assignment over the eval tail at the run's final temperature. It does so
+in the dictionary space and again with each atom decoded into the output
+space. The null permutes each head's profile coordinates independently
+(50 draws), keeping each head's own distribution. `spread` is each
+head's profile participation ratio as a fraction of the dimension; a
+partition into `h` blocks needs it near `1/h`.
+
+| model | `sigma` dict (null) | spread | `sigma` decoded (null) |
+|---|---|---|---|
+| SONAR `sweep_softmax_shm` | 0.731 (0.738) | 0.74 | 0.938 (0.930) |
+| SONAR `sweep_top2_shm` | 0.862 (0.860) | 0.87 | 0.972 (0.958) |
+| SONAR `ste_h76` (shipped init) | 0.942 (0.942) | 0.94 | 0.721 (0.719) |
+| SONAR `ste_h76_init01` | 0.962 (0.961) | 0.96 | 0.980 (0.965) |
+| SONAR `ste_l1_h380_i01_hm1e4` | 0.977 (0.977) | 0.98 | 0.974 (0.963) |
+| GPT-2 abs, e_dec 1536 | 0.739 (0.643) | 0.65 | 0.948 (0.925) |
+| GPT-2 abs, e_dec 768 | 0.596 (0.486) | 0.52 | 0.875 (0.852) |
+| GPT-2 signed, e_dec 1536 | 0.937 (0.636) | 0.64 | 0.964 (0.943) |
+| GPT-2 signed, e_dec 768 | 0.955 (0.950) | 0.95 | 0.965 (0.943) |
+| GPT-2 concat, d_head 32 | 0 by construction | -- | 0.846 (0.788) |
+
+**No model partitions its dictionary space between heads.** `sigma` is
+at or above its null everywhere, and each head's profile covers 52-98%
+of the coordinates where a partition needs about 3% (`h = 32`) or less.
+Where `sigma` departs from the null it is *above* it: the GPT-2 arms
+place their heads on the same coordinates, the signed wide arm most
+(0.94 against 0.64). Decoded, heads overlap slightly more than chance in
+every model. The two exceptions to dense profiles are collapsed layers
+(`sweep_softmax_shm` layer 4, `sigma` 0.086 against 0.112, the inert
+last layer of the selection-rule section; GPT-2 abs/768 layer 2, 0.133
+at its null), not partitions.
+
+It is not the null space. Most of each non-negative atom's energy sits in
+the decoder's null space, which reconstruction never constrains, so the
+dictionary-space overlap could have been gauge. Splitting each atom into
+its row-space (visible) and null-space parts and scoring each against the
+same shuffle null:
+
+| model | null-space energy | `sigma` visible (null) | `sigma` null part (null) |
+|---|---|---|---|
+| SONAR `sweep_softmax_shm` | 0.47 | 0.899 (0.901) | 0.887 (0.889) |
+| SONAR `sweep_top2_shm` | 0.89 | 0.971 (0.971) | 0.901 (0.899) |
+| SONAR `ste_h76` | 0.96 | 0.771 (0.771) | 0.983 (0.982) |
+| SONAR `ste_h76_init01` | 0.80 | 0.980 (0.980) | 0.981 (0.980) |
+| SONAR `ste_l1_h380_i01_hm1e4` | 0.78 | 0.978 (0.977) | 0.989 (0.987) |
+| GPT-2 abs, e_dec 1536 | 0.97 | 0.940 (0.934) | 0.802 (0.711) |
+| GPT-2 signed, e_dec 1536 | 0.14 | 0.955 (0.706) | 0.954 (0.890) |
+
+The visible part is at chance on SONAR and above it on GPT-2, so the
+part that reaches the output does not partition either; and the e_dec 768
+arms, whose square decoder has no null space, sit at or above the null in
+the dictionary space itself. The row space is not coordinate-aligned, so
+the visible part's support is basis-dependent; the decoded `sigma` is the
+nearest basis-free check, and it agrees. The energy split differs sharply
+by sign: the non-negative arms keep 78-97% of atom energy in the null
+space, the signed GPT-2 arm 14%. This is not the lift reading, which the
+null-space section rejects; what drives the difference is not measured
+here.
+
+The single-layer variants and the SAE's discovered groups have no
+dictionary space -- their decoder rows are output-space directions -- so
+only the decoded measure applies, with a head's profile
+`sum_{j in g} E[z_j] |W_dec,j|` (`--sae`):
+
+| model | heads or groups | `sigma` decoded (null) | spread |
+|---|---|---|---|
+| `g160top1` | 160 trained | 0.648 (0.644) | 0.64 |
+| `g160softmax` | 160 trained | 0.983 (0.975) | 0.97 |
+| `m11264_k32` | 359 discovered, 9025/11264 latents | 0.899 (0.892) | 0.89 |
+| `m5120_k32` | 164 discovered, 4247/5120 latents | 0.917 (0.905) | 0.91 |
+
+All at the null (ratio 1.01), as every Ontologizer's decoded `sigma` is
+(1.01-1.07). That says no head or group structure, trained or discovered,
+partitions the output coordinates -- but the decoded measure cannot tell
+architectures apart: SONAR's output coordinates are not meaningful axes,
+every model's atoms are dense across them, and all fourteen models land
+within 7% of their nulls. `g160top1`'s lower absolute value only reflects
+more concentrated profiles (it tiles one decoder cluster per head; see the
+coherence results). The comparison `sigma` was built for exists only in
+the dictionary space, which the SAE variants do not have.
+
+So the `cossim_h` penalty at the weights used did not produce the
+partition the architecture argument assumes, and the within-head
+orthogonality measured earlier is the only one the trained models have.
+`ConcatDictBlock` is the only way these models got disjoint support, and
+by construction. Whether `s_support` as a loss term can produce it is
+untested: no run has trained with it.
+
+`resid_nc` and `resid_nc_hm` are missing because this branch cannot load
+them. They predate `constinput`: their layer-0 classifier takes the bare
+1024-dim input, while `Ontologizer.setup` now always builds layer 0 with
+`resid_const`'s extra coordinate, and neither the spec nor `migrate_spec`
+records the difference. Every loader on this branch fails on them the same
+way (`ScopeParamShapeError`, 1025 against 1024).
+
+```bash
+uv run python experiments/ste-arm/headsupport.py \
+    --model data/out/sonar/multilingual/ste_h76_init01 \
+    --model data/out/gpt2_l8/ste_h76_sgn --out headsupport.json
+```
+
+Results: `data/out/headsupport/headsupport.json`.
 
 ## Head-independence pressure (`--s-hsic-heads`): a measurement artifact
 

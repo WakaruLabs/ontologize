@@ -67,6 +67,7 @@ does.
 | which auxiliary losses do anything, at what weight | `auxpull.py` |
 | **dictionary geometry** | |
 | within-head row geometry from the weights | `dictgeom.py` |
+| whether heads occupy disjoint coordinates (support overlap) | `headsupport.py` |
 | whether `ConcatDictBlock` changes the non-negative correlation floor | `concat_floor.py` |
 | whether entries in a layer contribute equally | `entryshare.py` |
 | how a layer's large atoms are spread across its heads | `bigatoms.py` |
