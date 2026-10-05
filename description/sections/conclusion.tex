@@ -24,6 +24,13 @@ is organized by; descriptions contrasting an entry with its siblings,
 validated by blinded assignment accuracy against $1/k$; and parallel-text
 invariance to separate content heads from form heads.
 
+\subsection{Disjoint heads}
+No trained model partitions its coordinates between heads, and none has
+trained with the support overlap itself as a loss term. Whether that
+penalty can buy the partition, and at what reconstruction price, is open;
+concatenated heads, disjoint by construction, are the comparison that
+already has it.
+
 \subsection{Transcoder adaptation}
 The architecture currently reconstructs an embedding. Adapting it to map
 between layers, as transcoders do, is the obvious next target.

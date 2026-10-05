@@ -149,9 +149,11 @@ loss term.
 \paragraph{Not orthogonal in the limit}
 The support overlap $\sigma$ (Section~\ref{sec:disjoint}) penalizes heads
 sharing coordinates but does not guarantee disjoint support at
-convergence. The head geometry (Figure~\ref{fig:head-simplex}) makes
-orthogonality the cheap solution rather than forcing it. Within a head,
-atoms do come apart (Section~\ref{sec:prelim-orth}).
+convergence, and the measured answer is that it does not arrive: within a
+head atoms come apart, but no trained model partitions its coordinates
+between heads (Section~\ref{sec:prelim-orth}). A static reading of the
+dictionary cannot assume disjoint heads; concatenated heads, disjoint by
+construction, are the route to them.
 
 \paragraph{Might not generalize out of distribution}
 The same concern applies to every feature-based technique. Closed-form

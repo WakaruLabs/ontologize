@@ -71,6 +71,15 @@ are orthogonal to slightly repelling (mean cosine $0.023$ at layer 0,
 $-0.015$ to $-0.020$ below). Hard per-head selection in a single linear
 layer gives the opposite signature, heads that tile one region.
 
+The other orthogonality the architecture was designed for did not
+emerge. No trained model partitions its dictionary space between heads:
+the support overlap $\sigma$ (Equation~\ref{eq:support}) sits at or above
+a null that shuffles each head's coordinates, in every model measured, and
+each head's usage covers 52--98\% of the coordinates where a partition
+into 32 heads needs about 3\%. This holds for the part of each atom the
+decoder sees as well as for its null-space part. Heads are contrast sets
+that share their coordinates.
+
 \begin{table}[tp]\centering\small
 \begin{tabular}{@{}lrrrr@{}}
 \toprule
@@ -255,7 +264,9 @@ steer decodes, but an input-space step disturbs other heads exactly as
 much as a random step of its length, and the residual cascade doubles
 that. \emph{Composable}: positive for interventions set on heads
 directly, which add. \emph{Closed-form}: negative so far, since
-parameter-space decodes do not describe. Underneath all three sits
+parameter-space decodes do not describe and heads do not own disjoint
+blocks of the dictionary that a static reading could take one at a
+time. Underneath all three sits
 identifiability, which the proposal took for granted: a head that is not
 the same head on the next run cannot be named, and past the first layer
 no head is. On reconstruction the verdict has turned: the soft code pays

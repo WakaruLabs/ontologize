@@ -19,9 +19,10 @@ constrains every prefix of the stack to reconstruct the input.
 
 Because entries within a head are mutually exclusive rather than
 independent, each head is a contrastive set: a $k$-way classifier whose
-entry swaps are steering moves. An auxiliary loss on the heads' support
-overlap $\sigma$ (Equation~\ref{eq:support}) pushes each head onto its
-own coordinates of the dictionary space (Figure~\ref{fig:head-simplex}).
+entry swaps are steering moves. A between-head penalty is meant to push
+each head onto its own coordinates of the dictionary space
+(Figure~\ref{fig:head-simplex}); measured on the trained models, it did
+not (Section~\ref{sec:disjoint}).
 
 \begin{figure}[tp]
 \centering
@@ -211,7 +212,9 @@ block of coordinates; \emph{within} a head the $k$ atoms are contrastive
 alternatives spread apart inside that block, which
 Section~\ref{sec:prelim-orth} measures. Neither is guaranteed at
 convergence: $\sigma$ is a penalty, and the geometry makes a support
-partition the cheap solution rather than forcing one.
+partition the cheap solution rather than forcing one. Measured, the
+within-head orthogonality holds and the between-head partition does not
+form (Section~\ref{sec:prelim-orth}).
 
 \subsubsection{Decoder}
 \label{sec:decoder}
@@ -298,7 +301,10 @@ layers,
 \end{equation}
 with $\mathrm{L1}$ the batch mean of each sample's feature norm. In
 practice $\mathrm{cossim}_b$ also minimizes $H$, which therefore carries
-no weight.
+no weight. Every model reported here trained before $\sigma$ existed, with
+its predecessor in that slot: the mean cosine between heads' features
+within a sample, which for non-negative features stands in for the same
+disjointness.
 
 \subsection{Evaluation}
 \label{sec:eval}
