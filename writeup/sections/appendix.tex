@@ -283,6 +283,26 @@ second view SONAR-encodes auto-interp description texts and tests pooled
 within-head similarity against a label-permutation null.
 \texttt{--assignment} scores discovered (post-hoc) groups.
 
+\paragraph{Between-head support (\texttt{headsupport.py}).}
+The complement on the other axis: do distinct heads occupy distinct
+coordinates, as Section~\ref{sec:disjoint} argues non-negative heads
+should? On a trained checkpoint, each head's usage-weighted coordinate
+profile and their mean pairwise cosine are those of
+Equation~\ref{eq:support}, with $\bar{\mathbf{p}}_i$ the head's mean
+assignment over the evaluation tail at the run's final temperature, from
+the model's own forward. The \emph{decoded} variant replaces each atom by
+$\lvert \mathrm{dec}(\mathbf{d}_{ij}) - \mathrm{dec}(\mathbf{0})\rvert$,
+the output-space direction steering acts in; for an \texttt{sae.py} run,
+which has no dictionary space, the profile of a head or group $g$ is
+$\mathbf{s}_g = \sum_{j \in g} \mathbb{E}[z_j]\,\lvert
+\mathbf{w}^{\mathrm{dec}}_j\rvert$. Non-negative profiles overlap heavily
+by chance, so $\sigma$ is scored against a null that permutes each head's
+profile coordinates independently (50 draws), keeping every head's own
+distribution and destroying only the alignment between heads. A head's
+\emph{spread} is its profile's participation ratio as a fraction of the
+dimension, $(\sum_c s_{ic})^2 / (n \sum_c s_{ic}^2)$; a partition into $h$
+blocks needs it near $1/h$.
+
 \paragraph{Feature splitting and seed stability (\texttt{splitting.py},
 \texttt{partition.py}, \texttt{headcontrib.py}).}
 For models $A$ (coarse) and $B$ (fine) on shared rows, each $B$-latent is
@@ -1682,6 +1702,70 @@ reconstruction gradient in $\ker(D)$ was a coordinate artifact, 3e-8 with
 respect to $\lvert W\rvert$. How large ``the null part'' is depends
 entirely on the norm asked for: 2.43\% of squared L2, 23.20\% of L2,
 56.55\% of L1.
+
+\subsection{Heads share coordinates: no partition}
+\label{sec:support}
+
+Section~\ref{sec:disjoint}'s between-head orthogonality --- non-negative
+heads that are orthogonal own disjoint coordinate blocks of the dictionary
+space, as a property of the weights --- is the premise for reading a
+dictionary statically. Every model here trained before the support overlap
+$\sigma$ existed, most with its predecessor penalized, so it had never been
+measured. Scored on final checkpoints (\texttt{headsupport.py}; one seed
+per row):
+
+\begin{center}\small
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+model & $\sigma$, dictionary (null) & spread & $\sigma$, decoded (null) \\
+\midrule
+SONAR \texttt{resid\_nc} (372.6k steps) & 0.818 (0.815) & 0.83 & 0.917 (0.910) \\
+SONAR \texttt{resid\_nc\_hm} (8.27M steps) & 0.113 (0.118) & 0.13 & 0.892 (0.878) \\
+SONAR \texttt{softmax\_shm} & 0.731 (0.738) & 0.74 & 0.938 (0.930) \\
+SONAR \texttt{top2\_shm} & 0.862 (0.860) & 0.87 & 0.972 (0.958) \\
+SONAR straight-through, shipped init & 0.942 (0.942) & 0.94 & 0.721 (0.719) \\
+SONAR straight-through, $5\times76$ & 0.962 (0.961) & 0.96 & 0.980 (0.965) \\
+SONAR straight-through, $1\times380$ & 0.977 (0.977) & 0.98 & 0.974 (0.963) \\
+GPT-2 abs, $e{=}1536$ & 0.739 (0.643) & 0.65 & 0.948 (0.925) \\
+GPT-2 abs, $e{=}768$ & 0.596 (0.486) & 0.52 & 0.875 (0.852) \\
+GPT-2 signed, $e{=}1536$ & 0.937 (0.636) & 0.64 & 0.964 (0.943) \\
+GPT-2 signed, $e{=}768$ & 0.955 (0.950) & 0.95 & 0.965 (0.943) \\
+GPT-2 concat, $d_{\text{head}}{=}32$ & 0 by construction & --- & 0.846 (0.788) \\
+\midrule
+\texttt{g160top1} (160 trained heads) & --- & --- & 0.648 (0.644) \\
+\texttt{g160softmax} (160 trained heads) & --- & --- & 0.983 (0.975) \\
+\texttt{k32} discovered groups (359) & --- & --- & 0.899 (0.892) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{No model partitions its dictionary space between heads.} $\sigma$
+sits at or above its null everywhere, and each head's profile covers 52--98\%
+of the coordinates where a partition into 32 heads needs about 3\%. Where
+$\sigma$ departs from the null it is \emph{above} it: the GPT-2 arms place
+their heads on the same coordinates, the signed wide arm most. The one
+exception is \texttt{resid\_nc\_hm}, the reference configuration trained 22
+times longer: its profiles are sparse and $\sigma$ falls 4\% below the null
+in four of five layers. That is long training sparsifying each head, not a
+partition --- at spread 0.13 a head still uses four times its share --- and
+the same configuration at 372.6k steps is dense and at its null. The
+predecessor penalty ($s_{\mathrm{cossim}_h} = 10^{-6}$, or $10^{-5}$ for
+\texttt{resid\_nc}) did not produce the partition; no run has trained with
+$\sigma$ itself as a loss term. \texttt{ConcatDictBlock} is the only route
+to disjoint support here, and it is disjoint by construction.
+
+It is not the decoder's null space. Splitting each atom into its row-space
+(visible) and null-space parts and scoring each against the same null, the
+visible part is at chance on SONAR and above it on GPT-2 (the signed wide
+arm 0.955 against 0.706), and the $e{=}768$ arms, whose square decoder has
+no null space, sit at or above the null in the dictionary space itself.
+The row space is not coordinate-aligned, so the visible part's support is
+basis-dependent; the decoded $\sigma$ is the nearest basis-free check, and
+it agrees. The decoded measure itself cannot separate architectures: every
+model's atoms are dense across SONAR's output coordinates, and all fifteen
+rows land within 7\% of their nulls, the trained and discovered SAE groups
+included. The comparison $\sigma$ was built for exists only in the
+dictionary space, which the SAE variants do not have.
 
 \subsection{Concatenated heads}
 \label{sec:concatgeom}

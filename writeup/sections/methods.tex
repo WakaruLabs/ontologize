@@ -329,8 +329,11 @@ alternatives spread apart inside that block
 (Figure~\ref{fig:head-simplex}). Section~\ref{sec:prelim-orth} measures
 the second. Neither is guaranteed at convergence: $\sigma$ is a penalty,
 and the geometry is built to make a support partition the cheap solution
-rather than to force one. Under $\mathtt{ConcatDictBlock}$ heads write
-disjoint slices by construction and $\sigma$ is identically zero.
+rather than to force one. Measured on the trained models, the cheap
+solution was not taken: the within-head orthogonality holds, and no model
+partitions its coordinates between heads (Appendix~\ref{sec:support}).
+Under $\mathtt{ConcatDictBlock}$ heads write disjoint slices by
+construction and $\sigma$ is identically zero.
 
 We add noise $\varepsilon_F$ to $F$, then sum over the head dimension to obtain
 pooled features $F' \in \mathbb{R}^{e}$, which are added to $R$.

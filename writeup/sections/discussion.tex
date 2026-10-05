@@ -109,6 +109,15 @@ architecture buys.} Trained softmax heads' decode directions repel (96\%
 of heads below null), and hard-code heads' decoded atoms are orthogonal
 to slightly repelling: each head holds well-separated alternatives. This
 is invisible to reconstruction metrics and to per-latent probes.
+\item \textbf{The other designed orthogonality did not emerge: heads share
+their coordinates.} No trained model partitions its dictionary space
+between heads; the support overlap sits at or above a coordinate-shuffle
+null in every model, each head's usage covers 52--98\% of the coordinates,
+and this holds for the part of each atom the decoder sees as well as for
+its null-space part. Only very long training (8.27M steps) moved it, by
+sparsifying each head's profile rather than separating heads. A static
+reading of the dictionary cannot assume disjoint heads; concatenated heads
+are the only route to them, by construction.
 \item \textbf{A discrete ontology is possible, but not at the softmax
 architecture's size or with its readout.} The softmax model's argmax is
 not its code (77$\times$ above the 800-bit floor for \texttt{resid\_nc},
@@ -260,6 +269,11 @@ pairing account from the other side.
 \item \textbf{The collinearity setpoint's mechanism.} The one lever that
 buys steerability acts on a statistic that is mostly gauge; repeat it on
 the decoded statistic, and on signed dictionaries.
+\item \textbf{Train with the support overlap.} No model attains between-head
+disjoint support (Appendix~\ref{sec:support}), and none has trained with
+$\sigma$ as a loss term rather than its predecessor; whether it can buy the
+partition, and at what reconstruction price, is open. Concatenated heads
+are the comparison that already has it.
 \item \textbf{Logit-scale control for straight-through training.}
 Normalize logits per head, or control $T$ against a spread$/T$ setpoint,
 in place of the hand-matched temperature.

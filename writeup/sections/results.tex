@@ -158,8 +158,13 @@ and slightly repelling, in the space that matters. The same statistic read
 in the $e$-dimensional dictionary space instead reads $0.12$--$0.29$; that
 reading is dominated by the decoder's null space and should not be used
 (Appendix~\ref{sec:rowcos}). Of the two orthogonalities in
-Section~\ref{sec:disjoint}, then, the within-head one is measured and
-holds in both code types.
+Section~\ref{sec:disjoint}, then, the within-head one holds in both code
+types. \textbf{The between-head one does not}: no trained model partitions
+its dictionary space between heads. The support overlap $\sigma$ sits at
+or above a null that shuffles each head's coordinates, and each head's
+usage covers 52--98\% of the coordinates where a partition into 32 heads
+needs about 3\% (Appendix~\ref{sec:support}). Heads are contrast sets that
+share their coordinates.
 
 Two \texttt{resid\_nc} outlier heads (layer-2 h25, $z{+}346$; layer-3
 h28, $z{+}280$; the next candidates sit in the partially frozen layer 4)
@@ -851,8 +856,9 @@ the error exactly at convergence (Spearman $+1.00$; $+0.90$ at step 90k,
 where concat is the single inversion). The cost is also an
 \emph{interaction}: narrowing $e$ costs $+0.2\%$ signed and $+51\%$ under
 \texttt{abs}, so the wide dictionary buys room for the constraint, not
-representational capacity --- which tempers Section~\ref{sec:disjoint}'s
-claim that head-disjointness is what $e > d$ buys. \texttt{abs} is worse
+representational capacity --- which undercuts Section~\ref{sec:disjoint}'s
+claim that head-disjointness is what $e > d$ buys, and no model attains
+head-disjointness in any case (Appendix~\ref{sec:support}). \texttt{abs} is worse
 than signed at both widths, and its gap at $e{=}1536$ grew
 from 8\% at step 20k to 50\% at 200k and has since narrowed to 26\%
 (Figure~\ref{fig:orthant-curves}), so \texttt{abs} may be partly slower,
