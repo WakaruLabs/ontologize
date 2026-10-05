@@ -31,6 +31,16 @@ And the per-layer spread is wide enough to qualify any aggregate: in a
 runs eff 2.95, 4.24, 9.45, 11.60, 17.50 for a mean of 9.15), so arms
 that differ on the mean can overlap layer for layer. The closed form
 above matches an arm only when its layers are homogeneous.
+
+The `trainFVU` column, and the `--fvu=` matching, read the training log:
+`loss.csv`'s MSE over a 200-step window, divided by the whitened target
+variance. That is not the held-out FVU_w the tables report. Under deep
+supervision the logged MSE averages every prefix's error, under training
+noise. A single layer reads about 1.2 times its held-out error; a
+five-layer stack reads 2-3 times at moderate error and up to 74 times
+when the final error is small, since the early prefixes then dominate the
+average. Arms with different layer counts do not even order the same way. Use it only to compare checkpoints of one arm; for anything quoted,
+score the checkpoint (`writeup/figures/extract_curves.py`).
 """
 import sys
 from pathlib import Path
@@ -56,7 +66,9 @@ def steps(arm):
 
 
 def fvu(arm, step=None, win=200):
-    """Windowed train FVU_w at `step` (default: the end of the log)."""
+    """Windowed training-log MSE over the whitened target variance at
+    `step` (default: the end of the log). Not held-out FVU_w: under deep
+    supervision it averages all prefixes (see the module docstring)."""
     a = np.loadtxt(arm_path(arm) / "loss.csv", delimiter=",", usecols=1,
                    ndmin=1)
     end = len(a) if step is None else min(step, len(a))
@@ -64,12 +76,14 @@ def fvu(arm, step=None, win=200):
 
 
 def step_at_fvu(arm, target, win=200):
-    """The checkpointed step whose windowed FVU is CLOSEST to `target`, or
-    None if the arm never reaches it. Matching on FVU rather than on step
-    count is what makes arms of different selection rules comparable: they
-    converge at very different rates. Closest rather than first-past
-    because checkpoints are 10k apart and a fast arm overshoots a target by
-    more than the spread being measured."""
+    """The checkpointed step whose windowed training-log FVU (`fvu`) is
+    CLOSEST to `target`, or None if the arm never reaches it. Closest
+    rather than first-past because checkpoints are 10k apart and a fast arm
+    overshoots a target by more than the spread being measured. The target
+    is on the training log's scale, not held out, and arms that converge at
+    different rates do not reach it at comparable held-out error: matched
+    this way, `top2` read as reaching 0.40 near step 234k, where held out it
+    is there by 36k."""
     a = np.loadtxt(arm_path(arm) / "loss.csv", delimiter=",", usecols=1,
                    ndmin=1) / BASE_MSE
     sm = np.convolve(a, np.ones(win) / win, "valid")
@@ -137,7 +151,7 @@ def main():
         # trace: the same arm at several steps, to separate "how long it
         # trained" from "which selection rule it used"
         print(f"{'arm':>20} {'select':>8} {'step':>8} {'c':>8} {'eff':>7} "
-              f"{'FVU_w':>8}")
+              f"{'trainFVU':>8}")
         print("-" * 64)
         for arm in args:
             avail = steps(arm)
@@ -150,16 +164,17 @@ def main():
                       f"{g[1]:>7.2f} {fvu(arm, s):>8.4f}")
         return
     if target is not None:
-        print(f"matched at FVU_w <= {target}, not at matched step\n")
+        print(f"matched at training-log FVU {target} (closest checkpoint), "
+              f"not at matched step; not held-out error\n")
     print(f"{'arm':>20} {'select':>8} {'k':>4} {'c':>8} {'eff':>7} "
-          f"{'rank99':>7} {'step':>8} {'FVU_w':>8}")
+          f"{'rank99':>7} {'step':>8} {'trainFVU':>8}")
     print("-" * 78)
     for arm in args:
         at = None
         if target is not None:
             at = step_at_fvu(arm, target)
             if at is None:
-                print(f"{arm:>20} never reaches FVU_w {target} "
+                print(f"{arm:>20} never reaches training-log FVU {target} "
                       f"(best {fvu(arm):.4f})")
                 continue
         try:

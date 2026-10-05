@@ -1171,8 +1171,9 @@ e_dec=2048) at 369,500 steps with only `select` varying.
 FVU_w is the final output's on the cache tail, scored from the checkpoint
 (`writeup/figures/extract_curves.py`); these runs trained on the tail, so
 it is in-sample. `dictgeom.py`'s own FVU_w column is the training log,
-which under deep supervision averages all five prefixes' error and runs
-two to twenty times higher.
+which under deep supervision averages all five prefixes' error and reads
+1.3 to 74 times higher across these arms, most where the final error is
+smallest.
 
 `rank99` is 30.7-31.8 of 32 in all ten arms, so the numerical rank is
 full whatever the code is and carries no signal. Effective rank varies
