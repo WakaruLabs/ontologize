@@ -359,3 +359,98 @@ c.set_ylabel("round-trip chrF")
 monoticks(c)
 eyebrow(c, "codes preserve text")
 save(fig, "fig-teaser")
+
+# ---- training curves: held-out FVU and row cosine per checkpoint ------------
+# Scored from checkpoints by extract_curves.py, not read from loss.csv: the
+# logged MSE averages every deep-supervision prefix, so it is not the FVU
+# the tables report.
+
+def load_curves(family):
+    rows = list(csv.DictReader(open(os.path.join(RESULTS,
+                                                 f"curves_{family}.csv"))))
+    arms = {}
+    for r in rows:
+        arms.setdefault(r["arm"], []).append(
+            (int(r["step"]), float(r["fvu"]), float(r["c"])))
+    return {k: sorted(v) for k, v in arms.items()}
+
+
+def curve(ax, pts, col, **kw):
+    ax.plot([p[0] for p in pts], [p[col] for p in pts], lw=1.2, **kw)
+
+
+DASH = (0, (4, 2))
+DOT = (0, (1, 1.5))
+
+# non-negativity x width on GPT-2 layer 8 (tab:orthant)
+cv = load_curves("orthant")
+ORTHANT = [
+    ("ste_h76_sgn", "signed, e=1536", PINE, "-"),
+    ("ste_h76_sgn768", "signed, e=768", PINE, DASH),
+    ("ste_h76", "abs, e=1536", INK, "-"),
+    ("ste_h76_e768", "abs, e=768", INK, DASH),
+    ("ste_h76_cat32", r"concat, $d_{\mathrm{head}}$=32", INKMUT, DOT),
+]
+fig, (a, b) = plt.subplots(1, 2, figsize=(5.4, 2.6))
+fig.subplots_adjust(wspace=0.30, bottom=0.32, top=0.89, left=0.09, right=0.99)
+for arm, label, col, ls in ORTHANT:
+    curve(a, cv[arm], 1, color=col, ls=ls, label=label)
+    curve(b, cv[arm], 2, color=col, ls=ls)
+for ax in (a, b):
+    ax.axvline(93000, color=INKMUT, lw=0.5, ls=(0, (2, 2)))
+    ax.set_xlabel("training step")
+    logx(ax)
+a.set_ylabel(r"held-out FVU$_w$")
+eyebrow(a, "reconstruction")
+b.set_ylabel(r"mean row cosine $c$")
+# neither panel has a free corner, so the legend goes underneath
+fig.legend(*a.get_legend_handles_labels(), loc="lower center", ncols=3,
+           handlelength=1.8, fontsize=6.6, bbox_to_anchor=(0.5, 0.0))
+eyebrow(b, "dictionary geometry")
+save(fig, "fig-orthant-curves")
+
+# the s_Hm selection sweep: error flattens, hard arms keep decorrelating
+cv = load_curves("sweep")
+SWEEP = [
+    ("sweep_top2_shm", "top2", INK, "-"),
+    ("sweep_top4_shm", "top4", INK, DASH),
+    ("sweep_top8_shm", "top8", INKMUT, "-"),
+    ("sweep_top16_shm", "top16", INKMUT, DASH),
+    ("sweep_softmax_shm", "softmax", PINE, "-"),
+]
+fig, (a, b) = plt.subplots(1, 2, figsize=(5.4, 2.2))
+fig.subplots_adjust(wspace=0.30, bottom=0.20, top=0.87, left=0.09, right=0.99)
+for arm, label, col, ls in SWEEP:
+    curve(a, cv[arm], 1, color=col, ls=ls, label=label)
+    curve(b, cv[arm], 2, color=col, ls=ls)
+for ax in (a, b):
+    ax.set_xlabel("training step")
+    logx(ax)
+a.set_ylabel(r"FVU$_w$ (in-sample tail)")
+a.legend(loc="upper right", handlelength=1.8, fontsize=6.6)
+eyebrow(a, "reconstruction")
+b.set_ylabel(r"mean row cosine $c$")
+eyebrow(b, "dictionary geometry")
+save(fig, "fig-sweep-curves")
+
+# depth vs. flat at the fixed initialization, with seed replicas
+cv = load_curves("depth")
+DEPTH = [
+    ("ste_h76_init01", r"5$\times$76", PINE, "-"),
+    ("ste_h76_i01_s43", r"5$\times$76, seed 43", PINE50, DASH),
+    ("ste_l1_h380_i01_hm1e4", r"1$\times$380, $s_{H_m}$=1e-4", INK, "-"),
+    ("ste_l1_h380_i01", r"1$\times$380", INKMUT, "-"),
+    ("ste_l1_h380_i01_s43", r"1$\times$380, seed 43", INKMUT, DASH),
+]
+fig, ax = plt.subplots(figsize=(5.4, 2.1))
+fig.subplots_adjust(bottom=0.21, top=0.86, left=0.12, right=0.99)
+for arm, label, col, ls in DEPTH:
+    curve(ax, cv[arm], 1, color=col, ls=ls, label=label)
+ax.set_xlabel("training step")
+ax.set_ylabel(r"held-out FVU$_w$")
+# the band between the flat arms and the stack is empty
+ax.legend(loc="center right", bbox_to_anchor=(1.0, 0.52), ncols=2,
+          handlelength=1.8, fontsize=6.4)
+logx(ax)
+eyebrow(ax, "depth leads at every checkpoint")
+save(fig, "fig-depth-curves")
