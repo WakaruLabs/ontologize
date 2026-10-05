@@ -11,12 +11,12 @@ in the parent `ontologize` repo; see `../CLAUDE.md` for the JAX/Flax implementat
 describes.
 
 It is distinct from `../description/`, the project-proposal paper, which cites this
-document as its working notes and has its own `CLAUDE.md`, `vars.tex` and build. The two
-share results: the proposal's evaluation (head freezing, the HSIC bottleneck, development
-over training, the star sweep, soft-partition seed stability, the supervised steering
-overlay, REINFORCE, head-level auto-interp) is reproduced in this document's appendix,
-with its figures copied into `figures/`. When a number changes in one, change it in the
-other.
+document as its working notes and has its own `CLAUDE.md`, `vars.tex` and build. The
+proposal carries only headline methods and results, restated from this document's
+headline sections; its former supplementary material (head freezing, the HSIC
+bottleneck, development over training, the star sweep, REINFORCE, head-level auto-interp)
+lives in this document's appendix, with its figures in `figures/`. When a headline
+number changes here, change it in `../description/sections/results.tex` too.
 
 Every number in the prose comes from a script's output in the parent repo, almost all of
 it from `../experiments/ste-arm/` and the root eval scripts (`pareto.py`, `steerfid.py`,
@@ -45,7 +45,7 @@ TeX is not installed on the machine Claude Code usually runs on, so edits are ch
 statically. After any structural change, run:
 
 ```bash
-F="findings.tex sections/*.tex tikz/*.tex"
+F="findings.tex sections/*.tex tikz/*.tex algorithms/*.tex config/*.tex"
 comm -13 <(grep -ohP '\\label\{\K[^}]+' $F | sort -u) \
          <(grep -ohP '\\(?:ref|eqref)\{\K[^}]+' $F | tr ',' '\n' | sort -u)   # undefined refs
 grep -ohP '\\label\{\K[^}]+' $F | sort | uniq -d                              # duplicate labels
@@ -63,7 +63,7 @@ inline, then inputs the rest:
 findings.tex
 ├── (inline) abstract, Evaluation frame, Related work
 ├── sections/methods.tex       architecture, router and fibers; inputs every tikz/ diagram
-├── (inline) Data and objective, Models and baselines, Evaluation protocols
+├── (inline) Data, models and evaluation: a short overview pointing into the appendix
 ├── sections/results.tex       headline results only
 ├── sections/discussion.tex    formal reading, conclusions, follow-ups
 ├── (inline) Reproducibility, \printbibliography
@@ -71,7 +71,11 @@ findings.tex
 ```
 
 `algorithms/` holds the `DictBlock`, `DictEnc` and `Ontologizer` training passes
-(`algorithm2e` floats, `\input` from `sections/methods.tex`). `config/` holds one table per
+(`algorithm2e` floats, `\input` from `sections/methods.tex`) and the `steerembed.py`
+evaluation (`\input` from the appendix). The appendix's Supplementary methods
+(`app:methods`) is the single full description of data, models and evaluation
+protocols, with each evaluation's defining equation; the main body keeps only an
+overview, so add protocol detail there, not inline. `config/` holds one table per
 model family (softmax, SONAR straight-through, GPT-2 straight-through, `headline`-branch
 GPT-2, SAEs), `\input` from the appendix's "Model configurations" (`app:configs`). Model
 configurations live there, not in the main body: the body names a model's shape where an

@@ -1,8 +1,10 @@
 \appendix
 
 \section{Supplementary methods}
+\label{app:methods}
 
 \subsection{Data and objective}
+\label{app:data}
 
 \paragraph{Embedding space and data.}
 All SONAR models are trained on a fixed cache of $N{=}4{,}000{,}000$
@@ -25,8 +27,16 @@ recovered --- whose numbers compare only within that section.
 
 \paragraph{Evaluation.}
 All models minimize the whitened MSE of Equation~\ref{eq:mse}. We report
-$\fvu$: whitened MSE divided by the whitened variance of a constant
-predictor, on the final 32{,}768 cache rows. This tail is excluded from
+$\fvu$, whitened MSE divided by the whitened variance of a constant
+predictor,
+\begin{equation}
+	\fvu := \frac{\sum_{n} \sum_{j} w_j \,(\hat{x}_{n,j} - x_{n,j})^2}
+	              {\sum_{n} \sum_{j} w_j \,(x_{n,j} - \bar{x}_j)^2},
+	\qquad \bar{\mathbf{x}} := \mathbb{E}_n[\mathbf{x}_n],
+	\label{eq:fvu}
+\end{equation}
+with $\mathbf{w}$ the per-dimension inverse variance normalized to mean
+one, on the final 32{,}768 cache rows. This tail is excluded from
 SAE training and from the training of every straight-through arm.
 \emph{Caveat: the softmax Ontologizers (\texttt{resid\_nc} and the
 selection sweep) predate the holdout and trained on the full cache
@@ -44,6 +54,7 @@ indistinguishable from a broken one; every number here uses the run's own
 temperature.
 
 \subsection{Models and baselines}
+\label{sec:models}
 
 Every model's configuration is tabulated in Appendix~\ref{app:configs}.
 
@@ -180,6 +191,7 @@ support, so $\sigma$, weighted by usage and computed per head pair,
 replaced it too.
 
 \subsection{Evaluation protocols}
+\label{app:protocols}
 
 Each protocol is a standalone script sharing the eval split and activation
 conventions; the root-level ones are unit-tested against planted-structure
@@ -189,7 +201,19 @@ synthetic data.
 Capacity is continuous coefficients transmitted per sample, plus index
 bits. Ontologizer code points are \emph{top-$m$ deviation truncations}:
 per head, keep the $m$ entries with largest $|p - \mathrm{origin}|$, pin
-the rest to the origin distribution, renormalize. The origin is the
+the rest to the origin distribution, renormalize,
+\begin{equation}
+	S_m := \operatorname*{top-}m_{\,j}\, \lvert p_{j} - o_{j}\rvert,
+	\qquad
+	\tilde{p}_{j} := \frac{p_{j}\,\mathbf{1}[j \in S_m]
+	                       + o_{j}\,\mathbf{1}[j \notin S_m]}
+	                      {\sum_{j'} \big(p_{j'}\,\mathbf{1}[j' \in S_m]
+	                       + o_{j'}\,\mathbf{1}[j' \notin S_m]\big)},
+	\qquad \mathbf{o} := \mathbb{E}_n[\mathbf{p}_n],
+	\label{eq:topdev}
+\end{equation}
+applied to every head, so the code transmits $m$ coefficients per head.
+The origin is the
 corpus-mean classification $\mathbb{E}[p]$ --- measured, not uniform: the
 model output is jointly \emph{linear} in the flattened classifications
 (zero residual seed, linear decoder), so $\mathrm{decode}(\mathbb{E}[p]) =
@@ -203,7 +227,15 @@ all but the $m$ lowest-entropy heads per layer. SAE points use measured
 eval $L_0$. A hard code's index bits are $l\cdot h\log_2 k$; we compare
 each against the reverse water-filling bound~\cite{cover2006} on the
 whitened eval-tail covariance, the best distortion \emph{any} code of
-that rate can reach under a Gaussian model.
+that rate can reach under a Gaussian model. With $\lambda_1, \dots,
+\lambda_d$ that covariance's eigenvalues, a rate of $B$ bits reaches
+\begin{equation}
+	\fvu_{\min}(B) = \frac{\sum_j \min(\theta, \lambda_j)}{\sum_j \lambda_j},
+	\qquad
+	B = \sum_j \max\!\Big(0,\; \tfrac{1}{2}\log_2 \frac{\lambda_j}{\theta}\Big),
+	\label{eq:ratefloor}
+\end{equation}
+with the water level $\theta$ solved from the rate.
 
 \paragraph{Categorical form (\texttt{headstruct.py}).}
 An Ontologizer head is exhaustive (always fires) and exclusive (one
@@ -211,10 +243,17 @@ winner). We test whether SAE latents form such units: discovery clusters
 latents by \emph{paradigmatic} affinity --- similar co-fire profiles with
 the rest of the dictionary $\times$ anti-correlation with each other
 (PMI${}<1$) --- under a group-size cap, on one half of the rows; scoring
-on the held-out half computes per-group exhaustiveness $P(\text{any
-fires})$, exclusivity $\mathbb{E}[\#\text{firing} \mid \geq 1]$, and the
-CV of summed activation, against size-matched random partitions of the
-live-latent pool. Head-like structure requires exhaustiveness \emph{above}
+on the held-out half computes per-group exhaustiveness, exclusivity and
+the coefficient of variation of the group's summed activation,
+\begin{equation}
+	\mathrm{exh}(g) := P_n\!\big(\textstyle\sum_{j \in g} \mathbf{1}[z_{nj} > 0] \ge 1\big),
+	\qquad
+	\mathrm{exc}(g) := \mathbb{E}_n\!\big[\textstyle\sum_{j \in g} \mathbf{1}[z_{nj} > 0]
+	\;\big|\; \textstyle\sum_{j \in g} \mathbf{1}[z_{nj} > 0] \ge 1\big],
+	\label{eq:exhaust}
+\end{equation}
+against size-matched random partitions of the live-latent pool. A head
+scores $\mathrm{exh} = \mathrm{exc} = 1$. Head-like structure requires exhaustiveness \emph{above}
 null with exclusivity \emph{below} null; topical co-firing clusters show
 the opposite signature. \texttt{--trained-groups} scores a run's own
 trained heads instead.
@@ -228,7 +267,15 @@ of the linear map $G$ with $Y = P_{\text{flat}}G$; for SAEs, decoder rows
 similarity is semantic similarity of what entries decode to. Per head we
 report mean pairwise cosine and top-singular-value energy fraction,
 $z$-scored against size-matched random subsets of the same pool (same
-layer for Ontologizer heads); as a metric-hygiene control the same
+layer for Ontologizer heads),
+\begin{equation}
+	c(g) := \mathbb{E}_{j \neq j' \in g}\cos(\mathbf{v}_j, \mathbf{v}_{j'}),
+	\qquad
+	z_{\cos}(g) := \frac{c(g) - \mathbb{E}_{g'}[c(g')]}{\mathrm{sd}_{g'}[c(g')]},
+	\label{eq:zcos}
+\end{equation}
+with $\mathbf{v}_j$ entry $j$'s decode direction and $g'$ ranging over
+500 random same-size subsets; as a metric-hygiene control the same
 statistics are recomputed under the training objective's inverse-variance
 inner product (\texttt{--metric whitened}). $z \gg 0$ means a head clusters
 semantically; $z \ll 0$ means its atoms repel --- the signature of a
@@ -254,11 +301,39 @@ partitions (what a head separates), and \texttt{headcontrib.py} by the
 cosine of their contributions (what a head writes): each head's decoded
 output contribution in the whitened frame, less $\mathrm{decode}(0)$,
 centered over rows --- uncentered, the non-negative dictionary's shared
-offset reads as agreement. Both use Hungarian matching, a row-shuffled
-null, and the same run against an earlier checkpoint as the positive
-control. \texttt{headcontrib.py} also splits each head's contribution
-size into its layer's input gain and its own decoded atoms, and with a
-reference seed pair (a flat arm) compares agreement at matched head size.
+offset reads as agreement. With $a_{nh}$ the entry head $h$ of run $A$
+selects on row $n$, and $\mathbf{c}^{A}_{nh}$ its whitened decoded
+contribution,
+\begin{equation}
+	M^{\mathrm{part}}_{hh'} := \mathrm{NMI}(a_{\cdot h}, b_{\cdot h'}),
+	\qquad
+	M^{\mathrm{contr}}_{hh'} := \cos\!\big(\mathrm{vec}_{n}[\mathbf{c}^{A}_{nh}
+	- \bar{\mathbf{c}}^{A}_{h}],\; \mathrm{vec}_{n}[\mathbf{c}^{B}_{nh'}
+	- \bar{\mathbf{c}}^{B}_{h'}]\big),
+	\label{eq:headmatch}
+\end{equation}
+where $\mathrm{NMI}(a,b) := 2I(a;b)/(H(a)+H(b))$, $\bar{\mathbf{c}}_h$ is
+the mean over rows, and each cosine runs over the contributions
+concatenated across rows. Each matrix is matched one-to-one by the
+permutation $\pi$ maximizing $\sum_h M_{h\pi(h)}$ (Hungarian), and the
+reported agreement is the mean of $M_{h\pi(h)}$. The null repeats this
+with $B$'s rows shuffled, and the positive control matches the run
+against its own earlier checkpoint. \texttt{headcontrib.py} also splits
+each head's contribution size into its layer's input gain and its own
+decoded atoms. Since a head's contribution on row $n$ is its layer's
+gain $g_n$ times the decoded atom $\mathbf{d}_{a_{nh}}$ it selected,
+\begin{equation}
+	\mathrm{size}_h := \frac{\sum_n \lVert \mathbf{c}_{nh} - \bar{\mathbf{c}}_h\rVert^2}
+	                       {\sum_n \lVert \mathbf{w}^{1/2} \odot (\mathbf{x}_n - \bar{\mathbf{x}})\rVert^2}
+	\approx \frac{\mathbb{E}_n[g_n^2]\; \mathbb{E}_{j \sim u_h}
+	        \lVert \mathbf{d}_j - \bar{\mathbf{d}}_h\rVert^2}
+	       {\mathbb{E}_n \lVert \mathbf{w}^{1/2} \odot (\mathbf{x}_n - \bar{\mathbf{x}})\rVert^2},
+	\label{eq:headsize}
+\end{equation}
+with $u_h$ head $h$'s usage over entries and $\bar{\mathbf{d}}_h$ its
+usage-weighted mean atom: gain squared times atom spread squared, up to
+the gain's small variation. With a reference seed pair (a flat arm) it
+compares agreement at matched head size.
 
 \paragraph{Text fidelity (\texttt{textfid.py}).}
 The ``loss recovered'' analogue: decode $x$ and $\mathrm{recon}(x)$
@@ -267,9 +342,17 @@ SONAR norm, so the metric sees direction error) and report
 chrF~\cite{popovic-2015-chrf} and exact-match between the decodes, plus the
 decoder's teacher-forced per-token NLL of the \emph{original's} decode
 under the original (ceiling), the reconstruction, and the corpus-mean
-embedding (floor --- which decodes to the generic text). Under the
-steering frame this doubles as the collateral ceiling: a code that cannot
-preserve text cannot steer text with low collateral.
+embedding (floor --- which decodes to the generic text). Loss recovered
+places the reconstruction between the two,
+\begin{equation}
+	\mathrm{recovered} := \frac{\mathrm{NLL}_{\mathrm{floor}} - \mathrm{NLL}_{\mathrm{recon}}}
+	                           {\mathrm{NLL}_{\mathrm{floor}} - \mathrm{NLL}_{\mathrm{ceil}}},
+	\label{eq:lossrec}
+\end{equation}
+the form GPT-2's loss recovered takes with cross-entropy in place of NLL
+(Section~\ref{sec:gpt2hard}). Under the steering frame this doubles as
+the collateral ceiling: a code that cannot preserve text cannot steer
+text with low collateral.
 
 \paragraph{Language probing (\texttt{langprobe.py}, \texttt{headlang.py},
 \texttt{headscript.py}).}
@@ -288,14 +371,30 @@ arithmetic mean of the two entropies, so its attainable maximum is
 $2\min(H_h,H_\ell)/(H_h+H_\ell)$ --- $0.875$ for a 5-bit head against the
 6.43-bit language label. \texttt{headscript.py} repeats this for script
 and scores per-label cells and cross-head conjunctions;
-\texttt{headeta.py} measures each partition's $\eta^2$ in embedding
-space, corrected by the $(g-1)/(n-1)$ a random $g$-way partition scores.
+\texttt{headeta.py} and \texttt{topichead.py} measure each partition's
+share of embedding variance,
+\begin{equation}
+	\eta^2(a) := \frac{\sum_{c} n_c \lVert \bar{\mathbf{x}}_c - \bar{\mathbf{x}}\rVert^2}
+	                  {\sum_n \lVert \mathbf{x}_n - \bar{\mathbf{x}}\rVert^2},
+	\qquad
+	\mathbb{E}\big[\eta^2_{\mathrm{random}}\big] \approx \frac{g-1}{n-1},
+	\label{eq:eta}
+\end{equation}
+with $\bar{\mathbf{x}}_c$ the mean of the $n_c$ rows in cell $c$, and
+report it raw and against the baseline a random $g$-cell partition of
+$n$ rows scores.
 
 \paragraph{Shrinkage (\texttt{refit.py}).}
-Gao-style refinement: freeze each sample's support, solve the whitened
-least-squares coefficients (masked normal equations; silent head slots
-forced to zero), and compare $\fvu$. Raw$-$refit is magnitude (shrinkage)
-error; refit is selection error. The Ontologizer shares the machinery via
+Gao-style refinement: freeze each sample's support $S_n$ and solve the
+whitened least-squares coefficients on it,
+\begin{equation}
+	\mathbf{z}^{\star}_n := \operatorname*{arg\,min}_{\mathbf{z} :\, z_j = 0 \;\forall j \notin S_n}
+	\big\lVert \mathbf{w}^{1/2} \odot \big(\mathbf{x}_n - \mathbf{b} - W^\top \mathbf{z}\big)\big\rVert^2,
+	\label{eq:refit}
+\end{equation}
+by masked normal equations (silent head slots forced to zero), and
+compare $\fvu$. Raw$-$refit is magnitude (shrinkage) error; refit is
+selection error. The Ontologizer shares the machinery via
 its exact linearity $Y = P_{\text{flat}} G$, with $G$ measured by decoding
 one-hot constant codes; its supports are the top-$m$ deviation entries.
 Points with support $\geq d$ are excluded (underdetermined). Note the raw
@@ -323,8 +422,39 @@ Directions: \texttt{decode} (the decode delta of forcing the entry),
 \texttt{grad} (the gradient of the target logit), \texttt{margin} (the
 gradient of the target's margin over the head's current winner),
 \texttt{adjoint} (the bilinear classifier's top eigenvector via
-\texttt{BilinearBlock.rev}), and \texttt{random}. 64 entries, 32 held-out
-rows each, steered only where the entry was not already selected.
+\texttt{BilinearBlock.rev}), and \texttt{random}. Strength is a fraction
+of each row's norm. The \emph{native} step is the model's own
+intervention size: the output change of forcing the entry, or for an SAE
+latent its decoder row at the latent's mean nonzero activation $\bar{a}_t$.
+Algorithm~\ref{alg:steerembed} gives the procedure.
+
+\input{algorithms/steerembed}
+
+\paragraph{Linearized collateral (\texttt{steergeom.py}).}
+Separates the direct effect of a step on the other heads of the target's
+layer from the cascade through later layers, by linearizing that layer's
+logits with every upstream code held fixed. Under residual forwarding an
+input step $\mathbf{v}$ moves the layer's residual input by exactly
+$\mathbf{v}$, so with $J_h$ the Jacobian of head $h$'s logits at the
+layer input $\mathbf{e}_n$, head $h$'s winner--runner-up margin and its
+first-order change along a step of $s\lVert\mathbf{x}_n\rVert$ are
+\begin{equation}
+	\mu_{nh} := K_{nh,w_1} - K_{nh,w_2},
+	\qquad
+	\Delta\mu_{nh} := s\,\lVert\mathbf{x}_n\rVert\,
+	\Big(\big(J_h\mathbf{v}_n\big)_{w_1} - \big(J_h\mathbf{v}_n\big)_{w_2}\Big),
+	\label{eq:flip}
+\end{equation}
+with $w_1, w_2$ the head's top two entries on row $n$. The linearized
+flip share is $\mathbb{E}_{n,\,h \neq h_t}\,\mathbf{1}[\mu_{nh} +
+\Delta\mu_{nh} < 0]$ at $s = 0.25$, reported for the \texttt{decode},
+\texttt{grad} and \texttt{random} directions with the median margin $\mu$.
+Two further measures use the same Jacobians: \emph{off}, the mean
+$\lVert\mathbf{x}_n\rVert\,\lvert J_h\mathbf{v}_n\rvert$ over other heads
+and entries as a ratio to the random direction's, which is below 1 when a
+direction avoids the other heads' detectors; and \emph{own}, the median
+first-order gain of the target over the incumbent per unit of
+$\lVert\mathbf{x}_n\rVert$, divided by the gap it has to close.
 
 \paragraph{Intervention composition (\texttt{compose.py}).}
 Treating heads as candidate causal variables: for pairs of forced
