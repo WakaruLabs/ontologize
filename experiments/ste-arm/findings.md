@@ -56,7 +56,10 @@ reach 0.1844 on 2.9x fewer parameters.
 | flat, 1 x 380 | 99.9% | 0.2750 |
 
 **Depth is worth 1.79x the error at matched bits, parameters and
-utilization.** It is not usage (a ZCA-whitened flat arm fills every bit and
+utilization.** The stack leads at every checkpoint (1.59x at 10k, peaking
+at 1.83x near 200k); neither arm has converged, and the flat arm improves
+faster over the last quarter (2.75% against 0.86%), so the gap is slowly
+narrowing. It is not usage (a ZCA-whitened flat arm fills every bit and
 is still 1.7x worse), not input conditioning, and not the per-layer gain
 channel (pinning it costs 2.1%). Blending each layer's subtracted
 reconstruction toward another row's costs 35% of FVU at a quarter blend:
@@ -175,17 +178,20 @@ reference does (32-head probe 0.42 against 0.28).
 *notes: The decoder's null space; The mechanism: the orthant forces a
 collinear dictionary; Does a softer code raise the dictionary's rank?*
 
-| GPT-2 layer 8 | row cosine | eff. rank | FVU_w |
+| GPT-2 layer 8 | row cosine | eff. rank | FVU_w (held out) |
 |---|---|---|---|
-| signed, e = 1536 | +0.0009 | 27.37 | 0.3363 |
-| signed, e = 768 | +0.0019 | 26.95 | 0.3367 |
-| abs, e = 1536 | +0.3038 | 9.15 | 0.3445 |
-| abs, e = 768 | +0.4543 | 5.41 | 0.3954 |
-| concat, d_head = 32 | +0.5353 | 3.30 | 0.5140 |
+| signed, e = 1536 | +0.0009 | 27.37 | 0.1540 |
+| signed, e = 768 | +0.0019 | 26.95 | 0.1543 |
+| abs, e = 1536 | +0.3038 | 9.15 | 0.1934 |
+| abs, e = 768 | +0.4543 | 5.41 | 0.2927 |
+| concat, d_head = 32 | +0.5353 | 3.30 | 0.4155 |
 
-- **Non-negativity forces a collinear dictionary** (a third of the signed
-  effective rank) for 2.4% of FVU at sufficient width; the cost becomes
-  14.8% at a square decoder.
+- **Non-negativity forces a collinear dictionary and costs reconstruction**:
+  a third of the signed effective rank and 26% more held-out error at
+  e = 1536, 90% at a square decoder. Row cosine orders all five arms by
+  error at convergence. Width matters only under `abs` (narrowing costs
+  +0.2% signed, +51% abs). The gap at e = 1536 peaked at 50% near step
+  200k and is narrowing, but has not closed in a full run.
 - **Row collinearity measured in the dictionary space is mostly gauge**:
   74-78% of each atom's energy is in the decoder's null space. A head's
   decoded atoms are orthogonal (0.023 at layer 0, slightly negative

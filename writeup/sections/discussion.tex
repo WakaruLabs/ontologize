@@ -191,11 +191,13 @@ verified causal language heads; detection F1 is $\sim$80\% explained by
 code density, and the Ontologizer sits on the SAE density trend.
 Parameter-space decodes are instances, not descriptions, and must be
 taken as deviations from the head mean to be legible at all.
-\item \textbf{Non-negativity is cheap in error and expensive in
-geometry.} It forces a collinear, low-effective-rank dictionary (a third
-of the signed rank) for 2.4\% of $\fvu$ at sufficient width; at a square
-decoder the cost becomes 14.8\%. Dictionary statistics computed in the
-dictionary space rather than after decoding are mostly gauge.
+\item \textbf{Non-negativity is expensive in geometry and in error.} It
+forces a collinear, low-effective-rank dictionary (a third of the signed
+rank) and costs 26\% of held-out $\fvu$ at the wide dictionary, 90\% at a
+square decoder; row collinearity orders all five GPT-2 arms by error at
+convergence. Signed atoms decorrelate the dictionary and reconstruct
+better at either width. Dictionary statistics computed in the dictionary
+space rather than after decoding are mostly gauge.
 \item \textbf{Every measure in this architecture needs a null of the same
 shape.} Non-negativity and the layer-dependent gain put structure into
 every floor. Three of four seed-reproducibility measures, the HSIC head

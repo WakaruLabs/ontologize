@@ -658,10 +658,14 @@ relative to the stack. `ste_l1_h380_zca` is the corrected flat arm and
 is the one to compare on reconstruction; the steering and language
 numbers have not been remeasured on it.
 
-The gap is not undertraining. The flat arm's training MSE moves -0.55%
-over its last quarter, and its kcos sibling, run 2.5x longer, ends
-lower in training MSE (5.60e-4 against 5.74e-4) and no better held out.
-Both have plateaued.
+Neither arm has converged. Held out at every 10k checkpoint
+(`writeup/figures/fig-depth-curves.pdf`), the stack leads throughout: the
+ratio to the compared flat arm is 1.59x at step 10k, peaks at 1.83x near
+200k and ends at 1.79x. Over the last quarter the stack improves 0.86% and
+the flat arms 2.3-2.75%, so the gap is narrowing slowly; where it ends
+needs longer runs. (At the shipped initialization, `ste_l1_h380`'s kcos
+sibling, run 2.5x longer, ended no better held out; that is a different
+flat arm from the one compared here.)
 
 **Depth is worth 1.79x the reconstruction error at equal nominal
 capacity, equal parameters and 99.9% code utilization on both sides,
@@ -1068,33 +1072,34 @@ independent `abs(N(0,1))` coordinates the chance pairwise cosine is
 `2/pi = 0.6367`, and over 4000 draws the *minimum* is `+0.5796` -- it
 does not approach zero. Signed draws give `0.0000`, minimum `-0.1314`.
 
-The effect on the dictionary is large. Converged, with `dictgeom.py`:
+The effect on the dictionary is large. Converged, geometry with
+`dictgeom.py`, FVU_w held out and scored from each checkpoint
+(`writeup/figures/extract_curves.py`):
 
 | arm | `c` | eff rank | FVU_w |
 |---|---|---|---|
-| signed, e_dec 1536 | +0.0009 | 27.37 | 0.3363 |
-| signed, e_dec 768 | +0.0019 | 26.95 | 0.3367 |
-| abs, e_dec 1536 | +0.3038 | 9.15 | 0.3445 |
-| abs, e_dec 768 | +0.4543 | 5.41 | 0.3954 |
+| signed, e_dec 1536 | +0.0009 | 27.37 | 0.1540 |
+| signed, e_dec 768 | +0.0019 | 26.95 | 0.1543 |
+| abs, e_dec 1536 | +0.3038 | 9.15 | 0.1934 |
+| abs, e_dec 768 | +0.4543 | 5.41 | 0.2927 |
 
-**And it is nearly free in reconstruction, which breaks the account this
-section first gave.** `abs` at e_dec 1536 runs at a third of the signed
-arms' effective rank -- 9.15 against 27.37 -- for 2.4% of FVU_w. A
-quantity can be forced, and differ 3-fold, without being what costs the
-objective anything. An earlier version of this section had collinearity
-ordering all five arms with Spearman +0.90; that was measured at step
-93,000, mid-descent, and does not survive convergence.
+**And it costs reconstruction.** `abs` at e_dec 1536 runs at a third of
+the signed arms' effective rank -- 9.15 against 27.37 -- and 26% more
+held-out error; at e_dec 768, 90% more. Collinearity orders all five arms
+(concat included) by error at convergence, Spearman +1.00, and at +0.90 at
+step 90,000, where concat is the single inversion.
 
-So the two are not one mechanism after all. Under `signed`, `e_dec`
-costs +0.1% -- nothing. Under `abs` it costs +14.8%. The reconstruction
-penalty is an **interaction**, carried by `abs` at a square decoder and
-not by either factor alone, which is what the cone account predicts and
-the collinearity account does not.
+Width is an **interaction** on top of that: under `signed`, `e_dec` costs
++0.2% -- nothing -- and under `abs` it costs +51%. So the collinearity
+account and the cone account are both live: collinearity tracks the error
+across all arms, and the square decoder makes it much worse only when the
+atoms are confined to the orthant.
 
-What the collinearity buys is therefore dictionary geometry rather than
-error: a decorrelated, near-full-effective-rank dictionary at matched
-reconstruction. For an interpretability method that is the interesting
-half, but it should not be sold as a reconstruction result.
+What removing `abs` buys is therefore both a decorrelated,
+near-full-effective-rank dictionary and lower error. An earlier version of
+this section, scored on `dictgeom.py`'s training-log FVU, read the cost as
+2.4% and called it nearly free; that log averages all five
+deep-supervision prefixes and does not measure the final output.
 
 `s_kcossim` and `KCOS_target` are 0 in all four arms, so none of this
 is a collinearity penalty doing the work. Removing one `abs` buys
@@ -1119,26 +1124,26 @@ coordinate per atom, so a decorrelated dictionary is a one-hot one with
 nothing left to express. It took the correlation instead, and ends with
 the highest of the three `abs` arms (per layer, at convergence):
 
-| arm | `cossim_k` | `cossim_k_max` | FVU_w |
+| arm | `cossim_k` | `cossim_k_max` | FVU_w (held out) |
 |---|---|---|---|
-| summing, e_dec 1536 | +0.3039 | 0.666 | 0.3445 |
-| summing, e_dec 768 | +0.4543 | 0.765 | 0.3954 |
-| concat, d_head 32 | +0.5353 | 0.841 | 0.5140 |
+| summing, e_dec 1536 | +0.3039 | 0.666 | 0.1934 |
+| summing, e_dec 768 | +0.4543 | 0.765 | 0.2927 |
+| concat, d_head 32 | +0.5353 | 0.841 | 0.4155 |
 
-Monotone in both across these three, but do not read that as the
-statistic driving FVU: the signed arms break exactly that relation,
-sitting at `c ~ 0` for only 2.4% less error than summing/1536. Within
+Monotone in both across these three, and the signed arms extend the same
+relation: at `c ~ 0` they have 20% less error than summing/1536. Within
 the `abs` family the two move together because both track how much room
 the orthant constraint has, which is also what the error tracks.
 `cossim_flat` is not comparable here -- `ConcatDictBlock` overrides it,
 and between-head pairs are exactly orthogonal by construction and swamp
 the within-head ones.
 
-Concat is not explained by `c` alone, though. At matched step 93,000 it
-has a *lower* `c` than the summing e_dec-768 arm (0.5657 against 0.5768)
-and a much worse FVU_w (0.8545 against 0.6532); the convergent ordering
-above holds only because it keeps degrading. Over the five arms
-Spearman is +0.90, and concat is the single inversion.
+Concat is not explained by `c` alone, though. At step 90,000 it has a
+slightly *lower* `c` than the summing e_dec-768 arm (0.571 against 0.578)
+and a much worse held-out FVU_w (0.806 against 0.463); over the five arms
+Spearman is +0.90 there, and concat is the single inversion. By
+convergence the ordering is exact, because concat's `c` stops falling
+while the summing arm's keeps going.
 
 Its extra cost is reachability, which is the one place that frame does
 bind. At `d_head = 32` a head's rows are non-negative vectors in `R^32`
@@ -1154,14 +1159,20 @@ No, and rank is the wrong variable. `dictgeom.py` reads the weights
 directly; the selection sweep is config-matched (k=32, h=32, l=5,
 e_dec=2048) at 369,500 steps with only `select` varying.
 
-| select | `c` | eff rank | rank99 | FVU_w | | `c` +s_Hm | eff +s_Hm |
-|---|---|---|---|---|---|---|---|
-| top1 | +0.3613 | 6.41 | 31.3 | 0.962 | | - | - |
-| top2 | +0.5797 | 2.68 | 30.7 | 0.591 | | +0.2177 | 13.83 |
-| top4 | - | - | - | - | | +0.1505 | 19.78 |
-| top8 | +0.3887 | 4.72 | 31.0 | 0.265 | | +0.1410 | 18.72 |
-| top16 | +0.2244 | 12.45 | 31.1 | 0.111 | | +0.2150 | 15.45 |
-| softmax | +0.2056 | 13.90 | 31.8 | 0.062 | | +0.3592 | 9.05 |
+| select | `c` | eff rank | rank99 | FVU_w | | `c` +s_Hm | eff +s_Hm | FVU_w +s_Hm |
+|---|---|---|---|---|---|---|---|---|
+| top1 | +0.3613 | 6.41 | 31.3 | 0.7190 | | - | - | - |
+| top2 | +0.5797 | 2.68 | 30.7 | 0.3516 | | +0.2177 | 13.83 | 0.1911 |
+| top4 | - | - | - | - | | +0.1505 | 19.78 | 0.0761 |
+| top8 | +0.3887 | 4.72 | 31.0 | 0.0370 | | +0.1410 | 18.72 | 0.0287 |
+| top16 | +0.2244 | 12.45 | 31.1 | 0.0052 | | +0.2150 | 15.45 | 0.0043 |
+| softmax | +0.2056 | 13.90 | 31.8 | 0.0023 | | +0.3592 | 9.05 | 0.0007 |
+
+FVU_w is the final output's on the cache tail, scored from the checkpoint
+(`writeup/figures/extract_curves.py`); these runs trained on the tail, so
+it is in-sample. `dictgeom.py`'s own FVU_w column is the training log,
+which under deep supervision averages all five prefixes' error and runs
+two to twenty times higher.
 
 `rank99` is 30.7-31.8 of 32 in all ten arms, so the numerical rank is
 full whatever the code is and carries no signal. Effective rank varies
@@ -1178,7 +1189,7 @@ coefficients give a continuum of outputs along even small differences
 between rows, so collinearity costs much less. A soft code needs rank
 less than a hard one does.
 
-Caveat on the whole table: the arms span FVU_w 0.96 to 0.05, so they sit
+Caveat on the whole table: the arms span FVU_w 0.72 to 0.0007, so they sit
 at very different points of fit and nothing here is matched on
 reconstruction quality.
 
@@ -1190,20 +1201,26 @@ checkpoints are 10k apart and a fast arm's FVU moves further between two
 of them than the spread being measured, so single matched points are
 interpolated onto a common grid.
 
-| select | FVU 0.90 | 0.60 | 0.45 | 0.40 |
-|---|---|---|---|---|
-| top2 | 0.7588 | 0.6791 | 0.4547 | 0.2580 |
-| top4 | 0.7799 | 0.7391 | 0.6951 | 0.6705 |
-| top8 | 0.7733 | 0.7494 | 0.7242 | 0.7137 |
-| top16 | 0.7408 | 0.7197 | 0.7033 | 0.6921 |
-| softmax | 0.6286 | 0.5950 | 0.5800 | 0.5705 |
+Matched on held-out FVU_w (in-sample tail; `c` and step at the first
+crossing, log-interpolated between 10k checkpoints):
 
-At the deepest common FVU the hardest code has the lowest `c` by a wide
-margin, the opposite of the step-matched reading; at FVU 0.90 it is among
-the highest. But this is the mirror confound rather than a fix: at FVU
-0.40 `top2` sits at step ~234,000 against 23,000-43,000 for the soft
-arms, and decorrelation continues long after FVU plateaus, so the arm
-that trained ten times longer looks decorrelated for that reason.
+| select | FVU 0.60 | 0.40 | 0.25 |
+|---|---|---|---|
+| top2 | 0.760 @23k | 0.716 @36k | **0.531** @80k |
+| top4 | 0.779 @14k | 0.762 @20k | 0.730 @29k |
+| top8 | 0.769 @12k | 0.757 @16k | 0.741 @21k |
+| top16 | 0.732 @14k | 0.719 @18k | 0.700 @22k |
+| softmax | **0.597** @25k | **0.577** @31k | 0.559 @36k |
+
+At moderate error the soft code has the least collinear dictionary by a
+wide margin, the same direction as the early step-matched reading. Only at
+the deepest common level does `top2` drop below it, and it reaches that
+level at step 80k against 21k-36k for the others, so its lower `c` there
+is the mirror confound: decorrelation continues after FVU flattens, and
+the arm that trained longest looks decorrelated for that reason. This
+table replaces one matched on `dictgeom.py`'s training-log FVU, which
+averages all five prefixes and put `top2` at 0.40 near step 234k; held
+out it is there by 36k.
 
 **Duration dominates the selection rule by 3.8x.** Mean `c` falls from
 0.750 at 10k to 0.217 at 369.5k, a swing of 0.533, while the spread
@@ -1221,17 +1238,20 @@ contradictory -- they sample opposite sides of it:
 | 150,000 | 0.329 | 0.275 | 0.256 | 0.303 | 0.370 | 0.114 |
 | 369,500 | 0.218 | 0.151 | 0.141 | 0.215 | 0.359 | 0.218 |
 
-The late half is the mechanism: the soft arm's `c` plateaus at 0.359 once
-reconstruction is good, while the hard arms keep paying collinearity down
-to 0.14 long after their own FVU has flattened -- `top2` improves FVU_w
-only 7% from 150k to 369.5k while dropping `c` by 34%. Collinearity costs
+The late half is the mechanism: the soft arm's `c` plateaus at 0.359 while
+its error keeps falling, and the hard arms keep paying collinearity down
+to 0.14 while their error barely moves. From 150k to 369.5k, held out:
+`softmax` cuts FVU_w 85% and `c` 3%; `top8` cuts FVU_w 3% and `c` 45%;
+`top16`'s FVU_w does not improve while `c` falls 29%; `top2` cuts both,
+12% and 34% (`writeup/figures/fig-sweep-curves.pdf`). Collinearity costs
 a hard code information directly, so it keeps working on it; a soft code
 has no such pressure and stops. At convergence a softer code therefore
 gives the *more* collinear dictionary, inverting the naive expectation.
 
 This is the `s_Hm` family. The family without the bonus disagrees at
 convergence, but its hard arms pair high `c` with poor FVU (`top2` at
-0.58 and 0.591), which reads as head collapse -- what `s_Hm` exists to
+`c` 0.58 and FVU_w 0.352, against 0.22 and 0.191 with the bonus), which
+reads as head collapse -- what `s_Hm` exists to
 prevent -- rather than a selection-rule effect. One seed per arm either
 way.
 
@@ -1305,37 +1325,53 @@ threshold where a random decoder's cone covers the output space at all.
 Reachability is binary; the measured effect is continuous in `c`.
 
 The cost of narrowing, under `abs`, grows as the model learns to use
-the lift (train FVU_w, mean of the 200 rows ending at each step):
+the lift (held-out FVU_w at each checkpoint):
 
 | step | e_dec 1536 | e_dec 768 | cost |
 |---|---|---|---|
-| 20,000 | 0.9277 | 0.9407 | +1.4% |
-| 93,000 | 0.5964 | 0.6532 | +9.5% |
-| 200,000 | 0.4503 | 0.4973 | +10.5% |
-| 371,900 | 0.3445 | 0.3954 | +14.8% |
+| 20,000 | 0.5950 | 0.6613 | +11.2% |
+| 90,000 | 0.3962 | 0.4631 | +16.9% |
+| 200,000 | 0.2900 | 0.3647 | +25.8% |
+| 371,900 | 0.1934 | 0.2927 | +51.3% |
 
 ### The test
 
-`--signed` drops the `abs()` in `DictBlock.dicts`. The prediction made
-beforehand was a *pattern* over the 2x2: three arms alike and one
-worse, since `abs` at e_dec 1536 should already have the room it needs.
-**At convergence that is what happened** -- but it took the full run to
-show it, and reading the 2x2 at 25% said the opposite.
+`--signed` drops the `abs()` in `DictBlock.dicts`. The prediction, as
+written on 2026-09-30, after the signed arms were launched and before any
+comparable result:
 
-| e_dec | abs | signed | | abs @93k | signed @93k |
+> `--signed` drops the `abs()` in `DictBlock.dicts`, which removes the
+> need for any lift. The prediction is a specific *pattern* over the 2x2,
+> not just a smaller gap: three cells alike and one worse. `abs` at
+> e_dec=1536 is already effectively signed, because it has 768 dimensions
+> of lift available; `signed` needs no lift at either width. So
+> `signed/768`, `signed/1536` and `abs/1536` should agree, and `abs/768`
+> alone should pay the +14.8%.
+>
+> It also separates lift from capacity, which the `e_dec` arm alone
+> cannot. If the wide dictionary were buying representational capacity,
+> `signed/1536` would still beat `signed/768`. If it were buying the
+> lift, they tie.
+
+The +14.8% it quotes is the training-log cost of narrowing, not a held-out
+one. **The pattern did not happen.** Held out, `abs` is worse at both
+widths:
+
+| e_dec | abs | signed | signed vs abs | abs @90k | signed @90k |
 |---|---|---|---|---|---|
-| 1536 | 0.3445 | 0.3363 | -2.4% | 0.5964 | 0.5362 (-10.1%) |
-| 768 | 0.3954 | 0.3367 | -14.8% | 0.6532 | 0.5410 (-17.2%) |
-| narrowing | +14.8% | +0.1% | | +9.5% | +0.9% |
+| 1536 | 0.1934 | 0.1540 | -20.4% | 0.3962 | 0.2910 (-26.6%) |
+| 768 | 0.2927 | 0.1543 | -47.3% | 0.4631 | 0.2942 (-36.5%) |
+| narrowing | +51.3% | +0.2% | | +16.9% | +1.1% |
 
-At step 93,000 `signed` led by 10.1% at e_dec 1536 and the pattern
-looked falsified; by 371,900 that lead is 2.4% and the three arms
-agree while `abs`/768 alone is 14.8% back. `abs` at the wide width
-catches up, it is merely slower. A prediction called wrong at a quarter
-of the run was right.
+At e_dec 1536 the `abs` arm's excess over signed grows from 8% at step
+20,000 to 50% at 200,000 and then narrows to 26% at 371,900, so part of it
+may be speed, but a full run does not close it. An earlier reading of this
+2x2, on `dictgeom.py`'s training-log FVU (which averages all five
+deep-supervision prefixes), had the three arms agreeing within 2.4% at
+convergence and called `abs` merely slower; held out, that was wrong.
 
 The pair also settles capacity, which the `e_dec` arm alone cannot: the
-two signed arms agree to +0.1%, so the wide dictionary was buying room
+two signed arms agree to +0.2%, so the wide dictionary was buying room
 for the constraint, not representational capacity.
 
 `ste_h76_sgn768` and `ste_h76_sgn` are that pair, at the reference
@@ -1359,7 +1395,8 @@ a diagnostic, since the arms also decorrelate the dictionary by two
 orders of magnitude without any collinearity pressure applied. That
 survives to convergence: at 371,900 steps the signed arms sit at
 `c` +0.0009 and +0.0019 with effective rank 27, against +0.30 and +0.45
-at rank 9.15 and 5.41 under `abs`, for 2.4% of FVU_w at e_dec 1536.
+at rank 9.15 and 5.41 under `abs`, and with 20% less held-out error at
+e_dec 1536.
 
 ## Head-independence pressure (`--s-hsic-heads`): a measurement artifact
 

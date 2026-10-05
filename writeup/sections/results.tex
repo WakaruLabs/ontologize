@@ -447,10 +447,12 @@ capacity (1900 bits) and exactly the same parameter count (51.93M; both
 the dictionary $h k e$ and the classifier $h k d n$ depend on $l$ and $h$
 only through $l\cdot h$). At the fixed initialization both fill 99.9\% of
 their code, and \textbf{depth is worth $1.79\times$ the reconstruction
-error} ($0.1535$ vs.\ $0.2750$). Neither seed nor undertraining explains
-it: seed replicas agree to four digits, and the flat arm's training MSE
-moves $-0.55\%$ over its last quarter while a sibling run $2.5\times$
-longer ends no better held out.
+error} ($0.1535$ vs.\ $0.2750$). Seed does not explain it: replicas agree
+to four digits. Neither arm has converged, and the flat arm is still
+improving faster ($-2.75\%$ held out over its last quarter, against
+$-0.86\%$ for the stack), so the ratio, which peaked at $1.83\times$ near
+step 200k, is narrowing slowly; the stack leads at every checkpoint
+(Appendix~\ref{sec:depthdetail}).
 
 What depth buys is not usage, input conditioning, or the per-layer gain
 channel: a ZCA-whitened flat arm fills every bit and still reconstructs
@@ -822,46 +824,58 @@ cosine is $2/\pi = 0.637$, with minimum $+0.58$ over 4000 draws; signed
 draws give 0.000. \texttt{--signed} drops the \texttt{abs()} in
 \texttt{DictBlock.dicts}. On GPT-2 layer 8 with the straight-through arm's
 shape, crossed with dictionary width, at convergence (371{,}900 steps;
-\texttt{dictgeom.py}):
+geometry from \texttt{dictgeom.py}, $\fvu$ held out and scored from each
+checkpoint):
 
 \begin{table}[h]\centering\small
 \begin{tabular}{@{}lrrrr@{}}
 \toprule
-arm & $c$ (row cosine) & eff.\ rank & $\fvu$ & at step 93k \\
+arm & $c$ (row cosine) & eff.\ rank & $\fvu$ & at step 90k \\
 \midrule
-signed, $e{=}1536$ & $+0.0009$ & 27.37 & 0.3363 & 0.5362 \\
-signed, $e{=}768$  & $+0.0019$ & 26.95 & 0.3367 & 0.5410 \\
-abs, $e{=}1536$    & $+0.3038$ &  9.15 & 0.3445 & 0.5964 \\
-abs, $e{=}768$     & $+0.4543$ &  5.41 & 0.3954 & 0.6532 \\
-concat, $d_{\text{head}}{=}32$ & $+0.5353$ & 3.30 & 0.5140 & 0.8545 \\
+signed, $e{=}1536$ & $+0.0009$ & 27.37 & \textbf{0.1540} & 0.2910 \\
+signed, $e{=}768$  & $+0.0019$ & 26.95 & 0.1543 & 0.2942 \\
+abs, $e{=}1536$    & $+0.3038$ &  9.15 & 0.1934 & 0.3962 \\
+abs, $e{=}768$     & $+0.4543$ &  5.41 & 0.2927 & 0.4631 \\
+concat, $d_{\text{head}}{=}32$ & $+0.5353$ & 3.30 & 0.4155 & 0.8055 \\
 \bottomrule
 \end{tabular}
-\caption{Non-negativity $\times$ width on GPT-2 layer-8 residuals. No
-collinearity penalty is active in any arm.}
+\caption{Non-negativity $\times$ width on GPT-2 layer-8 residuals, held-out
+tail. No collinearity penalty is active in any arm.}
 \label{tab:orthant}
 \end{table}
 
-\textbf{The forced collinearity is nearly free in reconstruction.} At
-$e{=}1536$, \texttt{abs} runs at a third of the signed effective rank for
-2.4\% of $\fvu$. The reconstruction cost is an \emph{interaction}:
-narrowing $e$ costs $+0.1\%$ signed and $+14.8\%$ under \texttt{abs}. So the
-wide dictionary was buying room for the constraint, not representational
-capacity --- which tempers Section~\ref{sec:disjoint}'s claim that
-head-disjointness is what $e > d$ buys. The prediction made in advance
---- three arms alike and \texttt{abs}/768 worse --- is what convergence
-shows, but at a quarter of the run \texttt{signed} led by 10.1\% at
-$e{=}1536$ and the prediction looked falsified; \texttt{abs} at the wide
-width is merely slower. A geometric reading via Wendel's
-theorem~\cite{wendel1962}: $m$ random columns lie in a common halfspace
-with probability $2^{1-m}\sum_{i<d}\binom{m-1}{i}$, exactly $1/2$ at
-$m{=}2d$, so $e{=}1536$ sits on the threshold where a random decoder's
-cone $\{Da : a\geq0\}$ covers the output space at all.
+\textbf{The forced collinearity costs reconstruction.} At $e{=}1536$,
+\texttt{abs} runs at a third of the signed effective rank and 26\% more
+held-out error; at $e{=}768$, 90\% more. Across the five arms $c$ orders
+the error exactly at convergence (Spearman $+1.00$; $+0.90$ at step 90k,
+where concat is the single inversion). The cost is also an
+\emph{interaction}: narrowing $e$ costs $+0.2\%$ signed and $+51\%$ under
+\texttt{abs}, so the wide dictionary buys room for the constraint, not
+representational capacity --- which tempers Section~\ref{sec:disjoint}'s
+claim that head-disjointness is what $e > d$ buys. \texttt{abs} is worse
+than signed at both widths, and its gap at $e{=}1536$ grew
+from 8\% at step 20k to 50\% at 200k and has since narrowed to 26\%
+(Figure~\ref{fig:orthant-curves}), so \texttt{abs} may be partly slower,
+but it has not caught up by the end of a full run. A geometric reading via
+Wendel's theorem~\cite{wendel1962}: $m$ random columns lie in a common
+halfspace with probability $2^{1-m}\sum_{i<d}\binom{m-1}{i}$, exactly
+$1/2$ at $m{=}2d$, so $e{=}1536$ sits on the threshold where a random
+decoder's cone $\{Da : a\geq0\}$ covers the output space at all.
 
-What removing \texttt{abs} buys is therefore dictionary geometry rather
-than error: a decorrelated, near-full-effective-rank dictionary at matched
-reconstruction --- roughly what the collinearity setpoint exists to buy.
-Signed atoms give up two things: subtractive features are harder to read
-as ``this concept is present'', and the $\lvert F\rvert_1 \geq h$ floor
-under \texttt{norm\_rows}, which rests on non-cancellation, disappears.
-Concatenated heads, which face a collapsed tradeoff rather than a raised
-floor, are the worst arm (Appendix~\ref{sec:concatgeom}).
+\begin{figure}[tp]\centering
+\includegraphics[width=\linewidth]{figures/fig-orthant-curves.pdf}
+\caption{The orthant arms over training: held-out $\fvu$ scored from each
+checkpoint (left) and mean within-head row cosine (right). The dotted line
+marks step 90k. The signed arms coincide at both widths; \texttt{abs} is
+behind at both, and further behind at the square decoder.}
+\label{fig:orthant-curves}
+\end{figure}
+
+Removing \texttt{abs} therefore buys both: a decorrelated,
+near-full-effective-rank dictionary and lower error, which is roughly what
+the collinearity setpoint exists to buy. Signed atoms give up two things:
+subtractive features are harder to read as ``this concept is present'', and
+the $\lvert F\rvert_1 \geq h$ floor under \texttt{norm\_rows}, which rests
+on non-cancellation, disappears. Concatenated heads, which face a collapsed
+tradeoff rather than a raised floor, are the worst arm
+(Appendix~\ref{sec:concatgeom}).
