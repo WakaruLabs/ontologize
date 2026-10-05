@@ -3,13 +3,18 @@
 Trains a top-k sparse autoencoder (Gao et al. 2024) -- or a vanilla ReLU+L1
 SAE with --l1 -- on the same precomputed SONAR embedding cache and the same
 whitened MSE objective as sonar.py, so FVU_w numbers are directly
-comparable. Deliberately NOT built from the ontologize layers: the abs()'d
-dictionary and softmax selection make DictEnc structurally not an SAE, and
-the baseline should be the field-standard architecture at its
-best-practice configuration (pre-subtracted decoder bias, unit-norm
-decoder rows, tied init, aux-k dead-latent revival -- or, for the
-ReLU+L1 arm, --resample-every swaps in that lineage's neuron
-resampling), not a handicapped reimplementation.
+comparable. Deliberately NOT built from DictEnc: the abs()'d dictionary
+and softmax selection make it structurally not an SAE, and the baseline
+should be the field-standard architecture at its best-practice
+configuration (pre-subtracted decoder bias, unit-norm decoder rows, tied
+init, aux-k dead-latent revival -- or, for the ReLU+L1 arm,
+--resample-every swaps in that lineage's neuron resampling), not a
+handicapped reimplementation. The models are `ontologize.sae.SAE`,
+`BilinearSAE` and `ontologize.grouped.Grouped`; this script is their
+trainer. Checkpoints keep the flat key layout (W_enc, W_dec, ...) every
+downstream script reads, and the module-level functions here (`encode`,
+`decode`, `preacts`, ...) take that layout and delegate to the classes
+(`from_legacy` / `to_legacy` convert).
 
 Matching the resid_nc Ontologizer (d=1024, e_dec=2048, k=32, h=32, l=5;
 ~23M params, l*h*k = 5120 dictionary entries, hard code = 800 bits/sample):
@@ -114,7 +119,10 @@ import optax
 from pathlib import Path
 from tqdm import tqdm
 
-AUX_COEF = 1 / 32  # aux-k loss scale (Gao et al. 2024)
+from ontologize.sae import (AUX_COEF, SAE, BilinearSAE, from_legacy,
+                            legacy_encoder, to_legacy, topk_relu)
+from ontologize.sae import eigenfeatures as _eigenfeatures
+from ontologize.grouped import Grouped, group_softmax, group_top1
 
 
 def parse_args():
@@ -183,188 +191,94 @@ def run_name(cfg):
     return name
 
 
-def init_params(rng, d, m, x_mean, enc="linear", x_scale=1.0):
-    """Unit-norm decoder rows, b_dec at the data mean; linear encoder is
-    tied-init, bilinear factors are scaled so each is unit-variance on
-    centered inputs of norm x_scale (bilinear logits grow with |x|^2, so
-    unscaled init runs hot on any data that isn't unit-norm)."""
-    r1, r2, r3 = jax.random.split(rng, 3)
-    W_dec = jax.random.normal(r1, (m, d), jnp.float32)
-    W_dec = W_dec / jnp.linalg.norm(W_dec, axis=-1, keepdims=True)
-    params = {"b_enc": jnp.zeros(m), "W_dec": W_dec,
-              "b_dec": jnp.asarray(x_mean, jnp.float32)}
+def model_for(params=None, *, d=0, m=0, enc=None, topk=0, l1=0.0, groups=0,
+              group_fn="top1", prefixes=1, aux_k=0):
+    """The `ontologize` model that a flat `params.npz` dict (or, without
+    one, `d`/`m`/`enc`) and the run's encode settings describe. The encoder
+    form comes off the params' keys, so a checkpoint needs no flag; the
+    gated form sets its own sparsity, so `topk` and `groups` are ignored
+    for it, as they always were here."""
+    if params is not None:
+        enc = legacy_encoder(params)
+        m, d = params["W_dec"].shape
+    enc = enc or "linear"
+    kw = dict(d=d, m=m, s_l1=l1, aux_k=aux_k, prefixes=prefixes, enc=enc)
     if enc == "gated":
-        # Rajamanoharan et al. 2024: one tied encoder direction per latent,
-        # read twice. `b_enc` is unused -- the two paths carry their own
-        # biases -- so it is dropped rather than left to confuse a reader
-        # of the checkpoint.
-        del params["b_enc"]
-        params["W_gate"] = W_dec.T
-        params["r_mag"] = jnp.zeros(m)      # W_mag = exp(r_mag) * W_gate
-        params["b_gate"] = jnp.zeros(m)
-        params["b_mag"] = jnp.zeros(m)
-    elif enc == "bilinear":
-        # factors act on [x - b_dec; 1]: the constant coordinate gives the
-        # quadratic form linear terms (resid_const's sign-blindness fix).
-        # Scale so the product matches the tied linear init's pre-activation
-        # std (|x|/sqrt(d)) -- top-k picks the extreme tail of m products,
-        # so a unit-scale product start puts the reconstruction orders of
-        # magnitude off the data
-        s = (x_scale * d ** 0.5) ** -0.5
-        params["W_enc1"] = s * jax.random.normal(r2, (d + 1, m), jnp.float32)
-        params["W_enc2"] = s * jax.random.normal(r3, (d + 1, m), jnp.float32)
-    else:
-        params["W_enc"] = W_dec.T
-    return params
+        return SAE(topk=0, **kw)
+    if groups:
+        return Grouped(topk=0, groups=groups, group_fn=group_fn, **kw)
+    return (BilinearSAE if enc == "bilinear" else SAE)(topk=topk, **kw)
+
+
+def model_from_cfg(cfg, params):
+    """`model_for` with a training run's settings."""
+    return model_for(params, topk=cfg.topk, l1=cfg.l1, groups=cfg.groups,
+                     group_fn=cfg.group_fn, prefixes=cfg.prefixes,
+                     aux_k=cfg.aux_k)
+
+
+def _apply(model, params, method, *args):
+    return model.apply({"params": from_legacy(params)}, *args,
+                       method=getattr(type(model), method))
+
+
+def init_params(rng, d, m, x_mean, enc="linear", x_scale=1.0):
+    """Field-standard initialization (`SAE.initialize`) in the flat layout:
+    unit-norm decoder rows, b_dec at the data mean, tied encoder, bilinear
+    factors scaled to the linear init's pre-activation scale. A gated
+    checkpoint has no `b_enc`: its two paths carry their own biases."""
+    return to_legacy(model_for(d=d, m=m, enc=enc).initialize(
+        rng, x_mean, x_scale))
 
 
 def gated_pre(params, X):
-    """Gated SAE's two read-outs of one tied encoder direction: the gate
-    logits that decide WHICH latents fire and the magnitude logits that
-    decide how much (Rajamanoharan et al. 2024).
-
-    The magnitude path shares `W_gate` up to a learned per-latent scale
-    `exp(r_mag)`, which is what lets an L1 on the gate control sparsity
-    without shrinking the magnitudes it selects -- the pathology of
-    ReLU+L1. The gate enters the code through a step function and so
-    passes no gradient; `W_gate` learns from the L1 and from the
-    auxiliary reconstruction in `loss_fn`, and without that auxiliary
-    term nothing would oppose the L1 and every gate would shut."""
-    Xc = X - params["b_dec"]
-    pre = Xc @ params["W_gate"]
-    return (pre + params["b_gate"],
-            pre * jnp.exp(params["r_mag"]) + params["b_mag"])
+    """The gated encoder's gate and magnitude logits (`SAE.gated_pre`)."""
+    return _apply(model_for(params), params, "gated_pre", X)
 
 
 def preacts(params, X):
-    """Raw encoder logits for any encoder form (which form a params dict
-    uses is carried by its keys, so downstream consumers need no flag).
-    For the gated form this is the magnitude path, the one whose
-    ReLU carries the coefficient."""
-    Xc = X - params["b_dec"]
-    if "W_gate" in params:
-        return gated_pre(params, X)[1]
-    if "W_enc2" in params:
-        Xa = jnp.concatenate([Xc, jnp.ones_like(Xc[..., :1])], -1)
-        return (Xa @ params["W_enc1"]) * (Xa @ params["W_enc2"]) \
-            + params["b_enc"]
-    return Xc @ params["W_enc"] + params["b_enc"]
+    """Raw encoder logits for any encoder form (`SAE.preacts`); for the
+    gated form, the magnitude path."""
+    return _apply(model_for(params), params, "preacts", X)
 
 
 def eigenfeatures(params):
-    """Input-space top eigenvector of each bilinear latent's symmetric
-    form B_j = sym(w1_j w2_j^T). Rank 2, so the top-|eigenvalue|
-    eigenvector is closed-form: w1/|w1| + sign(w1.w2) w2/|w2| (no eigh).
-    Returns (m, d): constant coordinate dropped, unit-normalized,
-    sign-aligned to the latent's decoder row (the form is even, so the
-    sign is otherwise arbitrary)."""
-    U = params["W_enc1"].T
-    V = params["W_enc2"].T
-    Un = U / (jnp.linalg.norm(U, axis=-1, keepdims=True) + 1e-9)
-    Vn = V / (jnp.linalg.norm(V, axis=-1, keepdims=True) + 1e-9)
-    c = jnp.where((U * V).sum(-1, keepdims=True) >= 0, 1.0, -1.0)
-    E = (Un + c * Vn)[:, :-1]
-    E = E / (jnp.linalg.norm(E, axis=-1, keepdims=True) + 1e-9)
-    s = (E * params["W_dec"]).sum(-1, keepdims=True)
-    return E * jnp.where(s >= 0, 1.0, -1.0)
+    """Each bilinear latent's closed-form top eigenvector, (m, d)
+    (`ontologize.sae.eigenfeatures`)."""
+    return _eigenfeatures(params["W_enc1"].T, params["W_enc2"].T,
+                          params["W_dec"])
 
 
 def activate(pre, topk, groups=0, group_fn="top1"):
     """Raw encoder logits -> latent activations for every SAE variant."""
     if groups:
-        g = pre.reshape(*pre.shape[:-1], groups, -1)
-        if group_fn == "softmax":
-            z = jax.nn.softmax(g, -1)
-        else:
-            # winner per group keeps its ReLU magnitude; a group whose
-            # winner is negative stays silent (unlike an Ontologizer head,
-            # a group may abstain)
-            top = g.max(-1, keepdims=True)
-            z = jnp.where((g >= top) & (g > 0), g, 0.0)
-        return z.reshape(pre.shape)
-    a = jax.nn.relu(pre)
-    if topk:
-        thr = jax.lax.top_k(a, topk)[0][..., -1:]
-        a = jnp.where(a >= thr, a, 0.0)
-    return a
+        return (group_softmax if group_fn == "softmax" else group_top1)(
+            pre, groups)
+    return topk_relu(pre, topk)
 
 
 def encode(params, X, topk, groups=0, group_fn="top1"):
-    if "W_gate" in params:
-        # sparsity comes from the gate, so topk/groups do not apply
-        pi_gate, pi_mag = gated_pre(params, X)
-        return jnp.where(pi_gate > 0, jax.nn.relu(pi_mag), 0.0)
-    return activate(preacts(params, X), topk, groups, group_fn)
+    return _apply(model_for(params, topk=topk, groups=groups,
+                            group_fn=group_fn), params, "encode", X)
 
 
 def decode(params, z):
-    return z @ params["W_dec"] + params["b_dec"]
+    return _apply(model_for(params), params, "decode", z)
 
 
 def gated_loss(params, X, w_sqrt, l1):
-    """Gated SAE objective: reconstruction + L1 on the gate + the
-    auxiliary reconstruction that keeps the gate honest.
-
-    The three terms are not separable. The gate reaches the code only
-    through a step function, so reconstruction gives it no gradient and
-    the L1 alone would drive every gate shut; the auxiliary term asks
-    `ReLU(gate)` to reconstruct through a frozen decoder, which is what
-    makes the gate learn what is worth opening for. Dropping it leaves a
-    model that trains, reports a loss, and encodes nothing.
-
-    Both reconstruction terms are whitened, so `l1` is priced against the
-    same MSE scale as every other mode here."""
-    pi_gate, pi_mag = gated_pre(params, X)
-    z = jnp.where(pi_gate > 0, jax.nn.relu(pi_mag), 0.0)
-    recon = decode(params, z)
-    mse = (((recon - X) * w_sqrt) ** 2).mean()
-    g = jax.nn.relu(pi_gate)
-    # frozen decoder: this term trains the gate, not the dictionary
-    aux_recon = g @ jax.lax.stop_gradient(params["W_dec"]) \
-        + jax.lax.stop_gradient(params["b_dec"])
-    aux = (((aux_recon - X) * w_sqrt) ** 2).mean()
-    loss = mse + l1 * g.sum(-1).mean() + aux
-    return loss, (mse, (z > 0.0).any(0))
+    """The gated objective (`SAE.gated_loss`): reconstruction, the gate's
+    L1 and the frozen-decoder auxiliary reconstruction."""
+    return _apply(model_for(params, l1=l1), params, "gated_loss", X, w_sqrt)
 
 
 def make_step(tx, cfg):
-    topk, l1, aux_k = cfg.topk, cfg.l1, cfg.aux_k
-    groups, group_fn, P = cfg.groups, cfg.group_fn, cfg.prefixes
-    # softmax coefficients are bounded, so rows must carry magnitude and
-    # the L1 norm-gaming loophole doesn't exist
-    renorm = not (groups and group_fn == "softmax")
-
+    """One optimizer step on the flat layout, with the model's loss
+    (`SAE.loss`) and decoder renormalization (`SAE.renorm`). The model is
+    built from the params inside the trace, where their shapes are fixed."""
     def loss_fn(params, X, w_sqrt, dead):
-        if "W_gate" in params:
-            return gated_loss(params, X, w_sqrt, l1)
-        pre = preacts(params, X)
-        z = activate(pre, topk, groups, group_fn)
-        if P > 1:
-            # nested prefix reconstructions (matryoshka/deepsup, joint):
-            # every prefix of latent blocks must reconstruct on its own
-            zb = z.reshape(z.shape[0], P, -1)
-            Wb = params["W_dec"].reshape(P, -1, params["W_dec"].shape[-1])
-            recons = (jnp.cumsum(jnp.einsum("bpj,pjd->pbd", zb, Wb), 0)
-                      + params["b_dec"])
-            mse = (((recons - X[None]) * w_sqrt) ** 2).mean()
-            recon = recons[-1]
-        else:
-            recon = decode(params, z)
-            mse = (((recon - X) * w_sqrt) ** 2).mean()
-        loss = mse
-        if l1:
-            loss = loss + l1 * jnp.abs(z).sum(-1).mean()
-        if aux_k:
-            # reconstruct the (stop-gradiented) residual with the top
-            # aux_k currently-dead latents so they receive gradient
-            a_dead = jnp.where(dead, jax.nn.relu(pre), 0.0)
-            thr_d = jax.lax.top_k(a_dead, aux_k)[0][..., -1:]
-            z_aux = jnp.where(a_dead >= thr_d, a_dead, 0.0)
-            resid = jax.lax.stop_gradient(X - recon)
-            aux = (((z_aux @ params["W_dec"] - resid) * w_sqrt) ** 2).mean()
-            loss = loss + AUX_COEF * aux * jnp.any(dead)
-        fired = (z > 0.0).any(0)
-        return loss, (mse, fired)
+        model = model_from_cfg(cfg, params)
+        return _apply(model, params, "loss", X, w_sqrt, dead)
 
     @jax.jit
     def step(params, opt_state, X, w_sqrt, dead):
@@ -372,12 +286,8 @@ def make_step(tx, cfg):
             loss_fn, has_aux=True)(params, X, w_sqrt, dead)
         updates, opt_state = tx.update(g, opt_state, params)
         params = optax.apply_updates(params, updates)
-        if renorm:
-            # keep decoder rows unit-norm: fixes the feature scale
-            # (coefficients carry magnitude) and closes the L1
-            # norm-gaming loophole
-            n = jnp.linalg.norm(params["W_dec"], axis=-1, keepdims=True)
-            params = {**params, "W_dec": params["W_dec"] / (n + 1e-9)}
+        params = to_legacy(model_from_cfg(cfg, params).renorm(
+            from_legacy(params)))
         return params, opt_state, loss, mse, fired
 
     return step
@@ -462,62 +372,16 @@ def save_state(path, params, opt_state, step, last_fired):
 
 def resample_dead(params, opt_state, X, w_sqrt, dead, rng,
                   topk=0, groups=0, group_fn="top1"):
-    """Neuron resampling (Bricken et al. 2023), the ReLU+L1 lineage's
-    dead-latent treatment: point each dead latent at an example the
-    current dictionary reconstructs badly. Examples are drawn with
-    probability proportional to the squared whitened loss; each dead
-    latent's decoder row becomes the drawn example's centered unit
-    direction, its encoder column the same direction at 0.2x the mean
-    alive encoder-column norm (tied, like the init), its encoder bias 0.
-    Adam's moments are zeroed for every touched entry, so stale momentum
-    cannot immediately drag the fresh direction away (skipping the reset
-    largely defeats the method).
-
-    Works for the linear and gated forms, dispatching on the params keys
-    as `preacts` does. Not bilinear: a factor pair has no defined
-    resample direction.
-
-    For a gated model this is the only mechanism that can bring a latent
-    back at all. Its gate reaches the code through a step function, so a
-    gate that has shut receives nothing from reconstruction, and `aux_k`
-    -- which acts on `relu(preacts)`, the MAGNITUDE path -- cannot reopen
-    one however much gradient it delivers. Resampling clears `b_gate`,
-    which can. `r_mag` and `b_mag` are reset with it, since a revived
-    latent pointed at a fresh direction has no use for the magnitude
-    scale its previous life ended on."""
-    z = encode(params, jnp.asarray(X), topk, groups, group_fn)
-    loss = np.asarray((((decode(params, z) - X) * w_sqrt) ** 2).sum(-1))
-    p = loss ** 2
-    p = p / p.sum() if p.sum() > 0 else np.full(len(loss), 1.0 / len(loss))
-    idx = rng.choice(len(loss), size=int(dead.sum()), replace=True, p=p)
-    v = np.asarray(X)[idx] - np.asarray(params["b_dec"])
-    v = v / (np.linalg.norm(v, axis=-1, keepdims=True) + 1e-9)
-
-    d_idx = np.flatnonzero(dead)
-    alive = ~dead
-    gated = "W_gate" in params
-    enc = "W_gate" if gated else "W_enc"
-    col = np.linalg.norm(np.asarray(params[enc]), axis=0)
-    scale = 0.2 * (col[alive].mean() if alive.any() else 1.0)
-
-    params = dict(params)
-    params["W_dec"] = params["W_dec"].at[d_idx].set(jnp.asarray(v))
-    params[enc] = params[enc].at[:, d_idx].set(jnp.asarray(scale * v.T))
-
-    keep = {"W_dec": jnp.asarray(alive)[:, None],
-            enc: jnp.asarray(alive)[None, :],
-            "b_dec": jnp.ones_like(params["b_dec"], bool)}
-    # every per-latent vector goes back to its init value and is masked
-    # alike; `keep` must name each params key or the Adam reset below
-    # raises on the one it missed
-    for k in (("b_gate", "b_mag", "r_mag") if gated else ("b_enc",)):
-        params[k] = params[k].at[d_idx].set(0.0)
-        keep[k] = jnp.asarray(alive)
+    """Neuron resampling (`SAE.resample`, Bricken et al. 2023) on the flat
+    layout, with Adam's moments zeroed for every touched entry. Linear and
+    gated forms only."""
+    model = model_for(params, topk=topk, groups=groups, group_fn=group_fn)
     adam = opt_state[0]
-    adam = adam._replace(
-        mu={k: adam.mu[k] * keep[k] for k in adam.mu},
-        nu={k: adam.nu[k] * keep[k] for k in adam.nu})
-    return params, (adam,) + tuple(opt_state[1:])
+    tree, (mu, nu) = model.resample(
+        from_legacy(params), (from_legacy(adam.mu), from_legacy(adam.nu)),
+        jnp.asarray(X), w_sqrt, np.asarray(dead), rng)
+    adam = adam._replace(mu=to_legacy(mu), nu=to_legacy(nu))
+    return to_legacy(tree), (adam,) + tuple(opt_state[1:])
 
 
 def load_state(path, params, opt_state):
