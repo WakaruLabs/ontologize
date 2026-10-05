@@ -100,7 +100,7 @@ def load_run(ckpt):
     """CheckpointManager + model spec, following autointerp.onto_acts_fn."""
     import orbax.checkpoint as ocp
     from ontologize.ontologizer import Ontologizer
-    from ontologize.training.serialize import migrate_spec
+    from ontologize.training.serialize import restore_spec
 
     manager = ocp.CheckpointManager(
         Path(ckpt).resolve(),
@@ -109,8 +109,7 @@ def load_run(ckpt):
     steps = sorted(int(s) for s in manager.all_steps())
     if not steps:
         raise SystemExit(f"no checkpoints under {ckpt}")
-    spec = manager.restore(steps[-1], items={'spec': None})['spec']
-    model = Ontologizer(**migrate_spec(spec))
+    model = Ontologizer(**restore_spec(manager, steps[-1]))
     return manager, model, steps
 
 

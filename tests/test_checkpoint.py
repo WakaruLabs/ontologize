@@ -11,7 +11,10 @@ import pytest
 
 from ontologize.ontologizer import Ontologizer
 from ontologize.training.ontostate import OntoState, state_init, load_params
-from ontologize.training.serialize import migrate_spec
+from flax.errors import ScopeParamShapeError
+
+from ontologize.training.serialize import (migrate_spec, restore_spec,
+                                           stored_params)
 
 from conftest import KW, B
 
@@ -95,9 +98,70 @@ def test_migrate_spec_leaves_unknown_keys_to_raise(tmp_path):
     differently from the one that trained, which is worse than refusing to
     build one."""
     bad = {"d_in": 4, "d_out": 4, "not_a_field": 1}
-    assert migrate_spec(bad) == bad
+    assert migrate_spec(bad)["not_a_field"] == 1
     with pytest.raises(TypeError):
         Ontologizer(**migrate_spec(bad))
+
+
+def save_with_spec(path, model, spec):
+    """A checkpoint of `model` whose stored spec is `spec`, as an older
+    branch of the code would have written it."""
+    state = state_init(model, B, optax.adam(1e-4), jax.random.PRNGKey(0),
+                       save_each=10, n_stats=OntoState.n_stats, ghost=False)
+    manager = make_manager(path)
+    manager.save(0, items={'state': state, 'spec': spec})
+    manager.wait_until_finished()
+    return manager, state
+
+
+def old_spec(model):
+    """`model`'s spec as written before `const0` and `resid_gain` existed."""
+    import dataclasses
+    spec = {f.name: getattr(model, f.name) for f in dataclasses.fields(model)
+            if f.name not in ("parent", "name")}
+    for k in ("const0", "resid_gain"):
+        spec.pop(k)
+    return spec
+
+
+def test_a_pre_resid_gain_spec_keeps_it_off():
+    """`resid_gain` was added at False and defaulted to True minutes later,
+    so a spec without the key trained without it; the dataclass default
+    would silently build a different forward pass."""
+    model = Ontologizer(**{**KW, "resid_gain": False})
+    spec = old_spec(model)
+    assert Ontologizer(**spec).resid_gain                  # the silent drift
+    assert Ontologizer(**migrate_spec(spec)) == \
+        Ontologizer(**{**KW, "resid_gain": False, "const0": True})
+
+
+def test_a_layer0_without_the_constant_restores(tmp_path, X):
+    """Checkpoints from before layer 0 took resid_const's coordinate
+    (`resid_nc`, `resid_nc_hm`) have a `d_in`-wide first classifier. Nothing
+    in their spec says so; `restore_spec` reads it off the stored shapes, and
+    the model rebuilt from it runs on the stored weights."""
+    model = Ontologizer(**{**KW, "resid_const": True, "resid_gain": False,
+                           "const0": False})
+    manager, state = save_with_spec(tmp_path, model, old_spec(model))
+
+    raw = manager.restore(0, items={'spec': None})['spec']
+    params = stored_params(manager.restore(0, items={'state': None})['state'])
+    with pytest.raises(ScopeParamShapeError):              # the loud failure
+        Ontologizer(**migrate_spec(raw)).apply({'params': params}, X)
+
+    rebuilt = Ontologizer(**restore_spec(manager, 0))
+    assert rebuilt == model
+    Y = rebuilt.apply({'params': params}, X)
+    assert jnp.allclose(Y, model.apply(
+        {'params': stored_params(state.params)}, X))
+
+
+def test_a_layer0_with_the_constant_still_restores(tmp_path, X):
+    """The same spec without `const0`, from a checkpoint whose layer 0 does
+    take the coordinate (everything trained since), must keep it."""
+    model = Ontologizer(**{**KW, "resid_const": True, "resid_gain": False})
+    manager, _ = save_with_spec(tmp_path, model, old_spec(model))
+    assert Ontologizer(**restore_spec(manager, 0)) == model
 
 
 def headline_spec(model):

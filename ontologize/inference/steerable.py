@@ -6,7 +6,7 @@ from typing import Any, List, Optional, Tuple
 from jaxtyping import Array, Bool, Float, UInt, PRNGKeyArray
 
 from ontologize.ontologizer import Ontologizer, DictIntervention
-from ontologize.training.serialize import migrate_spec
+from ontologize.training.serialize import restore_spec
 from ontologize.training.config import Hyperparams, Metadata
 from ontologize.training.ontostate import load_params
 
@@ -20,8 +20,7 @@ class Steerable:
         if self.meta.resume_from is None:
             self.meta.resume_from = manager.latest_step()
 
-        spec = manager.restore(self.meta.resume_from, items={'spec': None})['spec']
-        self.model = Ontologizer(**migrate_spec(spec))
+        self.model = Ontologizer(**restore_spec(manager, self.meta.resume_from))
         self.layer_args = [DictIntervention() for _ in range(self.model.l)]
 
         state = self.hyper.init(self.model, save_each=self.meta.save_each)

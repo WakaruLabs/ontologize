@@ -47,7 +47,7 @@ from transformers.modeling_outputs import BaseModelOutput     # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from ontologize.data.pretrained import pretrained_transformer  # noqa: E402
 from ontologize.ontologizer import Ontologizer                # noqa: E402
-from ontologize.training.serialize import migrate_spec        # noqa: E402
+from ontologize.training.serialize import restore_spec        # noqa: E402
 
 REF = ["The weather is nice today.",
        "She walked to the store to buy some bread.",
@@ -90,8 +90,7 @@ def main():
         checkpointers={"state": ocp.PyTreeCheckpointer(),
                        "spec": ocp.PyTreeCheckpointer()})
     step = man.latest_step()
-    model = Ontologizer(**migrate_spec(man.restore(step,
-                                                   items={"spec": None})["spec"]))
+    model = Ontologizer(**restore_spec(man, step))
     state = man.restore(step, items={"state": None})["state"]
     params = state["params"] if "opt_state" in state else state
     while "params" in params:

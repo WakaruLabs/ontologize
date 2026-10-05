@@ -48,7 +48,7 @@ from pathlib import Path
 import numpy as np
 import orbax.checkpoint as ocp
 
-from ontologize.training.serialize import migrate_spec
+from ontologize.training.serialize import restore_spec
 
 ROOT = Path("/home/keira/flock/ontologize/data/out/sonar/multilingual")
 
@@ -99,7 +99,7 @@ def load_dicts(arm, step=None):
         p, checkpointers={"state": ocp.PyTreeCheckpointer(),
                           "spec": ocp.PyTreeCheckpointer()})
     step = step or man.latest_step()
-    spec = migrate_spec(man.restore(step, items={"spec": None})["spec"])
+    spec = restore_spec(man, step)
     state = man.restore(step, items={"state": None})["state"]
     params = state["params"] if "opt_state" in state else state
     while "params" in params:

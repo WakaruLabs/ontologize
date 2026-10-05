@@ -61,7 +61,7 @@ from pathlib import Path
 
 import sae
 from ontologize.ontologizer import Ontologizer
-from ontologize.training.serialize import migrate_spec
+from ontologize.training.serialize import restore_spec
 
 
 def parse_args():
@@ -99,8 +99,7 @@ def load_onto(ckpt, step):
         checkpointers={"state": ocp.PyTreeCheckpointer(),
                        "spec": ocp.PyTreeCheckpointer()})
     step = step or manager.latest_step()
-    spec = manager.restore(step, items={"spec": None})["spec"]
-    model = Ontologizer(**migrate_spec(spec))
+    model = Ontologizer(**restore_spec(manager, step))
     state = manager.restore(step, items={"state": None})["state"]
     params = state["params"] if "opt_state" in state else state
     while "params" in params:

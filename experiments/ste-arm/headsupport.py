@@ -136,24 +136,12 @@ def null(S: Float[np.ndarray, "h d"], draws: int,
 
 def mean_assignment(model, params, X: Float[np.ndarray, "n d"], T: float,
                     b: int) -> Float[np.ndarray, "l h k"]:
-    """`Ontologizer.classify`'s loop, batch-meaned. Checkpoints from before
-    `constinput` (`resid_nc`, `resid_nc_hm`) have a layer-0 classifier
-    without the constant coordinate, which the current code would append;
-    the stored weight's input width says which layout it is."""
-    w0 = params["dictencs_0"]["classifier"]["weight"].shape[-1]
-    const0 = w0 != model.d_in
-
+    """Each head's assignment, averaged over `X` (`Ontologizer.classify`,
+    so gain-shape and the router apply)."""
     def assign(module, X: Float[Array, "b d"]) -> Float[Array, "l b hk"]:
         E, _ = module.encode(X, 0.0, None)
-        R = module.resid(E)
-        E = module.constinput(E) if const0 else E
-        Ps = []
-        for i, dictenc in enumerate(module.dictencs):
-            R, K = dictenc.withClusts(R, E, temperature=T)
-            Ps.append(K)
-            if i < module.l - 1:
-                E = module.nextinput(X, R, K)
-        return jnp.stack(Ps)
+        _, Ps = module.classify(E, X_ref=X, temperature=T)
+        return Ps
     run = jax.jit(lambda X: model.apply({"params": params}, X, method=assign))
     acc, nb = 0.0, 0
     for i in range(0, len(X) - b + 1, b):

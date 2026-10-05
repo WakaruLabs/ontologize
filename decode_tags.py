@@ -33,7 +33,7 @@ from transformers import AutoTokenizer, AutoModel, M2M100ForConditionalGeneratio
 from transformers.modeling_outputs import BaseModelOutput
 
 from ontologize.ontologizer import Ontologizer
-from ontologize.training.serialize import migrate_spec
+from ontologize.training.serialize import restore_spec
 from ontologize.training.ontostate import OntoState, load_params
 from ontologize.data.pretrained import encode
 
@@ -77,8 +77,7 @@ def main():
         raise ValueError("No checkpoint found in directory!")
 
     print("Setting up JAX Ontologizer from checkpoint spec...")
-    spec = manager.restore(step, items={'spec': None})['spec']
-    model = Ontologizer(**migrate_spec(spec))
+    model = Ontologizer(**restore_spec(manager, step))
 
     state_dict = manager.restore(step, items={'state': None})['state']
     

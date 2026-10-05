@@ -22,7 +22,7 @@ import numpy as np
 import orbax.checkpoint as ocp
 
 from ontologize.ontologizer import DictIntervention, Ontologizer
-from ontologize.training.serialize import migrate_spec
+from ontologize.training.serialize import restore_spec
 
 ROOT = Path("/home/keira/flock/ontologize/data/out/sonar/multilingual")
 CACHE = "/home/keira/flock/ontologize/data/sonar_embeddings/mc4_4M.npy"
@@ -36,7 +36,7 @@ def load(arm):
         p.resolve(), checkpointers={"state": ocp.PyTreeCheckpointer(),
                                     "spec": ocp.PyTreeCheckpointer()})
     step = man.latest_step()
-    spec = migrate_spec(man.restore(step, items={"spec": None})["spec"])
+    spec = restore_spec(man, step)
     state = man.restore(step, items={"state": None})["state"]
     params = state["params"] if "opt_state" in state else state
     while "params" in params:

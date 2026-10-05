@@ -398,15 +398,14 @@ def onto_acts_fn(ckpt, step, temperature):
     import jax.numpy as jnp
     import orbax.checkpoint as ocp
     from ontologize.ontologizer import Ontologizer
-    from ontologize.training.serialize import migrate_spec
+    from ontologize.training.serialize import restore_spec
 
     manager = ocp.CheckpointManager(
         Path(ckpt).resolve(),
         checkpointers={'state': ocp.PyTreeCheckpointer(),
                        'spec': ocp.PyTreeCheckpointer()})
     step = step or manager.latest_step()
-    spec = manager.restore(step, items={'spec': None})['spec']
-    model = Ontologizer(**migrate_spec(spec))
+    model = Ontologizer(**restore_spec(manager, step))
     state = manager.restore(step, items={'state': None})['state']
     params = state['params'] if 'opt_state' in state else state
     while 'params' in params:

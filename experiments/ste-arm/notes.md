@@ -1421,6 +1421,8 @@ partition into `h` blocks needs it near `1/h`.
 
 | model | `sigma` dict (null) | spread | `sigma` decoded (null) |
 |---|---|---|---|
+| SONAR `resid_nc` (372.6k steps) | 0.818 (0.815) | 0.83 | 0.917 (0.910) |
+| SONAR `resid_nc_hm` (8.27M steps) | 0.113 (0.118) | 0.13 | 0.892 (0.878) |
 | SONAR `sweep_softmax_shm` | 0.731 (0.738) | 0.74 | 0.938 (0.930) |
 | SONAR `sweep_top2_shm` | 0.862 (0.860) | 0.87 | 0.972 (0.958) |
 | SONAR `ste_h76` (shipped init) | 0.942 (0.942) | 0.94 | 0.721 (0.719) |
@@ -1499,12 +1501,19 @@ orthogonality measured earlier is the only one the trained models have.
 by construction. Whether `s_support` as a loss term can produce it is
 untested: no run has trained with it.
 
-`resid_nc` and `resid_nc_hm` are missing because this branch cannot load
-them. They predate `constinput`: their layer-0 classifier takes the bare
-1024-dim input, while `Ontologizer.setup` now always builds layer 0 with
-`resid_const`'s extra coordinate, and neither the spec nor `migrate_spec`
-records the difference. Every loader on this branch fails on them the same
-way (`ScopeParamShapeError`, 1025 against 1024).
+`resid_nc_hm`, the reference configuration trained 22 times longer, is
+the one model whose heads do anything like avoid each other. Its
+profiles are sparse (spread 0.13 against 0.52-0.98 elsewhere) and `sigma`
+sits 4% below its null, in four of five layers (0.113 against 0.118).
+That is still not a partition: at `h = 32` one needs spread near 0.03,
+and most of the low `sigma` is the sparsity, which the null shares. Long
+training sparsifies a head's coordinate profile; it barely separates
+heads. `resid_nc`, the same configuration at 372.6k steps, is at its null
+with dense profiles like the rest.
+
+(Both load through `restore_spec`, which infers from the stored weights
+that their layer 0 predates `resid_const`'s coordinate; the reloaded
+`resid_nc` reproduces the Pareto table to four digits.)
 
 ```bash
 uv run python experiments/ste-arm/headsupport.py \

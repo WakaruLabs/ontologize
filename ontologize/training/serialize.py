@@ -1,6 +1,6 @@
 import orbax.checkpoint as ocp
 import flax.linen as nn
-from typing import Any, Tuple, Dict
+from typing import Any, Dict, Optional, Tuple
 import dataclasses
 
 #: spec keys earlier checkpoints wrote under other names. A model is saved
@@ -36,8 +36,46 @@ HEADLINE_HEAD_SPARSE_KEYS = ("hs_shared", "hs_decoder", "hs_auxk", "m_h",
 #: the forward pass, so it is dropped whatever its value
 HEADLINE_STATS_ONLY_SPEC_KEYS = ("fast_stats",)
 
+#: fields whose default is not what a checkpoint written before the field
+#: existed did. A spec is `dataclasses.asdict(model)`, so every checkpoint
+#: written since a field was added carries it explicitly; a spec WITHOUT it
+#: predates it, and the dataclass default would silently build a different
+#: forward pass. `resid_gain` was added at False and defaulted to True ten
+#: minutes later (2026-09-10), so its absence means it was off.
+ABSENT_SPEC_DEFAULTS = {
+    "resid_gain": False,
+}
 
-def migrate_spec(spec: Dict[str, Any]) -> Dict[str, Any]:
+#: forward modes under which `resid_const` appends a coordinate at all
+RESID_FORWARDS = ("resid", "resid_labels")
+
+
+def stored_params(tree: Any) -> Any:
+    """The parameter tree inside a restored `state` item -- arrays or
+    orbax `ArrayMetadata` alike -- with the optimizer state and the nested
+    `params` wrappers both checkpoint formats carry stripped. Orbax's
+    metadata trees are mappings but not dicts, so this tests for keys."""
+    if hasattr(tree, "keys") and "opt_state" in tree:
+        tree = tree["params"]
+    while hasattr(tree, "keys") and "params" in tree:
+        tree = tree["params"]
+    return tree
+
+
+def infer_const0(spec: Dict[str, Any], params: Any) -> Optional[bool]:
+    """Whether a checkpoint's layer 0 takes `resid_const`'s coordinate,
+    read off the stored classifier's input width; `None` when the question
+    does not arise (no `resid_const`, or a forward mode without it) or the
+    width matches neither layout."""
+    if not spec.get("resid_const") or spec.get("forward") not in RESID_FORWARDS:
+        return None
+    d_enc = spec["e_enc"] if spec.get("encoded") and spec.get("e_enc", 0) > 0 \
+        else spec["d_in"]
+    width = params["dictencs_0"]["classifier"]["weight"].shape[-1]
+    return {d_enc + 1: True, d_enc: False}.get(width)
+
+
+def migrate_spec(spec: Dict[str, Any], params: Any = None) -> Dict[str, Any]:
     """A saved model spec with legacy field names mapped forward.
 
     Renames, plus the one kind of drop that cannot change the model: a
@@ -48,7 +86,16 @@ def migrate_spec(spec: Dict[str, Any]) -> Dict[str, Any]:
     raises from the constructor instead of being dropped: silently
     discarding a spec key would build a model whose configuration differs
     from the one that was trained, which is worse than failing to build one
-    at all."""
+    at all.
+
+    Fields a spec predates take their pre-feature value
+    (`ABSENT_SPEC_DEFAULTS`) rather than the dataclass default. `const0`
+    cannot be read off the spec -- every checkpoint written before the field
+    lacks it, with and without a layer-0 constant -- so it is inferred from
+    `params` (the stored parameter tree, or its shapes; see
+    `restore_spec`). Without `params` it falls to the default, and a
+    checkpoint whose layer 0 lacks the constant fails to load with a shape
+    error rather than loading wrong."""
     spec = dict(spec)
     for old, new in LEGACY_SPEC_KEYS.items():
         if old in spec:
@@ -63,7 +110,22 @@ def migrate_spec(spec: Dict[str, Any]) -> Dict[str, Any]:
         spec.pop(k, None)
     for k in HEADLINE_HEAD_SPARSE_KEYS + HEADLINE_STATS_ONLY_SPEC_KEYS:
         spec.pop(k, None)
+    for k, v in ABSENT_SPEC_DEFAULTS.items():
+        spec.setdefault(k, v)
+    if "const0" not in spec and params is not None:
+        const0 = infer_const0(spec, params)
+        if const0 is not None:
+            spec["const0"] = const0
     return spec
+
+
+def restore_spec(manager: ocp.CheckpointManager, step: int) -> Dict[str, Any]:
+    """The migrated model spec of checkpoint `step`, with `const0` read off
+    the stored weights' shapes (orbax metadata: no arrays are loaded). Every
+    loader should build its model from this rather than from the raw spec."""
+    spec = manager.restore(step, items={"spec": None})["spec"]
+    shapes = stored_params(manager.item_metadata(step)["state"])
+    return migrate_spec(spec, shapes)
 
 def save_model(
     checkpoint_dir: str, 

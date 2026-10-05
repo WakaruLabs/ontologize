@@ -100,6 +100,11 @@ class Ontologizer(nn.Module):
     # input dims.
     resid_norm: bool = False
     resid_const: bool = False
+    # whether resid_const's coordinate also reaches layer 0 (`constinput`).
+    # Off reproduces checkpoints from before layer 0 had it, whose first
+    # classifier is `d_in` wide rather than `d_in + 1`; `migrate_spec`
+    # infers it from the stored weights when a spec lacks the key.
+    const0: bool = True
     # gain-shape separation at each DictEnc input (forward="resid" only).
     # Moves resid_norm's normalization inside the layer: each DictEnc
     # unit-normalizes its own input (the shape), classifies that, and
@@ -296,7 +301,8 @@ class Ontologizer(nn.Module):
             n_up = n_const
             d_next = self.d_out + n_const
 
-        dictencs = [self.dictenc(d_enc + n_const, n_const)]
+        n_const0 = n_const if self.const0 else 0
+        dictencs = [self.dictenc(d_enc + n_const0, n_const0)]
         for _ in range(self.l - 1):
             dictencs.append(self.dictenc(d_next, n_up))
 
@@ -367,9 +373,9 @@ class Ontologizer(nn.Module):
         for the upper layers. `const` is the value appended: 1 for live
         inputs, 0 for ghost inputs (the coordinate is constant, so its
         gradient surrogate is zero). No-op unless a residual-carrying
-        forward mode is set and `resid_const`; a `None` ghost input passes
-        through."""
-        if (E is None or not self.resid_const
+        forward mode is set, `resid_const`, and `const0`; a `None` ghost
+        input passes through."""
+        if (E is None or not self.resid_const or not self.const0
                 or self.forward not in ("resid", "resid_labels")):
             return E
         c = jnp.full(E.shape[:-1] + (1,), const, E.dtype)

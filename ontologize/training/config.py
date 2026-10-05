@@ -16,7 +16,7 @@ from jaxtyping import Array, Bool, Float, UInt, PRNGKeyArray
 from flax.training.train_state import TrainState
 
 from ontologize.ontologizer import Ontologizer
-from .serialize import migrate_spec
+from .serialize import restore_spec
 from .ontostate import OntoState, state_init, load_params, update, train
 from ontologize.fns.keys import get_loss, get_srctype
 from ontologize.data.loaders import HFDataSource, SampleLoader
@@ -388,8 +388,7 @@ class Hyperparams:
 
     def load(self, manager: ocp.CheckpointManager, step):
         """Initializes an `OntoState`, then loads a checkpoint specified by `step`."""
-        spec = manager.restore(step, items={'spec': None})['spec']
-        model = Ontologizer(**migrate_spec(spec))
+        model = Ontologizer(**restore_spec(manager, step))
         state = self.init(model)
         return load_params(state, manager, step)
 
