@@ -29,8 +29,11 @@ written in plain language for a reviewer who found `findings.tex` too long and t
 with project vocabulary. Keep it free of that vocabulary (no heads/entries/atoms/
 realization/collateral without a plain definition) and organized as what the method does,
 the problem, its assumptions, how it works, how it compares with existing steering
-methods, and what does not work. Its numbers come from `findings.tex`; change them there
-first.
+methods, and what does not work. It covers both substrates and leads with GPT-2: GPT-2
+numbers come from the `headline` branch's held-out diagnostics as summarized in its
+`docs/OVERVIEW.md` (and `docs/COMPOSITIONAL_CELLS.md`), SONAR numbers from `findings.tex`;
+change them at their source first. It does not use "label" for a classifier's choice,
+since `docs/OVERVIEW.md` does and the writeup reserves the word for ground truth.
 
 ## Build
 
