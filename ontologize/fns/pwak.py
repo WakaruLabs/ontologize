@@ -9,15 +9,18 @@ splints on the same break). Temperature also amplifies whatever the model
 already believes about each sample *in isolation*: there is no external
 check, so early mistakes get locked in.
 
-Denoising with Deep learning of a Partitioned Weighted Affinity Kernel
-(DeePWAK) finds soft clusters from noise2self reconstruction.
-Labels are used to construct a partition mask which is applied to the 
-adjacency matrix of a weighted graph, which is used as a diffusion kernel.
-Each sample is interpolated as a weighted average of its neighbors.
+The construction comes from DeePWAK (Deep learning of a Partitioned
+Weighted Affinity Kernel; unpublished), which builds on noise2self
+(Batson & Royer 2019) and DEWAKSS (Tjarnberg et al. 2021). There a
+partitioner's soft labels K define a partition mask wak(K^T K) over the
+batch, the batch's embeddings are diffused through it and decoded, and the
+reconstruction error trains the partition: each sample is predicted from
+its co-clustered neighbours.
 
-There, the diffused labels sit in the reconstruction path; the
+There, the diffused embeddings sit in the reconstruction path; the
 hope in bringing it here was that increasing the diffusion depth s might
-force the model to learn sharper distinctions. That hypothesis presupposes
+force the model to learn sharper distinctions. DeePWAK never tested this;
+it chose s by grid search. That hypothesis presupposes
 the diffusion is used to reconstruct something, which is what `pwak_l2`
 does -- it scores the partition by how well a sample's own layer input is
 predicted by its neighbours' -- while `pwak_kl` uses the same graph only
@@ -61,7 +64,8 @@ mass on whichever tag the neighbourhood supports -- swapping the arguments
 in the return statement of `pwak_kl` and re-running the factorial would test
 that. But note the deeper mismatch recorded at the top: the
 hardening-by-deeper-diffusion hypothesis assumed the diffused labels feed
-the reconstruction of F, DeePWAK-style. As a KL regularizer, neither
+the reconstruction of F, as the diffused embeddings do in DeePWAK. As a
+KL regularizer, neither
 direction implements that mechanism.
 
 What it DOES do, unclaimed in advance: it regularizes. Training MSE +1.4%,
@@ -97,8 +101,12 @@ from jaxtyping import Array, Float
 from .loss import l2
 
 def wak(G: Float[Array, "... n n"]) -> Float[Array, "... n n"]:
-    """Weighted affinity kernel: row sums normalized to 1, NaNs zeroed.
-    DeePWAK's WAK function, verbatim in behaviour."""
+    """Weighted affinity kernel: row sums normalized to 1, all-zero rows
+    left at zero rather than NaN. This is the kernel from DEWAKSS, which uses
+    it to impute a cell's count for a gene as the weighted average of that
+    gene's counts in neighbouring cells; row normalization is what makes
+    `G @ E` that average. The diagonal is untouched here; `affinity`
+    zeroes it."""
     W = G.sum(-1, keepdims=True)
     return jnp.where(W > 0, G / jnp.where(W > 0, W, 1.0), 0.0)
 
