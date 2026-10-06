@@ -1,0 +1,159 @@
+\documentclass[11pt]{article}
+% A two-page summary of the Ontologizer for readers new to the project.
+% Kept in plain language on purpose: every term is defined where it first
+% appears, and project vocabulary from findings.tex is avoided. Numbers
+% come from findings.tex; change them there first.
+\usepackage[biblatex]{flockpaper}
+\usepackage[backend=biber,style=numeric,sorting=none]{biblatex}
+\addbibresource{refs.bib}
+
+\title{Unsupervised Steering Vectors from Learned Classifiers:\\
+A Two-Page Summary}
+\author{%
+  \begin{tabular}[t]{@{}l@{\hspace{2em}}l@{}}
+    Keira Wiechecki & Lamb Wakefield \\[2pt]
+    \mutedlabel{Wakaru \textperiodcentered{} kaw504@nyu.edu} &
+    \mutedlabel{Flock Capital \textperiodcentered{} lamb@flock.holdings} \\[9pt]
+    Jade Zaslavsky & vmfunc \\[2pt]
+    \mutedlabel{Wakaru \textperiodcentered{} jadeofnameless@gmail} &
+    \mutedlabel{Flock Capital \textperiodcentered{} celeste@linux.com}
+  \end{tabular}}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section*{What the method does}
+
+The method, which we call an \emph{Ontologizer}, learns a set of small
+classifiers that together describe a neural network's internal
+representation. Each classifier sorts every input into one of $k$
+categories (we use $k=32$), and each category stores one vector. An input
+is described by which category each classifier chose, and it is
+reconstructed as the sum of the chosen vectors. Nothing is labelled: the
+classifiers and their vectors are learned only by asking the sum to
+reproduce the representation as closely as possible.
+
+Because each classifier's categories are mutually exclusive, changing one
+classifier's answer for an input --- from category $a$ to category $b$ ---
+swaps one stored vector for another. That swap is a steering intervention:
+it moves the representation from ``$a$'' to ``$b$'' along a single,
+named axis, and the model supplies the direction.
+
+\section*{The problem it addresses}
+
+To steer a model is to change its internal state so that it behaves
+differently in a chosen way. The most reliable current method is a
+\emph{steering vector}: take the average representation of examples with a
+property, subtract the average of examples without it, and add the
+difference to new inputs~\cite{turner2023,rimsky2024}. This works well,
+but someone must decide which property to look for and supply labelled
+examples of both sides, so it can only find what its user already
+suspects is there.
+
+Sparse autoencoders (SAEs) find features without labels: each input is
+described by a few active features out of thousands~\cite{bricken2023,
+gao2024}. But their features switch on and off independently, and adding
+one to an input tends to change others and to damage the input in
+unpredictable ways; on standard steering benchmarks, simple supervised
+baselines beat them~\cite{wu2025axbenchsteeringllmssimple}. The goal here
+is steering vectors that need no labels but keep the useful shape of the
+supervised kind: each one a choice between alternatives on a shared axis.
+
+\section*{What it assumes, and why}
+
+\begin{enumerate}
+\item \textbf{Concepts are directions that add.} A representation is,
+approximately, a sum of vectors for the things it encodes. This is the
+linear representation hypothesis~\cite{park2023linear}, and it is what
+makes supervised steering vectors work at all.
+\item \textbf{Much of the variation is categorical.} A sentence has one
+dominant topic, one language, one register; it is more natural to describe
+it by choosing among alternatives than by switching many independent
+features on and off. We check this rather than assume it: the clearest
+classifier the method learns on sentence embeddings sorts by topic and
+genre (crime news, legislation, encyclopedic description, and so on).
+\item \textbf{The categories are a property of the data, not of the
+training run.} If the method recovers real structure, a second run from a
+different random start should find the same classifiers. This is the
+assumption that has \emph{not} held, and it is the main open problem
+(below).
+\end{enumerate}
+
+\section*{How it works, intuitively}
+
+Think of describing a sentence by answering a fixed list of multiple-choice
+questions, where the questions and answers are learned. The first round of
+questions captures the broad outline; the model then measures what that
+outline gets wrong and asks a second round about the remaining error, and
+so on for a few rounds. The answers can be soft (a mixture of categories)
+or hard (exactly one category per question). In the hard version an input
+is stored as a short list of discrete choices --- 1900 bits for a sentence
+embedding --- with no continuous numbers at all.
+
+We apply it to two representations: SONAR sentence
+embeddings~\cite{sonar}, which can be decoded back into text, so a steered
+embedding can be read; and the internal activations of GPT-2
+small~\cite{radford2019}, where the reconstruction can be put back into
+the model to see how much of its behaviour survives.
+
+\section*{How it compares with existing methods}
+
+\textbf{Against supervised steering --- the comparison that matters.} We
+have one direct test. Steering sentence embeddings toward a target
+language, forcing the classifier the method learned moved the decoded text
+toward that language $0.43$ times as far as the supervised
+difference-of-means vector did, and 5 times further than a linear-probe
+direction. The method never saw a label in training; labels were used only
+to pick which category to force. All methods, the supervised one included,
+damaged unrelated content about as much as a random step of the same size.
+So on this test the method recovers a useful but weaker steering
+direction than supervision provides. It has \emph{not} yet been shown to
+beat supervised steering.
+
+\textbf{Against SAEs on steering.} Measured directly in embedding space,
+at each model's own natural step size, a feature of a standard SAE (32
+active features per input) takes effect on 46--50\% of inputs, and other
+SAE settings range from 8\% to 82\%; the method's multi-round version takes
+effect on only 8--19\%, while disturbing other classifiers as much as a
+random step would.
+A simplified one-round version of the method does best of all on side
+effects: it takes effect on 41\% of inputs while disturbing only 1.4\% of
+the other classifiers, against 18\% for a random step.
+
+\textbf{Against SAEs on reconstruction (a secondary check).} Describing a
+sentence embedding with 1900 bits of discrete choices, the method leaves
+$15\%$ of the variance unexplained, against $26\%$ for an SAE using a
+similar number of bits plus 160 continuous coefficients. On GPT-2, an
+800-bit code preserves $97.6\%$ of the model's performance, against
+$96.2\%$ for an SAE with similar error.
+
+\section*{What does not work yet}
+
+\begin{itemize}
+\item \textbf{The classifiers are not reproducible.} Two runs from
+different random starts reconstruct equally well, but agree on almost none
+of their classifiers beyond the first round; only the topic classifier
+reappears reliably. A classifier that is different on every run cannot be
+named, so this limits everything else.
+\item \textbf{Steering through the input is not targeted.} Pushing an input
+toward one category changes other classifiers' answers about as much as a
+random push of the same size, and the multi-round structure doubles that.
+\item \textbf{The stored vectors cannot be read on their own.} Decoding a
+category's vector into text does not describe what the category selects;
+examples of inputs are needed.
+\end{itemize}
+
+\section*{Next}
+
+The test the method needs is a head-to-head steering benchmark:
+difference-of-means vectors, probe directions, SAE features and the
+method's own swaps, scored on the same targets with the same success and
+side-effect measures at matched step sizes. That comparison is being set
+up now. In parallel, the reproducibility problem has to be solved, or the
+reproducible classifiers identified, before any classifier is given a
+name.
+
+\printbibliography
+
+\end{document}

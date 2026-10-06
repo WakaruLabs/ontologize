@@ -24,6 +24,14 @@ it from `../experiments/ste-arm/` and the root eval scripts (`pareto.py`, `steer
 absorbed the former `writeup/ste-arm.md`); check claims against it or rerun the script,
 and do not invent numbers.
 
+`brief.tex` is a separate two-page summary for readers new to the project (`make brief`),
+written in plain language for a reviewer who found `findings.tex` too long and too dense
+with project vocabulary. Keep it free of that vocabulary (no heads/entries/atoms/
+realization/collateral without a plain definition) and organized as what the method does,
+the problem, its assumptions, how it works, how it compares with existing steering
+methods, and what does not work. Its numbers come from `findings.tex`; change them there
+first.
+
 ## Build
 
 ```bash

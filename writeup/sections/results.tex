@@ -250,9 +250,16 @@ On the hard code the oriented eigendirection is dead, below random at
 every strength. The depth decomposition of steering, which reverses the aggregate ranking of
 \texttt{decode} and \texttt{grad}, is in Appendix~\ref{sec:steerlayer}.
 
-Still not run: SAE decoder-row addition and supervised diff-of-means
-vectors in the embedding-space instrument, and per-head effect
-consistency across contexts. The existence proof from \texttt{resid\_nc}
+SAE decoder rows have been scored in the same instrument, at each model's
+own step size: a top-$k$ SAE latent (32 active) is realized on 46--50\% of
+rows, where the hard-code stack realizes 8\% and the softmax stack 19\%,
+each disturbing other heads exactly as much as a random step; the
+single-layer hard variant \texttt{g160top1} realizes 41\% while moving
+1.4\% of other heads against 18\% for random. Still not run: supervised
+difference-of-means and probe directions in the embedding-space
+instrument, which would put supervised, SAE and Ontologizer steering on
+one target, metric and budget; and per-head effect consistency across
+contexts. The existence proof from \texttt{resid\_nc}
 stands: forcing (L1,h8,k17) reliably yields Burmese decodes of otherwise
 preserved content.
 

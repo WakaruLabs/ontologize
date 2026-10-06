@@ -11,10 +11,23 @@ build/findings.bbl: build/findings.bcf
 build/findings.bcf: build $(SRC)
 	pdflatex -output-directory=build findings.tex
 
+brief: brief.pdf
+
+brief.pdf: build/brief.bbl brief.tex refs.bib
+	pdflatex -output-directory=build brief.tex
+	pdflatex -output-directory=build brief.tex
+	mv build/brief.pdf .
+
+build/brief.bbl: build/brief.bcf
+	biber build/brief
+
+build/brief.bcf: build brief.tex refs.bib
+	pdflatex -output-directory=build brief.tex
+
 build:
 	mkdir build
 
 clean:
 	rm -rf build
 
-.PHONY: clean
+.PHONY: clean brief
