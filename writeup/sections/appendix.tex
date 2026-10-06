@@ -224,17 +224,28 @@ $m{=}0$ (input-independent origin), $m{=}k$ (exact soft model), and
 end-to-end argmax (``hard''). An alternative head-level code mean-ablates
 all but the $m$ lowest-entropy heads per layer. SAE points use measured
 eval $L_0$. A hard code's index bits are $l\cdot h\log_2 k$; we compare
-each against the reverse water-filling bound~\cite{cover2006} on the
-whitened eval-tail covariance, the best distortion \emph{any} code of
-that rate can reach under a Gaussian model. With $\lambda_1, \dots,
-\lambda_d$ that covariance's eigenvalues, a rate of $B$ bits reaches
+each against a \emph{Gaussian reference}: the least distortion a code of
+that rate can achieve on a Gaussian source with the eval tail's whitened
+covariance, given by reverse water-filling~\cite{cover2006}. With
+$\lambda_1, \dots, \lambda_d$ that covariance's eigenvalues, a rate of $B$
+bits per sample gives
 \begin{equation}
-	\mathrm{FVU}_{w,\min}(B) = \frac{\sum_j \min(\theta, \lambda_j)}{\sum_j \lambda_j},
+	\mathrm{FVU}_{w,\mathrm{G}}(B) = \frac{\sum_j \min(\theta, \lambda_j)}{\sum_j \lambda_j},
 	\qquad
 	B = \sum_j \max\!\Big(0,\; \tfrac{1}{2}\log_2 \frac{\lambda_j}{\theta}\Big),
 	\label{eq:ratefloor}
 \end{equation}
-with the water level $\theta$ solved from the rate.
+with the water level $\theta$ solved from the rate. It is a reference, not
+a floor, for two reasons. Among sources of a given covariance the Gaussian
+has the largest rate--distortion function under squared error, so for
+the real embeddings the least achievable distortion at rate $B$ is
+\emph{at most} $\mathrm{FVU}_{w,\mathrm{G}}(B)$ and may be well below
+it~\cite{cover2006}. And the rate--distortion function is approached by
+coding long blocks of samples jointly with variable-length codes, where
+our codes spend a fixed $B$ bits on each sample alone. The reference is
+therefore safe to use in one direction only: a code \emph{above} it is at
+least that far from optimal, and nothing we report can establish that a
+given rate is too small.
 
 \paragraph{Categorical form (\texttt{headstruct.py}).}
 An Ontologizer head is exhaustive (always fires) and exclusive (one
@@ -1041,15 +1052,37 @@ against 12{,}160). The binary arm gets within 17\% on $2.9\times$ fewer
 parameters, with features that are one bit each --- the form that is
 actually nameable.
 
+\paragraph{Realized bits, and what they bound.} For a hard code, write
+$A_{lh}(\mathbf{x})$ for head $(l,h)$'s chosen entry and $\mathbf{A}$ for
+all of them. \emph{Realized bits} are the summed entropy of each head's
+usage over the data,
+\begin{equation}
+	R := \sum_{l,h} H(A_{lh})
+	= \sum_{l,h} \big(\log_2 k - \mathrm{KL}(u_{lh} \,\Vert\, \mathrm{uniform})\big)
+	\;\geq\; H(\mathbf{A}) = I(\mathbf{X}; \mathbf{A}),
+	\label{eq:realized}
+\end{equation}
+with $u_{lh}$ head $(l,h)$'s usage distribution; summed over layers this
+is $h(l\log_2 k - \mathrm{KL}_m)$ in the logged statistic's terms. Because
+the code is a deterministic function of the input, its joint entropy is
+exactly the information it carries about the input, and subadditivity
+puts the sum of marginal entropies above it, with equality only when the
+heads are independent. Realized bits therefore measure how evenly each
+head uses its entries, not how much the code says: two codes at the same
+$R$ can carry different information if their heads are redundant to
+different degrees, and the joint entropy, which needs a density estimate
+over $k^{lh}$ outcomes, is not measured here.
+
 \paragraph{Training dynamics.} On the shipped arm the training-log MSE
 (the deep-supervision prefix mean) is flat from step 237k while
 within-head row collinearity keeps falling ($0.812 \to 0.686$, against
-$\sim$0.64 for random non-negative rows). Its code collapses early and
-never fills (Figure~\ref{fig:realized-bits}): realized bits fall to 43\%
-of nominal near step 6k, recover to 85\% by 20k as the $s_{\mathrm{KL}_m}$
-rescale turns the usage collapse around, and end at 90\%. At the fixed
-initialization the code is 99\% full by step 5k, in the stack and the
-flat arm alike, and stays there. Realized bits come from the logged
+$\sim$0.64 for random non-negative rows). Its heads' usage collapses early
+and never evens out (Figure~\ref{fig:realized-bits}): realized bits fall
+to 43\% of nominal near step 6k, recover to 85\% by 20k as the
+$s_{\mathrm{KL}_m}$ rescale turns the usage collapse around, and end at
+90\%. At the fixed initialization every head's usage is near-uniform by
+step 5k (99\% of nominal), in the stack and the flat arm alike, and stays
+there. Realized bits come from the logged
 $\mathrm{KL}_m$, $h(l\log_2 k - \mathrm{KL}_m)$, less its sampling floor:
 $\mathrm{KL}_m$ is a plug-in estimate on one batch of 256 rows, which
 reads $(k-1)/(2b\ln 2) = 0.087$ bits per layer even for perfectly
@@ -1062,10 +1095,11 @@ assumes every entry is live, so it overstates the shipped arm by 14 bits.
 \includegraphics[width=\linewidth]{figures/fig-realized-bits.pdf}
 \caption{Realized code bits over training, as a share of the nominal 1900,
 from the logged $\mathrm{KL}_m$ less its one-batch sampling floor. The
-shipped initialization's code collapses to under half before recovering
-to 90\% (the curve's 91\% over-corrects heads with dead entries); at the
-fixed initialization stack and flat arm fill the code
-within 5k steps.}
+shipped initialization's head usage collapses to under half before
+recovering to 90\% (the curve's 91\% over-corrects heads with dead
+entries); at the fixed initialization every head in the stack and the
+flat arm reaches near-uniform usage within 5k steps. An upper bound on the
+information carried, not a measure of it (Equation~\ref{eq:realized}).}
 \label{fig:realized-bits}
 \end{figure}
 
@@ -1127,7 +1161,7 @@ layer & mean direction & mean pairwise cos & effective dim / 1024 \\
 
 Layer 0 (and every flat arm) classifies the raw cap; layers 1--4 classify
 residuals that span over half the space. On the shipped arm, layer 0 was
-the only layer that did not fill its code (10.6 live entries, 216 bits,
+the only layer whose heads left most entries unused (10.6 live entries, 216 bits,
 against $\sim$375 for each later layer) --- a within-model control on
 everything except the input.
 
@@ -1161,7 +1195,7 @@ pairing from conditioning: effective dimension falls in lockstep with the
 error, because a residual is small and nearly isotropic \emph{because} it
 is this sample's own error. That resolves the whitened arm rather than
 conflicting with it: whitening is conditioning without pairing, and it
-bought full utilization and $\sim$7\% of $\fvu$. (\texttt{forward="labels"},
+bought uniform usage of every entry and $\sim$7\% of $\fvu$. (\texttt{forward="labels"},
 which would test this by removing the residual entirely, has not been run
 at the fixed initialization. Forwarding the code \emph{alongside} the
 residual, \texttt{forward="resid\_labels"}, was a clear negative in a
@@ -1262,6 +1296,42 @@ dotted line is the 0.5 setpoint. Right: the applied multiplier
 $s_{\mathrm{kcossim}}$, averaged over 1000-step windows.}
 \label{fig:kcos}
 \end{figure}
+
+\subsection{Supervised vectors at their own step size}
+\label{sec:steersupnative}
+
+Table~\ref{tab:steersup} compares directions at an equal step. A real
+intervention has its own length: for a model, the output change of
+forcing the entry; for an SAE latent, its decoder row at its mean
+activation; for the difference of means, the difference vector itself,
+which is the step activation addition takes. At those lengths (realized /
+collateral, median step as a fraction of $\lVert x\rVert$, and each
+equal-length random step's collateral):
+
+\begin{center}\small
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+model & own (step) & diff.\ of means (step) & random: own / dm \\
+\midrule
+softmax stack & 0.19 / 0.25 (0.064) & 0.18 / 0.25 (0.079) & 0.25 / 0.30 \\
+hard-code stack & 0.08 / 0.54 (0.129) & \textbf{0.27} / 0.47 (0.064) & 0.53 / 0.48 \\
+hard-code flat & 0.17 / 0.04 (0.028) & \textbf{0.54} / 0.12 (0.087) & 0.05 / 0.17 \\
+\texttt{g160top1} & 0.41 / \textbf{0.01} (0.186) & 0.57 / 0.04 (0.053) & 0.18 / 0.07 \\
+\texttt{g160softmax} & 0.54 / 0.07 (0.050) & 0.57 / 0.13 (0.107) & 0.08 / 0.16 \\
+SAE, top-$k$ 32 ($m{=}5120$) & 0.46 / 0.06 (0.072) & \textbf{0.77} / 0.15 (0.180) & 0.07 / 0.17 \\
+SAE, top-$k$ 32 ($m{=}11264$) & 0.50 / 0.08 (0.076) & \textbf{0.82} / 0.17 (0.172) & 0.09 / 0.19 \\
+SAE, bilinear encoder & 0.82 / 0.04 (0.078) & 0.88 / 0.08 (0.121) & 0.04 / 0.07 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The difference of means realizes more in most models, and in the SAEs and
+the flat arm partly by taking 2--3 times longer steps. The hard-code stack
+is the clear case where direction, not length, decides: the supervised
+vector reaches its entries three times as often with half the step. The
+softmax stack's own intervention and the supervised vector tie.
+\texttt{g160top1}'s own intervention is the most precise step any method
+takes, disturbing 1.4\% of other heads against 18\% for random.
 
 \subsection{Head independence: a measurement artifact}
 \label{sec:hsic}

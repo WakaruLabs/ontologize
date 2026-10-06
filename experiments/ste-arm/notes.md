@@ -2494,6 +2494,82 @@ The softmax reference in the earlier steering table is `sweep_softmax_shm`
 against the earlier 0.824, a different 60-entry sample.
 `sweep_softmax` reads 0.609.
 
+## Supervised steering vectors on the same targets (`steerembed.py`)
+
+The steering comparisons above pit each model's own directions against a
+random step. A reviewer asked the right question: the method is pitched
+as unsupervised steering, so it should be compared with the supervised
+steering vectors it aims to replace. `steerembed.py` now fits, for each
+target, the two standard ones -- the difference of means between rows
+that select the target and rows that do not (activation addition), and a
+class-balanced logistic probe's weight vector -- on the 8,192 reference
+rows with the steered rows held out, and scores them with the same
+realization and collateral, on the same targets and rows (seed 42
+reproduces the earlier runs' targets; the model's own directions agree
+with the earlier tables to within sampling).
+
+The labels are the model's own selection, so this is an ORACLE baseline
+for reaching the model's categories: how well a supervised method that
+already knew the partition would steer into it. It is not a test against
+supervised steering of an external concept (language, topic); that needs
+labelled targets and is the next version.
+
+Fixed strength 0.25 of |x|, realized / collateral (SAE collateral is the
+share of a row's other active latents that drop out; compare within a
+row only):
+
+| model | own decode | diff. of means | probe | random |
+|---|---|---|---|---|
+| softmax stack (`sweep_softmax_shm`) | **0.752** / 0.568 | 0.464 / 0.460 | 0.469 / 0.505 | 0.019 / 0.560 |
+| hard-code stack (`ste_h76_init01`) | 0.370 / 0.656 | **0.910** / 0.628 | **0.939** / 0.640 | 0.021 / 0.654 |
+| hard-code flat (`ste_l1_h380_i01_hm1e4`) | 0.996 / 0.328 | 0.974 / **0.274** | 0.995 / 0.313 | 0.005 / 0.368 |
+| `g160top1` | 0.582 / **0.026** | 0.936 / 0.131 | 0.947 / 0.142 | 0.036 / 0.232 |
+| `g160softmax` | 1.000 / 0.301 | 0.985 / 0.270 | 1.000 / 0.309 | 0.012 / 0.336 |
+| SAE `m5120_k32` | 0.999 / 0.187 | 0.908 / 0.190 | 0.975 / 0.209 | 0.000 / 0.213 |
+| SAE `m11264_k32` | 0.999 / 0.214 | 0.918 / 0.214 | 0.974 / 0.234 | 0.002 / 0.247 |
+| SAE `k32_bl` | 1.000 / 0.066 | 0.970 / 0.122 | 0.992 / 0.111 | 0.013 / 0.126 |
+
+At each method's own step (`native`: the model's intervention; `native_dm`:
+the difference of means at its own length), realized / collateral, with
+the median step as a fraction of |x| and each control's collateral:
+
+| model | own (step) | diff. of means (step) | random collateral, own / dm |
+|---|---|---|---|
+| softmax stack | 0.194 / 0.251 (0.064) | 0.179 / 0.247 (0.079) | 0.249 / 0.298 |
+| hard-code stack | 0.076 / 0.536 (0.129) | **0.266** / 0.465 (0.064) | 0.531 / 0.482 |
+| hard-code flat | 0.169 / 0.043 (0.028) | **0.540** / 0.117 (0.087) | 0.051 / 0.170 |
+| `g160top1` | 0.410 / **0.014** (0.186) | 0.570 / 0.036 (0.053) | 0.176 / 0.070 |
+| `g160softmax` | 0.536 / 0.067 (0.050) | 0.565 / 0.126 (0.107) | 0.077 / 0.162 |
+| SAE `m5120_k32` | 0.456 / 0.062 (0.072) | **0.765** / 0.146 (0.180) | 0.070 / 0.165 |
+| SAE `m11264_k32` | 0.500 / 0.077 (0.076) | **0.824** / 0.167 (0.172) | 0.087 / 0.194 |
+| SAE `k32_bl` | 0.815 / 0.036 (0.078) | 0.881 / 0.078 (0.121) | 0.044 / 0.074 |
+
+- **The softmax stack's own direction beats the supervised vectors** at
+  reaching its own categories at equal budget (0.75 against 0.46-0.47),
+  the only model where it does by a margin; at native magnitude the two
+  tie (0.19 against 0.18 at similar steps).
+- **The hard-code stack's own direction is the problem, not its
+  categories.** Difference of means and the probe reach the same entries
+  on 91-94% of rows where the decode direction reaches 37%, at the same
+  collateral. Its categories are linearly reachable; its decode delta does
+  not point at them, consistent with `steergeom.py`'s finding that a forced
+  entry's output change barely moves the classifier.
+- **`g160top1` trades realization for precision.** Its decode direction
+  reaches fewer targets than the supervised vectors (0.58 against 0.94)
+  but disturbs a fifth as many other heads (0.026 against 0.13); every
+  other model's own direction is at random's collateral.
+- **Supervised vectors are only modestly more targeted.** Difference of
+  means sits about 0.1 below random's collateral in the softmax stack
+  (0.46 against 0.56), the flat arm (0.27 against 0.37) and `g160top1`
+  (0.13 against 0.23), 0.07 below in `g160softmax`, and at random's level
+  in the hard-code stack and the SAEs. Knowing the partition buys some
+  precision but not much; the side effects are still mostly a property of
+  the step's length.
+- **For SAEs the latent's decoder row is already as good as the oracle**
+  (0.999 against 0.91-0.97 at equal budget). At native magnitude difference
+  of means realizes more (0.77-0.82 against 0.46-0.50), but it takes
+  2.3-2.5x longer steps, so that is budget, not direction.
+
 ## Why collateral is direction-blind (`steergeom.py`)
 
 `steergeom.py` linearizes each head's logits in the target's layer, with

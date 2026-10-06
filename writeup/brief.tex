@@ -99,17 +99,33 @@ the model to see how much of its behaviour survives.
 
 \section*{How it compares with existing methods}
 
-\textbf{Against supervised steering --- the comparison that matters.} We
-have one direct test. Steering sentence embeddings toward a target
-language, forcing the classifier the method learned moved the decoded text
-toward that language $0.43$ times as far as the supervised
+\textbf{Against supervised steering --- the comparison that matters.} Two
+tests so far. First, steering sentence embeddings toward a target
+language: forcing one of the method's learned classifiers moved the
+decoded text toward that language $0.43$ times as far as the supervised
 difference-of-means vector did, and 5 times further than a linear-probe
 direction. The method never saw a label in training; labels were used only
 to pick which category to force. All methods, the supervised one included,
 damaged unrelated content about as much as a random step of the same size.
-So on this test the method recovers a useful but weaker steering
-direction than supervision provides. It has \emph{not} yet been shown to
-beat supervised steering.
+
+Second, a direct test of whether the method's own steering direction is a
+good way to reach its own categories. For each category we also fitted
+the two standard supervised vectors --- difference of means and a linear
+probe --- using the method's own assignments as labels, and gave every
+direction the same step size. This is a generous baseline, since it
+already knows which inputs belong to the category. For the soft version
+of the method, its own direction reached the category on 75\% of inputs,
+against 46--47\% for the supervised vectors. For the hard multi-round
+version, its own direction reached only 37\%, against 91--94\%: its
+categories can be reached, but its own direction does not point at them.
+Nearly every method, supervised or not, disturbed the other classifiers
+about as much as a random step of the same size.
+
+So the method recovers useful steering directions without labels, and in
+its soft form they are better than supervised vectors at reaching its own
+categories. It has \emph{not} been shown to beat supervised steering of an
+externally defined concept; the one such test puts it at $0.43$ of the
+supervised effect.
 
 \textbf{Against SAEs on steering.} Measured directly in embedding space,
 at each model's own natural step size, a feature of a standard SAE (32
@@ -127,6 +143,21 @@ $15\%$ of the variance unexplained, against $26\%$ for an SAE using a
 similar number of bits plus 160 continuous coefficients. On GPT-2, an
 800-bit code preserves $97.6\%$ of the model's performance, against
 $96.2\%$ for an SAE with similar error.
+
+\section*{What we can claim}
+
+On dense sentence embeddings, the method describes each embedding with a
+small set of discrete classifier choices far more efficiently than a
+sparse autoencoder of matched code size describes it, and at least one of
+those classifiers --- topic and genre --- is found again in every training
+run and can be described well enough for a blind judge to recognise its
+categories. Whether its classifiers are in general easier to interpret
+than SAE features is not established: descriptions of individual
+categories are no more accurate than descriptions of SAE features once
+the codes' density is accounted for, and most classifiers do not reappear
+across training runs. Testing the stronger claim needs labelled factors
+(such as topic) to compare against, classifiers that reproduce, and
+descriptions scored at matched code size.
 
 \section*{What does not work yet}
 
@@ -146,13 +177,13 @@ examples of inputs are needed.
 
 \section*{Next}
 
-The test the method needs is a head-to-head steering benchmark:
-difference-of-means vectors, probe directions, SAE features and the
-method's own swaps, scored on the same targets with the same success and
-side-effect measures at matched step sizes. That comparison is being set
-up now. In parallel, the reproducibility problem has to be solved, or the
-reproducible classifiers identified, before any classifier is given a
-name.
+The test the method still needs is steering toward externally defined
+concepts --- topic, language, register --- with supervised vectors fitted
+to those concepts' labels, SAE features and the method's own categories
+scored on the same targets, success measure and step size. The same
+comparison on the method's own categories is done (above). In parallel,
+the reproducibility problem has to be solved, or the reproducible
+classifiers identified, before any classifier is given a name.
 
 \printbibliography
 

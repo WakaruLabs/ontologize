@@ -10,7 +10,7 @@ point & coeffs & index bits & $\fvu$ \\
 \midrule
 onto $m{=}0$ ($\mathbb{E}[p]$ origin) & 0 & 0 & 1.001 \\
 onto hard (argmax)                  & 0 & 800 & 17.34 \\
-\emph{rate floor at 800 bits}       & 0 & 800 & \emph{0.226} \\
+\emph{Gaussian reference, 800 bits} & 0 & 800 & \emph{0.226} \\
 sae k32 tier ($m{=}5120/11264$, incl.\ p5, s43) & 32 & $\sim$400 & 0.494--0.509 \\
 sae k32 bilinear                    & 32 & 394 & 0.602 \\
 onto dev $m{=}1$                    & 160 & 800 & 0.677 \\
@@ -55,14 +55,19 @@ $\mathbb{E}[p]$-origin (dev $m{=}1$: $0.98$ vs.\ $0.68$): the measured
 mean classification, not uniform, is the code's true origin; neutral
 ablations and steering baselines should pin to it. (6) The soft model's
 own discrete reading is not a code at all. The argmax row is 77$\times$
-above the best distortion \emph{any} 800-bit code can reach ($0.226$),
-and on the selection sweep's \texttt{softmax\_shm} run the gap is nine
-orders of magnitude (argmax $\fvu$ $8.7\times10^6$ against $0.0007$ soft).
-The entries that \texttt{decode.py}'s interventions and
-\texttt{decode\_tags.py} read are therefore not what carries a softmax
-model's embedding --- the motivation for Section~\ref{sec:ste}. Even a
-perfect 800-bit code would sit near $\fvu\,0.23$: the live head count is
-too small for a discrete ontology to be possible at all.
+above the Gaussian reference for 800 bits ($0.226$), the least distortion
+an 800-bit code could reach if the embeddings were Gaussian with their
+measured covariance; real embeddings are no harder to compress than that,
+so the argmax is at least 77$\times$ from optimal
+(Appendix~\ref{app:protocols}, Equation~\ref{eq:ratefloor}). On the
+selection sweep's \texttt{softmax\_shm} run the gap is nine orders of
+magnitude (argmax $\fvu$ $8.7\times10^6$ against $0.0007$ soft). The
+entries that \texttt{decode.py}'s interventions and \texttt{decode\_tags.py}
+read are therefore not what carries a softmax model's embedding --- the
+motivation for Section~\ref{sec:ste}. The reference does not say that 800
+bits are too few: non-Gaussian data can be compressed below it, so it
+informs the larger head count of Section~\ref{sec:ste} without requiring
+it.
 
 \subsection{Structure decomposition (the ladder)}
 
@@ -250,16 +255,56 @@ On the hard code the oriented eigendirection is dead, below random at
 every strength. The depth decomposition of steering, which reverses the aggregate ranking of
 \texttt{decode} and \texttt{grad}, is in Appendix~\ref{sec:steerlayer}.
 
-SAE decoder rows have been scored in the same instrument, at each model's
-own step size: a top-$k$ SAE latent (32 active) is realized on 46--50\% of
-rows, where the hard-code stack realizes 8\% and the softmax stack 19\%,
-each disturbing other heads exactly as much as a random step; the
-single-layer hard variant \texttt{g160top1} realizes 41\% while moving
-1.4\% of other heads against 18\% for random. Still not run: supervised
-difference-of-means and probe directions in the embedding-space
-instrument, which would put supervised, SAE and Ontologizer steering on
-one target, metric and budget; and per-head effect consistency across
-contexts. The existence proof from \texttt{resid\_nc}
+\paragraph{Against supervised steering vectors.} The same instrument
+scores the two standard supervised steering vectors for each target:
+the difference of means between rows that select the target and rows
+that do not (activation addition~\cite{turner2023,rimsky2024}), and a
+class-balanced logistic probe's weight vector, both fitted on 8{,}192
+reference rows with the steered rows held out. Their labels are the code's
+own selections, so they are an \emph{oracle} baseline: how well a
+supervised method that already knew the partition would steer into it.
+At an equal step of a quarter of the input's norm (realized / collateral;
+an SAE's collateral counts its other active latents, so compare within a
+row):
+
+\begin{table}[h]\centering\small
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+model & own decode & diff.\ of means & probe & random \\
+\midrule
+softmax stack & \textbf{0.75} / 0.57 & 0.46 / 0.46 & 0.47 / 0.51 & 0.02 / 0.56 \\
+hard-code stack & 0.37 / 0.66 & \textbf{0.91} / 0.63 & \textbf{0.94} / 0.64 & 0.02 / 0.65 \\
+hard-code flat & 1.00 / 0.33 & 0.97 / 0.27 & 1.00 / 0.31 & 0.01 / 0.37 \\
+\texttt{g160top1} & 0.58 / \textbf{0.03} & 0.94 / 0.13 & 0.95 / 0.14 & 0.04 / 0.23 \\
+\texttt{g160softmax} & 1.00 / 0.30 & 0.99 / 0.27 & 1.00 / 0.31 & 0.01 / 0.34 \\
+SAE, top-$k$ 32 ($m{=}11264$) & 1.00 / 0.21 & 0.92 / 0.21 & 0.97 / 0.23 & 0.00 / 0.25 \\
+SAE, bilinear encoder & 1.00 / 0.07 & 0.97 / 0.12 & 0.99 / 0.11 & 0.01 / 0.13 \\
+\bottomrule
+\end{tabular}
+\caption{Each model's own steering direction against supervised vectors
+fitted to the same targets, step $0.25\lVert x\rVert$; 64 targets
+$\times$ 32 held-out rows per model, one seed.}
+\label{tab:steersup}
+\end{table}
+
+\textbf{Only the softmax stack's own direction beats the supervised
+vectors}, reaching its categories on 75\% of rows against 46--47\%.
+\textbf{The hard-code stack's categories are reachable but its own
+direction misses them}: the supervised vectors reach the same entries on
+91--94\% of rows where its decode direction reaches 37\%. \texttt{g160top1}
+trades reach for precision, 58\% realized against 94\% but a fifth of the
+collateral; every other model's own direction disturbs other heads as much
+as a random step. Knowing the partition buys the supervised vectors only a
+little precision (difference of means sits up to 0.1 below random's
+collateral), and an SAE's decoder row is already as good as the oracle.
+At each method's own step size the difference of means realizes more in
+most models, partly by taking longer steps
+(Appendix~\ref{sec:steersupnative}). This is a test of reaching the
+model's own categories; steering an external concept, against
+supervised vectors fitted to that concept's labels, is the comparison
+still to run, along with per-head effect consistency across contexts.
+
+The existence proof from \texttt{resid\_nc}
 stands: forcing (L1,h8,k17) reliably yields Burmese decodes of otherwise
 preserved content.
 
@@ -340,8 +385,10 @@ decimals.
 
 \subsection{Capacity, and why the head count rises}
 
-A hard code transmits exactly $l\cdot h\log_2 k$ index bits. Against the
-reverse water-filling bound on the whitened tail:
+A hard code transmits exactly $l\cdot h\log_2 k$ index bits. The bits a
+code of this shape would need to reach a given error \emph{if the
+embeddings were Gaussian} (the reference of Equation~\ref{eq:ratefloor};
+real embeddings may need fewer):
 
 \begin{center}\small
 \begin{tabular}{@{}lrl@{}}
@@ -391,13 +438,17 @@ arm & shape & $s_{\mathrm{KL}_m}$ & realized bits & $\fvu$ & params \\
 \bottomrule
 \end{tabular}
 \caption{Straight-through arms at the fixed initialization (except the
-first row), held-out tail. Realized bits are
-$h(l\log_2 k - \mathrm{KL}_m)$, computable from \texttt{loss.csv}.}
+first row), held-out tail. Realized bits are the summed entropy of each
+head's argmax usage over the tail (\texttt{codeuse.py}), against the
+nominal $l\,h\log_2 k$. That sum upper-bounds the information the code
+carries per sample, and equals it only when heads are independent
+(Equation~\ref{eq:realized}).}
 \label{tab:init}
 \end{table}
 
-A third off the held-out error and the code essentially full, from one
-scalar --- the largest single effect in the straight-through work. It
+A third off the held-out error and every head using its entries almost
+uniformly, from one scalar --- the largest single effect in the
+straight-through work. It
 subsumes two earlier corrections: the utilization gap that the
 entropy-pressure rescale and input whitening were each partly recovering
 \emph{was} the initialization. Hard-code results below use the fixed
@@ -432,13 +483,16 @@ selection but has one layer of linear classifiers and keeps a ReLU
 magnitude on each winner. Truncation rows (\texttt{dev} $m$) are
 \emph{worse} than the hard row on this arm ($0.259$ at $m{=}1$): pinning entries toward the origin adds mass
 the model was never trained to decode, so for a hard model the honest
-capacity axis is $l\cdot h\log_2 k$ itself. Against each code's own
-floor, depth is the less rate-efficient use of bits:
+capacity axis is $l\cdot h\log_2 k$ itself. Measured against the Gaussian
+reference at each code's own rate, the full stack sits further from it
+than one layer's prefix does. Each ratio is a lower bound on that code's
+distance from the optimum at its rate, since the optimum for real data
+may lie below the reference:
 
 \begin{center}\small
 \begin{tabular}{@{}lrrr@{}}
 \toprule
-code & floor & achieved & ratio \\
+code & Gaussian reference & achieved & ratio \\
 \midrule
 380 bits (one layer's prefix) & 0.4208 & 0.6427 & 1.53$\times$ \\
 1900 bits, $5\times76$ & 0.0499 & 0.1535 & 3.08$\times$ \\
@@ -457,9 +511,13 @@ rather than $h\log_2 k$ (Appendix~\ref{app:ste}).
 Five layers of 76 heads and one layer of 380 have the same nominal
 capacity (1900 bits) and exactly the same parameter count (51.93M; both
 the dictionary $h k e$ and the classifier $h k d n$ depend on $l$ and $h$
-only through $l\cdot h$). At the fixed initialization both fill 99.9\% of
-their code, and \textbf{depth is worth $1.79\times$ the reconstruction
-error} ($0.1535$ vs.\ $0.2750$). Seed does not explain it: replicas agree
+only through $l\cdot h$). At the fixed initialization every head in both
+uses its entries almost uniformly (summed head entropy 99.7\% and 99.9\%
+of nominal), and \textbf{depth is worth $1.79\times$ the reconstruction
+error} ($0.1535$ vs.\ $0.2750$). Summed head entropy is an upper bound on
+what a code carries; whether the two carry different amounts jointly ---
+the stack's heads are conditioned on one another's errors, the flat arm's
+are not --- is not measured. Seed does not explain the gap: replicas agree
 to four digits. Neither arm has converged, and the flat arm is still
 improving faster ($-2.75\%$ held out over its last quarter, against
 $-0.86\%$ for the stack), so the ratio, which peaked at $1.83\times$ near
@@ -467,7 +525,7 @@ step 200k, is narrowing slowly; the stack leads at every checkpoint
 (Appendix~\ref{sec:depthdetail}).
 
 What depth buys is not usage, input conditioning, or the per-layer gain
-channel: a ZCA-whitened flat arm fills every bit and still reconstructs
+channel: a ZCA-whitened flat arm uses every entry uniformly and still reconstructs
 $1.7\times$ worse, and pinning the gains costs the stack only 2.1\%
 (Appendix~\ref{sec:depthdetail}). Blending each layer's subtracted
 reconstruction toward another row's, without retraining, shows that the
