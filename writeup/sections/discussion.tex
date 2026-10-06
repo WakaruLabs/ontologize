@@ -118,15 +118,16 @@ its null-space part. Only very long training (8.27M steps) moved it, by
 sparsifying each head's profile rather than separating heads. A static
 reading of the dictionary cannot assume disjoint heads; concatenated heads
 are the only route to them, by construction.
-\item \textbf{A discrete ontology is possible, but not at the softmax
-architecture's size or with its readout.} The softmax model's argmax is
-not its code (77$\times$ above the 800-bit floor for \texttt{resid\_nc},
-nine orders of magnitude on \texttt{softmax\_shm}). A straight-through arm
+\item \textbf{A discrete ontology is possible, but not with the softmax
+architecture's readout.} The softmax model's argmax is not its code (at
+least 77$\times$ from the best 800-bit code for \texttt{resid\_nc}, nine
+orders of magnitude on \texttt{softmax\_shm}). A straight-through arm
 with $2.4\times$ the heads makes the discrete code the model, and at 1900
 index bits and no coefficients beats converged SAEs at matched index
 bits that also send 160 coefficients ($0.154$ vs.\ $0.258$--$0.274$), and
-an L1 SAE spending 519 coefficients and 3.4$\times$ the bits ($0.220$),
-within $3.1\times$ of its own rate floor. It needed a
+an L1 SAE spending 519 coefficients and 3.4$\times$ the bits ($0.220$).
+It sits $3.1\times$ above the Gaussian reference for its rate, so at least
+that far from the best achievable. It needed a
 temperature matched to the logit scale, relative logit noise, a rescaled
 entropy bonus, and an initialization fix worth a third of its error.
 \item \textbf{The discrete code holds up downstream.} On GPT-2 small, an
@@ -145,7 +146,7 @@ costs $\sim$30$\times$; text fidelity is a monotone function of $\fvu$
 and adds no independent axis.
 \item \textbf{The residual cascade is measured on both sides of the
 ledger.} For: $1.79\times$ lower error than a flat layer at equal bits,
-parameters and 99.9\% utilization, sourced in the pairing of each stage's
+parameters and near-uniform head usage on both sides, sourced in the pairing of each stage's
 input with the sample's own error (not utilization, conditioning, or the
 gain side-channel). Against: an input-space intervention disturbs 66\%
 of the stack's other heads against 33\% of a flat layer's, and realizes

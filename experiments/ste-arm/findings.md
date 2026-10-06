@@ -19,8 +19,11 @@ The softmax Ontologizer's argmax is not its code: on `sweep_softmax_shm` the
 hard row is FVU_w 8.7e6 against 0.0007 for the soft forward. Under
 `select="ste"` the forward is the argmax, and the hard and soft rows agree
 to four decimals at every checkpoint scored. A hard code transmits exactly
-`l * h * log2(k)` bits, and 800 bits cannot reach better than FVU_w 0.226 on
-SONAR, so the head count rises to 380.
+`l * h * log2(k)` bits. Reverse water-filling puts the best 800-bit code at
+FVU_w 0.226 *if the embeddings were Gaussian* with their covariance; real
+data is no harder to compress, so that is a reference rather than a floor
+(a real 800-bit code could do better), and it informed raising the head
+count to 380 rather than requiring it.
 
 ## Reconstruction against SAEs and a single-layer variant
 
@@ -42,25 +45,29 @@ Ontologizers with linear classifiers (hard and softmax selection), and are
 reported as simplified variants. The stack is 44% below the hard one. That needs the initialization fix: the `abs()`'d
 dictionary's rows sum coherently, the shipped arm starts at a residual of
 1.84e8, and `--dict-init-scale 0.1` takes a third off the error (0.2293 to
-0.1535) and fills the code (90% to 99.7% of bits). The arm sits at 3.1x its
-own rate floor (0.0499 at 1,900 bits). At identical bits, 380 binary heads
+0.1535) and brings every head to near-uniform use of its entries (summed
+head entropy 90% to 99.7% of nominal; an upper bound on the information
+the code carries, equal to it only if heads are independent). The arm sits
+3.1x above the Gaussian reference for its rate (0.0499 at 1,900 bits), so at
+least that far from the best 1,900-bit code. At identical bits, 380 binary heads
 reach 0.1844 on 2.9x fewer parameters.
 
 ## Depth at fixed capacity
 
 *notes: Depth at fixed capacity; What the cascade contributes*
 
-| arm | realized bits | FVU_w |
+| arm | summed head entropy | FVU_w |
 |---|---|---|
 | stack, 5 x 76 | 99.7% | **0.1535** (both seeds) |
 | flat, 1 x 380 | 99.9% | 0.2750 |
 
-**Depth is worth 1.79x the error at matched bits, parameters and
-utilization.** The stack leads at every checkpoint (1.59x at 10k, peaking
+**Depth is worth 1.79x the error at matched bits, parameters and head
+usage.** Summed head entropy cannot say whether the two codes carry
+different information jointly; that is not measured. The stack leads at every checkpoint (1.59x at 10k, peaking
 at 1.83x near 200k); neither arm has converged, and the flat arm improves
 faster over the last quarter (2.75% against 0.86%), so the gap is slowly
-narrowing. It is not usage (a ZCA-whitened flat arm fills every bit and
-is still 1.7x worse), not input conditioning, and not the per-layer gain
+narrowing. It is not usage (a ZCA-whitened flat arm uses every entry
+uniformly and is still 1.7x worse), not input conditioning, and not the per-layer gain
 channel (pinning it costs 2.1%). Blending each layer's subtracted
 reconstruction toward another row's costs 35% of FVU at a quarter blend:
 the cascade's value is the pairing of each stage's input with the sample's

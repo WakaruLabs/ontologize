@@ -26,9 +26,11 @@ it) at every capacity measured (Table~\ref{tab:prelim-pareto}): at
 $\mathrm{FVU}_w \approx 0.49$ the SAE transmits 32 coefficients where the
 Ontologizer needs 320, and at matched budgets an unstructured code
 reconstructs about $50\times$ better. The soft model's own discrete
-reading is not a code at all: its argmax lands $77\times$ above the best
-distortion any 800-bit code can reach under a Gaussian model, so the
-entries an intervention forces are not what carries the soft model's
+reading is not a code at all: its argmax lands $77\times$ above the least
+distortion an 800-bit code could reach if the embeddings were Gaussian
+with their covariance. Real data is no harder to compress than a Gaussian,
+so that is a lower bound on its distance from the best 800-bit code, and
+the entries an intervention forces are not what carries the soft model's
 embedding. That is the motivation for the hard code.
 
 \begin{table}[tp]\centering\small
@@ -38,7 +40,7 @@ point & coeffs & index bits & $\mathrm{FVU}_w$ \\
 \midrule
 onto $m{=}0$ (mean-assignment origin) & 0 & 0 & 1.001 \\
 onto hard (argmax)                  & 0 & 800 & 17.34 \\
-\emph{rate floor at 800 bits}       & 0 & 800 & \emph{0.226} \\
+\emph{Gaussian reference, 800 bits} & 0 & 800 & \emph{0.226} \\
 SAE $k{=}32$ tier                   & 32 & $\sim$400 & 0.494--0.509 \\
 onto dev $m{=}1$                    & 160 & 800 & 0.677 \\
 SAE $k{=}160$                       & 160 & 2154 & 0.258 \\
@@ -52,8 +54,10 @@ onto soft ($m{=}32$)                & 5120 & 0 & 0.00538 \\
 \caption{Reconstruction against code capacity for the softmax
 Ontologizer \texttt{resid\_nc}. Ontologizer points truncate each head to
 its $m$ largest deviations from the mean assignment; SAE points use
-measured $L_0$. The rate floor is reverse water-filling on the
-evaluation tail's whitened covariance\cite{cover2006}.}
+measured $L_0$. The Gaussian reference is reverse water-filling on the
+evaluation tail's whitened covariance\cite{cover2006}: the least
+distortion at that rate for a Gaussian source of that covariance, which
+real data can beat.}
 \label{tab:prelim-pareto}
 \end{table}
 
@@ -104,12 +108,14 @@ discrete code is the model. At 1900 index bits and no continuous
 coefficients the hard code reaches $\mathrm{FVU}_w$ $0.154$, $40\%$
 below a top-$k$ SAE at matched bits that also transmits 160
 coefficients, and $30\%$ below an L1 SAE spending $3.4\times$ the bits
-plus 519 coefficients (Table~\ref{tab:prelim-ste}). It sits at
-$3.1\times$ its own rate floor. A third of that error came from one
-scalar: the non-negative dictionary's atoms sum coherently, so the
-shipped initialization started the residual cascade at
-$1.84\times10^{8}$, and scaling the dictionary so each layer starts near
-the identity took the error from $0.229$ to $0.154$ and filled the code.
+plus 519 coefficients (Table~\ref{tab:prelim-ste}). It sits $3.1\times$
+above the Gaussian reference for its rate, so at least that far from the
+best 1900-bit code. A third of that error came from one scalar: the
+non-negative dictionary's atoms sum coherently, so the shipped
+initialization started the residual cascade at $1.84\times10^{8}$, and
+scaling the dictionary so each layer starts near the identity took the
+error from $0.229$ to $0.154$ and brought every head to near-uniform use of
+its entries.
 
 \begin{table}[tp]\centering\small
 \begin{tabular}{@{}lrrr@{}}
@@ -132,7 +138,8 @@ of linear classifiers and keeps a magnitude on each winner.}
 \subsection{Depth helps reconstruction and costs addressability}
 \label{sec:prelim-depth}
 Five layers of 76 heads and one layer of 380 have the same bits and
-exactly the same parameter count, and both fill their code. The stack's
+exactly the same parameter count, and every head in both uses its entries
+almost uniformly. The stack's
 error is $1.79\times$ lower ($0.1535$ against $0.2750$), and the gain
 comes from pairing each stage's input with the sample's own earlier
 error: a flat layer is a product quantizer\cite{jegou2011}, where no head
