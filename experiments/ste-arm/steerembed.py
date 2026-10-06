@@ -65,6 +65,16 @@ and its directions are:
   eig       a bilinear latent's top eigenfeature (`sae.eigenfeatures`).
   random    as above.
 
+Both modes also score the two standard SUPERVISED steering vectors for
+the same target (`supervised_dirs`), fitted on the reference rows with
+the steered rows held out and the code's own selection as the label:
+
+  dm        difference of means, selected minus not: activation addition
+  probe     a class-balanced logistic-regression probe's weight vector
+
+so supervised, SAE and Ontologizer steering are scored on one target, one
+success measure and one budget.
+
 Every direction above is a unit vector swept over fixed strengths and
 rescaled to |x|, which compares directions at equal budget but never at
 the magnitude a user's intervention would actually apply. `native` adds
@@ -73,7 +83,9 @@ x + a_j W_dec[j] for an SAE, a_j being latent j's mean nonzero
 activation on the reference rows -- the decoded change of clamping the
 feature on. No rescale, and `native_random` is the control: a random
 direction of the same per-row length. Its implied strength, |delta|/|x|,
-is reported alongside.
+is reported alongside. `native_dm` does the same for the
+difference-of-means vector at its own length -- the step activation
+addition takes -- with `native_dm_random` as its control.
 
   uv run python experiments/ste-arm/steerembed.py \\
       --model data/out/sonar/sae_conv/m11264_k32/params.npz
@@ -95,6 +107,7 @@ sys.path.insert(0, str(ROOT))
 import numpy as np
 import jax
 import jax.numpy as jnp
+import optax
 from jaxtyping import Array, Bool, Float, Int
 
 import sae
@@ -374,12 +387,21 @@ def main_onto(cfg: argparse.Namespace) -> None:
                         lambda A: (A[li, :, hi] == ki),
                         lambda A: _collateral(A, A0, li, hi),
                         dict(layer=li, head=hi, entry=ki))
+        dm, probe = supervised_dirs(Xref, A_ref[li, :, hi] == ki, idx)
+        rows += _native(jnp.broadcast_to(dm, X.shape), rnd, X,
+                        lambda Xi: np.asarray(jnp.argmax(
+                            f_codes(params, Xi)[0], -1)),
+                        lambda A: (A[li, :, hi] == ki),
+                        lambda A: _collateral(A, A0, li, hi),
+                        dict(layer=li, head=hi, entry=ki), name="native_dm")
         dirs = {
             "decode": unit(delta),
             "grad": unit(f_grad(params, X, li, hi, ki)),
             "margin": unit(f_margin(params, X, li, hi, ki)),
             "adjoint": unit(f_adj(params, X, li, hi, ki)),
             "adjoint_or": unit(f_adjor(params, X, li, hi, ki)),
+            "dm": unit(jnp.broadcast_to(dm, X.shape)),
+            "probe": jnp.broadcast_to(probe, X.shape),
             "random": rnd,
         }
         for s in cfg.strengths:
@@ -399,7 +421,8 @@ def main_onto(cfg: argparse.Namespace) -> None:
 
     print(f"{'kind':>8} {'strength':>9} {'realized':>9} {'collateral':>11}")
     summary = {}
-    for kind in ("decode", "grad", "margin", "adjoint", "adjoint_or", "random"):
+    for kind in ("decode", "grad", "margin", "adjoint", "adjoint_or", "dm",
+                 "probe", "random"):
         for s in cfg.strengths:
             R = [r for r in rows if r["kind"] == kind and r["strength"] == s]
             hit = float(np.mean([r["hit"] for r in R]))
@@ -530,9 +553,18 @@ def main_sae(cfg: argparse.Namespace) -> None:
                         lambda S: hits(S, j),
                         lambda S: _collateral_sae(S, S0, j, gs),
                         dict(latent=j, base_rate=float(rate[j])))
+        dm, probe = supervised_dirs(Xref, hits(S_ref, j), idx)
+        rows += _native(jnp.broadcast_to(dm, X.shape), rnd, X,
+                        lambda Xi: np.asarray(f_select(Xi)),
+                        lambda S: hits(S, j),
+                        lambda S: _collateral_sae(S, S0, j, gs),
+                        dict(latent=j, base_rate=float(rate[j])),
+                        name="native_dm")
         dirs = {
             "decode": unit(jnp.broadcast_to(W_dec[j], X.shape)),
             "grad": unit(f_grad(X, jnp.asarray(j), jnp.asarray(cur))),
+            "dm": unit(jnp.broadcast_to(dm, X.shape)),
+            "probe": jnp.broadcast_to(probe, X.shape),
             "random": rnd,
         }
         if eig is not None:
@@ -553,7 +585,7 @@ def main_sae(cfg: argparse.Namespace) -> None:
         w.writerows(rows)
 
     kinds = ["decode", "grad"] + (["eig"] if eig is not None else []) \
-        + ["random"]
+        + ["dm", "probe", "random"]
     print(f"{'kind':>8} {'strength':>9} {'realized':>9} {'collateral':>11}")
     summary = {}
     for kind in kinds:
@@ -575,19 +607,72 @@ def main_sae(cfg: argparse.Namespace) -> None:
     print(f"-> {out}")
 
 
+def supervised_dirs(Xref: Float[Array, "n d"], y: Bool[np.ndarray, "n"],
+                    exclude: Int[np.ndarray, "e"], steps: int = 300,
+                    l2: float = 1e-3
+                    ) -> Tuple[Float[Array, "d"], Float[Array, "d"]]:
+    """The two standard supervised steering vectors for "make the target
+    selected", fitted on the reference rows with `exclude` (the rows about
+    to be steered) held out, the model's own selection as the label:
+
+      dm     difference of means, mean(selected) - mean(not), at its own
+             length (the vector activation addition adds)
+      probe  the weight vector of a class-balanced logistic-regression
+             probe for "selected", unit length
+
+    The labels are the model's, so this asks whether a supervised method
+    given the model's partition steers into it better than the model's own
+    directions do -- the same target, metric and budget for both."""
+    keep = np.ones(len(y), bool)
+    keep[exclude] = False
+    X = Xref[jnp.asarray(np.where(keep)[0])]
+    t = jnp.asarray(y[keep], jnp.float32)
+    dm = X[t > 0].mean(0) - X[t == 0].mean(0)
+
+    # centre and rescale so one learning rate serves SONAR (|x| = 1) and
+    # GPT-2 (|x| ~ 120); neither changes the direction of w
+    Xc = X - X.mean(0)
+    Xc = Xc / jnp.linalg.norm(Xc, axis=-1).mean()
+    pos = jnp.maximum(t.mean(), 1e-6)
+    wt = jnp.where(t > 0, 0.5 / pos, 0.5 / (1 - pos))
+
+    def loss(p):
+        z = Xc @ p["w"] + p["b"]
+        nll = wt * (jax.nn.softplus(z) - t * z)
+        return nll.mean() + l2 * (p["w"] ** 2).sum()
+
+    tx = optax.adam(5e-2)
+    p = {"w": jnp.zeros(X.shape[1]), "b": jnp.zeros(())}
+    st = tx.init(p)
+
+    @jax.jit
+    def step(p, st):
+        g = jax.grad(loss)(p)
+        u, st = tx.update(g, st, p)
+        return optax.apply_updates(p, u), st
+
+    for _ in range(steps):
+        p, st = step(p, st)
+    w = p["w"]
+    return dm, w / (jnp.linalg.norm(w) + 1e-9)
+
+
 def _native(delta: Float[Array, "b d"], rnd: Float[Array, "b d"],
             X: Float[Array, "b d"], read: Callable[[Any], np.ndarray],
             hit: Callable[[np.ndarray], np.ndarray],
             collateral: Callable[[np.ndarray], float],
-            ident: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Steering at the model's own magnitude: x + delta, where delta is what
-    the intervention changes in the output, with no rescale to |x|. Its
-    control is a random direction of the same per-row length. `strength`
-    is the mean implied |delta| / |x|, on the fixed sweep's scale."""
+            ident: Dict[str, Any], name: str = "native"
+            ) -> List[Dict[str, Any]]:
+    """Steering at the method's own magnitude: x + delta with no rescale to
+    |x| -- for the model, what the intervention changes in the output; for
+    `name="native_dm"`, the difference-of-means vector at its own length.
+    Its control (`<name>_random`) is a random direction of the same per-row
+    length. `strength` is the mean implied |delta| / |x|, on the fixed
+    sweep's scale."""
     mag = jnp.linalg.norm(delta, axis=-1, keepdims=True)
     s = float((mag / jnp.linalg.norm(X, axis=-1, keepdims=True)).mean())
     out = []
-    for kind, Xi in (("native", X + delta), ("native_random", X + mag * rnd)):
+    for kind, Xi in ((name, X + delta), (f"{name}_random", X + mag * rnd)):
         A = read(Xi)
         out.append(dict(kind=kind, **ident, strength=s,
                         hit=float(hit(A).mean()),
@@ -599,7 +684,7 @@ def _native_summary(rows: List[Dict[str, Any]]) -> Dict[str, Dict[str, float]]:
     """Print and return the native rows: realization and collateral, and
     the spread of the implied strength across features."""
     out = {}
-    for kind in ("native", "native_random"):
+    for kind in ("native", "native_random", "native_dm", "native_dm_random"):
         R = [r for r in rows if r["kind"] == kind]
         s = np.array([r["strength"] for r in R])
         hit = float(np.mean([r["hit"] for r in R]))
