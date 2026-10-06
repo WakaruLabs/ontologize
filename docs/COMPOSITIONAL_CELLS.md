@@ -54,6 +54,11 @@ leaks (generic descriptions, or a bias toward answering "member") and the real s
   L0_H6 0.587, L1_H25 0.505, L1_H5 0.522 (balanced accuracy, random detection set) — no better than the top-member
   descriptions (0.55–0.59). Random-member description is not what drove the intersection scores, and the intersections
   (0.77–0.96) were measured on a *harder* discrimination (against members of the same cell). **The confound is ruled out.**
+- **R-judge on the 40M private model** (same protocol): L0_H19 0.594, **L0_H7 0.766**, L1_H7 0.642, L1_H8 0.539 (vs 0.608,
+  0.685, 0.585, 0.548 with top-member descriptions). For the private model, random-member descriptions *do* help some
+  cells, and one single cell (L0_H7) reaches the low end of the direct model's intersection range. So: the confound is
+  ruled out for the direct model, partly real for the private model; the private model's intersections are queued as
+  their own test before any claim is made about it.
 - **Random-partition nulls** (first three pairs): 0.481, 0.489, 0.498 — the protocol does not leak.
 - Pending: remaining nulls, lowest-MI pairs, cross-layer L0 × L2 pairs (+ nulls), private-model R-judge.
 - **Queued: does it hold with per-head dropout?** (Jade.) 10M private models with head dropout 0 / 0.1 / 0.3 (no winner
