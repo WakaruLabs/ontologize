@@ -40,18 +40,22 @@ causal (the model runs on them), composable (heads combine), and closed (an inte
 | Heads behave as roughly independent factors | Independence is what lets 32 small choices cover 32^32 combinations | Mutual information between two heads' labels: 0.27 bits at layer 0, 0.02 at layer 2, against about 5 bits of label entropy |
 | The choices carry the coarse structure; what remains is variation inside a cell | Each label is a prototype; members scatter around it | Adding a rank-4 correction per label on a frozen model cuts FVU from 0.186 to 0.064 |
 | The model tolerates running on the code | If it did not, interventions on the code would mean nothing | 97.5% loss recovered; swapping one label costs 0.01 to 0.06 nats of KL |
-| Token-level categories exist and can be named | Lexical and predictive classes are well known in language models | Layer-0 cells are predictive token states; an LLM judge picks a cell's top members out of distractors at 0.85 to 1.0 accuracy (typical members: see below) |
+| Token-level categories exist and can be named | Lexical and predictive classes are well known in language models | Layer-0 cells are predictive token states; an LLM judge picks a cell's top members out of distractors at about 0.87 balanced accuracy (typical members: see below) |
 
 Where the assumptions stop:
-- **Cells are named from their extremes, not their typical members.** The judge's 0.85 to 1.0 is on a cell's
-  highest-scoring members. On random members of the same layer-0 cells it falls to 0.55 to 0.69, and on members near a
-  cell's boundary to 0.50.
+- **Cells are named from their extremes, not their typical members.** The judge's 0.87 is on a cell's highest-scoring
+  members. On random members of the same layer-0 cells it falls to 0.55 to 0.61, and on members near a cell's boundary to
+  0.50 to 0.52. The gap widens with depth (top 0.77 and random 0.56 at layer 1; 0.68 and 0.51 at layer 2), and layer-4
+  cells score 0.50 even on their top members.
 - **Deep layers are causal but not yet nameable.** Their labels carry token information and steer specifically, yet the
   judge scores chance (0.50) on layers 3 and 4.
 - **Only layer 0 reproduces across training seeds.** Deeper label sets differ from run to run.
-- **Meaning often lives in combinations of cells.** Inside one layer-0 cell, the members another head also agrees on
-  form a nameable sub-concept (judge accuracy 0.77 to 0.96 against the rest of that cell), even when the cell alone
-  reads as a token class.
+- **Combinations of cells carry a little more nameable meaning than single cells.** Inside one layer-0 cell, the members
+  another head also agrees on form a sub-concept the judge can pick out against the rest of that cell at 0.64 to 0.66
+  balanced accuracy, versus about 0.59 for single cells and 0.50 for random-partition nulls.
+- **Correction (2026-10-06).** An earlier version of this page reported 0.77 to 0.96 for those intersections. The judging agents could
+  read the answer keys and earlier answers, and some copied them. Every judge number here comes from a re-run in a sandbox
+  where the judge sees only its task file. Single-cell scores were unchanged by the re-run; the intersection scores fell.
 
 ## How it works, intuitively
 ![one Ontologizer layer, and the residual stack](overview_diagram.png)
