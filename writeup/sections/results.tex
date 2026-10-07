@@ -461,7 +461,7 @@ in Appendix~\ref{sec:steerlayer}.
 \paragraph{A purely discrete code beats a sparse linear one.} Scored on
 one frontier of converged SAEs and the single-layer hard variant (the
 structural ladder plus an L1 sweep at the same $\sim$144k-step schedule;
-\texttt{pareto.py} into \texttt{data/out/sonar/pareto\_unified}):
+\texttt{pareto.py} into \texttt{data/out/sonar/\allowbreak pareto\_unified}):
 
 \begin{center}\small
 \begin{tabular}{@{}lrrr@{}}
@@ -596,7 +596,7 @@ Two runs differing only in seed, both at the fixed initialization, reach
 $0.2870$ and $0.2871$ for the flat arm (Table~\ref{tab:init}). Nothing
 that identifies an individual head agrees:
 
-\begin{center}\small
+\begin{center}\small\setlength{\tabcolsep}{4pt}
 \begin{tabular}{@{}lrrr@{}}
 \toprule
 what is compared & stack & flat & null \\
@@ -726,14 +726,14 @@ semantic, language-agnostic embedding should be organized by is meaning,
 and its strongest head is. \texttt{topichead.py} ranks layer-0 heads by
 $\eta^2$ and matches partitions across runs (65{,}536 held-out rows):
 
-\begin{center}\small
+\begin{center}\small\setlength{\tabcolsep}{4pt}
 \begin{tabular}{@{}llrrl@{}}
 \toprule
 run & top head & $\eta^2$ & next head & match across runs \\
 \midrule
 \texttt{ste\_h76\_init01} (seed 42) & h54 & 0.117 & 0.062 & --- \\
-\texttt{ste\_h76\_i01\_s43} (seed 43) & h14 & 0.122 & 0.068 & NMI 0.413 (other heads 0.010) \\
-\texttt{ste\_h76} (unfixed init, seed 42) & h54 & 0.111 & 0.080 & NMI 0.355 (other heads 0.024) \\
+\texttt{ste\_h76\_i01\_s43} (seed 43) & h14 & 0.122 & 0.068 & NMI 0.413 (others 0.010) \\
+\texttt{ste\_h76} (unfixed init, seed 42) & h54 & 0.111 & 0.080 & NMI 0.355 (others 0.024) \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -799,9 +799,11 @@ $5\times32$ heads of 32 entries the code is 800 bits per token with no
 continuous coefficients.
 
 \begin{table}[h]\centering\small
-\begin{tabular}{@{}lllrr@{}}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.29\linewidth}%
+>{\raggedright\arraybackslash}p{0.19\linewidth}%
+>{\raggedright\arraybackslash}p{0.17\linewidth}rr@{}}
 \toprule
-model & atoms & code per token & $\fvu$ & loss recovered \\
+model & atoms & code per token & $\fvu$ & \stackhead[r]{loss\\recovered} \\
 \midrule
 \textbf{direct + gain + STE} & signed, in $\mathbb{R}^{768}$ & 800 bits & 0.195 & \textbf{97.6\%} \\
 private heads + gain + STE & 48-dim blocks, shared decoder & 800 bits & 0.186 & 97.5\% \\
@@ -844,7 +846,8 @@ measures whether the discrete code still means what it did:
 \begin{center}\small
 \begin{tabular}{@{}lrrr@{}}
 \toprule
-variant (1 epoch, direct + gain + STE) & extra numbers & $\fvu$ (base only) & loss recovered \\
+\stackhead{variant\\(1 epoch, direct + gain + STE)} & \stackhead[r]{extra\\numbers}
+& \stackhead[r]{$\fvu$\\(base only)} & \stackhead[r]{loss\\recovered} \\
 \midrule
 base & 0 & 0.217 & 96.95\% \\
 rank-4 fiber, fiber dropout 0.5 & 640 & 0.059 (0.274) & 99.4\% \\

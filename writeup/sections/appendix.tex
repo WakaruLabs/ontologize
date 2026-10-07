@@ -310,12 +310,15 @@ and the positional loss weights keep pairing with the right quantity.
 The row of Equation~\ref{eq:stats} is therefore stored with two empty
 slots,
 \[
+	\begin{gathered}
 	\big[\,
 	\mathrm{L1}_K \;\; \mathrm{L1} \;\; H \;\; \mathrm{cossim}_b \;\;
-	\mathrm{cossim}_h \;\; \mathbb{E}_i\kappa_i \;\; \max_i \kappa_i \;\;
+	\mathrm{cossim}_h \;\; \mathbb{E}_i\kappa_i \;\; \max_i \kappa_i
+	\\
 	\mathrm{KL}_m \;\; \mathrm{KL}_{\mathrm{pwak}} \;\; \mathrm{L2}_{\mathrm{pwak}}
 	\;\; \mathrm{cossim}_{\mathrm{flat}} \;\; \mathrm{L1}_S \;\; \omega
 	\,\big],
+	\end{gathered}
 \]
 where the two retired statistics are logged as NaN and zeroed before the
 weighted sum.
@@ -416,10 +419,12 @@ the rest of the dictionary $\times$ anti-correlation with each other
 on the held-out half computes per-group exhaustiveness, exclusivity and
 the coefficient of variation of the group's summed activation,
 \begin{equation}
+	\begin{gathered}
 	\mathrm{exh}(\mathcal{G}) := \Pr_n\!\big(\textstyle\sum_{j \in \mathcal{G}} \mathbf{1}[z_{nj} > 0] \ge 1\big),
-	\qquad
+	\\
 	\mathrm{exc}(\mathcal{G}) := \mathbb{E}_n\!\big[\textstyle\sum_{j \in \mathcal{G}} \mathbf{1}[z_{nj} > 0]
 	\;\big|\; \textstyle\sum_{j \in \mathcal{G}} \mathbf{1}[z_{nj} > 0] \ge 1\big],
+	\end{gathered}
 	\label{eq:exhaust}
 \end{equation}
 against size-matched random partitions of the live-latent pool. A head
@@ -876,7 +881,7 @@ $\to$ 0.89), while collateral at these magnitudes ($\approx$0.75) is near
 the random-direction control. Across the Ontologizer selection sweep and
 the straight-through arm, at 64 features per run:
 
-\begin{table}[h]\centering\small
+\begin{table}[h]\centering\small\setlength{\tabcolsep}{4pt}
 \begin{tabular}{@{}lrrrrrrrr@{}}
 \toprule
 run & $\fvu$ & chrF & loss rec. & net @0.25 & @0.5 & @1.0 & hit @1.0 & rand.\ hit \\
@@ -1497,10 +1502,11 @@ which is the step activation addition takes. At those lengths (realized /
 collateral, median step as a fraction of $\lVert\mathbf{x}\rVert$, and each
 equal-length random step's collateral):
 
-\begin{center}\small
+\begin{center}\small\setlength{\tabcolsep}{4pt}
 \begin{tabular}{@{}lrrr@{}}
 \toprule
-model & own (step) & diff.\ of means (step) & random: own / dm \\
+model & \stackhead[r]{own\\(step)} & \stackhead[r]{diff.\ of means\\(step)}
+& \stackhead[r]{random:\\own / dm} \\
 \midrule
 softmax stack & 0.19 / 0.25 (0.064) & 0.18 / 0.25 (0.079) & 0.25 / 0.30 \\
 hard-code stack & 0.08 / 0.54 (0.129) & \textbf{0.27} / 0.47 (0.064) & 0.53 / 0.48 \\
@@ -1696,7 +1702,8 @@ $\mathbb{E}[\mathbf{1}\{\text{selected}\}\,\mathrm{gain}^2]\,
 \begin{table}[h]\centering\small
 \begin{tabular}{@{}llrrrrr@{}}
 \toprule
-run & layer & Gini & top 10\% carry & max/median & from atom norm & within heads \\
+run & layer & Gini & \stackhead[r]{top 10\%\\carry} & \stackhead[r]{max/\\median}
+& \stackhead[r]{from atom\\norm} & \stackhead[r]{within\\heads} \\
 \midrule
 GPT-2 concat, $k{=}256$ & 0 & \textbf{0.587} & 42\% & 38.7 & 76\% & 60\% \\
 & 1 & 0.155 & 16\% & 30.3 & 44\% & 100\% \\
@@ -1732,7 +1739,9 @@ holds 67\% of entry energy on GPT-2 and 49\% on SONAR, layer 4 4--5\%.
 models (\texttt{bigatoms.py}):
 
 \begin{center}\small
-\begin{tabular}{@{}lll@{}}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.34\linewidth}%
+>{\raggedright\arraybackslash}p{0.28\linewidth}%
+>{\raggedright\arraybackslash}p{0.28\linewidth}@{}}
 \toprule
 & GPT-2 concat, 20 heads & SONAR stack, 76 heads \\
 \midrule
@@ -1774,7 +1783,8 @@ Section~\ref{sec:lang}, which recurs across seeds.
 \begin{table}[h]\centering\small
 \begin{tabular}{@{}lrrrrr@{}}
 \toprule
-head & agreement & energy share & largest $/$ layer median & atoms $>3\times$ & largest $/$ head median \\
+head & agreement & \stackhead[r]{energy\\share} & \stackhead[r]{largest $/$\\layer median}
+& \stackhead[r]{atoms\\$>3\times$} & \stackhead[r]{largest $/$\\head median} \\
 \midrule
 \multicolumn{6}{@{}l}{\emph{SONAR stack, layer 0} (uniform share 1.3\%)} \\
 54 & \textbf{0.844} & 9.2\% & 6.81 & 8 & 3.41 \\
@@ -1974,7 +1984,7 @@ $\omega$ existed, most with its predecessor penalized, so it had never been
 measured. Scored on final checkpoints (\texttt{headsupport.py}; one seed
 per row):
 
-\begin{center}\small
+\begin{center}\small\setlength{\tabcolsep}{4pt}
 \begin{tabular}{@{}lrrr@{}}
 \toprule
 model & $\omega$, dictionary (null) & spread & $\omega$, decoded (null) \\
@@ -2109,7 +2119,7 @@ uniform (emit the mean atom) and zero (emit nothing):
 \begin{center}\small
 \begin{tabular}{@{}llrrrrr@{}}
 \toprule
-arm & select & L4 $\bar\kappa$ & L4 eff & prefix $\fvu$ before L4 & L4 adds & zero-ablate \\
+arm & select & L4 $\bar\kappa$ & L4 eff & \stackhead[r]{prefix $\fvu$\\before L4} & L4 adds & zero-ablate \\
 \midrule
 top1         & top1    & $+0.246$ & 10.60 & 0.7511 & $+4.3\%$  & $+4.5\%$ worse \\
 top2\_shm    & top2    & $+0.188$ & 14.89 & 0.2378 & $+19.7\%$ & $+24.5\%$ worse \\

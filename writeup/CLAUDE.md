@@ -68,9 +68,20 @@ plus a begin/end and brace balance check per edited file, and confirm every
 
 After a full build, count problems with `grep -a`: the log contains bytes that make
 `grep` treat it as binary, and without `-a` a count prints nothing rather than 0, which
-reads as clean. `grep -a -c Overfull build/findings.log` is 28 as of 2026-10-06, all
-predating the notation pass (mostly the `config/` tables, 84--160pt too wide); an edit
-should not raise it.
+reads as clean. `grep -a -c Overfull build/findings.log` is 0, and an edit should keep it
+there. The 5 underfull warnings are the Reproducibility paragraph, set loose under
+`sloppypar` because it is mostly unbreakable script names. A preamble
+`\emergencystretch` gives other paragraphs a third line-breaking pass instead.
+
+**Tables that would run wide.** Give a free-text column a ragged-right paragraph column,
+`>{\raggedright\arraybackslash}p{0.2\linewidth}` (`array` is loaded), rather than letting
+`l` columns run into the margin; put a long numeric header on two lines with `\stackhead`;
+tighten a nearly-fitting table with `\setlength{\tabcolsep}{4pt}` inside its group. The
+`config/` tables use a ragged-right description column in the shared block and
+`\footnotesize` for the per-run block. A long path in `\texttt` takes an `\allowbreak`
+after a slash, and a display equation too wide for a line goes in `gathered`. The text
+width is 390pt, and `\plate`'s hairline frame adds 0.8pt, so a full-width plate image is
+`\dimexpr\textwidth-0.8pt\relax`.
 
 ## Document structure
 
@@ -136,6 +147,8 @@ A `\caption` containing a blank line needs the optional short argument
   `\classifier`, `\dictblock`, ...) and the `algorithm2e` keywords, which mirror class
   names in `../ontologize/`. Add a keyword there rather than hardcoding `\texttt{}` in an
   algorithm block.
+- `\stackhead[r]{loss\\recovered}` (in `vars.tex`) sets a table header cell on two lines;
+  the optional argument is its alignment (default `l`).
 - `\todo{...}` marks open items in red.
 
 ## Notation

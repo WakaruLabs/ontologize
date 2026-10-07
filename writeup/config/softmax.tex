@@ -1,7 +1,7 @@
 % Softmax Ontologizers on SONAR. Values from each run's log.jsonl
 % (final env_config) and checkpoint spec.
 \begin{table}[tp]\centering\small
-\begin{tabular}{@{}ll@{}}
+\begin{tabular}{@{}l>{\raggedright\arraybackslash}p{0.78\linewidth}@{}}
 \toprule
 \multicolumn{2}{@{}l}{\emph{shared by every softmax run}} \\
 \midrule
@@ -19,7 +19,9 @@ seed & 42 \\
 \end{tabular}
 
 \vspace{8pt}
-\begin{tabular}{@{}lllllr@{}}
+{\footnotesize\setlength{\tabcolsep}{4pt}%
+\begin{tabular}{@{}l>{\raggedright\arraybackslash}p{0.22\linewidth}ll%
+>{\raggedright\arraybackslash}p{0.27\linewidth}r@{}}
 \toprule
 run & selection & $e$ & $s_{\mathrm{KL}_m}$ & other & steps \\
 \midrule
@@ -30,7 +32,7 @@ run & selection & $e$ & $s_{\mathrm{KL}_m}$ & other & steps \\
 \texttt{sweep\_top8\_relu} & top-8 & 2048 & $10^{-6}$ & ReLU gate on the classifier & 369.5k \\
 \texttt{sweep\_*\_shm} & softmax, top-$k_{\mathrm{sel}}$, $k_{\mathrm{sel}} \in \{2, 4, 8, 16\}$ & 2048 & $3\times10^{-5}$ & $s_{\mathrm{cossim}_h}{=}10^{-6}$ & 369.5k \\
 \bottomrule
-\end{tabular}
+\end{tabular}}
 \caption{Softmax Ontologizer configurations. $^\dagger$Changed at a resume:
 \texttt{resid\_nc} acquired $s_{\mathrm{KL}_m}$ and its $s_{\mathrm{cossim}_h}$
 mid-run, and \texttt{resid\_nc\_hm} lowered $s_{\mathrm{cossim}_h}$.

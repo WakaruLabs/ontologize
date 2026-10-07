@@ -1,7 +1,7 @@
 % Straight-through Ontologizers on GPT-2 small, this branch
 % (train_ste.py --base gpt2_l8). Values from log.jsonl and checkpoint spec.
 \begin{table}[tp]\centering\small
-\begin{tabular}{@{}ll@{}}
+\begin{tabular}{@{}l>{\raggedright\arraybackslash}p{0.78\linewidth}@{}}
 \toprule
 \multicolumn{2}{@{}l}{\emph{shared by every GPT-2 straight-through arm on this branch}} \\
 \midrule
@@ -19,9 +19,10 @@ $s_{\mathrm{cossim}_b}{=}10^{-5}$, $s_{\mathrm{cossim}_h}{=}10^{-6}$, $s_{\mathr
 \end{tabular}
 
 \vspace{8pt}
-\begin{tabular}{@{}llrlllr@{}}
+{\footnotesize\setlength{\tabcolsep}{4pt}%
+\begin{tabular}{@{}llr>{\raggedright\arraybackslash}p{0.27\linewidth}llr@{}}
 \toprule
-arm & shape & $k$ & dictionary & gate & init scale, seed & steps \\
+arm & shape & $k$ & dictionary & gate & \stackhead{init scale,\\seed} & steps \\
 \midrule
 \texttt{ste\_h76} & $5\times76$ & 32 & non-negative, $e{=}1536$ & none & 1.0, 42 & 371.9k \\
 \texttt{ste\_h76\_e768} & $5\times76$ & 32 & non-negative, $e{=}768$ & none & 1.0, 42 & 371.9k \\
@@ -33,7 +34,7 @@ arm & shape & $k$ & dictionary & gate & init scale, seed & steps \\
 \texttt{ste\_h20\_cat128-sc} & $5\times20$ & 256 & as above, plus router & sigmoid & ---, 42 & 371.75k \\
 \texttt{ste\_h20\_cat128-sc43} & $5\times20$ & 256 & as above, plus router & sigmoid & ---, 43 & 371.75k \\
 \bottomrule
-\end{tabular}
+\end{tabular}}
 \caption{GPT-2 straight-through configurations on this branch: the
 orthant arms of Table~\ref{tab:orthant} and the concatenated seed pairs
 of Section~\ref{sec:seeds}. The router (\texttt{scaled}) is

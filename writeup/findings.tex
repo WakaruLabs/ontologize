@@ -6,6 +6,9 @@
 \usetikzlibrary{arrows.meta}
 \usepackage[ruled]{algorithm2e}
 \usepackage{array,longtable}  % the appendix's notation table breaks across pages
+% a third line-breaking pass for paragraphs that would otherwise be overfull;
+% paragraphs that already set within tolerance are unaffected
+\setlength{\emergencystretch}{1.5em}
 \usepackage[backend=biber,style=numeric,sorting=none]{biblatex}
 \addbibresource{refs.bib}
 \input{vars}
@@ -30,7 +33,7 @@
 \maketitle
 
 % Frontispiece: decorative, deliberately not a numbered float.
-\noindent\plate{\includegraphics[width=\textwidth]{figures/frontis-orbit.png}}\\[3pt]
+\noindent\plate{\includegraphics[width=\dimexpr\textwidth-0.8pt\relax]{figures/frontis-orbit.png}}\\[3pt]
 \mutedlabel{orbit \textperiodcentered{} seed 1024 \textperiodcentered{} floyd--steinberg error diffusion}
 \vspace{8pt}
 
@@ -249,6 +252,9 @@ text and in embedding space (\texttt{steerfid.py}, \texttt{steerembed.py},
 
 \section*{Reproducibility}
 
+% sloppypar: the paragraph is mostly unbreakable script names, so its lines
+% are set loose (five underfull warnings) rather than into the margin
+\begin{sloppypar}
 All code is available at \texttt{https://github.com/WakaruLabs/ontologize}.
 The evaluation protocols are root-level scripts
 (\texttt{sae.py}, \texttt{pareto.py}, \texttt{headstruct.py},
@@ -275,6 +281,7 @@ headline runs' configs, diagnostics and loss curves) and need the
 statistics against planted-structure synthetics. Artifacts live under
 \texttt{data/out/sonar/} and \texttt{data/out/gpt2\_l8/}. At most three
 straight-through runs fit concurrently on one 24\,GB device.
+\end{sloppypar}
 
 \section*{Acknowledgements}
 Design, typesetting, and editorial production of this preprint are by
@@ -284,7 +291,7 @@ also printed the plates.
 \printbibliography
 
 \vspace{20pt}
-\noindent\plate{\includegraphics[width=\textwidth]{figures/end-ridge.png}}\\[3pt]
+\noindent\plate{\includegraphics[width=\dimexpr\textwidth-0.8pt\relax]{figures/end-ridge.png}}\\[3pt]
 \mutedlabel{ridge \textperiodcentered{} seed 32 \textperiodcentered{} the same pipeline, closing the file}
 
 \input{sections/appendix}

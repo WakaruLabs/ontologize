@@ -2,7 +2,7 @@
 % Values from each run's meta.json and loss.csv, and the commands in
 % sae_ladder.sh / sae_evals.sh (batch 4096 is 962 steps per epoch).
 \begin{table}[tp]\centering\small
-\begin{tabular}{@{}ll@{}}
+\begin{tabular}{@{}l>{\raggedright\arraybackslash}p{0.78\linewidth}@{}}
 \toprule
 \multicolumn{2}{@{}l}{\emph{shared by every \texttt{sae.py} run}} \\
 \midrule
@@ -16,7 +16,9 @@ optimizer & Adam, batch 4096 \\
 \end{tabular}
 
 \vspace{8pt}
-\begin{tabular}{@{}lrlllrr@{}}
+{\footnotesize\setlength{\tabcolsep}{4pt}%
+\begin{tabular}{@{}lr>{\raggedright\arraybackslash}p{0.19\linewidth}l%
+>{\raggedright\arraybackslash}p{0.19\linewidth}rr@{}}
 \toprule
 run & $m$ & sparsity & encoder & structure & lr & steps \\
 \midrule
@@ -24,7 +26,7 @@ run & $m$ & sparsity & encoder & structure & lr & steps \\
 \texttt{m5120\_k32\_s43} & 5120 & top-32 & linear & seed 43 & $4\times10^{-4}$ & 144.3k \\
 \texttt{m5120\_k32\_bl} & 5120 & top-32 & bilinear & --- & $4\times10^{-4}$ & 144.3k \\
 \texttt{m5120\_k32\_p5} & 5120 & top-32 & linear & 5 nested prefixes (Matryoshka) & $4\times10^{-4}$ & 144.3k \\
-\texttt{m5120\_l1}$\ast$ & 5120 & L1, $s_{\mathrm{L1}} \in \{3\!\times\!10^{-6}, \dots, 3\!\times\!10^{-4}\}$ & linear & --- & $4\times10^{-4}$ & 144.3k \\
+\texttt{m5120\_l1}$\ast$ & 5120 & L1, five weights $s_{\mathrm{L1}}$ (caption) & linear & --- & $4\times10^{-4}$ & 144.3k \\
 \texttt{m11264\_k32} & 11264 & top-32 & linear & --- & $10^{-4}$ & 336k \\
 \texttt{m11264\_k160} & 11264 & top-160 & linear & --- & $10^{-4}$$^\dagger$ & 336k \\
 \texttt{m11264\_k5120} & 11264 & top-5120 & linear & --- (dense, $\mathrm{L0} \approx 1520$) & $10^{-4}$ & 22k \\
@@ -32,7 +34,7 @@ run & $m$ & sparsity & encoder & structure & lr & steps \\
 \texttt{m5120\_g160top1} & 5120 & 160 heads, top-1 & linear & one-layer hard variant & $4\times10^{-4}$ & 144.3k \\
 \texttt{m5120\_g160softmax} & 5120 & 160 heads, softmax & linear & one-layer soft variant & $4\times10^{-4}$ & 144.3k \\
 \bottomrule
-\end{tabular}
+\end{tabular}}
 \caption{SAE baselines (above the rule) and the single-layer variants
 (below it; Section~\ref{sec:models}). The L1 sweep's five weights
 $s_{\mathrm{L1}}$ are $3\times10^{-6}$, $10^{-5}$, $3\times10^{-5}$, $10^{-4}$

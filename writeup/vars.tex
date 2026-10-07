@@ -1,6 +1,9 @@
 \newcommand{\map}{\mathop{\bigoplus}\limits}
 \newcommand{\txtop}[1]{\mathop{\mathtt{#1}}\limits}
 
+% a table header cell on two lines: \stackhead[r]{loss\\recovered}
+\newcommand{\stackhead}[2][l]{\begin{tabular}[b]{@{}#1@{}}#2\end{tabular}}
+
 \newcommand{\expr}{\txtop{expression}}
 
 \newcommand{\fn}{\txtop{function}}
