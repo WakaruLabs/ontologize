@@ -47,6 +47,9 @@ Where the assumptions stop:
   members. On random members of the same layer-0 cells it falls to 0.55 to 0.61, and on members near a cell's boundary to
   0.50 to 0.52. The gap widens with depth (top 0.77 and random 0.56 at layer 1; 0.68 and 0.51 at layer 2), and layer-4
   cells score 0.50 even on their top members.
+- **How the describer samples matters.** Describing each cell from a tagged mix (6 top, 12 typical and 6 boundary members,
+  each marked with its tier) raises detection of typical members from 0.58 to 0.61 across nine heads, ahead of the 8-top
+  baseline on eight of them. Twenty-four untagged random members do no better than eight top members (0.58).
 - **Deep layers are causal but not yet nameable.** Their labels carry token information and steer specifically, yet the
   judge scores chance (0.50) on layers 3 and 4.
 - **Only layer 0 reproduces across training seeds.** Deeper label sets differ from run to run.

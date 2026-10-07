@@ -29,8 +29,11 @@ with reshuffled items. Mean balanced accuracy over heads, random members (0.50 =
   16×24 went from "1.000" to 0.57).
 - **Deep refinements aren't nameable even given their parent.** A head's layer-2 label refines its own layer-0 label far more than
   another head's does (3–4× the label information, judge-free), yet the judge names both equally poorly (0.54).
-- Describing from 24 random members does not beat 8 top members on single cells (0.57 vs 0.59). A description-protocol
-  experiment (tagged top/typical/boundary mixes, 48 random, contrast with non-members, margin-weighted sampling) is running.
+- **Description protocol (Jade's idea, 2026-10-06).** Same detection items for every arm, nine D40 private layer-0 heads:
+  8 top members 0.581; 24 random 0.582; 48 random 0.598 (4 heads); **tagged mix of 6 top + 12 typical + 6 boundary 0.613**
+  (+0.031 paired, ≥ baseline on 8 of 9 heads). Tags or the margin-stratified selection, not sample size, carry the gain. A
+  second round (12/24/12, 8/32/8, the same mix untagged, the mix plus non-members, no-tools) and the tagged mix on the
+  intersections are running; this section will be updated with them.
 
 ## Earlier work on this page (leaky judge; numbers superseded by the section above)
 
