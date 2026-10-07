@@ -45,16 +45,10 @@ from transformers import M2M100ForConditionalGeneration      # noqa: E402
 from transformers.modeling_outputs import BaseModelOutput     # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from ontologize.data.pretrained import pretrained_transformer  # noqa: E402
+from transformers import AutoTokenizer                        # noqa: E402
 from ontologize.ontologizer import Ontologizer                # noqa: E402
 from ontologize.training.serialize import restore_spec        # noqa: E402
-
-REF = ["The weather is nice today.",
-       "She walked to the store to buy some bread.",
-       "The government announced new economic policies yesterday.",
-       "I really enjoyed the concert last night.",
-       "Scientists discovered a new species in the rainforest.",
-       "Please remember to submit your report by Friday."]
+from textfid import SONAR_NORM                                # noqa: E402
 
 
 def parse_args():
@@ -79,9 +73,7 @@ def parse_args():
 def main():
     cfg = parse_args()
     dev = t.device("cuda" if t.cuda.is_available() else "cpu")
-    enc, tok = pretrained_transformer("cointegrated/SONAR_200_text_encoder",
-                                      dtype_str="float32", dev=dev)
-    tok.src_lang = "eng_Latn"
+    tok = AutoTokenizer.from_pretrained("cointegrated/SONAR_200_text_encoder")
     dec = M2M100ForConditionalGeneration.from_pretrained(
         "raxtemur/SONAR_200_text_decoder").to(dev)
 
@@ -97,12 +89,7 @@ def main():
         params = params["params"]
 
     # the decoder wants the raw mean-pooled scale, not unit norm
-    inp = tok(REF, return_tensors="pt", padding=True)
-    with t.no_grad():
-        o = enc(**{k: v.to(dev) for k, v in inp.items()})
-        m = inp["attention_mask"].to(dev).unsqueeze(-1).float()
-        ref = t.norm((o.last_hidden_state * m).sum(1) / m.sum(1).clamp(min=1e-9),
-                     dim=-1).mean().item()
+    ref = SONAR_NORM
 
     R, _ = model.apply({"params": params}, cfg.layer,
                        method=Ontologizer.decodeLayerEntries)

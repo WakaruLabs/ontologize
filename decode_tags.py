@@ -93,21 +93,10 @@ def main():
 
     # 4. Reference norm: the decoder expects embeddings at the scale of the raw
     # mean-pooled encoder output, not unit norm (see decode.py). Dictionary
-    # entries have no original norm of their own, so measure a typical one.
-    ref_sentences = [
-        "The weather is nice today.",
-        "She walked to the store to buy some bread.",
-        "The government announced new economic policies yesterday.",
-        "I really enjoyed the concert last night.",
-        "Scientists discovered a new species in the rainforest.",
-        "Please remember to submit your report by Friday.",
-    ]
-    inputs = tokenizer(ref_sentences, return_tensors="pt", padding=True)
-    with t.no_grad():
-        outputs = pt_encoder(**{k: v.to(device) for k, v in inputs.items()})
-        mask = inputs['attention_mask'].to(device).unsqueeze(-1).float()
-        E_mean = (outputs.last_hidden_state * mask).sum(1) / mask.sum(1).clamp(min=1e-9)
-        ref_norm = t.norm(E_mean, p=2, dim=-1).mean().item()
+    # entries have no original norm of their own, so use the corpus's typical
+    # one (textfid.SONAR_NORM).
+    from textfid import SONAR_NORM
+    ref_norm = SONAR_NORM
     print(f"Reference embedding norm: {ref_norm:.4f}")
 
     # 5. Decode Tags

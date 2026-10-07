@@ -15,9 +15,9 @@ eng_Latn, so comparison happens in one language) and reports:
               as ceiling and the corpus mean (which decodes to the generic
               text every embedding shares) as floor
 
-Both embeddings are rescaled to the reference SONAR norm before decoding
-(the decoder needs the right scale), so the metric sees direction errors,
-not norm errors -- norm fidelity is already covered by FVU.
+Both embeddings are rescaled to SONAR_NORM before decoding (the decoder
+needs the right scale), so the metric sees direction errors, not norm
+errors -- norm fidelity is already covered by FVU.
 
 Works on sae.py runs (reconstruction = decode(encode(x))) and Ontologizer
 checkpoints (full soft forward at --temperature). Rows come from the
@@ -45,6 +45,14 @@ import sae
 
 ENCODER_ID = "cointegrated/SONAR_200_text_encoder"
 DECODER_ID = "raxtemur/SONAR_200_text_decoder"
+
+# The norm a SONAR sentence embedding has before the cache's L2
+# normalization, which the decoder was trained on: the median raw
+# mean-pooled norm of 2048 mC4 corpus texts under the eval-mode encoder
+# (SD 0.040; per-language medians 0.30-0.34). Every script that decodes
+# a unit-norm embedding rescales it to this. Short reference sentences
+# give 0.20, and decode->re-encode fidelity is lower there.
+SONAR_NORM = 0.307
 
 
 def parse_args():
@@ -140,30 +148,18 @@ def recon_fn(path, cfg):
 
 class SonarDecoder:
     """The SONAR/M2M100 text decoder as every text-space eval uses it:
-    forced eng_Latn, greedy, and each embedding rescaled to the reference
-    SONAR norm first (the decoder needs the right scale), so a comparison
-    of two decodes sees direction errors, not norm errors."""
+    forced eng_Latn, greedy, and each embedding rescaled to SONAR_NORM
+    first (the decoder needs the right scale), so a comparison of two
+    decodes sees direction errors, not norm errors."""
 
     def __init__(self, device: str = "cpu", b_decode: int = 16,
-                 max_length: int = 48):
+                 max_length: int = 48, ref_norm: float = SONAR_NORM):
         import torch as t
-        from transformers import M2M100ForConditionalGeneration
-        from ontologize.data.pretrained import pretrained_transformer
+        from transformers import AutoTokenizer, M2M100ForConditionalGeneration
         self.t, self.dev = t, t.device(device)
         self.b, self.max_length = b_decode, max_length
-        pt_enc, self.tokenizer = pretrained_transformer(ENCODER_ID, "float32",
-                                                        dev=self.dev)
-        refs = self.tokenizer(
-            ["The weather is nice today.",
-             "She walked to the store to buy some bread.",
-             "Scientists discovered a new species in the rainforest."],
-            return_tensors="pt", padding=True).to(self.dev)
-        with t.no_grad():
-            h = pt_enc(**refs).last_hidden_state
-            mask = refs["attention_mask"].unsqueeze(-1).float()
-            self.ref_norm = t.norm((h * mask).sum(1) / mask.sum(1),
-                                   dim=-1).mean().item()
-        del pt_enc
+        self.ref_norm = ref_norm
+        self.tokenizer = AutoTokenizer.from_pretrained(ENCODER_ID)
         self.dec = M2M100ForConditionalGeneration.from_pretrained(
             DECODER_ID).to(self.dev)
         self.dec.eval()

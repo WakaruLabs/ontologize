@@ -165,6 +165,11 @@ def extract_autointerp() -> None:
     for run, label, density, by_sae in AUTOINTERP:
         path = OUT / "sonar" / "autointerp" / run
         recs = read(path / "scores.csv")
+        # params decodes were redone at textfid.SONAR_NORM in a campaign
+        # of their own; acts and cacts never touch the decoder
+        recs = [r for r in recs if r["mode"] != "params"] + [
+            r for r in read(OUT / "sonar" / "autointerp_scalefix" / run
+                            / "scores.csv") if r["mode"] == "params"]
         freq = float(np.load(path / "features.npz")["freq"].mean())
         f1 = {m: float(np.mean([float(r["f1"]) for r in recs
                                 if r["mode"] == m]))

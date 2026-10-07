@@ -303,6 +303,11 @@ def make_llm(judge_model, dry_dir, jobs, rate=0):
     calls = []
     model = JUDGE_MODELS.get(judge_model, judge_model)
     key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if key.startswith("/") and Path(key).is_file():
+        # the var may hold a path to a token file rather than the key itself,
+        # the convention on this machine; sending the path gets a 401 that
+        # reads as a revoked key
+        key = Path(key).read_text().strip()
     if not dry_dir and not key:
         # never fall back to anything implicit: the campaign bills this key
         raise RuntimeError("ANTHROPIC_API_KEY unset; refusing to run judge")
@@ -568,7 +573,12 @@ def harvest(cfg):
     else:
         thresh = 0.0
     freq = (sub_acts > thresh).mean(0)
-    sel = stratified_features(freq, cfg.n_features, cfg.seed)
+    if getattr(cfg, "feature_ids", None):
+        sel = np.asarray(sorted(set(cfg.feature_ids)), np.int64)
+        assert sel.max() < sub_acts.shape[1] and sel.min() >= 0, \
+            f"feature ids must be in [0, {sub_acts.shape[1]})"
+    else:
+        sel = stratified_features(freq, cfg.n_features, cfg.seed)
 
     q50 = np.quantile(sub_acts[:, sel].astype(np.float32), 0.5, axis=0)
     rng = np.random.default_rng(cfg.seed)
@@ -590,8 +600,17 @@ def harvest(cfg):
         for j, f in enumerate(sel):
             li, hi, ki = f // (h * k), (f // k) % h, f % k
             codes[j, li, hi] = np.eye(k, dtype=np.float32)[ki]
-        emb = embed_fn(codes)
+        emb = np.asarray(embed_fn(codes))
     extra = {}
+    if cfg.model == "onto":
+        # `emb` forces ONE head of l*h and leaves the rest at the origin, so
+        # it is overwhelmingly the origin's own decode. The difference
+        # against the pure origin is the tag's own contribution ("pdev").
+        # That buys legibility, not detection score: a decoded sentence is
+        # an instance of what the tag writes, and detection needs a
+        # criterion to sort snippets by.
+        emb_origin = np.asarray(embed_fn(origin[None]))
+        extra = {"emb_dev": emb - emb_origin, "emb_origin": emb_origin}
     if cfg.model != "onto":
         alpha = top_v[sel, :cfg.n_desc].mean(1, keepdims=True)
         emb = (np.asarray(sae_params["b_dec"])
@@ -692,6 +711,9 @@ def describe(cfg):
     n = 0
     if cfg.mode in ("params", "both", "all"):
         n += flush(describe_params(cfg, dat, done))
+    if cfg.mode in ("pdev", "all") and "emb_dev" in dat:
+        n += flush(describe_params(cfg, dat, done, key="emb_dev",
+                                   mode="pdev"))
     if cfg.mode in ("eig", "all"):
         if "emb_eig" in dat:
             n += flush(describe_params(cfg, dat, done, key="emb_eig",
@@ -708,24 +730,16 @@ def describe(cfg):
 
 def describe_params(cfg, dat, done, key="emb", mode="params"):
     import torch as t
-    from transformers import M2M100ForConditionalGeneration
+    from transformers import AutoTokenizer, M2M100ForConditionalGeneration
     from transformers.modeling_outputs import BaseModelOutput
-    from ontologize.data.pretrained import pretrained_transformer
+    from textfid import SONAR_NORM
 
     todo = [j for j, f in enumerate(dat["sel"]) if (int(f), mode) not in done]
     if not todo:
         return []
     dev = t.device(cfg.device)
-    pt_enc, tokenizer = pretrained_transformer(ENCODER_ID, "float32", dev=dev)
-    refs = tokenizer(["The weather is nice today.",
-                      "She walked to the store to buy some bread.",
-                      "Scientists discovered a new species in the rainforest."],
-                     return_tensors="pt", padding=True).to(dev)
-    with t.no_grad():
-        h = pt_enc(**refs).last_hidden_state
-        mask = refs["attention_mask"].unsqueeze(-1).float()
-        ref_norm = t.norm((h * mask).sum(1) / mask.sum(1), dim=-1).mean().item()
-    del pt_enc
+    tokenizer = AutoTokenizer.from_pretrained(ENCODER_ID)
+    ref_norm = SONAR_NORM
     dec = M2M100ForConditionalGeneration.from_pretrained(DECODER_ID).to(dev)
     dec.eval()
     ENG = tokenizer.convert_tokens_to_ids("eng_Latn")
@@ -904,14 +918,21 @@ def main():
     p.add_argument("--n-neg", type=int, default=8)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--features", nargs="+", help="features.npz paths (texts)")
+    p.add_argument("--feature-ids", type=int, nargs="+", default=None,
+                   help="harvest exactly these feature indices instead of a "
+                        "stratified sample, for interrogating one head. An "
+                        "Ontologizer tag is layer*h*k + head*k + entry")
     p.add_argument("--dir", help="harvest output dir (describe/score)")
     p.add_argument("--mode",
-                   choices=["params", "acts", "cacts", "eig", "both", "all"],
+                   choices=["params", "pdev", "acts", "cacts", "eig", "both",
+                            "all"],
                    default="both",
-                   help="description modes: both = params+acts; eig = "
-                        "bilinear-SAE eigenfeature decodes; all = params+eig+"
-                        "acts; cacts = contrastive acts (top texts vs random "
-                        "corpus draws), run explicitly, never part of both/all")
+                   help="description modes: both = params+acts; pdev = the "
+                        "params decode less the pure-origin decode (onto); "
+                        "eig = bilinear-SAE eigenfeature decodes; all = "
+                        "params+pdev+eig+acts; cacts = contrastive acts (top "
+                        "texts vs random corpus draws), run explicitly, never "
+                        "part of both/all")
     p.add_argument("--device", default="cpu",
                    help="torch device for the M2M100 decode")
     p.add_argument("--b-decode", type=int, default=16)

@@ -302,23 +302,15 @@ def harvest(cfg):
 
 def decode_values(cfg, emb):
     """Decode entry embeddings (N, d) to text through M2M100, exactly as
-    autointerp.describe_params does (forced eng_Latn, ref-norm rescale)."""
+    autointerp.describe_params does (forced eng_Latn, SONAR_NORM rescale)."""
     import torch as t
-    from transformers import M2M100ForConditionalGeneration
+    from transformers import AutoTokenizer, M2M100ForConditionalGeneration
     from transformers.modeling_outputs import BaseModelOutput
-    from ontologize.data.pretrained import pretrained_transformer
+    from textfid import SONAR_NORM
 
     dev = t.device(cfg.device)
-    pt_enc, tokenizer = pretrained_transformer(ENCODER_ID, "float32", dev=dev)
-    refs = tokenizer(["The weather is nice today.",
-                      "She walked to the store to buy some bread.",
-                      "Scientists discovered a new species in the rainforest."],
-                     return_tensors="pt", padding=True).to(dev)
-    with t.no_grad():
-        hh = pt_enc(**refs).last_hidden_state
-        mask = refs["attention_mask"].unsqueeze(-1).float()
-        ref_norm = t.norm((hh * mask).sum(1) / mask.sum(1), dim=-1).mean().item()
-    del pt_enc
+    tokenizer = AutoTokenizer.from_pretrained(ENCODER_ID)
+    ref_norm = SONAR_NORM
     dec = M2M100ForConditionalGeneration.from_pretrained(DECODER_ID).to(dev)
     dec.eval()
     eng = tokenizer.convert_tokens_to_ids("eng_Latn")

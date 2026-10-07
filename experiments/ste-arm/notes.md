@@ -271,18 +271,22 @@ from one pilot, not a measurement. Not worth a full run.
 
 `steerfid.py` reads an intervention's effect off a re-encoding of the
 generated text, and that instrument is too weak here to support any
-conclusion. Measured on an UNSTEERED round trip, 512 held-out rows:
+conclusion. Measured on an UNSTEERED round trip, the last 512 cache rows
+(`roundtrip.py`, remeasured 2026-10-07 with the eval-mode encoder and
+SONAR_NORM; see the encoder section below):
 
-| | ste_h76 | softmax | reference |
+| | ste_h76 | softmax (`sweep_softmax_shm`) | reference |
 |---|---|---|---|
-| cos(x, cycle(x)) | 0.378 | 0.380 | 0.314 between random pairs |
-| head argmax survives | 12.1% | 10.5% | 3.1% chance |
+| cos(x, cycle(x)) | 0.382 (the cycle does not involve the model) | | 0.318 between random pairs |
+| head argmax survives | 12.9% | 10.8% | 3.1% chance |
 
 The cycled embedding retains barely more than the shared corpus
-direction (0.561 to the corpus mean), so a perfect intervention could be
-observed at most ~12% of the time -- the same order as the hit rates
-that metric reports. For the hard code it is worse with depth: survival
-is 34.8% at layer 0 and 4.6% by layer 4, against 3.1% chance.
+direction (rows sit at 0.561 to the corpus mean, and 0.561^2 is the
+random-pair cosine), so a perfect intervention could be observed at most
+~13% of the time -- the same order as the hit rates that metric reports.
+For the hard code it is worse with depth: survival is 36.2% at layer 0
+and 4.8% by layer 4, against 3.1% chance. The softmax model's runs
+8.5--14.5% across layers.
 Reconstruction into embedding space is fine; generation is where it
 goes.
 
@@ -3135,19 +3139,93 @@ stochastic:
   `experiments/partition-autointerp/headinterp.py`. Each rescales an
   embedding to `ref_norm` before decoding, and `ref_norm` came from the
   encoder: 0.247–0.258 across processes with dropout, 0.2030 without. So
-  their decodes were made at a random scale about 25% above SONAR's own.
+  their decodes were made at a scale that changed from run to run.
 - **Decode scale and re-encoded text:** `steerfid.py`,
   `experiments/steering-overlay/steer_overlay.py` and
-  `experiments/rl-classifications/rl_reinforce.py`. Each also re-encodes
-  generated text to measure its effect, so those activations carried
-  dropout noise.
+  `experiments/rl-classifications/rl_reinforce.py`'s cycle tier. Each also
+  re-encodes generated text to measure its effect, so those activations
+  carried dropout noise. The recorded REINFORCE result used the
+  in-embedding tier, which never decodes, and is unaffected.
 - **Encoded text:** `headcoh.py`'s description view,
   `experiments/ste-arm/decodehead.py`, and the `decode.py` /
   `decode_tags.py` REPLs.
 
-Every number those scripts produced before this date (the textfid chrF,
-the steerfid and steer_overlay effects, REINFORCE, naturalness) was
-measured this way and has not been rerun.
+### The decode scale
+
+`ref_norm` was the mean-pooled norm of three short English reference
+sentences, and that is not the scale the decoder was trained on. The
+cache's rows are L2-normalized, so their own norms are gone; re-encoding
+2048 mC4 corpus texts with the eval-mode encoder gives a raw mean-pooled
+norm of median 0.307 (SD 0.040, 5–95% 0.235–0.365; per-language medians
+0.30–0.34). Decode-then-re-encode fidelity follows it: on 128 tail rows,
+cos(x, cycle(x)) is 0.240 decoding at 0.15, 0.338 at 0.203, 0.352 at
+0.25, 0.376 at 0.30 and 0.374 at 0.40. So the dropout-inflated scale
+(about 0.25) happened to sit closer to the right one than the
+deterministic 3-sentence value (0.203). Every script now rescales to
+`textfid.SONAR_NORM = 0.307`, one shared constant, and `SonarDecoder`
+no longer loads the encoder at all; `decode.py` still rescales to its
+input text's own norm, which is correct now that the encoder is in eval
+mode.
+
+### Reruns (2026-10-07)
+
+Results that sit in their own sections are updated there: the round trip
+("Steering, scored in embedding space" above),
+`experiments/steering-overlay/notes.md` and
+`experiments/task-naturalness/notes.md`. The rest, the earlier value in
+parentheses:
+
+**Text fidelity** (`textfid.py`, 512 tail rows, the SAEs in
+`data/out/sonar/sae_conv`, byte-identical to the checkpoints the first
+runs used). The NLL ceiling is now one value, 1.560 for every model, and
+the corpus-mean floor 3.999 (chrF 0.176, earlier about 0.20):
+
+| model | chrF | exact | NLL of decode(x) under recon |
+|---|---|---|---|
+| m5120_k32 | 0.228 (0.235) | 0.000 | 3.156 |
+| m5120_k32_p5 | 0.229 (0.229) | 0.000 | 3.178 |
+| m11264_k32 | 0.230 (0.232) | 0.000 | 3.160 |
+| m5120_k32_bl | 0.204 (0.214) | 0.000 | 3.365 |
+| m11264_k160 | 0.282 (0.285) | 0.000 | 2.434 |
+| m5120_g160top1 | 0.275 (0.275) | 0.000 | 2.407 |
+| resid_nc, soft | 0.552 (0.538) | 0.070 (0.090) | 1.585 |
+| m5120_g160softmax | 0.591 (0.592) | 0.094 (0.119) | 1.568 |
+| m11264_k5120 | 0.841 (0.856) | 0.562 (0.592) | 1.560 |
+
+**Description-text coherence** (`headcoh.py --desc-mode cacts`, the same
+campaign descriptions, encoded in eval mode): permutation z of
+within-head description similarity is +2.03 for `resid_nc` (+1.92),
++1.55 for `g160top1` (+2.42) and +1.09 for `g160softmax` (+0.79). The
+hard variant no longer clears 2 and the Ontologizer now has the largest
+z; on the plain `acts` descriptions `resid_nc` reads +0.14. The
+decode-direction z-scores in the same runs are unchanged, as they never
+touch the encoder.
+
+**Parameter-space decodes** (`autointerp.py describe --mode params`,
+`eig` for the bilinear SAE, re-decoded at SONAR_NORM from the campaign's
+own harvests into `data/out/sonar/autointerp_scalefix/`, then self-scored
+by the Haiku judge without a null, as the first campaign was): mean
+detection F1
+
+| run | params | eig |
+|---|---|---|
+| onto (resid_nc) | 0.039 (0.020) | |
+| m5120_k32 | 0.139 (0.158) | |
+| m5120_k32_bl | 0.136 (0.061) | 0.034 (0.021) |
+| m5120_g160top1 | 0.111 (0.039) | |
+| m5120_g160softmax | 0.086 (0.025) | |
+| m11264_k5120 | 0.010 (0.001) | |
+
+Three SAE-family runs now read 0.09–0.14 where the first campaign had
+them at or under 0.06, so "at most 0.06 everywhere except the plain SAE"
+no longer holds. The conclusion does: activation-based descriptions of
+the same features score 0.45–0.65.
+
+Still running at the time of writing: the sweep's text fidelity and
+`steerfid.py --n-features 64` over the selection sweep and the
+straight-through arms (ten of twelve done), the text strips, the
+`decodehead.py` decode of L0 h54, the h54 `params`/`pdev` scores and the
+head-level pass in `experiments/partition-autointerp`.
 
 ## Run
 

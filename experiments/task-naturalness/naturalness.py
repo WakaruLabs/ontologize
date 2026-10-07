@@ -48,7 +48,7 @@ import csv
 import json
 import numpy as np
 
-from textfid import chrf, ENCODER_ID, DECODER_ID
+from textfid import chrf, ENCODER_ID, DECODER_ID, SONAR_NORM
 
 
 def parse_args():
@@ -143,9 +143,9 @@ def main():
     if nll_ok:
         try:
             import torch as t
-            from transformers import M2M100ForConditionalGeneration
+            from transformers import (AutoTokenizer,
+                                      M2M100ForConditionalGeneration)
             from transformers.modeling_outputs import BaseModelOutput
-            from ontologize.data.pretrained import pretrained_transformer
         except ImportError as e:
             print(f"NLL pass unavailable ({e}); continuing without it")
             nll_ok = False
@@ -153,20 +153,9 @@ def main():
         mm = np.load(cfg.cache, mmap_mode="r")
         x_mean = np.asarray(mm[:1 << 17], dtype=np.float32).mean(0)
         dev = t.device(cfg.device)
-        # reference SONAR norm, exactly as textfid.py derives it
-        pt_enc, tokenizer = pretrained_transformer(ENCODER_ID, "float32",
-                                                   dev=dev)
-        refs = tokenizer(
-            ["The weather is nice today.",
-             "She walked to the store to buy some bread.",
-             "Scientists discovered a new species in the rainforest."],
-            return_tensors="pt", padding=True).to(dev)
-        with t.no_grad():
-            h = pt_enc(**refs).last_hidden_state
-            mask = refs["attention_mask"].unsqueeze(-1).float()
-            ref_norm = t.norm((h * mask).sum(1) / mask.sum(1),
-                              dim=-1).mean().item()
-        del pt_enc
+        # the SONAR norm textfid.py decodes at
+        ref_norm = SONAR_NORM
+        tokenizer = AutoTokenizer.from_pretrained(ENCODER_ID)
         dec = M2M100ForConditionalGeneration.from_pretrained(
             DECODER_ID).to(dev)
         dec.eval()

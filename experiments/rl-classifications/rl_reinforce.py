@@ -75,7 +75,7 @@ ROOT = EXP.parents[1]
 sys.path.insert(0, str(ROOT))
 
 from steerfid import unit, firing_quantiles, effect_scores
-from textfid import chrf
+from textfid import SONAR_NORM, chrf
 
 ENCODER_ID = "cointegrated/SONAR_200_text_encoder"
 DECODER_ID = "raxtemur/SONAR_200_text_decoder"
@@ -291,15 +291,7 @@ def torch_stack(cfg):
 
     dev = t.device(cfg.device)
     pt_enc, tokenizer = pretrained_transformer(ENCODER_ID, "float32", dev=dev)
-    refs = tokenizer(["The weather is nice today.",
-                      "She walked to the store to buy some bread.",
-                      "Scientists discovered a new species in the rainforest."],
-                     return_tensors="pt", padding=True).to(dev)
-    with t.no_grad():
-        hh = pt_enc(**refs).last_hidden_state
-        mask = refs["attention_mask"].unsqueeze(-1).float()
-        ref_norm = t.norm((hh * mask).sum(1) / mask.sum(1),
-                          dim=-1).mean().item()
+    ref_norm = SONAR_NORM
     dec = M2M100ForConditionalGeneration.from_pretrained(DECODER_ID).to(dev)
     dec.eval()
     eng = tokenizer.convert_tokens_to_ids("eng_Latn")
