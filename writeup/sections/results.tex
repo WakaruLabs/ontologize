@@ -3,48 +3,21 @@
 \subsection{The price of structure: reconstruction--capacity Pareto}
 \label{sec:pareto}
 
-\begin{table}[htbp]\centering\small
-\begin{tabular}{@{}lrrr@{}}
-\toprule
-point & coeffs & index bits & $\fvu$ \\
-\midrule
-onto $\nu{=}0$ ($\mathbb{E}[\mathbf{p}]$ origin) & 0 & 0 & 1.001 \\
-onto hard (argmax)                  & 0 & 800 & 17.34 \\
-\emph{Gaussian reference, 800 bits} & 0 & 800 & \emph{0.226} \\
-sae k32 tier ($m{=}5120/11264$, incl.\ p5, s43) & 32 & $\sim$400 & 0.494--0.509 \\
-sae k32 bilinear                    & 32 & 394 & 0.602 \\
-onto dev $\nu{=}1$                  & 160 & 800 & 0.677 \\
-1-layer hard variant \texttt{g160top1} & 160 & 1972 & 0.274 \\
-sae k160 ($m{=}11264$)              & 160 & 2154 & 0.258 \\
-onto dev $\nu{=}2$                  & 320 & 1600 & 0.497 \\
-onto dev $\nu{=}4$                  & 640 & 3200 & 0.289 \\
-onto dev $\nu{=}8$                  & 1280 & 6400 & 0.094 \\
-sae k5120 ($m{=}11264$, $\mathrm{L0}{\approx}1520$) & 1520 & 20455 & \textbf{0.00011} \\
-onto dev $\nu{=}16$                 & 2560 & 12800 & 0.0082 \\
-1-layer soft variant \texttt{g160softmax} & 5120 & 0 & \textbf{0.00436} \\
-onto soft ($\nu{=}32$)              & 5120 & 0 & 0.00538 \\
-\bottomrule
-\end{tabular}
-\caption{Reconstruction against code capacity for the reference softmax
-model (\texttt{resid\_nc}) and the SAEs, on the shared evaluation tail.
-The single-layer variants are \texttt{sae.py} with per-head competition,
-simplified Ontologizers rather than SAEs (Appendix~\ref{sec:models}).}
-\label{tab:pareto}
-\end{table}
-
 \begin{figure}[tp]\centering
 \includegraphics[width=\linewidth]{figures/fig-pareto.pdf}
 \caption[Reconstruction against code size]{Reconstruction against code
 size on the shared evaluation tail, by index bits (a) and by continuous
-coefficients (b): the points of Table~\ref{tab:pareto}, the L1 SAEs at
-all five weights, and the straight-through stack
-(\texttt{ste\_h76\_init01}, Section~\ref{sec:ste}). A code appears only
-where its size is nonzero, so the soft codes are in (b) alone, the
-softmax argmax is in (a) alone, and the straight-through stack is a level
-in (b). The dashed curve is the Gaussian reference
-(Eq.~\eqref{eq:ratefloor}). The softmax model (\texttt{resid\_nc}) saw
-the tail in training and the others hold it out. One seed per point,
-except the $k_{\mathrm{SAE}}{=}32$ SAE's seed-43 replica.}
+coefficients (b): the reference softmax model's truncated codes
+(\texttt{resid\_nc}), the SAEs (the L1 SAEs at all five weights of
+Table~\ref{tab:cfg-sae}), the single-layer variants and the
+straight-through stack (\texttt{ste\_h76\_init01},
+Section~\ref{sec:ste}). A code
+appears only where its size is nonzero, so the soft codes are in (b)
+alone, the softmax argmax is in (a) alone, and the straight-through stack
+is a level in (b). The dashed curve is the Gaussian reference
+(Eq.~\eqref{eq:ratefloor}). The softmax model saw the tail in training
+and the others hold it out. One seed per point, except the
+$k_{\mathrm{SAE}}{=}32$ SAE's seed-43 replica.}
 \label{fig:pareto}
 \end{figure}
 
@@ -123,31 +96,16 @@ language localization and shrinkage) is in Appendix~\ref{app:soft}.
 \subsection{Semantic coherence: heads are contrast sets}
 \label{sec:prelim-orth}
 
-\begin{table}[htbp]\centering\small
-\begin{tabular}{@{}lrrrr@{}}
-\toprule
-heads or grouping & count & mean $\zeta_{\cos}$ & frac $\zeta{>}2$ & frac $\zeta{<}{-}2$ \\
-\midrule
-g160top1 (trained, hard)      & 160 & $+161.3$ & 1.00 & 0.00 \\
-k32 discovered (\texttt{m11264}) & 359 & $+1.7$ & 0.36 & 0.02 \\
-onto heads (trained, soft)    & 160 & $-17.6$ & 0.04 & \textbf{0.96} \\
-g160softmax (trained, soft)   & 160 & $-14.7$ & 0.00 & \textbf{1.00} \\
-\bottomrule
-\end{tabular}
-\caption{Within-head decode-direction coherence against size-matched
-nulls drawn from the same pool ($n_{\mathrm{null}}{=}500$).}
-\label{tab:headcoh}
-\end{table}
-
 \begin{figure}[tp]\centering
 \includegraphics[width=\linewidth]{figures/fig-headcoh.pdf}
-\caption[Within-head coherence by head]{Each head's, or discovered
-group's, $\zeta_{\cos}$ against its size-matched null
-(Table~\ref{tab:headcoh}), on a scale linear between the dotted lines at
-$\pm2$ and logarithmic beyond them; bars are means. The soft heads are
-those of \texttt{resid\_nc} and \texttt{g160softmax}, the discovered
-groups those of the $m{=}11264$, $k_{\mathrm{SAE}}{=}32$ SAE. One seed
-per model.}
+\caption[Within-head coherence by head]{Within-head decode-direction
+coherence: each head's, or discovered group's, $\zeta_{\cos}$ against a
+size-matched null drawn from the same pool ($n_{\mathrm{null}}{=}500$),
+on a scale linear between the dotted lines at $\pm2$ and logarithmic
+beyond them; bars are means. The
+soft heads are those of \texttt{resid\_nc} and \texttt{g160softmax}, the
+discovered groups those of the $m{=}11264$, $k_{\mathrm{SAE}}{=}32$ SAE.
+One seed per model.}
 \label{fig:headcoh}
 \end{figure}
 
@@ -448,29 +406,15 @@ in Appendix~\ref{sec:steerlayer}.
 
 \paragraph{A purely discrete code beats a sparse linear one.} On one
 frontier of converged SAEs and the single-layer hard variant, all trained
-for about 144k steps (Figure~\ref{fig:pareto}a):
-
-\begin{center}\small
-\begin{tabular}{@{}lrrr@{}}
-\toprule
-code & coeffs & index bits & $\fvu$ \\
-\midrule
-\textbf{straight-through, $5\times76$} & \textbf{0} & \textbf{1900} & \textbf{0.154} \\
-SAE \texttt{m11264\_k160} & 160 & 2154 & 0.258 \\
-SAE ReLU+L1 $3\times10^{-5}$ & 519 & 6390 & 0.220 \\
-SAE ReLU+L1 $10^{-5}$ & 1438 & 17723 & 0.048 \\
-\midrule
-1-layer hard variant \texttt{g160top1} & 160 & 1972 & 0.274 \\
-\bottomrule
-\end{tabular}
-\end{center}
-
-At matched index bits (about 2{,}000) the discrete code is 40\% below the
-$\topk$ SAE that additionally transmits 160 continuous coefficients, and
-30\% below an L1 SAE spending $3.4\times$ the bits plus 519 coefficients.
-It is also 44\% below the single-layer hard variant, which shares its hard
-per-head selection but has one layer of linear classifiers and keeps a
-ReLU magnitude on each winner. For a hard model the capacity axis is
+for about 144k steps (Figure~\ref{fig:pareto}a), the stack's 1900 index
+bits reach $\fvu$ 0.154
+with no continuous coefficients. At matched index bits (about 2{,}000)
+that is 40\% below the $\topk$ SAE that additionally transmits 160
+continuous coefficients (0.258), and 30\% below an L1 SAE spending
+$3.4\times$ the bits plus 519 coefficients (0.219). It is also 44\% below
+the single-layer hard variant (0.274), which shares its hard per-head
+selection but has one layer of linear classifiers and keeps a ReLU
+magnitude on each winner. For a hard model the capacity axis is
 $l\cdot h\log_2 k$ itself: truncating toward the origin only adds mass the
 model was never trained to decode (0.259 at $\nu{=}1$). The stack is less
 efficient per bit than a single layer, $3.08\times$ the Gaussian reference
@@ -600,41 +544,21 @@ pair matches 3--31\% (Figure~\ref{fig:softseed}).
 A GPT-2 pair differing only in seed ($5\times20$ heads, $k{=}256$,
 concatenated heads at $d_{\mathrm{head}}{=}128$, 371{,}900 steps) gives the
 same picture. Each measure is run across seeds and, as a positive
-control, against the first run's own checkpoint at step 350{,}000:
-
-\begin{table}[htbp]\centering\small
-\begin{tabular}{@{}lrrrr@{}}
-\toprule
-layer & partition NMI, seeds & control & contribution cos, seeds & control \\
-\midrule
-0 & \textbf{0.359} & 0.976 & \textbf{0.171} & 0.956 \\
-1 & 0.188 & 0.766 & 0.017 & 0.758 \\
-2 & 0.186 & 0.602 & 0.007 & 0.588 \\
-3 & 0.186 & 0.538 & 0.005 & 0.516 \\
-4 & 0.186 & 0.510 & 0.004 & 0.483 \\
-all & 0.221 & 0.679 & 0.041 & 0.660 \\
-null & 0.179 & 0.179 & 0.0017 & 0.0017 \\
-\bottomrule
-\end{tabular}
-\caption{GPT-2 concatenated-head seed pair: partition NMI on 32{,}768
-rows and centered contribution cosine on 8{,}192 rows (null maximum
-0.0030), across seeds and against the same run's earlier checkpoint.}
-\label{tab:gpt2seeds}
-\end{table}
+control, against the first run's own checkpoint at step 350{,}000
+(Figure~\ref{fig:gpt2-seeds}).
 
 \begin{figure}[tp]\centering
 \includegraphics[width=\linewidth]{figures/fig-gpt2-seeds.pdf}
-\caption[GPT-2 seed agreement by layer]{Table~\ref{tab:gpt2seeds} by
-layer: what each head separates (a, partition NMI) and what it writes
-(b, centered contribution cosine, log scale), across the two seeds and
-against the first run's own checkpoint at step 350{,}000. Dotted lines are
-the nulls; the band in (b) runs from the null's mean to its maximum. One
-seed pair.}
+\caption[GPT-2 seed agreement by layer]{The GPT-2 concatenated-head seed
+pair by layer: what each head separates (a, partition NMI on 32{,}768
+rows) and what it writes (b, centered contribution cosine on 8{,}192
+rows, log scale), across the two seeds and against the first run's own
+checkpoint at step 350{,}000. Dotted lines are the nulls; the band in (b)
+runs from the null's mean to its maximum. One seed pair.}
 \label{fig:gpt2-seeds}
 \end{figure}
 
-Only layer 0 reproduces, at under a fifth of the control
-(Figure~\ref{fig:gpt2-seeds}), and each of its
+Only layer 0 reproduces, at under a fifth of the control, and each of its
 heads matches into the other seed's layer 0 on both measures. Layer 1
 keeps its identity (19 and 20 of its 20 heads land in the other seed's
 layer 1) while agreeing on almost nothing it separates or writes; layers

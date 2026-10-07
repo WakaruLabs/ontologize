@@ -2211,23 +2211,8 @@ oppositely at convergence. Tracing each arm over training resolves it:
 \textbf{training duration dominates the selection rule by 3.8$\times$}
 (mean $\bar\kappa$ falls 0.750 $\to$ 0.217 from step 10k to 369.5k, while the
 spread across rules at a fixed step averages 0.140), and the orderings
-cross near step 100k:
-
-\begin{center}\small
-\begin{tabular}{@{}lrrrrrr@{}}
-\toprule
-step & top2 & top4 & top8 & top16 & softmax & spread \\
-\midrule
-10{,}000  & 0.795 & 0.788 & 0.774 & 0.743 & 0.648 & 0.147 \\
-50{,}000  & 0.658 & 0.639 & 0.612 & 0.588 & 0.519 & 0.139 \\
-100{,}000 & 0.459 & 0.418 & 0.406 & 0.426 & 0.435 & 0.053 \\
-150{,}000 & 0.329 & 0.275 & 0.256 & 0.303 & 0.370 & 0.114 \\
-369{,}500 & 0.218 & 0.151 & 0.141 & 0.215 & 0.359 & 0.218 \\
-\bottomrule
-\end{tabular}
-\end{center}
-
-(\texttt{\_shm} family.) The soft arm's $\bar\kappa$ plateaus while its
+cross near step 100k (Figure~\ref{fig:sweep-curves}b, the
+\texttt{\_shm} family). The soft arm's $\bar\kappa$ plateaus while its
 error keeps falling, and the hard arms do the reverse: from 150k to 369.5k
 \texttt{softmax} cuts its $\fvu$ by 85\% while $\bar\kappa$ moves 3\%,
 whereas \texttt{top8} moves $\fvu$ 3\% while cutting $\bar\kappa$ by 45\%,
