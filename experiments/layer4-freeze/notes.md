@@ -50,3 +50,40 @@ zero dependence on the others. Settling it needs either the arms'
 `log.jsonl`/spec from wherever they ran, or a retrain of one arm to ~80k
 steps diagnosed with the fixed script. Their reconstruction numbers
 (training MSE from `loss.csv`) do not depend on the probe.
+
+### 2026-10-07: retrain of the `hsic` arm with gain-shape on
+
+`train_hsic.py --arm hsic --s-hsic-heads 1e-4 --epochs 6 --resid-gain 1
+--const0 0` (seed 42; `data/out/sonar/hsic_check/hsic`), the
+configuration under which the old probe would be wrong. The harness
+needed repairs to run at all on current code (see the hsic-bottleneck
+README). Optimizer and schedules do not depend on the epoch count (constant
+Adam rate; anneals on the absolute 50k-step horizon), so the first 93k
+steps follow the 24-epoch run's path. Training was healthy to step
+~92,400 (1000-step mean whitened MSE 5.2e-5) and then diverged in its last
+~700 steps (final rows: MSE 1.7e-2, KL_m 4.3), so only checkpoints
+through 90k are read below.
+
+Frozen heads per layer 0-4, both probes on the same checkpoints:
+
+| step | fixed probe | old probe |
+|---|---|---|
+| 50k | 0 0 0 0 0 | 0 0 0 0 0 |
+| 60k | 0 0 0 0 0 | 0 0 0 0 18 |
+| 70k | 0 0 0 0 3 | 0 0 0 0 28 |
+| 80k | 0 0 0 0 2 | 0 0 0 0 29 |
+| 90k | 0 0 0 0 3 | 0 0 0 6 28 |
+
+On a gain-shape HSIC model the old probe manufactures a large late, deep
+freeze that the correct probe does not see.
+
+But this retrain is not the original arm. Layer 0, which no probe
+difference touches, diverges from the saved original from the start:
+original layer-0 usage 3.1-3.5 bits (mean top share ~0.5) through 90k,
+retrain 2.7 -> 4.8 bits (top share 0.45 -> 0.09); the original froze
+layer 3 first (32/32 by 80k), the retrain's old-probe freeze is in
+layer 4. So the original arms most likely trained with gain-shape off, on
+which the old probe is exact and their freeze would be real. The
+no-gain retrain (`--resid-gain 0 --const0 0`,
+`data/out/sonar/hsic_check_nogain`) tests that directly: if it
+reproduces the original's trajectory, the reported freeze stands.
