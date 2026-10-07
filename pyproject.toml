@@ -20,6 +20,7 @@ dependencies = [
     "orbax-checkpoint",
     "pillow",
     "pytest>=9.0.3",
+    "scipy>=1.18",
     "torch",
     "torch-xla>=2.9.0",
     "tqdm",

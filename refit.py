@@ -16,9 +16,10 @@ b_dec. Group-softmax runs are skipped (dense support, nothing frozen).
 
 Ontologizer (--onto, evaluated at each --ms deviation count): the output
 is jointly linear in the flattened per-layer classifications (zero
-residual seed + linear decoder), so the model has a fixed (l*h*k, d)
-direction matrix G -- measured by decoding one-hot constant codes -- and
-Y = P @ G exactly. Support = the top-m |p - E[p]| entries per head; raw
+residual seed + affine decoder), so the model has a fixed (l*h*k, d)
+direction matrix G -- measured by decoding one-hot constant codes, minus
+the decode of the zero code -- and Y = P @ G + b exactly, b the decoder
+bias (0 without `biased_dec`). Support = the top-m |p - E[p]| entries per head; raw
 truncates the SOFT forward's P and decodes linearly, so it is the
 NON-adaptive truncation -- pareto.py truncates inside the forward, where
 later layers reclassify against the truncated prefix residual, and its
@@ -121,13 +122,15 @@ def sae_supports(params, X, topk, groups, group_fn):
 
 
 def onto_linear_model(ckpt, step, temperature):
-    """acts fn + the fixed direction matrix G with Y = P_flat @ G."""
-    from autointerp import onto_acts_fn
+    """acts fn + the fixed direction matrix G with Y = P_flat @ G +
+    meta["offset"]. G's rows are the entries' decoded directions with the
+    decoder bias removed (`autointerp.entry_directions`); the offset is
+    that bias, zero without `biased_dec`."""
+    from autointerp import onto_acts_fn, entry_directions
     acts, embed, F, meta = onto_acts_fn(ckpt, step, temperature)
-    l, h, k = meta["l"], meta["h"], meta["k"]
-    codes = np.eye(F, dtype=np.float32).reshape(F, l, h, k)
-    G = jnp.asarray(embed(codes))                     # (F, d)
-    return acts, G, meta
+    dirs, offset = entry_directions(embed, meta["l"], meta["h"], meta["k"])
+    meta["offset"] = jnp.asarray(offset)              # (d,)
+    return acts, jnp.asarray(dirs), meta              # G: (F, d)
 
 
 def onto_supports(P, origin, m, l, h, k):
@@ -209,7 +212,8 @@ def main():
             nb += 1
         origin = (acc / nb).reshape(l * h, k)
         origin = jnp.asarray(origin / origin.sum(-1, keepdims=True))
-        c = (origin.reshape(-1) @ G)[None]            # pinned-code decode
+        b0 = meta["offset"][None]                     # decoder bias
+        c = origin.reshape(-1) @ G + b0               # pinned-code decode
 
         d_out = X_all.shape[1]
         for m in cfg.ms:
@@ -226,7 +230,7 @@ def main():
             def run(X, m=m):
                 P = acts(X)
                 idx, Pt = onto_supports(P, origin, m, l, h, k)
-                raw = Pt @ G
+                raw = Pt @ G + b0
                 base = c + jnp.zeros_like(X)
                 # kept slots refit their deviation from the origin
                 fit = refit_recon(X, G, idx,

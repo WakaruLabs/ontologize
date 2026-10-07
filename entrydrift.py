@@ -169,17 +169,11 @@ def mark_boundary(steps: Sequence[int], mark_step: Optional[int],
 
 def entry_dirs(embed: Callable, l: int, h: int, k: int, d: int,
                chunk: int = 512) -> Float[np.ndarray, "l h k d"]:
-    """Decoded direction of every entry, decode(one-hot) - decode(0)."""
-    F = l * h * k
-    zero = np.zeros((1, l, h, k), np.float32)
-    base = embed(zero)[0]
-    out = np.empty((F, d), np.float32)
-    for i in range(0, F, chunk):
-        f = np.arange(i, min(i + chunk, F))
-        codes = np.zeros((len(f), F), np.float32)
-        codes[np.arange(len(f)), f] = 1.0
-        out[f] = embed(codes.reshape(len(f), l, h, k)) - base
-    return out.reshape(l, h, k, d)
+    """Decoded direction of every entry, decode(one-hot) - decode(0)
+    (`autointerp.entry_directions`), in (layer, head, entry) layout."""
+    from autointerp import entry_directions
+    dirs, _ = entry_directions(embed, l, h, k, chunk)
+    return dirs.reshape(l, h, k, d)
 
 
 def unit(U: Float[np.ndarray, "... d"], eps: float = 1e-9) -> np.ndarray:

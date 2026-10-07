@@ -1,6 +1,8 @@
 # selection.py's noise2self partition score, settings and grid helpers,
 # pinned on hand-checkable cases, and both figures drawn from synthetic
 # rows.
+from pathlib import Path
+
 import jax.numpy as jnp
 import numpy as np
 import pytest
@@ -123,6 +125,34 @@ def test_pareto_fvu(tmp_path):
     assert selection.pareto_fvu(p, "hard") == 0.7
     assert selection.pareto_fvu(tmp_path / "missing.csv") is None
     assert selection.sae_fvus(p) == [("sae m5120_k32", 32, 0.6)]
+
+
+def test_pareto_candidates_exact_names_in_order(tmp_path):
+    # inside the run, then beside it (gpt2_l8), then under --pareto-dir
+    # (sonar); a folder named for another run is never a candidate, and a
+    # --pareto-dir that is the run's parent is searched once
+    run = tmp_path / "gpt2_l8" / "ste_h76_cat32"
+    got = selection.pareto_candidates(run, run.name, tmp_path / "sonar")
+    assert got == [run / "pareto" / "pareto.csv",
+                   tmp_path / "gpt2_l8" / "pareto_ste_h76_cat32" / "pareto.csv",
+                   tmp_path / "sonar" / "pareto_ste_h76_cat32" / "pareto.csv"]
+    assert all("pareto_cat32" not in str(c) for c in got)
+    got = selection.pareto_candidates(run, run.name, tmp_path / "gpt2_l8")
+    assert len(got) == 2
+
+
+def test_pareto_default_stays_on_the_runs_substrate():
+    # ste_h76 exists on both substrates: by default a GPT-2 run never reads
+    # data/out/sonar/pareto, and a SONAR run finds its sonar/pareto folder
+    gpt2 = Path("data/out/gpt2_l8/ste_h76")
+    sonar = Path("data/out/sonar/multilingual/ste_h76")
+    assert selection.substrate_root(gpt2) == Path("data/out/gpt2_l8")
+    assert selection.substrate_root(sonar) == Path("data/out/sonar")
+    assert all("sonar" not in str(c)
+               for c in selection.pareto_candidates(gpt2, "ste_h76"))
+    assert Path("data/out/sonar/pareto/pareto_ste_h76/pareto.csv") in \
+        selection.pareto_candidates(sonar, "ste_h76")
+    assert selection.substrate_root(Path("/x/runs/a")) == Path("/x/runs")
 
 
 def test_sae_frontier():

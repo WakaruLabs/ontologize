@@ -209,3 +209,22 @@ def test_onto_probe_matches_the_forward(over, X):
 
     Ps = model.apply(params, X, method=forward)
     assert jnp.allclose(P, jnp.moveaxis(Ps, 0, 1).reshape(P.shape), atol=1e-6)
+
+
+def test_entry_directions_keep_the_bias_out():
+    # embed(P) = P_flat @ W + b is affine in the code: one decoded
+    # direction per entry, the bias returned once as the offset, and the
+    # pair reconstructs any code exactly (with the bias counted once, not
+    # once per head)
+    from autointerp import entry_directions
+    l, h, k, d = 2, 3, 4, 5
+    rng = np.random.default_rng(0)
+    W = rng.normal(size=(l * h * k, d)).astype(np.float32)
+    b = rng.normal(size=d).astype(np.float32)
+    embed = lambda c: c.reshape(len(c), -1) @ W + b
+    dirs, offset = entry_directions(embed, l, h, k, chunk=7)
+    np.testing.assert_allclose(dirs, W, atol=1e-5)
+    np.testing.assert_allclose(offset, b, atol=1e-6)
+    P = rng.dirichlet(np.ones(k), size=(6, l, h)).astype(np.float32)
+    np.testing.assert_allclose(P.reshape(6, -1) @ dirs + offset, embed(P),
+                               atol=1e-4)

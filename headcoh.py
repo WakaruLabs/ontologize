@@ -6,7 +6,8 @@ dimension rather than an arbitrary partition cell.
 
 Geometry view (quota-free, covers every head): each entry has an exact
 decode direction in SONAR output space -- Ontologizer: the row of the
-end-to-end linear map G with Y = P_flat @ G (refit.onto_linear_model);
+end-to-end affine map Y = P_flat @ G + b (refit.onto_linear_model; the
+decoder bias b is kept out of the rows);
 SAE: its W_dec row. SONAR space is a semantic sentence space, so
 within-head direction similarity is semantic similarity of what the
 entries decode to. Per head: mean pairwise cosine and top-singular-value

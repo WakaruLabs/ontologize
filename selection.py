@@ -46,9 +46,13 @@ function of E rather than a property of any partition.
 GRID (--grid ROW COL): held-out whitened FVU over a 2-D grid of settings.
 Each run's FVU is pareto.py's: the "soft" row (the model as it runs, at
 its temperature) or --point hard, read from an existing pareto.csv when
-one is found (<run>/pareto/, then <--pareto-dir>/pareto_<run name>/),
-otherwise computed with `pareto.onto_points` on the same tail rows and
---mse-weights. Cells are annotated with FVU and nominal capacity under
+one is found (<run>/pareto/, then pareto_<run name>/ beside the run, then
+<--pareto-dir>/pareto_<run name>/, by default data/out/<substrate>/pareto
+of the run's own substrate; exact names only, since a pareto.csv does not
+record its checkpoint and run names repeat across substrates), otherwise computed with
+`pareto.onto_points` on the same tail rows and --mse-weights, which must
+match the cache's width (pass the activation cache's own weights for
+gpt2_l8). Cells are annotated with FVU and nominal capacity under
 pareto.py's convention:
   argmax / ste / top1  0 coefficients, l*h*log2(k) index bits (its "hard")
   top<n>, n < k        l*h*n coefficients, l*h*n*log2(k) bits (its "dev m=n")
@@ -122,8 +126,10 @@ def parse_args(argv=None):
                    help="draw the FVU grid over these two keys instead")
     p.add_argument("--point", choices=["soft", "hard"], default="soft",
                    help="grid: which pareto.py point is the run's FVU")
-    p.add_argument("--pareto-dir", default="data/out/sonar/pareto",
-                   help="grid: where pareto_<run name>/pareto.csv may exist")
+    p.add_argument("--pareto-dir", default=None,
+                   help="grid: where pareto_<run name>/pareto.csv may exist "
+                   "(default: <data/out/SUBSTRATE>/pareto for each run, so a "
+                   "namesake on another substrate is never read)")
     p.add_argument("--recompute", action="store_true",
                    help="grid: ignore existing pareto.csv files")
     p.add_argument("--sae-csv", default=None,
@@ -579,6 +585,41 @@ def draw_grid(records, rkey: str, ckey: str, title: str, path,
     plt.close(fig)
 
 
+def substrate_root(run) -> Path:
+    """The run's directory one level under `out/` (data/out/sonar,
+    data/out/gpt2_l8), which every pareto.csv for its substrate sits
+    under; the run's parent when it is not under an `out/` directory."""
+    parts = Path(run).parts
+    if "out" in parts[:-1]:
+        i = len(parts) - 1 - parts[::-1].index("out")
+        if i + 1 < len(parts) - 1:
+            return Path(*parts[:i + 2])
+    return Path(run).parent
+
+
+def pareto_candidates(run, name: str, pareto_dir=None) -> list:
+    """Where a run's pareto.csv may be, in search order: <run>/pareto/,
+    then pareto_<name>/ beside the run (the gpt2_l8 layout), then
+    pareto_<name>/ under --pareto-dir, by default the substrate root's
+    pareto/ (the sonar layout). Only exact name matches, and by default
+    only within the run's own substrate: a pareto.csv does not record its
+    checkpoint, and run names repeat across substrates (ste_h76 is both a
+    SONAR and a GPT-2 run), so a folder named for another run, or for a
+    namesake on another substrate, is never taken for this one."""
+    if pareto_dir is None:
+        pareto_dir = substrate_root(run) / "pareto"
+    cands = [Path(run) / "pareto" / "pareto.csv",
+             Path(run).parent / f"pareto_{name}" / "pareto.csv",
+             Path(pareto_dir) / f"pareto_{name}" / "pareto.csv"]
+    seen, out = set(), []
+    for c in cands:
+        key = c.resolve()
+        if key not in seen:
+            seen.add(key)
+            out.append(c)
+    return out
+
+
 def grid_records(cfg, runs) -> list:
     """One record per run: settings + FVU + its source."""
     recs, todo = [], []
@@ -586,9 +627,7 @@ def grid_records(cfg, runs) -> list:
         st = run_settings(run)
         f, src = None, None
         if not cfg.recompute:
-            for cand in (Path(run) / "pareto" / "pareto.csv",
-                         Path(cfg.pareto_dir) / f"pareto_{st['name']}"
-                         / "pareto.csv"):
+            for cand in pareto_candidates(run, st["name"], cfg.pareto_dir):
                 f = pareto_fvu(cand, cfg.point)
                 if f is not None:
                     src = str(cand)
@@ -602,6 +641,10 @@ def grid_records(cfg, runs) -> list:
         X_eval = np.asarray(mm[-cfg.eval_rows:], dtype=np.float32)
         w = np.load(cfg.mse_weights) if cfg.mse_weights \
             else np.ones(mm.shape[1])
+        assert w.shape == (mm.shape[1],), (
+            f"--mse-weights {cfg.mse_weights} is {w.shape[0]} wide but the "
+            f"cache {cfg.cache} is {mm.shape[1]}: pass the weights that "
+            f"match the cache (e.g. the activation cache's .mse_weights.npy)")
         base_w = (X_eval.var(0) * w).mean()
         for st in todo:
             ns = SimpleNamespace(

@@ -479,6 +479,26 @@ def onto_acts_fn(ckpt, step, temperature, inputs=False):
     return acts, embed, l * h * k, meta, layer_inputs
 
 
+def entry_directions(embed, l, h, k, chunk=512):
+    """Every entry's decoded direction from `onto_acts_fn`'s `embed`:
+    (dirs, offset) with dirs[f] = embed(one-hot f) - embed(0) for
+    f = (layer*h + head)*k + entry, and offset = embed(0), the decoder
+    bias (0 without `biased_dec`). embed is affine in the code, so
+    embed(P) = P_flat @ dirs + offset exactly; subtracting the offset
+    keeps it out of every direction, where it would otherwise be counted
+    once per head. Decoded `chunk` one-hot codes at a time, so the
+    (F, F) identity is never built."""
+    F = l * h * k
+    offset = np.asarray(embed(np.zeros((1, l, h, k), np.float32)))[0]
+    dirs = np.empty((F, len(offset)), np.float32)
+    for i in range(0, F, chunk):
+        f = np.arange(i, min(i + chunk, F))
+        codes = np.zeros((len(f), F), np.float32)
+        codes[np.arange(len(f)), f] = 1.0
+        dirs[f] = np.asarray(embed(codes.reshape(len(f), l, h, k))) - offset
+    return dirs, offset
+
+
 def sae_acts_fn(ckpt, topk):
     import jax
     import jax.numpy as jnp
