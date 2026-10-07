@@ -8,7 +8,8 @@
 \midrule
 input & the SONAR cache and eval tail of the Ontologizers, $d{=}1024$ \\
 objective & whitened MSE, as the Ontologizers \\
-architecture & pre-subtracted decoder bias, unit-norm decoder rows, tied initialization \\
+architecture & pre-subtracted decoder bias, tied initialization \\
+decoder & unit-norm directions, the columns of $W_{\mathrm{dec}}$ \\
 dead latents & \texttt{aux\_k} 512 ($\topk$ runs) or neuron resampling every 5000 steps (L1 runs) \\
 optimizer & Adam, batch 4096 \\
 \bottomrule

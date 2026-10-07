@@ -2,8 +2,9 @@
 \label{sec:formal}
 
 The steering frame has a natural formalization in the causal-abstraction
-vocabulary, and stating it makes several instruments in the battery
-estimators of named quantities rather than ad hoc scores.
+vocabulary~\cite{rubenstein2017,beckers2019,geiger2021,geiger2025}, and
+stating it makes several instruments in the battery estimators of named
+quantities rather than ad hoc scores.
 
 \paragraph{Definitions.}
 Read the Ontologizer as a structural causal model: each head $(\ell,i)$ is a
@@ -20,7 +21,7 @@ realization rate is an estimator of whether an \emph{input-space}
 intervention implements $\mathrm{do}[(\ell,i){=}j']$, and its collateral of
 how far it also intervenes on other variables;
 \texttt{steerfid.py}'s cycle-consistency gain estimates
-\emph{interchange-intervention accuracy} in the closed loop $\mathrm{assign} \circ
+\emph{interchange-intervention accuracy}~\cite{geiger2022} in the closed loop $\mathrm{assign} \circ
 \mathrm{encode} \circ \mathrm{decode}$, bounded above by the
 $\sim$12\% round-trip survival of Section~\ref{sec:steer}; and seed-to-seed
 matching is \emph{empirical identifiability}. What the softmax leaves
@@ -71,13 +72,13 @@ pairs):
 \begin{center}
 \begin{tabular}{@{}lrrrr@{}}
 \toprule
-stratum & pairs & cos & rel.\ err & note \\
+stratum & pairs & cos & rel.\ err & later layers \\
 \midrule
-same-layer L0 & 28 & 0.959 & 0.350 & 4 downstream layers \\
+same-layer L0 & 28 & 0.959 & 0.350 & 4 \\
 same-layer L1 & 28 & 0.947 & 0.354 & 3 \\
 same-layer L2 & 28 & 0.967 & 0.259 & 2 \\
 same-layer L3 & 28 & 0.996 & 0.092 & 1 \\
-same-layer L4 & 28 & 1.000 & 0.019 & 0 (= numerical floor) \\
+same-layer L4 & 28 & 1.000 & 0.019 & 0 (numerical floor) \\
 cross-layer (earlier $=$ L0/L1) & 42 & 0.97--0.98 & 0.20--0.23 & \\
 cross-layer (earlier $=$ L2/L3) & 18 & 1.00 & 0.02--0.04 & \\
 \bottomrule
@@ -245,7 +246,7 @@ radial fibers already sit at 160 numbers per token).
 the gain and blend ablations ran on the shipped initialization, which
 was $1.84\times10^8$ off at step 0 and left 10\% of the code unused.
 \item \textbf{The steering overlay at scale.} \texttt{steerembed.py} with
-SAE decoder rows, bilinear eigenfeatures and supervised diff-of-means
+SAE decoder directions, bilinear eigenfeatures and supervised diff-of-means
 vectors alongside Ontologizer directions; per-entry effect consistency
 across contexts; and the flat arm's near-perfect realization, halved
 collateral and better reproducibility weighed against its $1.79\times$

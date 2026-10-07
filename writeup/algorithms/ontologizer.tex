@@ -20,30 +20,30 @@
 	\Begin{
 		$E \leftarrow \mathrm{enc}\big(\mathrm{noise}_X(X)\big)$
 			\tcp*{Eq.~\ref{eq:noise_batchnorm}}
-		$R \leftarrow \mathbf{0} \in \mathbb{R}^{b \times e}$;\quad
-			$E \leftarrow E \oplus [1]$ \tcp*{if \texttt{resid\_const}}
-		\For{$\ell \leftarrow 0$ \KwTo $l-1$}{
+		$R \leftarrow \mathbf{0} \in \mathbb{R}^{b \times e}$
+			\tcp*{state 0: no layers applied}
+		$E \leftarrow E \oplus [1]$ \tcp*{if \texttt{resid\_const}}
+		\For(\tcp*[f]{layer $\ell$ reads state $\ell$, writes state $\ell+1$}){$\ell \leftarrow 0$ \KwTo $l-1$}{
 			$R_{\mathrm{prev}} \leftarrow R$\;
 			$R, \mathsf{P}_\ell, \boldsymbol{\psi}_\ell \leftarrow \dictenc_\ell(R, E)$\;
 			\If(\tcp*[f]{a decode per prefix}){deep supervision}{
-				$\hat{X}_\ell \leftarrow \mathrm{dec}\big(R - R_{\mathrm{prev}}
+				$\hat{X}_{\ell+1} \leftarrow \mathrm{dec}\big(R - R_{\mathrm{prev}}
 					+ \mathrm{sg}[R_{\mathrm{prev}}]\big)$
 					\tcp*{$\mathrm{dec}(R)$ without \texttt{deepsup\_sg}}
 			}
 			\If{$\ell < l-1$}{
 				$Y \leftarrow \mathrm{sg}\big[X - \mathrm{dec}(R)\big]$
 					\tcp*{Eq.~\ref{eq:L2}}
-				$E \leftarrow Y / (\mathrm{L2}(Y) + \epsilon)$
-					\tcp*{Eq.~\ref{eq:y_norm}; raw under
-					\texttt{resid\_gain}}
-				$E \leftarrow E \oplus [1]$
-					\tcp*{if \texttt{resid\_const}}
+				$E \leftarrow Y \oplus [1]$
+					\tcp*{if \texttt{resid\_const}; the next layer splits it
+					into gain and shape, Eq.~\ref{eq:y_norm} (normalized here
+					instead under \texttt{resid\_norm} alone)}
 			}
 		}
-		\lIf{not deep supervision}{$\hat{X}_{l-1} \leftarrow \mathrm{dec}(R)$}
+		\lIf{not deep supervision}{$\hat{X}_{l} \leftarrow \mathrm{dec}(R)$}
 		$\mathrm{MSE} \leftarrow \mathbb{E}_\ell\,
 			\mathrm{MSE}_{\mathbf{w}}(X, \hat{X}_\ell)$
-			\tcp*{Eq.~\ref{eq:mse}; each prefix weighted $1/l$}
+			\tcp*{Eq.~\ref{eq:mse}; over the prefixes computed, each weighted $1/l$}
 		$L \leftarrow \mathrm{MSE} + s_g\,\mathrm{MSE}_g
 			+ \mathbf{s} \cdot \sum_{\ell=0}^{l-1} \boldsymbol{\psi}_\ell$
 			\tcp*{Eq.~\ref{eq:loss_total}; $\mathrm{MSE}_g = 0$ without

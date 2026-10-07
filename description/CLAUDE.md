@@ -29,6 +29,9 @@ make            # pdflatex → biber → pdflatex ×2, then moves build/paper.pd
 make clean      # rm -rf build
 ```
 
+The Makefile runs `pdflatex`/`biber` through `nix develop` on the root `flake.nix` (skipped
+inside a nix shell); the system TeX Live install is not usable.
+
 Toolchain is **pdflatex + biber/biblatex** (not xelatex, not bibtex). It moved
 from xelatex when the paper adopted `flockpaper.sty` (the Flock Capital house
 style, which is pdflatex-only by design so arXiv can compile the submission).
@@ -132,13 +135,17 @@ changes there changes here too. In brief:
 
 Use lowercase characters for scalars, `$\mathbf{}$` for vectors, capitals for matrices,
 and `$\mathsf{}$` for 3-tensors or greater; a subscripted object takes the font of what it
-is (`$p_{ij}$` is an entry, `$\mathbf{p}_{ni}$` a vector slice).
-Use `$\tilde{}$` for noised variables and `$\hat{}$` for reconstructed variables.
+is (`$p_{ij}$` is an entry, `$\mathbf{p}_{ni}$` a vector slice). Vectors are columns
+(`$W_{\mathrm{dec}}\mathbf{r}$`), and a decoder's directions are its columns.
+Use `$\tilde{}$` only for noised variables and `$\hat{}$` only for reconstructed variables;
+the normalized layer input is the shape `$\mathbf{u}_\ell$`, not a tilde.
 Use `$\odot$` for elementwise multiplication and `$\oplus$` for concatenation.
 
 Counts: `$b$` batch, `$l$` layers, `$h$` heads, `$k$` entries per head, `$d$` input
-dimension, `$e$` dictionary width. Indices: sample `$n$`, layer `$\ell$` (0-indexed, with
-`$-1$` the state before layer 0), head `$i$`, entry `$j$`, coordinate `$q$`.
+dimension, `$e$` dictionary width. Indices: sample `$n$`, layer `$\ell$` (0-indexed),
+head `$i$`, entry `$j$`, coordinate `$q$`. States of the stack are indexed by the number of
+layers applied, so layer `$\ell$` reads state `$\ell$` and writes state `$\ell+1$`, and
+subscript 0 is always the initial state (`$\mathbf{r}_0 = \mathbf{0}$`, `$\mathbf{y}_0 = \mathbf{x}$`).
 
 `$X$` are input data in `$\mathbb{R}^{b \times d}$`.
 `$K$` are one sample's logits in `$\mathbb{R}^{h \times k}$`, and `$\mathsf{K}$` a batch's in
@@ -146,7 +153,7 @@ dimension, `$e$` dictionary width. Indices: sample `$n$`, layer `$\ell$` (0-inde
 `$\mathsf{F}$` are per-head outputs in `$\mathbb{R}^{b \times h \times e}$`.
 `$\mathbf{f}'$` is one sample's pooled output in `$\mathbb{R}^{e}$`, and `$F'$` a batch's in
 `$\mathbb{R}^{b \times e}$`.
-`$\mathbf{r}_\ell$` is the accumulator after layer `$\ell$`, and `$R$` the batched one in
+`$\mathbf{r}_\ell$` is the accumulator after `$\ell$` layers, and `$R$` the batched one in
 `$\mathbb{R}^{b \times e}$`.
 
 `$t$` is temperature. `$\sigma_X$` is SD of noise added to `$X$`.

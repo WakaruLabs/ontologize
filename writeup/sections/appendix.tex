@@ -1,5 +1,160 @@
 \appendix
 
+\section{Notation}
+\label{app:notation}
+
+This appendix collects the symbols used throughout, with where each is
+defined.
+
+\paragraph{Conventions.}
+Lowercase italic letters are scalars ($t$, $g_\ell$), bold lowercase
+letters vectors ($\mathbf{x}$, $\mathbf{a}_{ij}$), uppercase italic
+letters matrices ($W_{\mathrm{dec}}$, $D_i$), and sans-serif letters
+tensors of rank three or more ($\mathsf{D}$, $\mathsf{P}$). A subscripted
+object takes the font of what it is: $p_{nij}$ is an entry of
+$\mathsf{P}$, $\mathbf{p}_{ni}$ a vector slice of it, and
+$D_i := \mathsf{D}_{i\cdot\cdot}$ a matrix slice; where a lowercase entry
+would read as a count, it is bracketed, as in $[\mathsf{K}]_{nij}$.
+Batching adds a rank: one sample's assignments are
+$P \in \mathbb{R}^{h\times k}$, a batch's
+$\mathsf{P} \in \mathbb{R}^{b\times h\times k}$. Vectors are columns, so a
+matrix acts on the left ($W_{\mathrm{dec}}\mathbf{r}_\ell$, with
+$W_{\mathrm{dec}} \in \mathbb{R}^{d\times e}$ mapping $\mathbb{R}^e$ to
+$\mathbb{R}^d$); a batch stacks its samples as rows
+($X \in \mathbb{R}^{b\times d}$), so a batched product carries a
+transpose, $\hat{X} = R\,W_{\mathrm{dec}}^\top$, or is written as function
+application, $\mathrm{dec}(R)$. Sets are calligraphic
+($\mathcal{S}_n$, $\mathcal{G}$). Named statistics, losses and operators
+are roman ($\fvu$, $\mathrm{MSE}$, $\mathrm{KL}_m$, $\mathrm{dec}$,
+$\mathrm{sg}$), as are $H$, entropy, and $L$, the loss; the paragraph
+around Equation~\ref{eq:realized} follows information theory in writing
+random variables in uppercase. A hat marks a reconstruction
+($\hat{\mathbf{x}}_\ell$), a tilde a noised quantity
+($\tilde{\mathsf{F}}$, $\tilde{\mathbf{f}}_i$), a bar a mean
+($\bar{\mathbf{p}}_i$, $\bar\kappa$), and a prime on an index a second
+index of the same kind ($i'$, $j'$). $\odot$ is the elementwise product
+and $\oplus$ concatenation.
+
+\paragraph{Layers and states.}
+A layer is indexed by its position, $\ell = 0,\dots,l-1$, and a state of
+the stack by the number of layers applied, $0,\dots,l$: layer $\ell$
+reads state $\ell$ and writes state $\ell+1$. So $\mathbf{r}_0 =
+\mathbf{0}$ and $\mathbf{y}_0 = \mathbf{x}$, the final reconstruction is
+$\hat{\mathbf{x}}_l$, and the deep-supervision prefixes are
+$\hat{\mathbf{x}}_1,\dots,\hat{\mathbf{x}}_l$. Tables and prose name
+layers ("layer 0"), so a table's row for layer $\ell$ reports the prefix
+through it, $\hat{\mathbf{x}}_{\ell+1}$.
+
+\paragraph{Indices and sizes.}
+\begin{center}\small
+\begin{tabular}{@{}llll@{}}
+\toprule
+index & ranges over & size & \\
+\midrule
+$n$, $n'$ & samples & $b$ & batch size \\
+$\ell$, $\ell'$ & layers, $0,\dots,l-1$ & $l$ & layers \\
+$i$, $i'$ & heads of a layer & $h$ & heads per layer \\
+$j$, $j'$ & entries of a head & $k$ & entries per head \\
+$q$ & coordinates & $d$, $e$ & input dimension, dictionary width \\
+\midrule
+& & $r$ & fiber rank \\
+& & $d_{\mathrm{head}}$ & a head's slice of $e$ under $\mathtt{ConcatDictBlock}$ \\
+& & $k_{\mathrm{sel}}$ & entries kept by the \texttt{top}$k_{\mathrm{sel}}$ selection rule \\
+& & $h'$ & heads kept, probed or conjoined, out of $h$ \\
+& & $n_{\mathrm{const}}$ & constant coordinates appended to a layer's input \\
+& & $m$, $k_{\mathrm{SAE}}$ & SAE width, and active latents under $\topk$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+$k$ alone always counts Ontologizer entries.
+
+\paragraph{Symbols.}
+Grouped by the part of the paper that introduces them.
+
+\begingroup\small
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.25\linewidth}%
+>{\raggedright\arraybackslash}p{0.52\linewidth}%
+>{\raggedright\arraybackslash}p{0.15\linewidth}@{}}
+\toprule
+symbol & meaning & defined \\
+\midrule
+\endfirsthead
+\toprule
+symbol & meaning & defined \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+\bottomrule
+\endlastfoot
+\multicolumn{3}{@{}l}{\emph{The model}} \\[2pt]
+$\mathbf{x}$, $X$; $\bar{\mathbf{x}}$ & an input ($d$), a batch ($b\times d$); the data mean & Eqs.~\ref{eq:mse}, \ref{eq:fvu} \\
+$\mathrm{enc}$ & the encoder, the identity unless stated & Alg.~\ref{alg:ontologizer} \\
+$\mathbf{u}_\ell$, $\mathbf{u}$ & layer $\ell$'s shape: its input's unit direction, with the constant coordinate appended; what the classifier, router and fibers read ($\mathbf{u}$ within a layer) & Eq.~\ref{eq:y_norm} \\
+$\mathsf{W}$, $\mathsf{V}$ & the bilinear classifier's weight tensors & Eq.~\ref{eq:bilinearblock} \\
+$K$, $\mathsf{K}$ & logits, one sample's ($h\times k$) and a batch's & Eq.~\ref{eq:bilinearblock} \\
+$t$ & classifier temperature, $P = \mathrm{softmax}_k(K/t)$ & §\ref{sec:labels} \\
+$P$, $\mathsf{P}$; $\mathbf{p}_{ni}$, $p_{nij}$ & assignments, one sample's and a batch's; head $i$'s distribution, one entry's probability & §\ref{sec:labels} \\
+$\bar{\mathbf{p}}_i$ & head $i$'s mean assignment over the data, its usage & Eq.~\ref{eq:KL} \\
+$p_{\mathrm{drop}}$ & winner-dropout probability & §\ref{sec:bilinear} \\
+$\mathsf{D}$, $D_i$ & the dictionary ($h\times k\times e$), and head $i$'s slice ($k\times e$) & Eq.~\ref{eq:dictblock} \\
+$\mathbf{a}_{ij}$ & an atom: $\lvert\mathsf{D}_{ij\cdot}\rvert$, or $\mathsf{D}_{ij\cdot}$ when signed & Eq.~\ref{eq:dictblock} \\
+$G_i$ & head $i$'s dictionary Gram & Eq.~\ref{eq:cossim_b} \\
+$\mathbf{f}_i$; $F$, $\mathsf{F}$ & head $i$'s output ($e$); stacked over heads, and over heads and samples & Eq.~\ref{eq:dictblock} \\
+$\mathbf{f}'_\ell$, $F'$ & layer $\ell$'s pooled output, and a batch's & Eq.~\ref{eq:pool} \\
+$\boldsymbol{\gamma}$, $\gamma_i$, $\Gamma$ & router scales: per head, one head's, and a batch's & Eq.~\ref{eq:fiber} \\
+$U_{ij}$, $\mathbf{c}_i$; $C$, $\mathsf{C}$ & fiber basis ($e\times r$) and coordinates; one sample's coordinates, and a batch's & Eq.~\ref{eq:fiber} \\
+$\mathsf{A}$, $A_i$; $\beta$, $\rho$ & fiber readout, and head $i$'s; coordinate bound, norm cap & §\ref{sec:router-fiber} \\
+$g_\ell$, $g_n$ & gain: the norm of layer $\ell$'s input, or of one sample's & Eq.~\ref{eq:accum} \\
+$\mathbf{r}_\ell$, $R$ & accumulator after $\ell$ layers, and batched & Eq.~\ref{eq:accum} \\
+$W_{\mathrm{dec}}$, $\mathrm{dec}$ & the decoder shared by all layers & Eq.~\ref{eq:dec} \\
+$\hat{\mathbf{x}}_\ell$, $\hat{X}$ & reconstruction after $\ell$ layers; the final one, batched & Eq.~\ref{eq:dec} \\
+$\mathbf{y}_\ell$ & residual after $\ell$ layers, which is layer $\ell$'s input & Eq.~\ref{eq:L2} \\
+$\mathrm{sg}[\cdot]$ & stop-gradient & Eq.~\ref{eq:L2} \\
+$W_{\mathrm{flat}}$ & the code-to-output map of a model's flattened code, $\hat{\mathbf{x}} = W_{\mathrm{flat}}\mathbf{p}_{\mathrm{flat}}$; its columns are the entries' decode directions & §\ref{app:protocols} \\
+\addlinespace
+\multicolumn{3}{@{}l}{\emph{Noise, statistics and loss}} \\[2pt]
+$\varepsilon$; $\varepsilon_K$, $\varepsilon_F$ & a standard normal draw; the logit and feature noise terms & §\ref{sec:noise} \\
+$\sigma_X$, $\sigma_K$, $\sigma_F$ & noise scales for inputs, logits and features & §\ref{sec:noise} \\
+$\tilde{\mathsf{F}}$, $\tilde{\mathbf{f}}_i$ & noised per-head outputs & Eq.~\ref{eq:L1} \\
+$\epsilon$ & floating-point epsilon of the working dtype & Eq.~\ref{eq:y_norm} \\
+$\tau_{\mathrm{rev}}$ & dead-entry revival threshold & Alg.~\ref{alg:dictblock} \\
+$\mathrm{entropy}_k$, $H$ & entropy of a head's assignment in bits, and its mean over samples and heads & Eq.~\ref{eq:entropy} \\
+$\mathrm{cossim}_b$ & between-sample similarity of per-head outputs & Eq.~\ref{eq:cossim_b} \\
+$\mathrm{KL}_m$ & divergence of each head's batch-mean assignment from uniform, averaged over heads & Eq.~\ref{eq:KL} \\
+$\kappa_i$, $\bar\kappa$ & mean cosine between head $i$'s atoms, and its mean over heads (row collinearity) & Eq.~\ref{eq:stats}; §\ref{sec:rowcos} \\
+$\boldsymbol{\pi}_i$, $\omega$ & head $i$'s usage-weighted coordinate profile; the support overlap between heads & Eq.~\ref{eq:support} \\
+$\mathrm{L1}$, $\mathrm{L1}_K$, $\mathrm{L1}_S$ & feature L1; the classifier gate's; the router's & Eqs.~\ref{eq:L1}, \ref{eq:stats} \\
+$\mathrm{KL}_{\mathrm{pwak}}$, $\mathrm{L2}_{\mathrm{pwak}}$ & partition-consensus statistics & Eq.~\ref{eq:stats} \\
+$\boldsymbol{\psi}_\ell$ & layer $\ell$'s statistics row & Eq.~\ref{eq:stats} \\
+$\mathbf{w}$ & per-dimension MSE weights: inverse variance, normalized to mean one & Eq.~\ref{eq:mse} \\
+$\mathbf{s}$; $s_g$, $s_\omega$, $s_{\mathrm{L1}}$, \dots & loss weights: the vector paired with $\boldsymbol{\psi}_\ell$, and individual weights & Eq.~\ref{eq:loss_total} \\
+$\mathrm{MSE}$, $L$ & whitened reconstruction error; the total loss & Eqs.~\ref{eq:mse}, \ref{eq:loss_total} \\
+\addlinespace
+\multicolumn{3}{@{}l}{\emph{Evaluation and baselines}} \\[2pt]
+$\fvu$ & whitened fraction of variance unexplained & Eq.~\ref{eq:fvu} \\
+$\nu$, $\mathcal{S}_\nu$; $\mathbf{o}$ & deviations kept per head, and their entries; the origin, the mean assignment & Eq.~\ref{eq:topdev} \\
+$\mathrm{FVU}_{w,\mathrm{G}}$, $n_{\mathrm{bits}}$; $\lambda_j$, $\theta$ & the Gaussian reference at a bit budget; covariance eigenvalues, the water level & Eq.~\ref{eq:ratefloor} \\
+$H_{\mathrm{real}}$ & realized bits: the summed per-head entropy of usage & Eq.~\ref{eq:realized} \\
+$\mathcal{G}$; $\mathrm{exh}$, $\mathrm{exc}$ & a head or latent group; its exhaustiveness and exclusivity & Eq.~\ref{eq:exhaust} \\
+$\kappa(\mathcal{G})$, $\zeta_{\cos}$; $\mathbf{v}_j$ & a group's mean decode-direction cosine, and its standardized score; a decode direction & Eq.~\ref{eq:zcos} \\
+$(\cdot)^{(1)}$, $(\cdot)^{(2)}$ & the two models in a pairwise comparison & Eq.~\ref{eq:headmatch} \\
+$\mathbf{q}^{(1)}_i$; $[M^{\mathrm{part}}]_{ii'}$, $[M^{\mathrm{contr}}]_{ii'}$ & head $i$'s entry choices over the rows; the head-matching matrices & Eq.~\ref{eq:headmatch} \\
+$\boldsymbol{\phi}_{ni}$, $\mathrm{size}_i$ & head $i$'s output contribution on sample $n$; its share of the variance & Eqs.~\ref{eq:headmatch}, \ref{eq:headsize} \\
+$\mathbf{a}^{\mathrm{dec}}_{ij}$, $\bar{\mathbf{a}}^{\mathrm{dec}}_i$ & a decoded atom; head $i$'s usage-weighted mean & Eq.~\ref{eq:headsize} \\
+$\mathrm{recovered}$ & fraction of the next-token loss recovered & Eq.~\ref{eq:lossrec} \\
+$\eta^2$; $\mathcal{C}$, $n_{\mathrm{rows}}$ & variance explained by a partition; its cells, the rows scored & Eq.~\ref{eq:eta} \\
+$k_{\mathrm{probe}}$ & the sparse-probing budget & §\ref{app:protocols} \\
+$\mathbf{z}^\star_n$, $\mathcal{S}_n$; $W$, $\mathbf{b}$ & refitted coefficients on a frozen support; a linear code's decode directions (the columns of $W$) and offset & Eq.~\ref{eq:refit} \\
+$\mu_{ni}$; $j_1$, $j_2$; $J_i$; $\alpha$ & a head's logit margin between two entries; the Jacobian of head $i$'s logits; step strength & Eq.~\ref{eq:flip} \\
+$j^\star$, $\mathrm{dir}$, $\boldsymbol{\xi}_n$ & a steering target, a direction, the random control & Alg.~\ref{alg:steerembed} \\
+$\mathrm{assign}$ & the abstraction map from an input to its code & §\ref{sec:formal} \\
+$\mathbf{z}$, $z_{nj}$ & SAE latent activations & Eq.~\ref{eq:exhaust} \\
+$W_{\mathrm{enc}}$, $\mathbf{b}_{\mathrm{enc}}$; $W_{\mathrm{dec}}$, $\mathbf{b}_{\mathrm{dec}}$ & SAE encoder weights and bias; its decoder, whose columns are the latents' directions, and the pre-subtracted decoder bias & §\ref{sec:models} \\
+$\mathrm{L0}$, $s_{\mathrm{L1}}$, \texttt{aux\_k} & active SAE latents per sample; an L1 SAE's weight; dead-latent revival & §\ref{sec:models}; Table~\ref{tab:cfg-sae} \\
+\end{longtable}
+\endgroup
+
 \section{Supplementary methods}
 \label{app:methods}
 
@@ -79,9 +234,11 @@ its results in Section~\ref{sec:ste}.
 
 \paragraph{SAEs.}
 SAEs follow Gao et al.~\cite{gao2024}: pre-activation
-$\mathrm{relu}((\mathbf{x}-\mathbf{b}_{\mathrm{dec}})W_{\mathrm{enc}}+\mathbf{b}_{\mathrm{enc}})$
+$\mathrm{relu}(W_{\mathrm{enc}}(\mathbf{x}-\mathbf{b}_{\mathrm{dec}})+\mathbf{b}_{\mathrm{enc}})$,
+reconstruction $\hat{\mathbf{x}} = W_{\mathrm{dec}}\mathbf{z} + \mathbf{b}_{\mathrm{dec}}$,
 with $\topk$ selection of $k_{\mathrm{SAE}}$ latents, unit-norm decoder
-rows, tied initialization and \texttt{aux\_k} dead-latent revival, trained to
+directions (the columns of $W_{\mathrm{dec}}$), tied initialization and
+\texttt{aux\_k} dead-latent revival, trained to
 convergence; ReLU+L1 SAEs replace $\topk$ with an L1 penalty and neuron
 resampling.
 
@@ -207,9 +364,8 @@ pin the rest to the origin distribution $\mathbf{o}$, renormalize,
 \begin{equation}
 	\mathcal{S}_\nu := \operatorname*{top-}\nu_{\,j}\, \lvert p_{j} - o_{j}\rvert,
 	\qquad
-	p'_j := \begin{cases} p_j & j \in \mathcal{S}_\nu \\ o_j & j \notin \mathcal{S}_\nu \end{cases},
-	\qquad
-	\tilde{p}_{j} := \frac{p'_j}{\sum_{j'} p'_{j'}},
+	p'_j := \frac{\mathbf{1}[j \in \mathcal{S}_\nu]\,p_j + \mathbf{1}[j \notin \mathcal{S}_\nu]\,o_j}
+	             {\sum_{j' \in \mathcal{S}_\nu} p_{j'} + \sum_{j' \notin \mathcal{S}_\nu} o_{j'}},
 	\qquad \mathbf{o} := \mathbb{E}_n[\mathbf{p}_n],
 	\label{eq:topdev}
 \end{equation}
@@ -275,10 +431,10 @@ trained heads instead.
 \paragraph{Semantic coherence vs.\ contrast (\texttt{headcoh.py}).}
 The complement to categorical form: do a head's entries \emph{mean}
 similar things, or do they form a contrast set? Every entry has an exact
-decode direction in SONAR output space --- for the Ontologizer, the rows
+decode direction in SONAR output space --- for the Ontologizer, the columns
 of the linear map $W_{\mathrm{flat}}$ with
-$\hat{\mathbf{x}} = \mathbf{p}_{\mathrm{flat}}W_{\mathrm{flat}}$; for SAEs,
-decoder rows --- and SONAR space is a semantic sentence space, so
+$\hat{\mathbf{x}} = W_{\mathrm{flat}}\mathbf{p}_{\mathrm{flat}}$; for SAEs,
+decoder directions --- and SONAR space is a semantic sentence space, so
 within-head direction similarity is semantic similarity of what entries
 decode to. Per head or group $\mathcal{G}$ we report mean pairwise cosine
 and top-singular-value energy fraction, z-scored as $\zeta$ against
@@ -347,11 +503,13 @@ run~(1) selects on row $n$, $\mathbf{q}^{(1)}_i$ those selections over
 all rows, and $\boldsymbol{\phi}^{(1)}_{ni}$ the head's whitened decoded
 contribution on row $n$,
 \begin{equation}
+	\begin{gathered}
 	[M^{\mathrm{part}}]_{ii'} := \mathrm{NMI}(\mathbf{q}^{(1)}_{i}, \mathbf{q}^{(2)}_{i'}),
-	\qquad
+	\\
 	[M^{\mathrm{contr}}]_{ii'} := \cos\!\big(\mathrm{vec}_{n}[\boldsymbol{\phi}^{(1)}_{ni}
 	- \bar{\boldsymbol{\phi}}^{(1)}_{i}],\; \mathrm{vec}_{n}[\boldsymbol{\phi}^{(2)}_{ni'}
 	- \bar{\boldsymbol{\phi}}^{(2)}_{i'}]\big),
+	\end{gathered}
 	\label{eq:headmatch}
 \end{equation}
 where $\mathrm{NMI}(\mathbf{q}, \mathbf{q}') := 2I(\mathbf{q};\mathbf{q}')/
@@ -439,14 +597,15 @@ Gao-style refinement: freeze each sample's support $\mathcal{S}_n$ and solve the
 whitened least-squares coefficients on it,
 \begin{equation}
 	\mathbf{z}^{\star}_n := \operatorname*{arg\,min}_{\mathbf{z} :\, z_j = 0 \;\forall j \notin \mathcal{S}_n}
-	\big\lVert \mathbf{w}^{1/2} \odot \big(\mathbf{x}_n - \mathbf{b} - W^\top \mathbf{z}\big)\big\rVert^2,
+	\big\lVert \mathbf{w}^{1/2} \odot \big(\mathbf{x}_n - \mathbf{b} - W \mathbf{z}\big)\big\rVert^2,
 	\label{eq:refit}
 \end{equation}
-by masked normal equations (silent head slots forced to zero), and
-compare $\fvu$. Raw$-$refit is magnitude (shrinkage) error; refit is
-selection error. The Ontologizer shares the machinery via
-its exact linearity $\hat{\mathbf{x}} = \mathbf{p}_{\mathrm{flat}}
-W_{\mathrm{flat}}$, with $W_{\mathrm{flat}}$ measured by decoding one-hot
+where the columns of $W$ are the code's decode directions and
+$\mathbf{b}$ its offset, by masked normal equations (silent head slots
+forced to zero), and compare $\fvu$. Raw$-$refit is magnitude (shrinkage)
+error; refit is selection error. The Ontologizer shares the machinery via
+its exact linearity $\hat{\mathbf{x}} = W_{\mathrm{flat}}
+\mathbf{p}_{\mathrm{flat}}$, with $W_{\mathrm{flat}}$ measured by decoding one-hot
 constant codes; its supports are the top-$\nu$ deviation entries.
 Points with support $\geq d$ are excluded (underdetermined). Note the raw
 convention: \texttt{refit.py} truncates the soft forward's $P$
@@ -454,7 +613,7 @@ convention: \texttt{refit.py} truncates the soft forward's $P$
 letting later layers reclassify against the truncated prefix residual.
 
 \paragraph{Steering fidelity in text (\texttt{steerfid.py}).}
-Unit-normalized native steering directions --- SAE decoder rows, bilinear
+Unit-normalized native steering directions --- SAE decoder directions, bilinear
 eigenfeatures, or the Ontologizer's \texttt{withArgs} set-intervention
 delta --- applied at matched embedding magnitudes. Effect is cycle
 consistency: the steered decode is re-encoded through SONAR and the target
@@ -476,7 +635,7 @@ gradient of the target's margin over the head's current winner),
 \texttt{BilinearBlock.rev}), and \texttt{random}. Strength is a fraction
 of each row's norm. The \emph{native} step is the model's own
 intervention size: the output change of forcing the entry, or for an SAE
-latent its decoder row at the latent's mean nonzero activation.
+latent its decoder direction at the latent's mean nonzero activation.
 Algorithm~\ref{alg:steerembed} gives the procedure.
 
 \input{algorithms/steerembed}
@@ -1085,7 +1244,7 @@ code and a random input $\mathbf{X}$, write $A_{\ell i}$ for the entry
 head $(\ell,i)$ chooses and $\mathbf{A}$ for all of them. \emph{Realized
 bits} are the summed entropy of each head's usage over the data,
 \begin{equation}
-	\hat H := \sum_{\ell,i} H(A_{\ell i})
+	H_{\mathrm{real}} := \sum_{\ell,i} H(A_{\ell i})
 	= \sum_{\ell,i} \big(\log_2 k - \mathrm{KL}(\bar{\mathbf{p}}_{\ell i} \,\Vert\, \mathrm{uniform})\big)
 	\;\geq\; H(\mathbf{A}) = I(\mathbf{X}; \mathbf{A}),
 	\label{eq:realized}
@@ -1098,7 +1257,7 @@ exactly the information it carries about the input, and subadditivity
 puts the sum of marginal entropies above it, with equality only when the
 heads are independent. Realized bits therefore measure how evenly each
 head uses its entries, not how much the code says: two codes at the same
-$\hat H$ can carry different information if their heads are redundant to
+$H_{\mathrm{real}}$ can carry different information if their heads are redundant to
 different degrees, and the joint entropy, which needs a density estimate
 over $k^{lh}$ outcomes, is not measured here.
 
@@ -1196,7 +1355,7 @@ everything except the input.
 
 \paragraph{What the cascade contributes: pairing.}
 \texttt{blendablate.py} blends the subtracted term
-$\mathrm{dec}(\mathbf{r}_\ell)$ in layer $\ell{+}1$'s input toward a reference with
+$\mathrm{dec}(\mathbf{r}_\ell)$ in layer $\ell$'s input toward a reference with
 the same marginals and none of the pairing --- another row's
 reconstruction (shuffle), the mean, or Gaussian noise rescaled to the
 shuffle's per-sample magnitude --- without retraining:
@@ -1332,7 +1491,7 @@ $s_{\mathrm{kcossim}}$, averaged over 1000-step windows.}
 
 Table~\ref{tab:steersup} compares directions at an equal step. A real
 intervention has its own length: for a model, the output change of
-forcing the entry; for an SAE latent, its decoder row at its mean
+forcing the entry; for an SAE latent, its decoder direction at its mean
 activation; for the difference of means, the difference vector itself,
 which is the step activation addition takes. At those lengths (realized /
 collateral, median step as a fraction of $\lVert\mathbf{x}\rVert$, and each

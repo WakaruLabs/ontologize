@@ -17,9 +17,9 @@
   ]
 
   %% ---- gain-shape split ------------------------------------------------
-  \node[lab] (E)  at (-1.4,0) {$\tilde{\mathbf{y}}$};
+  \node[lab] (E)  at (-1.4,0) {$\mathbf{y}$};
   \node[blk] (GS) at ( 0.6,0) {gain--shape\\
-                               $\mathbf{u}=\tilde{\mathbf{y}}/\lVert\tilde{\mathbf{y}}\rVert$};
+                               $\mathbf{u}=\mathbf{y}/\lVert\mathbf{y}\rVert\oplus 1$};
   \draw[sig] (E) -- (GS);
   \coordinate (B) at (2.3,0);
   \draw[semithick] (GS.east) -- node[above,lab,pos=0.55]{$\mathbf{u}$} (B);
@@ -63,7 +63,7 @@
   \draw[sig] (CB) -- node[above,lab]{$\mathbf{f}'$} (MG);
   \draw[sig] (MG) -- (F);
   \draw[sig] (GS.south) -- (0.6,-4.1) -| node[pos=0.25,below,lab]
-       {$g=\lVert\tilde{\mathbf{y}}\rVert$, stop-gradient} (MG.south);
+       {$g=\lVert\mathbf{y}\rVert$, stop-gradient} (MG.south);
 
   %% ---- training-time hooks and the intervention interface (above) -------------
   \node[hook] (nk) at (5.9, 1.0) {$+\,\varepsilon_K$, winner dropout};

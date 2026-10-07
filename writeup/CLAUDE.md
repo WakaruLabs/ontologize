@@ -52,9 +52,9 @@ add amssymb, whose symbols clash with newpxmath's. It also provides the author b
 A failed run can leave a malformed `build/findings.bcf` that makes biber refuse every
 later run; `make clean && make` fixes it.
 
-TeX is not usable on the machine Claude Code usually runs on: `pdflatex` and `xelatex` are
-on the PATH, but the TeX Live install has no `texmf.cnf`, format files or `biber`. So edits
-are checked statically. After any structural change, run:
+The system TeX Live install is unusable (no `texmf.cnf`, format files or `biber`), so the
+Makefile runs `pdflatex`/`biber` through the root flake's `nix develop`; plain `make` works. For a quick
+check without a full build, after any structural change run:
 
 ```bash
 F="findings.tex sections/*.tex tikz/*.tex algorithms/*.tex config/*.tex"
@@ -65,6 +65,12 @@ grep -ohP '\\label\{\K[^}]+' $F | sort | uniq -d                              # 
 
 plus a begin/end and brace balance check per edited file, and confirm every
 `\includegraphics` path exists.
+
+After a full build, count problems with `grep -a`: the log contains bytes that make
+`grep` treat it as binary, and without `-a` a count prints nothing rather than 0, which
+reads as clean. `grep -a -c Overfull build/findings.log` is 28 as of 2026-10-06, all
+predating the notation pass (mostly the `config/` tables, 84--160pt too wide); an edit
+should not raise it.
 
 ## Document structure
 
@@ -140,9 +146,17 @@ font of what it *is*, not of its parent: $p_{nij}$ is a scalar entry of $\mathsf
 $\mathbf{p}_{ni}$ a vector slice, $D_i := \mathsf{D}_{i\cdot\cdot}$ a matrix slice. Name a
 slice that is used repeatedly rather than writing the parent with dots. Batching adds a
 rank: one sample's assignments $P \in \mathbb{R}^{h\times k}$, a batch's
-$\mathsf{P} \in \mathbb{R}^{b\times h\times k}$. Use `\tilde{}` for noised and `\hat{}` for
-reconstructed variables, `\odot` for elementwise multiplication and `\oplus` for
-concatenation. `../description/CLAUDE.md` defers to this section. Where a lowercase entry
+$\mathsf{P} \in \mathbb{R}^{b\times h\times k}$. Vectors are columns: a matrix acts on the
+left ($W_{\mathrm{dec}}\mathbf{r}$, $W_{\mathrm{enc}}(\mathbf{x}-\mathbf{b}_{\mathrm{dec}})$,
+$J_i\mathbf{v}$), shapes read (output, input), and a decoder's directions are its
+*columns* ("decoder directions" in prose, never "decoder rows"). A batch stacks samples as
+rows, so a batched product carries a transpose ($\hat X = RW_{\mathrm{dec}}^\top$) or is
+written as function application ($\mathrm{dec}(R)$). This is the package's convention
+(`Linear` stores (out, in)); `sae.py`'s on-disk `params.npz` stores `W_dec` as $m\times d$
+rows, which `from_legacy` transposes, so do not transcribe formulas from that layout. Use
+`\tilde{}` only for noised variables (not normalized ones: the normalized layer input is
+the shape $\mathbf{u}_\ell$) and `\hat{}` only for reconstructed variables, `\odot` for
+elementwise multiplication and `\oplus` for concatenation. `../description/CLAUDE.md` defers to this section. Where a lowercase entry
 would read as a reserved count ($k$, $m$), write it bracketed: $[M^{\mathrm{part}}]_{ii'}$,
 $[\mathsf{K}]_{nij}$. Pearson's $r$, $R^2$ and $t$-statistics are written in words, since
 $r$, $R$ and $t$ are reserved.
@@ -155,13 +169,39 @@ paragraph uses the information-theory convention of uppercase random variables
 
 **Indices and counts.** Sample $n$, layer $\ell$ (0-indexed, $\ell = 0,\dots,l-1$, matching
 "layer 0" in prose, tables and code), head $i$ and $i'$, entry $j$ and $j'$, coordinate
-$q$. Index $-1$ is the state before layer 0: $\mathbf{r}_{-1} := \mathbf{0}$,
-$\mathbf{y}_{-1} := \mathbf{x}$, so the gain $g_\ell := \mathrm{sg}[\mathrm{L2}(\mathbf{y}_{\ell-1})]$
-needs no special case. Counts: batch $b$, layers $l$, heads $h$, entries $k$, input
-dimension $d$, dictionary width $e$, fiber rank $r$, SAE width $m$. Inline settings use
-`{=}`: $k{=}32$, $e{=}1536$.
+$q$.
 
-**Reserved symbols.** Each has one meaning; do not reuse them.
+**Layers versus states.** A layer is indexed by its position, $\ell = 0,\dots,l-1$; a
+state of the stack by the number of layers applied, $0,\dots,l$. Layer $\ell$ reads state
+$\ell$ and writes state $\ell+1$, so subscript 0 always means the initial state and no
+index is ever $-1$:
+$\mathbf{r}_0 := \mathbf{0}$, $\mathbf{r}_{\ell+1} = \mathbf{r}_\ell + g_\ell\mathbf{f}'_\ell$,
+$\hat{\mathbf{x}}_\ell = \mathrm{dec}(\mathbf{r}_\ell)$,
+$\mathbf{y}_\ell = \mathrm{sg}[\mathbf{x} - \hat{\mathbf{x}}_\ell]$ (so $\mathbf{y}_0 = \mathbf{x}$),
+$g_\ell = \mathrm{sg}[\mathrm{L2}(\mathbf{y}_\ell)]$, the shape
+$\mathbf{u}_\ell = \mathbf{y}_\ell/\mathrm{L2}(\mathbf{y}_\ell) \oplus [1]$ (what the
+classifier, router and fibers read; $\mathbf{y}_\ell = g_\ell\mathbf{u}_\ell$ on the residual
+coordinates), and the final reconstruction is $\hat{\mathbf{x}}_l$. Layer-owned objects
+($\dictenc_\ell$, $\mathbf{f}'_\ell$, $g_\ell$, $\mathbf{u}_\ell$, $\boldsymbol{\psi}_\ell$)
+carry the layer index; the
+deep-supervision prefixes are $\hat{\mathbf{x}}_1,\dots,\hat{\mathbf{x}}_l$. This is
+TransformerLens's convention (block $\ell$ reads `resid_pre` $\ell$). The one off-by-one
+it leaves is at the tables: a row "layer $\ell$" reports the prefix through that layer,
+$\hat{\mathbf{x}}_{\ell+1}$.
+
+**Sites.** Say which side of a block a GPT-2 activation is on, in words: master's cache is
+`blocks.8.resid_post`, the residual *leaving* block 8; the `headline` branch's is
+`hidden_states[8]`, the residual *entering* block 8, one block earlier. In plain
+language, entering 0-indexed block 8 is "after the first eight blocks", not "entering the
+eighth".
+
+Counts: batch $b$, layers $l$, heads $h$, entries $k$, input dimension $d$, dictionary
+width $e$, fiber rank $r$, SAE width $m$. Inline settings use `{=}`: $k{=}32$, $e{=}1536$.
+
+**Reserved symbols.** Each has one meaning; do not reuse them. The appendix's Notation
+section (`app:notation`, the first section of `sections/appendix.tex`) is the reader's
+version of these rules and this table, with where each symbol is defined; when a symbol
+is added, renamed or retired, change both.
 
 | symbol | meaning |
 |---|---|
@@ -183,12 +223,13 @@ dimension $d$, dictionary width $e$, fiber rank $r$, SAE width $m$. Inline setti
 | $g_\ell$, $g_n$ | gain (scalar), per layer or per sample |
 | $\boldsymbol{\gamma}_n$, $\Gamma$ | router scales, one sample $(h)$ or a batch $(b,h)$; $\gamma_{ni}$ one head |
 | $\mathbf{f}_i$, $\mathbf{f}'$ | one head's output, and a layer's pooled output ($e$); $F$, $\mathsf{F}$ when stacked over heads, or heads and samples |
-| $\mathbf{r}_\ell$, $R$ | accumulator after layer $\ell$ (one sample), and batched |
-| $\hat{\mathbf{x}}_\ell$, $\mathbf{y}_\ell$ | prefix reconstruction and residual after layer $\ell$ |
+| $\mathbf{r}_\ell$, $R$ | accumulator after $\ell$ layers (one sample), and batched; $\mathbf{r}_0 = \mathbf{0}$ |
+| $\hat{\mathbf{x}}_\ell$, $\mathbf{y}_\ell$ | reconstruction and residual after $\ell$ layers; $\mathbf{y}_\ell$ is layer $\ell$'s input |
 | $\kappa_i$, $\bar\kappa$ | within-head mean atom cosine, and its mean over heads (formerly row collinearity $c$) |
 | $\boldsymbol{\psi}_\ell$ | layer $\ell$'s statistics row (Eq.~stats); $\mathbf{s}$ the loss-weight vector |
 | $\boldsymbol{\phi}_{ni}$ | head $i$'s output contribution on sample $n$ (`headcontrib.py`) |
-| $\hat H$ | realized bits, $\sum_{\ell,i} H(A_{\ell i})$ |
+| $H_{\mathrm{real}}$ | realized bits, $\sum_{\ell,i} H(A_{\ell i})$ (not $\hat H$: a hat means a reconstruction) |
+| $\mathbf{u}_\ell$, $\mathbf{u}$ | layer $\ell$'s shape: its input's unit direction with the constant coordinate (code: `U` from `gainshape_in`); $\mathbf{u}$ within one layer. Replaces the former $\tilde{\mathbf{y}}_\ell$ |
 | $n_{\mathrm{bits}}$ | bit budget in the Gaussian reference $\mathrm{FVU}_{w,\mathrm{G}}$ |
 | $n_{\mathrm{const}}$ | number of trailing constant input coordinates |
 | $k_{\mathrm{SAE}}$ | an SAE's active-latent count; $k$ alone is always Ontologizer entries |

@@ -13,8 +13,9 @@ followed by a dictionary. The classifier splits its input into $h$
 independent \emph{assignments}, each a distribution over one head's $k$
 \emph{entries}, and the dictionary maps each entry to an \emph{atom}.
 Each layer writes the assignment-weighted sum of its atoms to the
-accumulator; the accumulator $\mathbf{r}_\ell$ is decoded, and the residual
-$\mathbf{x} - \mathrm{dec}(\mathbf{r}_\ell)$ is passed to the next layer. Deep supervision
+accumulator; after each layer the accumulator is decoded and the residual
+passed on, so layer $\ell$ receives $\mathbf{x} - \mathrm{dec}(\mathbf{r}_\ell)$,
+where $\mathbf{r}_\ell$ holds the $\ell$ layers before it. Deep supervision
 constrains every prefix of the stack to reconstruct the input.
 
 Because entries within a head are mutually exclusive rather than
@@ -30,27 +31,31 @@ not (Section~\ref{sec:disjoint}).
 \caption[\texttt{Ontologizer} architecture]{\textbf{\texttt{Ontologizer} architecture.}
 	An \texttt{Ontologizer} consists of $l$ stacked \texttt{DictEnc} layers.
 	Each returns a pooled feature vector $\mathbf{f}'_\ell\in\mathbb{R}^{e}$,
-	which is written to a residual accumulator $\mathbf{r}$.
-	For each layer $\ell$, $\mathbf{r}_\ell = \mathbf{r}_{\ell-1} + \mathbf{f}'_\ell$,
-	starting from $\mathbf{r}_{-1} = \mathbf{0}$; a stop-gradient variant
-	($\mathrm{sg}$ on $\mathbf{r}_{\ell-1}$, available but off in every model
+	which is written, scaled by its input's gain $g_\ell$, to a residual
+	accumulator $\mathbf{r}$.
+	Layers are indexed $\ell = 0, \dots, l-1$ and accumulator states by the
+	number of layers applied: $\mathbf{r}_0 := \mathbf{0}$ and
+	$\mathbf{r}_{\ell+1} = \mathbf{r}_\ell + g_\ell\,\mathbf{f}'_\ell$, so
+	layer $\ell$ reads state $\ell$ and writes state $\ell+1$; a stop-gradient
+	variant ($\mathrm{sg}$ on $\mathbf{r}_\ell$, available but off in every model
 	reported here) would prevent gradient communication between layers.
 	$\mathrm{dec}$ is a linear decoder with shape $\mathbb{R}^{d \times e}$,
 	shared by all layers.
 	Deep supervision gives a coarse-to-fine representation where
 	the component encoded by previous layers is inaccessible to later layers.
-	At each layer $\ell$, $\hat{\mathbf{x}}_\ell = \mathrm{dec}(\mathbf{r}_\ell)$, and
+	After $\ell$ layers, $\hat{\mathbf{x}}_\ell = \mathrm{dec}(\mathbf{r}_\ell)$, and
 	the component left unexplained is
-	$\mathbf{y}_\ell = \mathbf{x} - \hat{\mathbf{x}}_\ell$.
-	The input to layer $\ell+1$ is
-	$\tilde{\mathbf{y}}_\ell
-	  = \mathbf{y}_\ell / \mathrm{L2}(\mathbf{y}_\ell) \oplus [1]$.
+	$\mathbf{y}_\ell = \mathbf{x} - \hat{\mathbf{x}}_\ell$, so $\mathbf{y}_0 = \mathbf{x}$.
+	Layer $\ell$ classifies the shape of its input,
+	$\mathbf{u}_\ell
+	  = \mathbf{y}_\ell / \mathrm{L2}(\mathbf{y}_\ell) \oplus [1]$, and scales
+	what it writes by the gain $g_\ell = \mathrm{L2}(\mathbf{y}_\ell)$.
 	Normalizing prevents exploding gradients from repeated
 	application of bilinear layers, each of which scales its input by
 	$\lVert\cdot\rVert^{2}$; the constant coordinate keeps the sign of
 	$\mathbf{y}_\ell$, which the bilinear form would otherwise lose.
-	$\mathrm{MSE}(\mathbf{x},\mathrm{dec}(\mathbf{r}_\ell))$ is computed separately for
-	each layer. The input-noise hook drawn on $\mathbf{x}$ is disabled in
+	$\mathrm{MSE}(\mathbf{x},\hat{\mathbf{x}}_\ell)$ is computed separately for
+	each prefix $\ell = 1, \dots, l$. The input-noise hook drawn on $\mathbf{x}$ is disabled in
 	every model reported here.
 }
 \label{fig:onto-stack}
@@ -61,9 +66,10 @@ not (Section~\ref{sec:disjoint}).
 Each $\dictenc$'s classifier is a multihead bilinear map
 ($\bilinearblock$) with weights
 $[\mathsf{W}, \mathsf{V}] \in \mathbb{R}^{2 \times h \times k \times d}$
-($d+1$ after the first layer; Equation~\ref{eq:y_norm}). It accepts
-$\mathbf{x} \in \mathbb{R}^d$, which may be a residual from a previous
-layer, and returns logits $K \in \mathbb{R}^{h \times k}$,
+($d+1$ with the constant coordinate of Equation~\ref{eq:y_norm}). It
+reads the shape $\mathbf{u}_\ell$ of the layer's input (the residual left
+by the layers before it, or $\mathbf{x}$ at layer 0), written $\mathbf{x}$
+below for a generic input, and returns logits $K \in \mathbb{R}^{h \times k}$,
 \begin{equation}
 	\bilinearblock([\mathsf{W},\mathsf{V}],\mathbf{x}) :=
 	\left(\sum^{d}_{q=1}W_{\cdot\cdot q}\,x_q\right)
@@ -225,29 +231,33 @@ form (Section~\ref{sec:prelim-orth}).
 \subsubsection{Decoder}
 \label{sec:decoder}
 Each layer's pooled output $\mathbf{f}'_\ell = \sum_{i=1}^{h}\tilde{\mathbf{f}}_{i}$ is scaled
-by its input's gain $g_\ell$ and added to the accumulator, which a single
-unbiased linear map shared by all layers decodes,
+by its input's gain $g_\ell$ and added to the accumulator, whose state
+after $\ell$ layers a single unbiased linear map shared by all layers
+decodes,
 \begin{equation}
-	\mathbf{r}_\ell = \sum_{\ell'=0}^{\ell} g_{\ell'}\,\mathbf{f}'_{\ell'},
+	\mathbf{r}_\ell = \sum_{\ell'=0}^{\ell-1} g_{\ell'}\,\mathbf{f}'_{\ell'},
 	\qquad
 	\hat{\mathbf{x}}_\ell = W_{\mathrm{dec}}\mathbf{r}_\ell,
 	\qquad
 	W_{\mathrm{dec}} \in \mathbb{R}^{d \times e}.
 	\label{eq:dec}
 \end{equation}
-The residual is stop-gradiented, so that lower layers cannot write a
-communication code into it instead of reducing it, and normalized
-before the next layer classifies it:
+The residual $\mathbf{y}_\ell$, layer $\ell$'s input, is stop-gradiented,
+so that lower layers cannot write a communication code into it instead
+of reducing it, and split into a gain and a shape $\mathbf{u}_\ell$, its
+unit direction with a constant coordinate appended, which is what layer
+$\ell$ classifies:
 \begin{equation}
 	\mathbf{y}_\ell = \mathrm{sg}\!\left[\mathbf{x} - \hat{\mathbf{x}}_\ell\right],
 	\qquad
-	\tilde{\mathbf{y}}_\ell =
+	\mathbf{u}_\ell =
 	\frac{\mathbf{y}_\ell}{\mathrm{L2}(\mathbf{y}_\ell) + \epsilon} \oplus [1],
 	\qquad
-	g_{\ell} := \mathrm{sg}\!\left[\mathrm{L2}(\mathbf{y}_{\ell-1})\right],
-	\quad \mathbf{y}_{-1} := \mathbf{x}.
+	g_{\ell} := \mathrm{sg}\!\left[\mathrm{L2}(\mathbf{y}_\ell)\right].
 	\label{eq:y_norm}
 \end{equation}
+The empty sum makes $\mathbf{r}_0 = \mathbf{0}$, so $\mathbf{y}_0 = \mathbf{x}$:
+layer 0 classifies the input itself.
 Under \texttt{resid\_gain} each layer classifies the direction of what it
 corrects, and the gain carries the magnitude it cannot see; without it
 $g_\ell = 1$.
@@ -296,11 +306,11 @@ per-dimension inverse variance normalized to mean one,
 	\label{eq:mse}
 \end{equation}
 under deep supervision: it is computed at every prefix
-$\hat{X}_\ell$ and averaged, so each layer must explain what earlier layers
-left unexplained. The auxiliary statistics are weighted and summed over
-layers,
+$\hat{X}_\ell$, $\ell = 1, \dots, l$, and averaged, so each layer must explain
+what earlier layers left unexplained. The auxiliary statistics are weighted
+and summed over layers,
 \begin{equation}
-	L := \frac{1}{l}\sum^{l-1}_{\ell=0}\mathrm{MSE}(X,\hat{X}_\ell)
+	L := \frac{1}{l}\sum^{l}_{\ell=1}\mathrm{MSE}(X,\hat{X}_\ell)
 	+ \sum^{l-1}_{\ell=0}\mathbf{s}\cdot\boldsymbol{\psi}_\ell,
 	\qquad
 	\boldsymbol{\psi}_\ell := \big[\, \mathrm{L1} \;\; \mathrm{cossim}_b \;\;
