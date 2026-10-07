@@ -41,6 +41,9 @@ def pretrained_transformer(model_id: str, dtype_str: str="bfloat16", dev=t.devic
     if dev is not None:
         encoder = encoder.to(dev)
 
+    # a module built directly (the SONAR branch) starts in training mode,
+    # and SONAR's config has dropout 0.1: every encode would be stochastic
+    encoder.eval()
     return encoder, tokenizer
 
 def tokenize(tokenizer, batch, *args, **kwargs):
