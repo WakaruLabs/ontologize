@@ -300,3 +300,6 @@ Code identifiers keep their names (`tags()`, `decode_tags.py`, `forward="labels"
 - A citation is tied to its word with `~\cite{...}`, never glued (`word\cite`).
 - Quotation marks are ``...''; a straight `"` prints as a closing quote.
 - Floats take `[tp]` or `[htbp]`, never `[h]` alone (LaTeX warns and changes it to `[ht]`).
+- Multi-panel figures carry bold panel letters (`letters()` in `make_figs.py`, the
+  `letter`/`place_letters` pair in `anatomy.py`), and captions name panels as (a), (b),
+  never "left", "right", "top" or "centre".

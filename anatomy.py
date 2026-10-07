@@ -320,6 +320,31 @@ def draw(z: dict, coords: int, pdf: Path, png: Path):
         for lb in ax.get_xticklabels() + ax.get_yticklabels():
             lb.set_fontfamily("monospace")
 
+    lettered = []
+
+    def letter(ax, ch, row):
+        """Queue a bold panel letter so captions can name panels by letter;
+        `place_letters` sets it once the layout is final."""
+        lettered.append((ax, ch, row))
+
+    def place_letters():
+        """Each letter left of its axes, level with the top of the tallest
+        title in its row: the square blocks shrink to their aspect, so the
+        axes' own tops do not line up."""
+        fig.canvas.draw()
+        r = fig.canvas.get_renderer()
+        inv = fig.transFigure.inverted()
+        tops, lefts = {}, {}
+        for ax, _, row in lettered:
+            t = inv.transform(ax.title.get_window_extent(r))
+            pos = ax.get_position()
+            tops[row] = max(tops.get(row, 0.0), t[1, 1], pos.y1)
+            # a title wider than its axes starts left of them
+            lefts[ax] = min(pos.x0, t[0, 0]) if ax.get_title() else pos.x0
+        for ax, ch, row in lettered:
+            fig.text(lefts[ax] - 0.01, tops[row], ch, fontsize=9,
+                     fontweight="bold", color=INK, ha="right", va="top")
+
     # p_bar strip
     ax_u = fig.add_subplot(top[0, 0])
     ax_u.bar(np.arange(k), pbar, width=1.0, color=INKMUT)
@@ -330,9 +355,10 @@ def draw(z: dict, coords: int, pdf: Path, png: Path):
     for s in ("top", "right", "left"):
         ax_u.spines[s].set_visible(False)
     ax_u.set_ylabel(r"$\bar p$", rotation=0, labelpad=8, va="center")
-    ax_u.set_title(r"head $i$'s assignments $P_i$ at temperature $t$"
+    ax_u.set_title(r"assignments $P_i$ at temperature $t$"
                    f"\nuse {use:.1f}, row {reff:.1f} of k={k}",
                    fontsize=7, pad=3)
+    letter(ax_u, "a", 0)
 
     # P_h
     ax_p = fig.add_subplot(top[1, 0])
@@ -361,6 +387,7 @@ def draw(z: dict, coords: int, pdf: Path, png: Path):
     ax_g.set_title(r"PWAK neighbor graph: $P_iP_i^\top\odot$ heat kernel"
                    f" (bandwidth {tau:g})\nself-edges zeroed, rows sum to 1",
                    fontsize=7, pad=3)
+    letter(ax_g, "b", 0)
     cbar(im, fig.add_subplot(top[1, 4]), "row weight (clipped at p99)",
          extend="max")
 
@@ -378,6 +405,7 @@ def draw(z: dict, coords: int, pdf: Path, png: Path):
     ax_c.set_xlabel("entry (by usage)")
     ax_c.set_title("atom cosines\n" + rf"$\kappa_i$ = {cosk:.3f}",
                    fontsize=7, pad=3)
+    letter(ax_c, "c", 1)
     cbar(im, fig.add_subplot(bot[1]))
 
     # overlap
@@ -404,6 +432,7 @@ def draw(z: dict, coords: int, pdf: Path, png: Path):
                        rf"$\omega$ = {offdiag_mean(S):.3f}",
                        fontsize=7, pad=3)
         cbar(im, cax_s)
+    letter(ax_s, "d", 1)
 
     # W_h column subset
     ax_w = fig.add_subplot(bot[6])
@@ -422,11 +451,13 @@ def draw(z: dict, coords: int, pdf: Path, png: Path):
                     + r"$\boldsymbol{\pi}_i$")
     ax_w.set_title(r"atoms $\mathbf{a}_{ij}$, column subset", fontsize=7,
                    pad=3)
+    letter(ax_w, "e", 1)
     cbar(im, fig.add_subplot(bot[7]))
 
     fig.text(0.10, 0.985, f"{z['run']}  step {int(z['step'])}  layer "
              f"{int(z['layer'])}  head {hd}  t={float(z['temperature']):g}",
              fontsize=6.5, fontfamily="monospace", color=INKMUT, va="top")
+    place_letters()
     fig.savefig(pdf, bbox_inches="tight")
     fig.savefig(png, dpi=200, bbox_inches="tight", facecolor="white")
     plt.close(fig)

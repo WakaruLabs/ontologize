@@ -5,6 +5,7 @@
 	statistic is stop-gradiented unless its loss term is enabled.}
 	\label{alg:dictblock}
 	\DontPrintSemicolon
+	\footnotesize
 
 	\KwIn{logits $\mathsf{K} \in \mathbb{R}^{b \times h \times k}$;
 		router scales $\Gamma \in \mathbb{R}_{\ge 0}^{b \times h}$ (all ones
@@ -38,10 +39,8 @@
 					\tcp*{tie the leader}
 			}
 		}
-		\ForEach(\tcp*[f]{winner dropout}){$(n,i)$ with probability
-			$p_{\mathrm{drop}}$}{
-			set head $i$'s largest logit on row $n$ to $-\infty$\;
-		}
+		each $(n,i)$: $\max_j [\mathsf{K}]_{nij} \leftarrow -\infty$ with probability
+			$p_{\mathrm{drop}}$ \tcp*{winner dropout}
 		$\mathsf{P} \leftarrow \mathrm{select}_k(\mathsf{K}/t)$
 			\tcp*{softmax, \texttt{top}$k_{\mathrm{sel}}$ or straight-through}
 		$H \leftarrow \mathbb{E}_{n,i}\,\mathrm{entropy}_k(\mathbf{p}_{ni})$
@@ -54,10 +53,8 @@
 				$\bar{\mathbf{p}}_i + (\mathbf{p}_{ni} - \bar{\mathbf{p}}_i)
 				/ (1 - p_{\mathrm{head}})$\;
 		}
-		\ForEach(\tcp*[f]{fiber dropout}){$(n,i)$ with probability
-			$p_{\mathrm{fib}}$}{
-			$\mathbf{c}_{ni} \leftarrow \mathbf{0}$\;
-		}
+		each $(n,i)$: $\mathbf{c}_{ni} \leftarrow \mathbf{0}$ with
+			probability $p_{\mathrm{fib}}$ \tcp*{fiber dropout}
 		$\mathbf{f}_{ni} \leftarrow \gamma_{ni} \sum_{j} p'_{nij}\,
 			\mathbf{a}_{ij}$ \tcp*{Eq.~\eqref{eq:dictblock}; interventions act
 			on $\mathbf{p}'$}

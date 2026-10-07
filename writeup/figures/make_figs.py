@@ -1,8 +1,11 @@
 """House-style result figures for the ontologize paper.
 
 Palette and rules follow the flock design system: pine / ink / paper and
-their mixes only, flat, no gridlines, left+bottom spines, serif text
-with mono tick labels. Outputs PDF (for the paper) and PNG (preview).
+their mixes, flat, no gridlines, left+bottom spines, serif text with mono
+tick labels. The one exception is LEAF, a lighter green for plotted data:
+pine and ink are both near-black, so pine series beside ink ones blur
+together. Pine is kept for eyebrows. Outputs PDF (for the paper) and PNG
+(preview).
 """
 
 import csv
@@ -15,6 +18,7 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import LogLocator, NullFormatter
 
 PINE = "#0B5132"
+LEAF = "#2A8C5A"     # data green: separable from ink by lightness
 INK = "#232329"
 PINE50 = "#86A791"   # pine 50% on paper
 PINE25 = "#C2D3C7"   # pine 25% on paper
@@ -60,10 +64,26 @@ def save(fig, name):
     print("wrote", name)
 
 
-def eyebrow(ax, text):
-    """The house '//' label, top-left above the axes."""
-    ax.text(0.0, 1.06, "// " + text, transform=ax.transAxes,
-            fontdict=dict(MONO, size=7.0), color=PINE, va="bottom")
+def eyebrow(ax, text, y=1.06):
+    """The house '//' label, top-left above the axes. In a lettered figure
+    it starts after the panel letter (see `letters`)."""
+    ax.annotate("// " + text, xy=(0.0, y), xycoords="axes fraction",
+                xytext=(0, 0), textcoords="offset points",
+                fontfamily="monospace", fontsize=7.0, color=PINE,
+                va="bottom")
+
+
+def letters(axes):
+    """Bold panel letters a, b, ... at the start of each panel's eyebrow
+    line, pushing the eyebrow right, so captions can name panels by letter.
+    Call after the eyebrows are drawn."""
+    for ch, ax in zip("abcdefgh", axes):
+        ax.annotate(ch, xy=(0.0, 1.06), xycoords="axes fraction",
+                    fontsize=9.0, fontweight="bold", color=INK,
+                    ha="left", va="bottom")
+        for t in ax.texts:
+            if t.get_text().startswith("// ") and t.xy == (0.0, 1.06):
+                t.xyann = (10, 0)
 
 
 def logx(ax):
@@ -91,7 +111,7 @@ hsamp = [float(r["mean_H_sample"]) for r in rows]
 fig, (a, b) = plt.subplots(1, 2, figsize=(5.4, 2.1))
 fig.subplots_adjust(wspace=0.32, bottom=0.21, top=0.86, left=0.09, right=0.99)
 
-a.plot(steps, meanz, color=PINE, lw=1.3, label="mean")
+a.plot(steps, meanz, color=LEAF, lw=1.3, label="mean")
 a.plot(steps, medz, color=PINE50, lw=1.1, label="median")
 a.axhline(2, color=INKMUT, lw=0.6, ls=(0, (2, 2)))
 a.text(steps[0], 2, " z=2", color=INKMUT, fontsize=6.5, va="bottom",
@@ -111,6 +131,7 @@ b.set_ylabel("per-sample entropy (bits)")
 b.set_ylim(3.2, 5.25)
 logx(b)
 eyebrow(b, "code softens")
+letters((a, b))
 save(fig, "fig-devinterp")
 
 # ---- freeze: transient in one run, persistent in the other -----------------
@@ -126,7 +147,7 @@ def load_freeze(name):
 
 hm = load_freeze("diag_hm_summary.csv")
 nc = load_freeze("diag_nc_summary.csv")
-shades = {0: PINE25, 1: PINE, 2: PINE50, 3: INKMUT, 4: INK}
+shades = {0: PINE25, 1: LEAF, 2: PINE50, 3: INKMUT, 4: INK}
 
 fig, (a, b) = plt.subplots(1, 2, figsize=(5.4, 2.1), sharey=True)
 fig.subplots_adjust(wspace=0.10, bottom=0.21, top=0.86, left=0.10, right=0.98)
@@ -138,8 +159,8 @@ for layer in sorted(hm):
 peak = max(hm[1], key=lambda p: p[1])
 a.annotate(f"{peak[1]}/32 at {peak[0]//1000}k", xy=peak,
            xytext=(peak[0] * 4, peak[1] - 1),
-           fontsize=6.8, family="monospace", color=PINE,
-           arrowprops=dict(arrowstyle="-", color=PINE, lw=0.6))
+           fontsize=6.8, family="monospace", color=LEAF,
+           arrowprops=dict(arrowstyle="-", color=LEAF, lw=0.6))
 a.set_xlabel("training step")
 a.set_ylabel("frozen heads (of 32)")
 a.set_ylim(-0.8, 31)
@@ -158,6 +179,7 @@ b.annotate(f"layer 4: {last[1]}/32 at\nlast checkpoint", xy=last,
 b.set_xlabel("training step")
 logx(b)
 eyebrow(b, "resid_nc: late, persistent")
+letters((a, b))
 save(fig, "fig-freeze")
 
 # ---- naturalness: arms indistinguishable -----------------------------------
@@ -168,7 +190,7 @@ for r in d["by_kind_mag"]:
     series.setdefault(r["kind"], []).append((r["mag"], r["chrf"]))
 style = {
     "dm": (INK, "-", "difference of means"),
-    "onto": (PINE, "-", "classification forcing"),
+    "onto": (LEAF, "-", "classification forcing"),
     "probe": (PINE50, "-", "linear probe"),
     "random": (INKMUT, (0, (2, 2)), "random direction"),
 }
@@ -200,7 +222,7 @@ ax.plot(taus, selfmatch, color=PINE50, ls=(0, (2, 2)), lw=1.2, marker="o",
         ms=2.6, label="same run, 2.6k steps apart (ceiling)")
 ax.plot(taus, sae, color=INK, lw=1.2, marker="o", ms=2.6,
         label="SAE k32, seed pair")
-ax.plot(taus, onto, color=PINE, lw=1.4, marker="o", ms=2.8,
+ax.plot(taus, onto, color=LEAF, lw=1.4, marker="o", ms=2.8,
         label="Ontologizer, seed pair")
 ax.set_xlabel(r"match threshold $\tau$ (activation frame)")
 ax.set_ylabel("matched-entry fraction")
@@ -215,7 +237,7 @@ save(fig, "fig-seed")
 
 VARIANTS = [
     ("diag_baseline_summary.csv", "control", INK, "-"),
-    ("diag_slow_anneal_summary.csv", "anneal 50k→150k", PINE, "-"),
+    ("diag_slow_anneal_summary.csv", "anneal 50k→150k", LEAF, "-"),
     ("diag_drop_ramp_summary.csv", "dropout 0.1→0.25", PINE50, (0, (4, 2))),
     ("diag_sdk_floor_summary.csv", "noise floor held", INKMUT, (0, (1, 1.5))),
 ]
@@ -240,7 +262,7 @@ save(fig, "fig-variants")
 
 HSIC_ARMS = [
     ("diag_baseline_summary.csv", "auxiliary losses (control)", INK, "-"),
-    ("diag_hsic_summary.csv", "HSIC replaces them", PINE, "-"),
+    ("diag_hsic_summary.csv", "HSIC replaces them", LEAF, "-"),
     ("diag_both_summary.csv", "HSIC + auxiliary", PINE50, (0, (4, 2))),
 ]
 fig, ax = plt.subplots(figsize=(5.4, 2.0))
@@ -273,24 +295,25 @@ AXES = [
 ]
 UNCONVERGED = {"h64_k32_l5"}
 fig, axs = plt.subplots(1, 3, figsize=(5.4, 1.9), sharey=True)
-fig.subplots_adjust(wspace=0.12, bottom=0.25, top=0.82, left=0.09, right=0.99)
+fig.subplots_adjust(wspace=0.12, bottom=0.25, top=0.78, left=0.09, right=0.99)
 for ax, (label, names, xs) in zip(axs, AXES):
     ys = [float(byname[n]["mean_z_cos"]) for n in names]
-    ax.plot(xs, ys, color=PINE, lw=1.2, zorder=1)
+    ax.plot(xs, ys, color=LEAF, lw=1.2, zorder=1)
     for n, x, y in zip(names, xs, ys):
         filled = n not in UNCONVERGED
-        ax.plot([x], [y], marker="o", ms=4.5, color=PINE,
-                mfc=PINE if filled else PAPER if False else "#F4F7F2",
-                mec=PINE, zorder=2)
+        ax.plot([x], [y], marker="o", ms=4.5, color=LEAF,
+                mfc=LEAF if filled else PAPER if False else "#F4F7F2",
+                mec=LEAF, zorder=2)
     ax.set_xlabel(label)
     ax.set_xticks(xs)
     monoticks(ax)
 axs[0].set_ylabel(r"mean within-head $z_{\cos}$")
 axs[0].set_ylim(-1.5, 23)
-eyebrow(axs[0], "coherence does not rise with parameter count")
+eyebrow(axs[0], "coherence does not rise with parameter count", y=1.17)
 axs[0].annotate("unconverged", xy=(64, float(byname["h64_k32_l5"]["mean_z_cos"])),
                 xytext=(34, 12), fontsize=6.6, family="monospace", color=INKMUT,
                 arrowprops=dict(arrowstyle="-", color=INKMUT, lw=0.6))
+letters(axs)
 save(fig, "fig-scaling")
 
 # ---- rl: a classification is a trainable reward ----------------------------
@@ -301,7 +324,7 @@ eff = [float(r["eff"]) for r in rows]
 coll = [float(r["coll"]) for r in rows]
 fig, (a, b) = plt.subplots(1, 2, figsize=(5.4, 1.9))
 fig.subplots_adjust(wspace=0.28, bottom=0.25, top=0.82, left=0.09, right=0.99)
-a.plot(steps, eff, color=PINE, lw=1.1)
+a.plot(steps, eff, color=LEAF, lw=1.1)
 a.set_xlabel("REINFORCE step")
 a.set_ylabel("effect (quantile units)")
 monoticks(a)
@@ -312,6 +335,7 @@ b.set_ylabel("collateral")
 b.set_ylim(0, 0.2)
 monoticks(b)
 eyebrow(b, "at flat collateral")
+letters((a, b))
 save(fig, "fig-rl")
 
 # ---- teaser: the proposition, measured -------------------------------------
@@ -322,21 +346,21 @@ fig.subplots_adjust(wspace=0.42, bottom=0.30, top=0.80, left=0.10, right=0.99)
 # (a) unsupervised steering on the shared frame (steer_overlay medians)
 arms = ["probe", "onto", "dm"]
 effs = [0.028, 0.146, 0.337]
-cols = [PINE50, PINE, INK]
+cols = [PINE50, LEAF, INK]
 a.bar(range(3), effs, color=cols, width=0.62)
 a.set_xticks(range(3))
 a.set_xticklabels(["probe", "onto", "dm\n(superv.)"], fontsize=6.8,
                   family="monospace")
 a.set_ylabel("steering effect (dm frame)")
 a.text(1, 0.155, "5× probe", ha="center", fontsize=6.6,
-       family="monospace", color=PINE)
+       family="monospace", color=LEAF)
 monoticks(a)
 eyebrow(a, "steers unsupervised")
 
 # (b) composition additivity by intervention layer (working notes)
 layers = [0, 1, 2, 3, 4]
 coss = [0.959, 0.947, 0.967, 0.996, 1.000]
-b.plot(layers, coss, color=PINE, lw=1.2, marker="o", ms=3.2)
+b.plot(layers, coss, color=LEAF, lw=1.2, marker="o", ms=3.2)
 b.axhline(1.0, color=INKMUT, lw=0.6, ls=(0, (2, 2)))
 b.set_xticks(layers)
 b.set_xlabel("intervention layer")
@@ -348,7 +372,7 @@ eyebrow(b, "interventions compose")
 # (c) code round-trip text fidelity (working notes, forced-English decodes)
 names = ["k32", "k160", "onto\nsoft", "k5120\n(dense)"]
 chrfs = [0.23, 0.285, 0.538, 0.856]
-ccols = [INKMUT, INKMUT, PINE, PINE25]
+ccols = [INKMUT, INKMUT, LEAF, PINE25]
 c.bar(range(4), chrfs, color=ccols, width=0.62)
 c.axhline(0.20, color=INKMUT, lw=0.6, ls=(0, (2, 2)))
 c.text(3.45, 0.155, "corpus\nfloor", fontsize=6.0, family="monospace",
@@ -357,7 +381,8 @@ c.set_xticks(range(4))
 c.set_xticklabels(names, fontsize=6.8, family="monospace")
 c.set_ylabel("round-trip chrF")
 monoticks(c)
-eyebrow(c, "codes preserve text")
+eyebrow(c, "codes keep text")
+letters((a, b, c))
 save(fig, "fig-teaser")
 
 # ---- training curves: held-out FVU and row cosine per checkpoint ------------
@@ -385,8 +410,8 @@ DOT = (0, (1, 1.5))
 # non-negativity x width on GPT-2 layer 8 (tab:orthant)
 cv = load_curves("orthant")
 ORTHANT = [
-    ("ste_h76_sgn", "signed, e=1536", PINE, "-"),
-    ("ste_h76_sgn768", "signed, e=768", PINE, DASH),
+    ("ste_h76_sgn", "signed, e=1536", LEAF, "-"),
+    ("ste_h76_sgn768", "signed, e=768", LEAF, DASH),
     ("ste_h76", "abs, e=1536", INK, "-"),
     ("ste_h76_e768", "abs, e=768", INK, DASH),
     ("ste_h76_cat32", r"concat, $d_{\mathrm{head}}$=32", INKMUT, DOT),
@@ -407,6 +432,7 @@ b.set_ylabel(r"mean row cosine $c$")
 fig.legend(*a.get_legend_handles_labels(), loc="lower center", ncols=3,
            handlelength=1.8, fontsize=6.6, bbox_to_anchor=(0.5, 0.0))
 eyebrow(b, "dictionary geometry")
+letters((a, b))
 save(fig, "fig-orthant-curves")
 
 # the s_Hm selection sweep: error flattens, hard arms keep decorrelating
@@ -416,7 +442,7 @@ SWEEP = [
     ("sweep_top4_shm", "top4", INK, DASH),
     ("sweep_top8_shm", "top8", INKMUT, "-"),
     ("sweep_top16_shm", "top16", INKMUT, DASH),
-    ("sweep_softmax_shm", "softmax", PINE, "-"),
+    ("sweep_softmax_shm", "softmax", LEAF, "-"),
 ]
 fig, (a, b) = plt.subplots(1, 2, figsize=(5.4, 2.2))
 fig.subplots_adjust(wspace=0.30, bottom=0.20, top=0.87, left=0.09, right=0.99)
@@ -431,12 +457,13 @@ a.legend(loc="upper right", handlelength=1.8, fontsize=6.6)
 eyebrow(a, "reconstruction")
 b.set_ylabel(r"mean row cosine $c$")
 eyebrow(b, "dictionary geometry")
+letters((a, b))
 save(fig, "fig-sweep-curves")
 
 # depth vs. flat at the fixed initialization, with seed replicas
 cv = load_curves("depth")
 DEPTH = [
-    ("ste_h76_init01", r"5$\times$76", PINE, "-"),
+    ("ste_h76_init01", r"5$\times$76", LEAF, "-"),
     ("ste_h76_i01_s43", r"5$\times$76, seed 43", PINE50, DASH),
     ("ste_l1_h380_i01_hm1e4", r"1$\times$380, $s_{H_m}$=1e-4", INK, "-"),
     ("ste_l1_h380_i01", r"1$\times$380", INKMUT, "-"),
@@ -471,7 +498,7 @@ def load_logged(family, *cols):
 cv = load_logged("bits", "bits", "nominal")
 BITS = [
     ("ste_h76", "5×76, shipped init", INK, "-"),
-    ("ste_h76_init01", "5×76, fixed init", PINE, "-"),
+    ("ste_h76_init01", "5×76, fixed init", LEAF, "-"),
     ("ste_h76_i01_s43", "5×76, fixed init, seed 43", PINE50, DASH),
     ("ste_l1_h380_i01_hm1e4", "1×380, fixed init", INKMUT, DOT),
 ]
@@ -492,7 +519,7 @@ save(fig, "fig-realized-bits")
 # the row-collinearity setpoint: the watched max, and the applied multiplier
 cv = load_logged("kcos", "cossim_k_max", "s_kcossim")
 KCOS = [("ste_h76", "uncontrolled", INK, "-"),
-        ("ste_h76_kcos", "setpoint 0.5", PINE, "-")]
+        ("ste_h76_kcos", "setpoint 0.5", LEAF, "-")]
 fig, (a, b) = plt.subplots(1, 2, figsize=(5.4, 2.2))
 fig.subplots_adjust(wspace=0.34, bottom=0.20, top=0.87, left=0.09, right=0.99)
 for arm, label, col, ls in KCOS:
@@ -504,9 +531,10 @@ a.legend(loc="lower left", handlelength=1.8, fontsize=6.6)
 logx(a)
 eyebrow(a, "pulled to 0.5, it stays there")
 pts = cv["ste_h76_kcos"]
-b.plot([p[0] for p in pts], [1e3 * p[2] for p in pts], color=PINE, lw=1.0)
+b.plot([p[0] for p in pts], [1e3 * p[2] for p in pts], color=LEAF, lw=1.0)
 b.set_xlabel("training step")
 b.set_ylabel(r"applied $s_{\mathrm{kcossim}}$ ($\times 10^{-3}$)")
 logx(b)
 eyebrow(b, "one burst, then idle")
+letters((a, b))
 save(fig, "fig-kcos")

@@ -809,9 +809,9 @@ Figure~\ref{fig:anatomy-softmax} shows one such soft head of
 	block by block.} The blocks of Figure~\ref{fig:anatomy} for head 0 of
 	layer 0 of \texttt{resid\_nc} (step 372{,}600, $t{=}0.03$) on $n{=}384$
 	eval-tail rows; one seed. Usage is spread across entries (use 29.9 of
-	$k{=}32$), but each row is a near-uniform mixture (row 23.5), so the
-	neighbor graph is close to the heat kernel alone, with hub columns
-	rather than blocks. $\kappa_i{=}0.138$, $\omega{=}0.901$, $e{=}4096$.
+	$k{=}32$), but each row is a near-uniform mixture (row 23.5; a), so
+	the neighbor graph (b) is close to the heat kernel alone, with hub
+	columns rather than blocks. $\kappa_i{=}0.138$, $\omega{=}0.901$, $e{=}4096$.
 	As in Figure~\ref{fig:anatomy}, the model was not trained with the
 	statistics that use the graph.}
 \label{fig:anatomy-softmax}
@@ -1044,10 +1044,10 @@ freeze.}
 
 \begin{figure}[htbp]\centering
 \includegraphics[width=\linewidth]{figures/fig-freeze.pdf}
-\caption{Frozen heads per layer over training. Left:
+\caption{Frozen heads per layer over training. (a)
 \texttt{resid\_nc\_hm}, with the mean-entropy bonus, has only an early
 annealing transient, peaking at 22/32 in layer 1 at step 10k and
-recovering to zero everywhere by step 30k. Right: \texttt{resid\_nc}
+recovering to zero everywhere by step 30k. (b) \texttt{resid\_nc}
 develops a post-anneal layer-4 freeze from ${\sim}$190k that persists
 through its last checkpoint.}
 \label{fig:freeze}
@@ -1127,9 +1127,9 @@ soft.
 \begin{figure}[htbp]\centering
 \includegraphics[width=\linewidth]{figures/fig-devinterp.pdf}
 \caption{The 448-checkpoint training history of \texttt{resid\_nc\_hm}.
-Left: within-head coherence of refit end-to-end directions, z-scored
+(a) Within-head coherence of refit end-to-end directions, z-scored
 against size-matched nulls; rise, peak near step 370k, partial
-relaxation. Right: mean per-sample classification entropy returns toward
+relaxation. (b) Mean per-sample classification entropy returns toward
 the 5-bit maximum after the annealing transient.}
 \label{fig:devinterp}
 \end{figure}
@@ -1152,9 +1152,9 @@ weak evidence either way; full-length retrains are the missing control.
 
 \begin{figure}[htbp]\centering
 \includegraphics[width=\linewidth]{figures/fig-scaling.pdf}
-\caption{Head coherence against each parameter axis of the star sweep,
-all runs at 4 epochs (62k steps). No axis delivers the predicted rise;
-the entries axis falls monotonically. The open marker is the unconverged
+\caption{Head coherence against each parameter axis of the star sweep:
+heads (a), entries (b) and layers (c), all runs at 4 epochs (62k steps). No axis delivers the predicted rise;
+the entries axis falls monotonically. The open marker in (a) is the unconverged
 $h{=}64$ run.}
 \label{fig:scaling}
 \end{figure}
@@ -1247,8 +1247,8 @@ race against paired steering has been run.
 \includegraphics[width=\linewidth]{figures/fig-rl.pdf}
 \caption{REINFORCE against a single frozen classification's
 quantile-normalized score, in-embedding tier. The policy saturates the
-reward within roughly 40 steps while collateral stays at its starting
-level.}
+reward within roughly 40 steps (a) while collateral stays at its
+starting level (b).}
 \label{fig:rl}
 \end{figure}
 
@@ -1601,9 +1601,9 @@ steering is already saturated (0.992 vs.\ 0.966).
 \begin{figure}[tp]\centering
 \includegraphics[width=\linewidth]{figures/fig-kcos.pdf}
 \caption{The row-collinearity setpoint on the shipped stack, from the
-training log. Left: the max within-head row cosine over heads and layers,
+training log. (a) The max within-head row cosine over heads and layers,
 the statistic the controller watches, against the uncontrolled twin; the
-dotted line is the 0.5 setpoint. Right: the applied multiplier
+dotted line is the 0.5 setpoint. (b) The applied multiplier
 $s_{\mathrm{kcossim}}$, averaged over 1000-step windows.}
 \label{fig:kcos}
 \end{figure}
@@ -2250,8 +2250,8 @@ tail, so their $\fvu$ is in-sample.
 \begin{figure}[tp]\centering
 \includegraphics[width=\linewidth]{figures/fig-sweep-curves.pdf}
 \caption{The selection sweep's \texttt{\_shm} arms over training:
-$\fvu$ on the (in-sample) tail, scored from each checkpoint, and mean
-within-head row cosine $\bar\kappa$. The soft arm's $\bar\kappa$ flattens near 0.36 while its
+(a) $\fvu$ on the (in-sample) tail, scored from each checkpoint, and
+(b) mean within-head row cosine $\bar\kappa$. The soft arm's $\bar\kappa$ flattens near 0.36 while its
 error keeps falling; the hard arms keep decorrelating.}
 \label{fig:sweep-curves}
 \end{figure}
