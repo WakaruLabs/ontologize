@@ -62,20 +62,16 @@ This proposal assumes:
 	\item \textbf{Weights are themselves interpretable} (for certain architectural choices).
 	\item \textbf{Clustering rather than decomposition.} Representations
 	are grouped into mutually contrastive categories rather than
-	decomposed into independently firing features. The clustering framing
-	is counterintuitive unless you arrive at it from Leiden-style
-	community detection.
+	decomposed into independently firing features.
 	\item \textbf{Categorical structure is imposed on features.}
 	\item \textbf{Interpretability gets a cheap forward pass.}
 	\item \textbf{Concepts compose linearly.} Concepts must be additive to be
 	useful.
 	\item \textbf{Dictionary learning is all you need}, in a nonstandard
 	form: the dictionary forms a basis for the representation rather than
-	a target.
-	\item \textbf{Representations are not themselves quantized.} The
-	learned dictionary serves as a basis for the representation rather
-	than a discrete codebook; quantization comes from sharpening of
-	classifications over that basis.
+	a target or a discrete codebook. Representations are not themselves
+	quantized; quantization comes from sharpening the classifications
+	over that basis.
 	\item \textbf{Interpreting a well trained model is the same problem
 	as interpreting the data and training tasks.}
 \end{itemize}
@@ -85,9 +81,6 @@ Two of these are pivotal: some version of the linear representation
 hypothesis is true, and latent space is in some way ``natural''.
 
 \subsection{Concerns}
-
-\paragraph{Timelines could be too short}
-We'll just have to go faster.
 
 \paragraph{Contrastive classifiers might not be expressive enough}
 This is what the reconstruction benchmarks are for. A soft code pays
@@ -122,7 +115,7 @@ basis vectors even if the representations are dense mixtures. A soft
 code's argmax is not its code, though (Section~\ref{sec:prelim-pareto}),
 which is why the hard code exists.
 
-\paragraph{Ontofeatures could be too polysemantic}
+\paragraph{Entries could be too polysemantic}
 Orthogonality and categorical constraints give a theoretical inductive
 bias to monosemanticity. As long as they have decent explanatory power
 we can do eigendecomposition; polysemanticity should decrease with
@@ -131,20 +124,18 @@ parameter count, and there are several directions to increase parameters
 in head coherence with parameter count (working notes); full-length
 retrains are the missing control.
 
-\paragraph{Interpreting ontofeatures could be otherwise intractable}
+\paragraph{Interpreting entries could be otherwise intractable}
 This would imply the universality hypothesis is false and is highly
 correlated with intractability of other interpretability agendas.
 Submodules could be interpretable even if features aren't.
 
 \paragraph{Training could be intractable}
-A hard code trains, but needed relative logit noise, a temperature
-matched to the logit scale and an initialization fix worth a third of
-its error (Section~\ref{sec:prelim-ste}).
+A hard code trains, though only with stabilizers whose derivation is in
+the working notes (Section~\ref{sec:prelim-ste}).
 
 \paragraph{Doesn't converge in the limit}
-Collapse in one layer would propagate down the stack. Candidate causes:
-underparameterization, a really bad optimizer, bad initialization, a bad
-loss term.
+Collapse in one layer would propagate down the stack. Heads do freeze in
+the softmax models; the working notes trace the cause.
 
 \paragraph{Not orthogonal in the limit}
 The support overlap $\omega$ (Section~\ref{sec:disjoint}) penalizes heads

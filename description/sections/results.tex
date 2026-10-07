@@ -111,12 +111,7 @@ below a $\topk$ SAE at matched bits that also transmits 160
 coefficients, and $30\%$ below an L1 SAE spending $3.4\times$ the bits
 plus 519 coefficients (Table~\ref{tab:prelim-ste}). It sits $3.1\times$
 above the Gaussian reference for its rate, so at least that far from the
-best 1900-bit code. A third of that error came from one scalar: the
-non-negative dictionary's atoms sum coherently, so the shipped
-initialization started the residual cascade at $1.84\times10^{8}$, and
-scaling the dictionary so each layer starts near the identity took the
-error from $0.229$ to $0.154$ and brought every head to near-uniform use of
-its entries.
+best 1900-bit code.
 
 \begin{table}[tp]\centering\small
 \begin{tabular}{@{}lrrr@{}}
@@ -162,7 +157,8 @@ disturbing $2.6\%$ of other heads, against $23\%$ for a random step.
 \label{sec:prelim-steer}
 Steering works when it is measured where it acts. In the soft model a
 decode-direction step of a quarter of the input's norm realizes the
-target entry on 77--82\% of rows, against a $3\%$ chance rate; the text
+target entry on 82\% of rows, against 2\% for a random step of the same
+length; the text
 round trip had hidden this, since an unsteered decode--re-encode cycle
 preserves a head's choice on only about $12\%$ of rows. Interventions
 set directly on a head compose: the decode change of a joint two-head

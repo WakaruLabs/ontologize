@@ -5,9 +5,7 @@
 Before heads are named they must be reproducible, or it must be known
 which are. The first layer partly is, and one head in it recurs in every
 run; what lets that head recur when no other does, and whether training
-pressure can extend it, are the first questions. The next training runs
-use 128 entries per head and atoms without a decoder, the configuration
-in which the GPT-2 hard codes were strongest, at two seeds each.
+pressure can extend it, are the first questions.
 
 \subsection{Steering at scale}
 The embedding-space steering instrument with SAE decoder directions and
@@ -34,8 +32,3 @@ already has it.
 \subsection{Transcoder adaptation}
 The architecture currently reconstructs an embedding. Adapting it to map
 between layers, as transcoders do, is the obvious next target.
-
-\subsection{A fresh evaluation set}
-The softmax Ontologizers trained on the evaluation tail, so every
-comparison against them is in-sample. Closing that needs a new source,
-since the deterministic mC4 stream is exhausted by the training cache.

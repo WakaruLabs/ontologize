@@ -117,9 +117,7 @@ finds the softmax model's discrete reading far from its embedding. The
 the forward pass selects the one-hot argmax, and the backward pass uses
 $\mathrm{softmax}(K/t)$ as its surrogate gradient\cite{bengio2013}. A
 hard code transmits exactly $l\,h\log_2 k$ bits and no continuous
-coefficients. Training under a hard forward needs relative logit noise,
-a temperature matched to the logit scale, and a dictionary initialized
-so that the stack starts near the identity (working notes).
+coefficients.
 
 From the assignments $P_n$ of each sample $n$ we collect per-sample
 entropy, in bits,

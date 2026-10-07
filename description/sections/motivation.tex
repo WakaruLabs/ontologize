@@ -7,19 +7,9 @@ We can't currently look inside a model and make any conclusions about its goals 
 This is a major limitation on almost all proposed alignment agendas.
 
 \paragraph{Inner misalignment}
-We don't currently know how to specify a \href{https://arbital.com/p/diamond_maximizer/}{robust goal for a model}.
+We don't currently know how to specify a robust goal for a model.
 Because goal space is large, we should expect
-\href{https://www.lesswrong.com/s/r9tYkB2a8Fp4DN8yB/p/FkgsxrGf3QxhfLWHG}{goal misgeneralization as the default outcome}
-\footnote{The most straightforward path to doom is for a goal-driven superintelligence to seize power to prevent its optimization target from being changed.
-In slow takeoff or multipolar scenarios, there is also a ``decoherence'' risk, 
-where comparably weak specialist optimizers disempower humanity without any coherent strategy.
-Consider for instance superpersuaders which fall short of superintelligence.
-A viral chatbot might have very simple objectives to optimize engagement and distribution of itself.
-While such a scenario would be an especially 
-\href{https://www.lesswrong.com/posts/mSF4KTxAGRG3EHmhb/ai-x-risk-approximately-ordered-by-embarrassment}{undignified} 
-end for humanity,
-it broadly fits with both natural language being much easier than anyone expected and
-AI labs being much less safety conscious than anyone expected.}.
+goal misgeneralization as the default outcome.
 
 
 \subsubsection{Limits of natural abstractions}
@@ -52,8 +42,7 @@ is unlikely to be done soon otherwise.
 
 \subsubsection{What a solution would look like}
 Mechinterp plausibly offers the best path to a robust alignment
-solution despite
-\href{https://www.lesswrong.com/posts/tEPHGZAb63dfq2v8n/how-useful-is-mechanistic-interpretability}{criticisms}.
+solution despite criticisms.
 The case rests on
 \begin{enumerate}
     \item \textbf{decomposability} Mechinterp allows alignment to be
@@ -65,19 +54,18 @@ The case rests on
 \end{enumerate}
 The most straightforward mechinterp alignment solutions are
 \begin{enumerate}
-    \item \href{https://www.alignment.org/blog/arcs-first-technical-report-eliciting-latent-knowledge/}{eliciting latent knowledge (ELK)}
+    \item eliciting latent knowledge (ELK)
     Directly inferring a model's ontology.
     \label{it:elk}
-    \item \href{https://www.alignment.org/blog/mechanistic-anomaly-detection-and-elk/}{mechanistic anomaly detection (MAD)}
+    \item mechanistic anomaly detection (MAD)
     Detecting when a model has ``unusual'' thoughts.
     \label{it:mad}
 \end{enumerate}
 Both of these can be considered
-\href{https://arbital.greaterwrong.com/p/ontology_identification/}{ontology identification}
-subproblems. MAD requires mapping between the model's activations and
+ontology identification subproblems. MAD requires mapping between the model's activations and
 the model's ontology. ELK requires mapping between the model's ontology
 and human ontology. These are hard but not intractable problems.
-Recently, \href{https://devinterp.com/}{developmental interpretability}
+Recently, developmental interpretability
 (devinterp) techniques have enabled identification of ``developmental
 stages'' corresponding to learning specific
 tasks\cite{hoogland2024developmental}. This is strong evidence that
@@ -107,7 +95,7 @@ Broadly, the goals are to
   the latent concept space increases
 \end{enumerate}
 A prerequisite for all of these is the ability to express a
-\href{https://plato.stanford.edu/entries/ontological-commitment/}{metaontology}
+metaontology
 which can identify latent concepts in activation space.
 
 
