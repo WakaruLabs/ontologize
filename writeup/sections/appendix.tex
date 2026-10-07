@@ -565,8 +565,10 @@ compares agreement at matched head size.
 
 \paragraph{Text fidelity (\texttt{textfid.py}).}
 The ``loss recovered'' analogue: decode $\mathbf{x}$ and $\mathrm{recon}(\mathbf{x})$
-through M2M100 (forced \texttt{eng\_Latn}, both rescaled to the reference
-SONAR norm, so the metric sees direction error) and report
+through M2M100 (forced \texttt{eng\_Latn}, both rescaled to SONAR's median
+mean-pooled norm over the corpus, 0.307, so the metric sees direction
+error; every decode in this document uses that scale, near which
+decode-then-re-encode fidelity peaks) and report
 chrF~\cite{popovic-2015-chrf} and exact-match between the decodes, plus the
 decoder's teacher-forced per-token NLL of the \emph{original's} decode
 under the original (ceiling), the reconstruction, and the corpus-mean
@@ -835,12 +837,12 @@ coherence; they have not been inspected further.
 The description-text view of coherence is uninformative on plain
 summaries, which are generic for about 77\% of entries and 49\% of
 $k_{\mathrm{SAE}}{=}32$ latents and so inflate the permutation null
-(pooled $\zeta{=}{-}0.25$). On the contrastive descriptions it acquires
-signal. Within-head description similarity clears the head-membership
-permutation null for the single-layer hard variant
-($\zeta{=}{+}2.42$, 62 within-head pairs), is marginal for Ontologizer
-heads (${+}1.92$, 155 pairs), and is absent for the single-layer soft
-variant (${+}0.79$, 217 pairs). Against the geometry, this is the pattern
+(Ontologizer heads $\zeta{=}{+}0.14$). On the contrastive descriptions it
+acquires signal. Within-head description similarity clears the
+head-membership permutation null for Ontologizer heads
+($\zeta{=}{+}2.03$, 155 within-head pairs), is marginal for the
+single-layer hard variant (${+}1.55$, 62 pairs), and is weaker still for
+the single-layer soft variant (${+}1.09$, 217 pairs). Against the geometry, this is the pattern
 that alternative values of one shared dimension predict: Ontologizer
 entries' decode directions repel while their described contents weakly
 cohere. It is also the first measure to separate the Ontologizer from its
@@ -870,18 +872,20 @@ finds it reproduces far \emph{worse} than SAE features do.
 \begin{table}[htbp]\centering\small
 \begin{tabular}{@{}lrrr@{}}
 \toprule
-model & chrF & exact & NLL (ceil.\ $\approx$1.56--1.63, floor $\approx$3.8) \\
+model & chrF & exact & NLL (ceiling 1.560, floor 3.999) \\
 \midrule
-corpus-mean floor & $\approx$0.20 & 0 & 3.60--3.89 \\
-k32 tier (incl.\ p5, m11264) & 0.23 & 0.00 & 3.00--3.08 \\
-k32\_bl          & 0.21 & 0.00 & 3.19 \\
-k160 / g160top1  & 0.28--0.29 & 0.00 & 2.34--2.37 \\
-onto soft        & 0.538 & 0.090 & 1.658 (gap 0.026) \\
-g160softmax      & 0.592 & 0.119 & 1.563 (gap 0.007) \\
-k5120            & 0.856 & 0.592 & 1.587 (gap 0.000) \\
+corpus-mean floor & 0.176 & 0 & 3.999 \\
+k32 tier (incl.\ p5, m11264) & 0.23 & 0.00 & 3.16--3.18 \\
+k32\_bl          & 0.204 & 0.00 & 3.365 \\
+k160 / g160top1  & 0.28 & 0.00 & 2.41--2.43 \\
+onto soft        & 0.552 & 0.070 & 1.585 (gap 0.025) \\
+g160softmax      & 0.591 & 0.094 & 1.568 (gap 0.008) \\
+k5120            & 0.841 & 0.562 & 1.560 (gap 0.000) \\
 \bottomrule
 \end{tabular}
-\caption{Downstream text fidelity, 512 tail rows, forced English decodes.}
+\caption{Downstream text fidelity, 512 tail rows, forced English decodes.
+The NLL ceiling is the same for every model, the original's decode
+scored under the original.}
 \end{table}
 
 The FVU--text mapping is sharply nonlinear: $\fvu \approx 0.5$ decodes to
@@ -890,7 +894,7 @@ Ontologizer's soft code and \texttt{g160softmax} are near the likelihood
 ceiling --- almost all decodable content survives. Across the eleven
 Ontologizer runs with both numbers (the selection sweep and the
 straight-through arms; Table~\ref{tab:steerfid}), ``loss recovered'' is a
-monotone function of $\fvu$ (rank correlation essentially $-1$), so text
+monotone function of $\fvu$ (rank correlation $-1$), so text
 fidelity is a check that the whitened objective transports to text, not
 an independent axis --- and it does. This matters doubly under the
 steering frame: a steering primitive that routes through a code which
@@ -959,58 +963,64 @@ Section~\ref{sec:entangle} shows, widespread collateral.
 \subsection{Steering through the text round trip}
 \label{sec:steertext}
 
-On the SAE side only a smoke-scale run exists (k32, 3 features):
-cycle-consistency effect rises with magnitude (1.2 $\to$ 1.8 over
-magnitudes 0.5 $\to$ 1.0 relative to the unit input norm; hit rate 0.67
-$\to$ 0.89), while collateral at these magnitudes ($\approx$0.75) is near
-the random-direction control. Across the Ontologizer selection sweep and
-the straight-through arm, at 64 features per run:
+Across the Ontologizer selection sweep, the straight-through arm and the
+$k_{\mathrm{SAE}}{=}32$ SAE, at 64 features per run:
 
 \begin{table}[htbp]\centering\small\setlength{\tabcolsep}{4pt}
 \begin{tabular}{@{}lrrrrrrrr@{}}
 \toprule
 run & $\fvu$ & chrF & loss rec. & net @0.25 & @0.5 & @1.0 & hit @1.0 & rand.\ hit \\
 \midrule
-top8          & 0.0370 & --- & 0.940 & 0.131 & 0.303 & \textbf{0.580} & 0.713 & 0.277 \\
-top2          & 0.3516 & 0.248 & 0.532 & 0.125 & 0.289 & 0.474 & 0.564 & 0.217 \\
-top16         & 0.0052 & --- & --- & 0.065 & 0.119 & 0.243 & 0.313 & 0.139 \\
-top8\_shm     & 0.0287 & 0.416 & 0.956 & 0.072 & 0.096 & 0.193 & 0.291 & 0.142 \\
-softmax\_shm  & 0.0007 & 0.694 & 0.998 & 0.032 & 0.072 & 0.146 & 0.150 & 0.064 \\
-top2\_shm     & 0.1911 & 0.303 & 0.738 & 0.022 & 0.070 & 0.141 & 0.154 & 0.041 \\
-top4\_shm     & 0.0761 & 0.360 & 0.897 & --- & --- & --- & --- & --- \\
-\texttt{ste\_h76} & 0.2293 & 0.282 & 0.702 & 0.072 & 0.096 & 0.107 & 0.068 & 0.062 \\
-top1          & 0.7190 & 0.180 & 0.123 & 0.011 & 0.026 & 0.048 & 0.069 & 0.020 \\
+top8          & 0.0370 & --- & 0.941 & 0.203 & 0.404 & \textbf{0.652} & 0.734 & 0.359 \\
+top2          & 0.3516 & 0.246 & 0.521 & 0.072 & 0.277 & 0.509 & 0.578 & 0.109 \\
+top16         & 0.0052 & --- & --- & 0.027 & 0.110 & 0.363 & 0.381 & 0.156 \\
+top4\_shm     & 0.0761 & 0.375 & 0.892 & 0.112 & 0.140 & 0.248 & 0.242 & 0.062 \\
+softmax\_shm  & 0.0007 & 0.706 & 0.997 & 0.058 & 0.128 & 0.242 & 0.211 & 0.094 \\
+top2\_shm     & 0.1911 & 0.301 & 0.742 & 0.018 & 0.071 & 0.196 & 0.150 & 0.016 \\
+top8\_shm     & 0.0287 & 0.437 & 0.954 & $-0.015$ & 0.074 & 0.176 & 0.330 & 0.094 \\
+top1          & 0.7190 & 0.170 & 0.126 & 0.047 & 0.104 & 0.064 & 0.102 & 0.109 \\
+\texttt{ste\_h76} & 0.2293 & 0.295 & 0.695 & 0.033 & 0.045 & $-0.020$ & 0.055 & 0.125 \\
+\midrule
+SAE \texttt{k32} & 0.4994 & --- & --- & 0.048 & 0.187 & 0.402 & 0.260 & 0.016 \\
 \bottomrule
 \end{tabular}
 \caption{Text fidelity and text-cycle steering (\texttt{steerfid.py},
-\texttt{--n-features 64}) across selection rules. Net effect is feature
+\texttt{--n-features 64}) across selection rules, and the
+$k_{\mathrm{SAE}}{=}32$ SAE under the same protocol. Net effect is feature
 effect minus the random-direction control. A further run
-(\texttt{topk4\_rev}, $\fvu$ 0.164) reads net 0.520 at 1.0.}
+(\texttt{topk4\_rev}, $\fvu$ 0.164) reads net 0.636 at 1.0.}
 \label{tab:steerfid}
 \end{table}
 
 Steerability does not track reconstruction. The best steerer is
 \texttt{top8} at $\fvu$ 0.037, the most faithful model
-(\texttt{softmax\_shm}) is among the weakest, and every \texttt{\_shm}
-variant steers about three times worse than its twin (\texttt{top2} 0.474
-vs.\ \texttt{top2\_shm} 0.141; \texttt{top8} 0.580 vs.\ 0.193). The
-straight-through arm's effect is positive but nearly flat in magnitude,
-and its hit rate (0.068) barely clears its own random control (0.062).
-Two cautions on this instrument. Sixteen features is too few to quote: at
-16 features the straight-through arm's net effect was negative at every
-magnitude and at 64 it is positive throughout. And the hit rate is not
+(\texttt{softmax\_shm}) steers at about a third of its rate, and every
+\texttt{\_shm} variant steers about three times worse than its twin
+(\texttt{top2} 0.509 vs.\ \texttt{top2\_shm} 0.196; \texttt{top8} 0.652
+vs.\ 0.176). The straight-through arm is the weakest of all: its raw
+effect is flat in magnitude (0.018, 0.014, 0.027) and no larger than a
+random direction's, and its hit rate (0.055) does not clear its own
+random control (0.125). The SAE steers in text by the same measure (net
+0.402 at 1.0, hit 0.260 against 0.016 for random).
+Two cautions on this instrument. Sixteen features is too few to quote,
+and even at 64 the straight-through arm's net effect changes sign with
+its random control: it was negative at every magnitude at 16 features
+and is $+0.033$, $+0.045$, $-0.020$ here, so its text-cycle effect is
+within the instrument's noise. And the hit rate is not
 comparable across hard and soft codes: under a hard code an activation
 is exactly 0 or 1, so a ``hit'' demands the argmax land exactly on the
 target entry, where a soft code need only cross a fractional threshold.
 
 \paragraph{The text cycle is too weak to support conclusions.} Measured on
-an \emph{unsteered} round trip (512 held-out rows), the cycled embedding
-retains barely more than the shared corpus direction: $\cos(\mathbf{x},
-\mathrm{cycle}(\mathbf{x}))$ is $0.378$ for \texttt{ste\_h76} and $0.380$ for
-softmax, against $0.314$ between random pairs, and a head's argmax
-survives the round trip on 12.1\% and 10.5\% of rows against 3.1\%
-chance (34.8\% at layer 0, 4.6\% by layer 4 for the hard code). A
-perfect intervention could therefore be observed at most $\sim$12\% of
+an \emph{unsteered} round trip (the last 512 cache rows), the cycled
+embedding retains barely more than the shared corpus direction:
+$\cos(\mathbf{x}, \mathrm{cycle}(\mathbf{x}))$ is $0.382$, against
+$0.318$ between random pairs (rows sit at 0.561 to the corpus mean, and
+$0.561^2$ is the random-pair cosine). A head's argmax survives the round
+trip on 12.9\% of rows for \texttt{ste\_h76} and 10.8\% for the softmax
+model, against 3.1\% chance; for the hard code survival falls with depth,
+from 36.2\% at layer 0 to 4.8\% by layer 4. A
+perfect intervention could therefore be observed at most $\sim$13\% of
 the time --- the same order as the hit rates the instrument reports.
 Reconstruction into embedding space is fine; generation is where the
 signal goes.
@@ -1189,35 +1199,39 @@ Ontologizer's partitions reproduce not at all.}
 \subsection{Steering against supervised baselines}
 \label{sec:steeroverlay}
 
-A matched-budget overlay on \texttt{resid\_nc\_hm}'s final checkpoint
-compares forced classifications against difference-of-means and
-linear-probe directions on language steering, with a random-direction
-floor (Table~\ref{tab:steer-overlay}). Each arm wins its own effect frame,
-as expected. On the shared difference-of-means frame, forcing a
-classification moves decodes along the target direction $0.43\times$ as
-far as supervised steering does, and well ahead of probe directions. Every
-arm's collateral, supervised steering included, sits at the
-random-direction floor ($0.72$--$0.78$), the same floor the text round
-trip shows for SAE steering (Section~\ref{sec:steertext}). On naturalness the arms are so far indistinguishable
-(Figure~\ref{fig:naturalness}): chrF against unsteered decodes falls from
-${\sim}0.35$ at magnitude $0.25$ to ${\sim}0.15$ at $1.0$ for the
-difference-of-means and forced-classification arms, with probe and random
-decaying in parallel from ${\sim}0.38$ to ${\sim}0.20$. A blinded
-human-rating sheet (120 items) is prepared but unscored.
+A matched-budget overlay on \texttt{resid\_nc\_hm} at step 4{,}380{,}000,
+the last checkpoint kept, compares forced classifications against
+difference-of-means and linear-probe directions on language steering,
+with a random-direction floor (Table~\ref{tab:steer-overlay}). Each arm
+wins its own effect frame, as expected. On the shared difference-of-means
+frame, forcing a classification moves decodes along the target direction
+$0.64\times$ as far as supervised steering does, and $4.2\times$ as far as
+probe directions. No arm reliably reaches the target language: the
+median hit rate is $0.06$ for the difference of means and 0 for the other
+arms. Every arm's collateral,
+supervised steering included, sits at the random-direction floor
+($0.70$--$0.78$), the same floor the text round trip shows for SAE
+steering (Section~\ref{sec:steertext}). On naturalness the arms are so
+far indistinguishable (Figure~\ref{fig:naturalness}): chrF against
+unsteered decodes falls from ${\sim}0.37$ at magnitude $0.25$ to
+${\sim}0.15$ at $1.0$ for the difference-of-means and
+forced-classification arms, with probe and random decaying in parallel
+from $0.38$--$0.40$ to $0.19$--$0.20$. A blinded human-rating sheet (120
+items) is prepared but unscored.
 
 \begin{table}[htbp]\centering\small
 \begin{tabular}{@{}lrrrr@{}}
 \toprule
 arm & effect (native) & effect (dm frame) & hit rate & collateral \\
 \midrule
-difference of means    & 0.337 & 0.337 & 0.250 & 0.757 \\
-classification forcing & 0.394 & 0.146 & 0.125 & 0.778 \\
-linear probe           & 0.293 & 0.028 & 0.000 & 0.720 \\
-random direction       & ---   & ---   & ---   & 0.721 \\
+difference of means    & 0.474 & 0.474 & 0.062 & 0.752 \\
+classification forcing & 0.399 & 0.302 & 0.000 & 0.776 \\
+linear probe           & 0.294 & 0.072 & 0.000 & 0.701 \\
+random direction       & ---   & ---   & ---   & 0.705 \\
 \bottomrule
 \end{tabular}
 \caption{Language steering under matched intervention budgets on
-\texttt{resid\_nc\_hm}'s final checkpoint; medians over 24
+\texttt{resid\_nc\_hm} at step 4{,}380{,}000; medians over 24
 language--magnitude conditions per arm. Effect is displacement along the arm's
 own direction (native) and along the shared difference-of-means direction
 (dm frame); hit rate is the fraction of steered decodes reaching the
@@ -1261,12 +1275,13 @@ over \texttt{resid\_nc} (step 372{,}600) tests the claim directly; its
 frozen top layer (Section~\ref{sec:freeze}) is a caveat for any layer-4
 heads in the sample. Descriptions decoded from dictionary parameters fail
 at the partition level as they do per latent (median self accuracy
-$0.02$). Activation-grounded head descriptions do no better than a null
-pairing at this sample size (20 heads per condition, median accuracy
-$0.083$ against $0.125$), and a head's detection accuracy is uncorrelated
-with the mean describability of its latents (Spearman $+0.07$ over 30
-head--lens pairs, 15 heads under each lens; neither per-lens value
-distinguishable from zero). The two lenses disagree and neither shows
+$0.000$, as is the null's). Activation-grounded head descriptions do no
+better than a null pairing at this sample size (20 heads per condition,
+median accuracy $0.083$ against $0.125$, where guessing one value per head
+scores about $0.11$), and a head's detection accuracy is uncorrelated
+with the mean describability of its latents (Spearman $+0.12$ over 30
+head--lens pairs; $+0.25$ under activations and $+0.05$ under
+parameters, 15 heads each, $p{=}0.37$ and $0.86$). The two lenses disagree and neither shows
 above-chance head-level signal, so the mis-measurement argument predicts
 an advantage this sample does not deliver.
 
@@ -1572,7 +1587,7 @@ reading is to steer layer 0 by gradient and the middle layers by decode.
 \paragraph{Head-health levers and steering.} Three levers were tried on
 the shipped stack. \emph{Mean-entropy pressure is not what costs
 steerability}: a twin trained at $s_{\mathrm{KL}_m}{=}10^{-6}$ has raw
-text-cycle effect $0.039$ against $0.029$, both an order of magnitude
+text-cycle effect $0.043$ against $0.027$, both an order of magnitude
 below \texttt{top2}/\texttt{top8} at the same weight, so hard selection,
 not the bonus, is the cost (removing the bonus does cost head usage:
 imbalance 5.00 bits against 2.71). \emph{Head-independence pressure
@@ -2166,9 +2181,10 @@ in four of five layers. That is long training sparsifying each head, not a
 partition --- at spread 0.13 a head still uses four times its share --- and
 the same configuration at 372.6k steps is dense and at its null. The
 predecessor penalty ($s_{\mathrm{cossim}_h}{=}10^{-6}$, or $10^{-5}$ for
-\texttt{resid\_nc}) did not produce the partition; no run has trained with
-$\omega$ itself as a loss term. \texttt{ConcatDictBlock} is the only route
-to disjoint support here, and it is disjoint by construction.
+\texttt{resid\_nc}) did not produce the partition, and none of these
+models trained with $\omega$ itself as a loss term.
+\texttt{ConcatDictBlock} is the only route to disjoint support here, and
+it is disjoint by construction.
 
 It is not the decoder's null space. Splitting each atom into its row-space
 (visible) and null-space parts and scoring each against the same null, the
@@ -2182,6 +2198,23 @@ model's atoms are dense across SONAR's output coordinates, and all fifteen
 rows land within 7\% of their nulls, the trained and discovered SAE groups
 included. The comparison $\omega$ was built for exists only in the
 dictionary space, which the SAE variants do not have.
+
+\paragraph{Training with $\omega$.} Penalizing $\omega$ does produce the
+partition, but only where reconstruction cannot see it. On GPT-2 with a
+signed dictionary ($e{=}1536$; three epochs, one seed per weight), it
+falls below its null from $s_\omega{=}10^{-4}$ (ratio 0.61, and 0.15 at
+$10^{-3}$), at a cost of 10\%, 21\% and 43\% of held-out $\fvu$ for
+$s_\omega{=}10^{-5}$, $10^{-4}$ and $10^{-3}$. Decoded, nothing changes:
+every arm sits 8--10\% above its null, as the unpenalized one does. The
+penalized arms move 73--95\% of atom energy into the decoder's null
+space, where each head's profile is a few large coordinates of its own;
+the visible part stays dense and overlaps more than its null as the
+weight rises. A square decoder ($e{=}768$) gives the same table to within
+a few percent, because it grows a near-null space instead (condition
+number $1.0\times10^4$ unpenalized, $5.1\times10^5$ at $10^{-3}$), and
+each penalized head puts nearly all its energy in directions the decoder
+shrinks tenfold or more. Measured on the dictionary weights, $\omega$ can
+be gamed through any learned decoder.
 
 \subsection{Concatenated heads}
 \label{sec:concatgeom}

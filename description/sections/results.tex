@@ -160,7 +160,7 @@ decode-direction step of a quarter of the input's norm realizes the
 target entry on 82\% of rows, against 2\% for a random step of the same
 length; the text
 round trip had hidden this, since an unsteered decode--re-encode cycle
-preserves a head's choice on only about $12\%$ of rows. Interventions
+preserves a head's choice on only $11$--$13\%$ of rows. Interventions
 set directly on a head compose: the decode change of a joint two-head
 intervention points where the sum of the single interventions points
 (median cosine at least $0.95$ in every layer, exact in the last, where
@@ -170,8 +170,8 @@ their content, a causally verified existence proof on one seed.
 
 Against supervised steering on language, under matched intervention
 budgets (Table~\ref{tab:steer-overlay}), forcing an entry moves decodes
-along the supervised difference-of-means direction $0.43\times$ as far
-as supervised steering itself and $5\times$ further than linear-probe
+along the supervised difference-of-means direction $0.64\times$ as far
+as supervised steering itself and $4\times$ as far as linear-probe
 directions. Every arm's collateral, supervised steering included, sits
 at the random-direction floor.
 
@@ -180,10 +180,10 @@ at the random-direction floor.
 \toprule
 arm & eff (native) & eff (dm frame) & hit rate & collateral \\
 \midrule
-difference of means    & 0.337 & 0.337 & 0.250 & 0.757 \\
-entry forcing          & 0.394 & 0.146 & 0.125 & 0.778 \\
-linear probe           & 0.293 & 0.028 & 0.000 & 0.720 \\
-random direction       & --    & --    & --   & 0.721 \\
+difference of means    & 0.474 & 0.474 & 0.062 & 0.752 \\
+entry forcing          & 0.399 & 0.302 & 0.000 & 0.776 \\
+linear probe           & 0.294 & 0.072 & 0.000 & 0.701 \\
+random direction       & --    & --    & --   & 0.705 \\
 \bottomrule
 \end{tabular}
 \caption{Language steering under matched intervention budgets on the
@@ -256,7 +256,7 @@ partitions rather than latent magnitudes. Blinded detection F1 of
 latent descriptions tracks code density, not architecture (correlation
 $-0.89$ with log density across six models), and the Ontologizer sits on
 the SAE trend. Descriptions decoded from parameters alone fail outright
-(F1 $0.02$ for the Ontologizer and at most $0.16$ for any model, against
+(F1 $0.04$ for the Ontologizer and at most $0.14$ for any model, against
 an always-match null of $0.67$): a decoded
 atom is an instance of what an entry writes, not a criterion for it, and
 naming an entry requires activation evidence.

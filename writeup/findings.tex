@@ -102,14 +102,14 @@ soft one (Section~\ref{sec:steer}).
 \includegraphics[width=\linewidth]{figures/fig-teaser.pdf}
 \caption[The steering primitive, measured]{The softmax Ontologizer's
 steering primitive, measured. (a) Forcing an entry moves decodes along
-the supervised difference-of-means direction $0.43\times$ as far as
-supervised steering itself and $5\times$ further than probe directions
+the supervised difference-of-means direction $0.64\times$ as far as
+supervised steering itself and $4\times$ as far as probe directions
 (\texttt{resid\_nc\_hm}; Table~\ref{tab:steer-overlay}). (b) Joint
 two-head interventions point where the summed single interventions point,
 exactly in the final layer (\texttt{resid\_nc}; Section~\ref{sec:formal}).
 (c) The sparse SAEs' codes lose most text before any intervention
-(round-trip chrF 0.23--0.28 against a 0.20 corpus floor) while the soft
-code keeps it (0.54); the dense \texttt{k5120} keeps more but is not a
+(round-trip chrF 0.23--0.28 against a 0.18 corpus floor) while the soft
+code keeps it (0.55); the dense \texttt{k5120} keeps more but is not a
 sparse code (Appendix~\ref{sec:textfid}).}
 \label{fig:teaser}
 \end{figure}

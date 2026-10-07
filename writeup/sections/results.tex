@@ -147,7 +147,7 @@ direction, scored by whether the target entry becomes selected (its
 realization) and by how many other heads change (its collateral;
 Algorithm~\ref{alg:steerembed}). The text round trip cannot resolve an
 intervention, because even an unsteered round trip preserves a head's
-argmax on only about 12\% of rows (Appendix~\ref{sec:steertext}).
+argmax on only 11--13\% of rows (Appendix~\ref{sec:steertext}).
 
 \begin{table}[htbp]\centering\small
 \begin{tabular}{@{}lrr@{}}
@@ -247,14 +247,15 @@ collateral), and an SAE's decoder direction is already as good as the
 oracle. At each method's own step size the difference of means realizes
 more in most models, partly by taking longer steps
 (Appendix~\ref{sec:steersupnative}). This tests reaching the model's own
-categories; steering toward an external concept, against supervised
-vectors fitted to that concept's labels, remains to be run.
+categories; Appendix~\ref{sec:steeroverlay} steers toward an external
+concept, language, against supervised vectors fitted to its labels.
 
 A single entry can still steer content: on the reference softmax model,
 forcing entry 17 of head 8 in layer 1 reliably yields Burmese decodes of
 otherwise preserved content.
 
 \subsection{Description specificity (autointerp)}
+\label{sec:autointerp}
 
 Individual SAE latents are about twice as describable as individual
 entries. Under the same plain summarization prompt, 51\% of
@@ -267,12 +268,12 @@ entries (8\%). Blinded detection over the full campaign agrees:
 \toprule
 model & density & freq & \texttt{params} & \texttt{eig} & \texttt{acts} & \texttt{cacts} & features \\
 \midrule
-onto (resid\_nc)   & 100\%  & 10.80\% & 0.020 & ---   & 0.473 & 0.392 & 225 \\
-k32                & 0.6\%  & 0.61\%  & 0.158 & ---   & 0.645 & 0.603 & 250 \\
-k32\_bl            & 0.6\%  & 2.62\%  & 0.061 & 0.021 & 0.578 & 0.470 & 75 \\
-g160top1           & 3.1\%  & 5.08\%  & 0.039 & ---   & 0.646 & 0.594 & 150 \\
-g160softmax        & 100\%  & 0.00\%  & 0.025 & ---   & 0.449 & 0.364 & 256 \\
-k5120 (dense ctrl) & 45.5\% & 17.97\% & 0.001 & ---   & 0.470 & 0.332 & 256 \\
+onto (resid\_nc)   & 100\%  & 10.80\% & 0.039 & ---   & 0.473 & 0.392 & 225 \\
+k32                & 0.6\%  & 0.61\%  & 0.139 & ---   & 0.645 & 0.603 & 250 \\
+k32\_bl            & 0.6\%  & 2.62\%  & 0.136 & 0.034 & 0.578 & 0.470 & 75 \\
+g160top1           & 3.1\%  & 5.08\%  & 0.111 & ---   & 0.646 & 0.594 & 150 \\
+g160softmax        & 100\%  & 0.00\%  & 0.086 & ---   & 0.449 & 0.364 & 256 \\
+k5120 (dense ctrl) & 45.5\% & 17.97\% & 0.010 & ---   & 0.470 & 0.332 & 256 \\
 \bottomrule
 \end{tabular}
 \caption{Mean per-feature detection F1 by description mode
@@ -316,12 +317,14 @@ dense control (by 0.14), so part of every plain-summary score is generic
 matching.
 
 Parameter-space decodes are not descriptions. Decoding the parameters
-scores at most 0.06 everywhere except the plain SAE (0.158), and decoding
-bilinear eigenfeatures fails the same way (0.021). Part of the failure is
+scores 0.14 at best (the plain and bilinear SAEs) and 0.04 for the
+reference model, where activation descriptions of the same features
+score 0.45--0.65, and decoding bilinear eigenfeatures fails the same way
+(0.034). Part of the failure is
 how the decode is taken: an atom's cosine to its head's mean atom is
 0.849, so a raw decode returns one template sentence with the details
 shuffled. Subtracting the origin decode makes the decodes legible but not
-detectable (on one head, 0.052 against a 0.014 null, where contrastive
+detectable (on one head, 0.079 against a 0.021 null, where contrastive
 activation descriptions score 0.479 against 0.273). A decoded sentence is
 an instance of what an entry writes, and detection needs a criterion, so
 naming requires activation evidence.

@@ -23,7 +23,7 @@ how far it also intervenes on other variables;
 \texttt{steerfid.py}'s cycle-consistency gain estimates
 \emph{interchange-intervention accuracy}~\cite{geiger2022} in the closed loop $\mathrm{assign} \circ
 \mathrm{encode} \circ \mathrm{decode}$, bounded above by the
-$\sim$12\% round-trip survival of Section~\ref{sec:steer}; and seed-to-seed
+$\sim$13\% round-trip survival of Section~\ref{sec:steer}; and seed-to-seed
 matching is \emph{empirical identifiability}. What the softmax leaves
 unidentified in principle is the per-head entry order (permutation) and
 any logit gauge the temperature absorbs; what must therefore be
@@ -163,7 +163,7 @@ the stack was checkpoint-specific.
 \item \textbf{Steering works in embedding space and the text cycle hides
 it.} The decode direction realizes a target entry on 82\% of rows for the
 softmax model at strength 0.25, against a 3\% chance rate, while the
-text round trip can observe at most $\sim$12\% of perfect interventions.
+text round trip can observe at most $\sim$13\% of perfect interventions.
 The soft code is the more steerable at low collateral; steerability does
 not track reconstruction, and the classifier's own gradient is the right
 direction only where the input reaches the classifier directly.
@@ -217,65 +217,111 @@ reproducibility each reversed or dissolved under the right control.
 \end{enumerate}
 
 \section{Follow-up investigations}
+\label{sec:followup}
 
 Ordered by relevance to the steering goal.
 
 \begin{itemize}
 \item \textbf{Head identifiability first.} Before naming heads, make them
-reproducible or establish which are. Candidates: partition-level seed
-stability on the softmax Ontologizer and \texttt{g160softmax}; whether
-large-atom heads' reproducibility can be extended by training pressure;
-whether the $k{=}2$ arm's one-bit heads reproduce better than 32-way ones;
-what lets the topic head recur when no other head does; and a GPT-2 flat arm, so the
-matched-size comparison of Section~\ref{sec:l0size} has a second
-dataset.
-\item \textbf{Bring the GPT-2 hard code onto this branch, then to SONAR.}
-Section~\ref{sec:gpt2hard}'s runs need \texttt{direct},
-\texttt{resid\_first} and \texttt{gain\_clip}, which only the
-\texttt{headline} branch has; porting them makes those results reproducible
-here and lets the same design run on SONAR, where its 800-bit code can be
-compared with the straight-through arm's 1900 bits. Direct atoms also
-make steering literal --- a set-intervention adds
-$g_\ell(\mathbf{a}_{ij'} - \mathbf{a}_{ij})$ at one layer --- and that has
-not been measured.
+reproducible or establish which are. The softmax Ontologizer's
+partitions are now compared across seeds too, and at 370k steps match
+essentially nothing (Appendix~\ref{sec:softseed}). A $k{=}128$ pair
+sharpens the problem. Two architectures trained from the same seed, one
+decoding its atoms and one with direct atoms, share their partitions
+head for head (matched NMI 0.18, every head matched to the head at its
+own index), while each architecture across seeds reaches 0.064 against
+a 0.059 null. Seed replicas see the same data in the same order, so the
+seed acts only through the initialization and the training noise; it,
+rather than the data or anything after the classifier, largely fixes
+what a head carves. Candidates: replicas of \texttt{resid\_nc\_hm} to its
+full 4.4M steps and of \texttt{g160softmax}; whether large-atom heads'
+reproducibility can be extended by training pressure; whether the
+$k{=}2$ arm's one-bit heads reproduce better than 32-way ones; what lets
+the topic head recur when no other head does (at $k{=}128$ a dominant
+layer-0 head recurs with a third to a half of its agreement); whether a
+per-head router's gain is what reproduces, since on GPT-2 the router
+doubles contribution agreement while switching off the last two layers;
+and a GPT-2 flat arm, so the matched-size comparison of
+Section~\ref{sec:l0size} has a second dataset.
+\item \textbf{Bring the rest of the GPT-2 hard code onto this branch.}
+Direct atoms are ported (Appendix~\ref{sec:gpt2ablation}), but
+\texttt{resid\_first} and \texttt{gain\_clip} are not, so
+Section~\ref{sec:gpt2hard}'s runs still reproduce only on the
+\texttt{headline} branch. On SONAR, $5\times54$ heads at $k{=}128$
+(1{,}890 bits, matching the $k{=}32$ stack's 1{,}900) converge to twice
+its error ($\fvu$ 0.31--0.32 against 0.1535, two seeds each), with direct
+atoms 0.009 ahead of decoded ones. Both codes are full, so the gap is not
+utilization; but the temperature, learning rate and mean-entropy weight
+were tuned at $k{=}32$ and carried over, and need retuning before the gap
+reads as a property of $k$. Direct atoms also make steering literal, a
+set-intervention adding $g_\ell(\mathbf{a}_{ij'} - \mathbf{a}_{ij})$ at
+one layer, and that has not been measured.
 \item \textbf{Fibers on a frozen base.} The two-stage recipe kept the base
-exact and matched unconstrained fibers' reconstruction; it should be the
-default, scored at matched continuous capacity against SAEs (rank-1
-radial fibers already sit at 160 numbers per token).
+exact and matched unconstrained fibers' reconstruction on GPT-2. Fibers
+are ported, but no SONAR run has used them; the recipe should be the
+default there, scored at matched continuous capacity against SAEs
+(rank-1 radial fibers already sit at 160 numbers per token).
 \item \textbf{Remeasure on the fixed initialization.} Entanglement and
 the gain and blend ablations ran on the shipped initialization, which
 was $1.84\times10^8$ off at step 0 and left 10\% of the code unused.
-\item \textbf{The steering overlay at scale.} \texttt{steerembed.py} with
-SAE decoder directions, bilinear eigenfeatures and supervised diff-of-means
-vectors alongside Ontologizer directions; per-entry effect consistency
-across contexts; and the flat arm's near-perfect realization, halved
-collateral and better reproducibility weighed against its $1.79\times$
-reconstruction cost. Collateral at the boundary itself needs a lever:
-the hard code's winner--runner-up margins are $\sim$$10^{-4}$, and binary
-heads, with margins a hundred times larger, flip the fewest other heads
-of any Ontologizer.
-\item \textbf{Task reconstruction.} Recover what each head classifies:
+\item \textbf{The steering overlay at scale.} Supervised vectors are now
+scored on the model's own categories (Section~\ref{sec:steer}) and, for
+\texttt{resid\_nc\_hm}, on an external concept, language
+(Appendix~\ref{sec:steeroverlay}). Still open: the language overlay on
+the hard code and the flat arm; bilinear eigenfeatures; per-entry effect
+consistency across contexts; and the flat arm's near-perfect
+realization, halved collateral and better reproducibility weighed
+against its $1.79\times$ reconstruction cost. Collateral needs a lever
+more than a better direction. It is direction-blind even with the
+cascade excluded: every Ontologizer's decode direction, linearized
+within its own layer, flips other heads at a random step's rate. In
+decoded text too, removing what a head wrote costs no more than a random
+step of the same length. The hard code's winner--runner-up margins are
+$\sim$$10^{-4}$, and binary heads, with margins a hundred times larger,
+flip the fewest other heads of any Ontologizer.
+\item \textbf{Task reconstruction.} Recover what each head classifies.
+Head-level autointerp, which describes a head from its entries' texts
+side by side and scores blinded assignment against sibling entries,
+finds no above-chance signal at 20 heads per condition, on heads not
+screened for identifiability (Appendix~\ref{sec:headautointerp}). Scored
+by modularity on a nearest-neighbor graph of the residual each layer
+classifies, the softmax Ontologizer's layers 1--4 are two to three times
+as modular as size-matched regroupings of their entries; neither a
+Matryoshka SAE's discovered groups nor its trained heads are, on matched
+prefix-residual graphs (one checkpoint each). Still open:
 partition-vs-label-library MI, led by topic and genre (from a labeled
 corpus or unsupervised topic clusters) since those are what the
 embedding is organized by, with length, formatting/noise and script as
-secondary factors; \emph{sibling-contrastive}
-descriptions (positives where entry $j$ wins within head $i$, background
-where its siblings win), validated by blinded assignment accuracy vs.\
-$1/k$; and FLORES parallel-text invariance to split content heads from
-form heads. Run identically on Ontologizer heads and \texttt{g160softmax}'s
-heads, and only on heads that pass the identifiability bar.
+secondary factors; head-level autointerp on heads that pass the
+identifiability bar, at a sample large enough to separate from its
+null; and FLORES parallel-text invariance to split content heads from
+form heads. Run each identically on Ontologizer heads and
+\texttt{g160softmax}'s heads.
 \item \textbf{Hierarchy as MoE routing.} Conditional MI between
 successive layers' partitions tests whether depth builds compositional
 tasks; \texttt{forward="labels"} at the fixed initialization tests the
-pairing account from the other side.
+pairing account from the other side. Pairwise effective
+information~\cite{hoel2013} bounds the edges of
+Section~\ref{sec:formal}'s causal graph: on the hard code, forcing a
+head to one of its live entries moves any single downstream head's
+choice by about 0.01 of a possible 5 bits, at every depth, though 11--16
+times more than the pair co-varies naturally. Whether that influence is
+spread thinly or joint across sources, which pairwise measures cannot
+see, is open.
 \item \textbf{The collinearity setpoint's mechanism.} The one lever that
 buys steerability acts on a statistic that is mostly gauge; repeat it on
 the decoded statistic, and on signed dictionaries.
-\item \textbf{Train with the support overlap.} No model attains between-head
-disjoint support (Appendix~\ref{sec:support}), and none has trained with
-$\omega$ as a loss term rather than its predecessor; whether it can buy the
-partition, and at what reconstruction price, is open. Concatenated heads
-are the comparison that already has it.
+\item \textbf{Penalize head overlap where a decoder cannot absorb it.}
+Trained as a loss term, $\omega$ reaches its target in the dictionary
+space and nowhere else: the partition moves into the decoder's null
+space, or a near-null one when the decoder is square
+(Appendix~\ref{sec:support}). The penalty has to act on decoded atoms, or
+on direct atoms, which have no decoder. The $k{=}128$ direct runs trained
+only at $s_\omega{=}10^{-6}$, too weak to move $\omega$, where on GPT-2 it
+takes hold from $10^{-5}$. Output coordinates are not privileged axes, so
+a disjoint-coordinate partition there is a strong and somewhat arbitrary
+constraint, but it cannot be faked. Concatenated heads remain the only
+route to disjoint support.
 \item \textbf{Logit-scale control for straight-through training.}
 Normalize logits per head, or control $t$ against a spread$/t$ setpoint,
 in place of the hand-matched temperature.
@@ -291,12 +337,27 @@ exactly matched rate.
 \item \textbf{Trained truncatability.} A deviation-sparsity penalty at
 training time would show whether the soft Pareto curve can shift left.
 \item \textbf{Rung composition and frontier fill.} \texttt{groups+prefixes}
-(2b+3), the one-layer variants at $m{=}11264$, the mid-range $\topk$ sweep
-($k_{\mathrm{SAE}} \in \{512, 2048\}$); random-support and nonnegative-LS refit controls.
+(2b+3) is now trained, as \texttt{m5120\_g160top1\_p5} ($\fvu$ 0.294), for
+the modularity control above, but is not yet on the ladder. Still to run:
+the one-layer variants at $m{=}11264$, the mid-range $\topk$ sweep
+($k_{\mathrm{SAE}} \in \{512, 2048\}$), and random-support and
+nonnegative-LS refit controls.
+\item \textbf{Whether the HSIC bottleneck's freeze is real.} The frozen
+counts behind Appendix~\ref{sec:freeze}'s HSIC-bottleneck arms came from
+a probe that skipped the gain--shape split, and on a gain--shape model
+that probe manufactures a late, deep freeze of the same kind: retraining
+the HSIC arm with gain--shape on gives 29 frozen layer-4 heads under the
+old probe at step 80k, against 2 under the correct one. The original
+arms' runs are gone, but their layer-0 trajectory, which the probe
+difference cannot touch, suggests they trained with gain--shape off,
+where the old probe is exact. A retrain with gain--shape off settles it.
 \item \textbf{Closed.} HSIC head independence (heads are already
 independent), decoder sparsification and bias (no structure; $<1\%$),
 code-forwarding alongside the residual, input whitening (subsumed by
-initialization), and entropy-pressure rescaling across shapes (likewise).
-The \texttt{resid\_nc} layer-4 freeze is explained by saturation;
+initialization), entropy-pressure rescaling across shapes (likewise), and
+per-layer decoders (on GPT-2 every layer adds what it added with the
+shared decoder, to within 0.007 of $\fvu$, so a basis fitted to layer 0's
+error is not what limits depth). The \texttt{resid\_nc} layer-4 freeze is
+explained by saturation, and the probe correction leaves it unchanged;
 the two anomalously coherent heads (L2h25, L3h28) remain to inspect.
 \end{itemize}
