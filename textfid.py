@@ -138,12 +138,91 @@ def recon_fn(path, cfg):
     return recon, f"{p.name}_{step}"
 
 
+class SonarDecoder:
+    """The SONAR/M2M100 text decoder as every text-space eval uses it:
+    forced eng_Latn, greedy, and each embedding rescaled to the reference
+    SONAR norm first (the decoder needs the right scale), so a comparison
+    of two decodes sees direction errors, not norm errors."""
+
+    def __init__(self, device: str = "cpu", b_decode: int = 16,
+                 max_length: int = 48):
+        import torch as t
+        from transformers import M2M100ForConditionalGeneration
+        from ontologize.data.pretrained import pretrained_transformer
+        self.t, self.dev = t, t.device(device)
+        self.b, self.max_length = b_decode, max_length
+        pt_enc, self.tokenizer = pretrained_transformer(ENCODER_ID, "float32",
+                                                        dev=self.dev)
+        refs = self.tokenizer(
+            ["The weather is nice today.",
+             "She walked to the store to buy some bread.",
+             "Scientists discovered a new species in the rainforest."],
+            return_tensors="pt", padding=True).to(self.dev)
+        with t.no_grad():
+            h = pt_enc(**refs).last_hidden_state
+            mask = refs["attention_mask"].unsqueeze(-1).float()
+            self.ref_norm = t.norm((h * mask).sum(1) / mask.sum(1),
+                                   dim=-1).mean().item()
+        del pt_enc
+        self.dec = M2M100ForConditionalGeneration.from_pretrained(
+            DECODER_ID).to(self.dev)
+        self.dec.eval()
+        self.eng = self.tokenizer.convert_tokens_to_ids("eng_Latn")
+        self.pad = self.tokenizer.pad_token_id
+
+    def scale(self, Y):
+        Y = self.t.from_numpy(np.ascontiguousarray(Y)).to(self.dev,
+                                                          self.t.float32)
+        return self.t.nn.functional.normalize(Y, dim=-1) * self.ref_norm
+
+    def _enc(self, Y):
+        from transformers.modeling_outputs import BaseModelOutput
+        return BaseModelOutput(last_hidden_state=self.scale(Y).unsqueeze(1))
+
+    def generate(self, Y) -> list:
+        """Token sequences decoded from the rows of `Y`."""
+        seqs = []
+        with self.t.no_grad():
+            for i in range(0, len(Y), self.b):
+                gen = self.dec.generate(
+                    encoder_outputs=self._enc(Y[i:i + self.b]),
+                    forced_bos_token_id=self.eng, max_length=self.max_length,
+                    num_beams=1, repetition_penalty=1.2)
+                seqs += [g for g in gen.cpu()]
+        return seqs
+
+    def text(self, seq) -> str:
+        return self.tokenizer.decode(seq, skip_special_tokens=True).strip()
+
+    def texts(self, Y) -> list:
+        """Decoded text for each row of `Y`."""
+        return [self.text(s) for s in self.generate(Y)]
+
+    def nll(self, Y, seqs):
+        """Mean per-token NLL of token sequences under embeddings Y."""
+        t = self.t
+        outs = np.empty(len(seqs))
+        with t.no_grad():
+            for i in range(0, len(seqs), self.b):
+                batch = seqs[i:i + self.b]
+                width = max(len(s) for s in batch)
+                lab = t.full((len(batch), width - 1), -100, dtype=t.long)
+                for j, s in enumerate(batch):  # drop the decoder-start token
+                    toks = s[1:][s[1:] != self.pad]
+                    lab[j, :len(toks)] = toks
+                labd = lab.to(self.dev)
+                logits = self.dec(encoder_outputs=self._enc(Y[i:i + self.b]),
+                                  labels=labd).logits
+                lp = t.log_softmax(logits, -1)
+                tok_lp = lp.gather(-1, labd.clamp(min=0).unsqueeze(-1)).squeeze(-1)
+                m = (labd != -100).float()
+                outs[i:i + len(batch)] = \
+                    (-(tok_lp * m).sum(-1) / m.sum(-1).clamp(min=1)).cpu().numpy()
+        return outs
+
+
 def main():
     import jax.numpy as jnp
-    import torch as t
-    from transformers import M2M100ForConditionalGeneration
-    from transformers.modeling_outputs import BaseModelOutput
-    from ontologize.data.pretrained import pretrained_transformer
 
     cfg = parse_args()
     recon, name = recon_fn(cfg.model, cfg)
@@ -156,66 +235,13 @@ def main():
                         for i in range(0, len(X), cfg.b)])
     x_mean = np.asarray(mm[:1 << 17], dtype=np.float32).mean(0)
 
-    dev = t.device(cfg.device)
-    pt_enc, tokenizer = pretrained_transformer(ENCODER_ID, "float32", dev=dev)
-    refs = tokenizer(["The weather is nice today.",
-                      "She walked to the store to buy some bread.",
-                      "Scientists discovered a new species in the rainforest."],
-                     return_tensors="pt", padding=True).to(dev)
-    with t.no_grad():
-        h = pt_enc(**refs).last_hidden_state
-        mask = refs["attention_mask"].unsqueeze(-1).float()
-        ref_norm = t.norm((h * mask).sum(1) / mask.sum(1), dim=-1).mean().item()
-    del pt_enc
-    dec = M2M100ForConditionalGeneration.from_pretrained(DECODER_ID).to(dev)
-    dec.eval()
-    ENG = tokenizer.convert_tokens_to_ids("eng_Latn")
-    PAD = tokenizer.pad_token_id
-
-    def scale(Y):
-        Y = t.from_numpy(Y).to(dev, t.float32)
-        return t.nn.functional.normalize(Y, dim=-1) * ref_norm
-
-    def generate(Y):
-        seqs = []
-        with t.no_grad():
-            for i in range(0, len(Y), cfg.b_decode):
-                gen = dec.generate(
-                    encoder_outputs=BaseModelOutput(
-                        last_hidden_state=scale(Y[i:i + cfg.b_decode]).unsqueeze(1)),
-                    forced_bos_token_id=ENG, max_length=48, num_beams=1,
-                    repetition_penalty=1.2)
-                seqs += [g for g in gen.cpu()]
-        return seqs
-
-    def nll(Y, seqs):
-        """Mean per-token NLL of token sequences under embeddings Y."""
-        outs = np.empty(len(seqs))
-        with t.no_grad():
-            for i in range(0, len(seqs), cfg.b_decode):
-                batch = seqs[i:i + cfg.b_decode]
-                width = max(len(s) for s in batch)
-                lab = t.full((len(batch), width - 1), -100, dtype=t.long)
-                for j, s in enumerate(batch):  # drop the decoder-start token
-                    toks = s[1:][s[1:] != PAD]
-                    lab[j, :len(toks)] = toks
-                logits = dec(
-                    encoder_outputs=BaseModelOutput(
-                        last_hidden_state=scale(Y[i:i + cfg.b_decode]).unsqueeze(1)),
-                    labels=lab.to(dev)).logits
-                lp = t.log_softmax(logits, -1)
-                labd = lab.to(dev)
-                tok_lp = lp.gather(-1, labd.clamp(min=0).unsqueeze(-1)).squeeze(-1)
-                m = (labd != -100).float()
-                outs[i:i + len(batch)] = \
-                    (-(tok_lp * m).sum(-1) / m.sum(-1).clamp(min=1)).cpu().numpy()
-        return outs
+    dec = SonarDecoder(cfg.device, cfg.b_decode)
+    generate, nll, txt = dec.generate, dec.nll, dec.text
 
     print(f"{name}: decoding {len(X)} tail rows on {cfg.device}")
     ref_seqs = generate(X)
     rec_seqs = generate(R)
     base_seq = generate(x_mean[None])[0]
-    txt = lambda s: tokenizer.decode(s, skip_special_tokens=True).strip()
     ref_txt = [txt(s) for s in ref_seqs]
     rec_txt = [txt(s) for s in rec_seqs]
     base_txt = txt(base_seq)

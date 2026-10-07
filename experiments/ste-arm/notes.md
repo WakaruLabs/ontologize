@@ -2992,6 +2992,163 @@ uv run python experiments/ste-arm/topichead.py --temperature 0.00015 \
 
 Logs: `experiments/logs/eval_k128/`.
 
+## Classifier geometry from the weights (`bilinspec.py`)
+
+2026-10-07. Per (layer, head, entry), the signed cos(w, v) of the
+bilinear pair over the semantic block of the classifier input, the
+odd share (the constant coordinate's linear term, as a share of the
+logit's variance for isotropic unit u), and rho = |a| / |w_s|. Eight
+geometrically spaced checkpoints per run. Closed-form spectra match
+dense `eigvalsh` to 1e-14. Random-pair |cos| at d = 1024 is about 0.025.
+
+Final checkpoint, median |cos| [IQR], share of features with dominant
+eigenvalue negative ("neg-dom"), median odd share, median rho_w:
+
+| layer | `ste_h76_init01` (369.5k) | | | | `resid_nc` (372.6k) | | | |
+|---|---|---|---|---|---|---|---|---|
+| | \|cos\| | neg-dom | odd | rho_w | \|cos\| | neg-dom | odd | rho_w |
+| 0 | 0.535 [0.50–0.56] | 98% | 0.72 | 0.032 | 0.638 [0.48–0.72] | 96% | 0 (no const) | — |
+| 1 | 0.096 [0.07–0.14] | 98% | 0.68 | 0.026 | 0.938 [0.92–0.95] | 99% | 0.96 | 0.178 |
+| 2 | 0.109 [0.08–0.14] | 99% | 0.67 | 0.025 | 0.799 [0.73–0.83] | 93% | 0.99 | 0.211 |
+| 3 | 0.155 [0.12–0.19] | 100% | 0.61 | 0.022 | 0.517 [0.38–0.59] | 87% | 0.99 | 0.242 |
+| 4 | 0.262 [0.22–0.30] | 100% | 0.48 | 0.018 | 0.176 [0.10–0.28] | 63% | 1.00 | 0.227 |
+
+- **The softmax stack goes rank-1; the hard stack mostly does not.**
+  `resid_nc` layer 1 is the `(u·x)²` regime lineage §6 described for
+  `resid_nc_hm` (86% of features above 0.9), and layers 1–3 sit at
+  0.5–0.94. In `ste_h76_init01` only layer 0 leaves the random-pair
+  floor far (0.54); layers 1–3 stay at 0.10–0.16, near-orthogonal
+  factors, which is a saddle `(w·x)(v·x)` that sees each projection's
+  sign.
+- **Alignment is learned late, after the anneal.** In both runs every
+  layer is at the random floor at 10k–20k steps. `resid_nc` departs
+  from 30k and climbs to the end; `ste_h76_init01` stays at the floor
+  until about 80k (layer 0) and 130k (the rest).
+- **The dominant eigenvalue is negative almost everywhere** (c < 0):
+  the rank-1 features are `−λ(u·x)²`, high where the input is
+  orthogonal to u, not aligned with it.
+- **resid_nc's constant coordinate carries weight; ste_h76_init01's
+  barely does.** rho_w is about 0.2 in `resid_nc` layers 1–4, so the
+  constant dominates a factor for inputs within cosine 0.2 of w_s,
+  which is most of a 1024-d sphere; in `ste_h76_init01` it is 0.02–0.03.
+  The odd share is near 1 in `resid_nc` but is inflated by
+  construction: an isotropic projection is only ~|w|/√d, so a small
+  constant already dominates that reference measure. On data the share
+  depends on how inputs align with w_s, which this script does not
+  measure. Sign-blindness of `resid_nc`'s rank-1 layers is therefore
+  broken by the constant at least for weakly aligned inputs.
+- One seed per run; weights only, no data.
+
+Outputs: `<run>/bilinspec/` (`bilin_ecdf.png`, `bilin_steps.png`,
+`bilin_heads.png`, `bilinspec.npz`, `bilinspec.csv`).
+
+```bash
+uv run python bilinspec.py --ckpt data/out/sonar/multilingual/ste_h76_init01
+uv run python bilinspec.py --ckpt data/out/sonar/multilingual/resid_nc
+```
+
+## What one head's removal does to the decoded text (`textstrip.py`)
+
+2026-10-07, after the SONAR-encoder dropout fix below. 12 random eval-tail
+rows (seed 42), the 2 heads per layer whose uniform ablation moves x_hat
+furthest, so 120 (row, head) cells per model; one seed and checkpoint each
+(`resid_nc` step 372.6k at t=0.03, `ste_h76_init01` step 369.5k at
+t=0.00015). Every condition is decoded and scored by dNLL: the decoder's
+per-token NLL of a reference decode under the condition's embedding, less
+under the reference's own (decode(x_hat) for ablations and the null,
+decode(x) for recon, prefixes and a head's write alone). chrF between
+decodes is not usable for comparisons: greedy decoding flips on
+rounding-level differences. At the last layer, where the live and frozen
+ablations are one embedding up to float32 rounding (max |diff| 1e-3 and
+4.5e-4), 9/24 (`resid_nc`) and 3/24 (`ste_h76_init01`) pairs decode to
+different text.
+
+Machinery: the probes reproduce the model's forward to 8e-4 / 6e-5 abs;
+per-head contributions sum to x_hat to 6e-4 / 3e-4; a live uniform ablation
+equals `withArgs` with `h_unif` (unit test). Two runs with identical inputs
+agree on 779/780 decodes, max dNLL difference 0.011.
+
+Mean dNLL (nats/token), SE over cells (cells share rows, so the SE is
+optimistic):
+
+| condition | `resid_nc` | `ste_h76_init01` |
+|---|---|---|
+| recon vs decode(x) | 0.019 ± 0.004 | 0.459 ± 0.103 |
+| prefixes x̂_1..x̂_4 vs decode(x) | 0.149 ± 0.037 | 0.947 ± 0.120 |
+| uniform ablation, live | 0.025 ± 0.005 | 0.086 ± 0.011 |
+| uniform ablation, frozen | 0.051 ± 0.010 | 0.020 ± 0.009 |
+| zero ablation, live | 0.017 ± 0.004 | 0.088 ± 0.012 |
+| null step, frozen's length | 0.040 ± 0.007 | 0.021 ± 0.005 |
+| head's write alone | 2.378 ± 0.123 | 2.356 ± 0.121 |
+| head's mean write alone | 2.456 ± 0.124 | 2.398 ± 0.124 |
+
+Live minus frozen, by layer of the ablated head:
+
+| layer | `resid_nc` live / frozen / null | `ste_h76_init01` live / frozen / null |
+|---|---|---|
+| 0 | 0.044 / 0.165 / 0.144 | 0.235 / 0.090 / 0.083 |
+| 1 | 0.022 / 0.022 / 0.028 | 0.117 / 0.003 / 0.007 |
+| 2 | 0.006 / 0.009 / 0.005 | 0.063 / 0.002 / 0.003 |
+| 3 | 0.028 / 0.031 / 0.011 | 0.009 / 0.001 / 0.008 |
+| 4 | 0.026 / 0.026 / 0.011 | 0.006 / 0.006 / 0.005 |
+
+- **Removing what a head wrote costs no more text than a random step of
+  the same size.** Frozen ablation minus null: +0.011 (`resid_nc`, worse in
+  50% of cells) and −0.001 (`ste_h76_init01`, 45%). The null steps along the
+  difference of two random tail rows at the frozen delta's whitened length
+  (median 6.5% and 3.4% of x_hat). So at this resolution, the text damage
+  of an ablation is set by its size, not by what the head carried.
+- **Downstream layers repair a soft ablation and amplify a hard one.** In
+  `resid_nc` the live ablation does less damage than the frozen one
+  (0.025 vs 0.051; layer 0: 0.044 vs 0.165), as later layers re-read the
+  residual and re-classify toward the original. In `ste_h76_init01` it
+  does more (0.086 vs 0.020, live worse in 82% of cells; layer 1: 0.117 vs
+  0.003): later hard classifiers flip, and the flips add error. This fits
+  the residual cascade amplifying disturbance in the depth results, seen
+  here in text.
+- **A head's write alone carries almost none of the sentence.** Its own
+  write scores 0.04–0.08 nats better than its average write over 1024 tail
+  rows (better in 58–62% of cells), against about 2.4 nats for either.
+- The hard code's reconstruction is far from x in decode likelihood
+  (0.459 vs 0.019), consistent with its FVU.
+
+Outputs: `<run>/textstrip/` (`strips.html`, `strips.jsonl`, `summary.json`,
+`meta.json`).
+
+```bash
+uv run python textstrip.py --ckpt data/out/sonar/multilingual/resid_nc --device cuda
+uv run python textstrip.py --ckpt data/out/sonar/multilingual/ste_h76_init01 --device cuda
+```
+
+## The SONAR encoder ran with dropout outside `encode_corpus.py`
+
+Found 2026-10-07; fixed in `ontologize/data/pretrained.py`, which now
+returns the encoder in eval mode. Its SONAR branch builds `M2M100Encoder`
+directly, so the module started in training mode with the config's
+dropout 0.1. `encode_corpus.py` and `experiments/fresh-eval/encode_fresh.py`
+called `.eval()` themselves, so the embedding caches are unaffected. Every
+other caller put only the decoder in eval mode, so its encodes were
+stochastic:
+
+- **Decode scale only:** `textfid.py`, `autointerp.py`,
+  `experiments/task-naturalness/naturalness.py` and
+  `experiments/partition-autointerp/headinterp.py`. Each rescales an
+  embedding to `ref_norm` before decoding, and `ref_norm` came from the
+  encoder: 0.247–0.258 across processes with dropout, 0.2030 without. So
+  their decodes were made at a random scale about 25% above SONAR's own.
+- **Decode scale and re-encoded text:** `steerfid.py`,
+  `experiments/steering-overlay/steer_overlay.py` and
+  `experiments/rl-classifications/rl_reinforce.py`. Each also re-encodes
+  generated text to measure its effect, so those activations carried
+  dropout noise.
+- **Encoded text:** `headcoh.py`'s description view,
+  `experiments/ste-arm/decodehead.py`, and the `decode.py` /
+  `decode_tags.py` REPLs.
+
+Every number those scripts produced before this date (the textfid chrF,
+the steerfid and steer_overlay effects, REINFORCE, naturalness) was
+measured this way and has not been rerun.
+
 ## Run
 
 See [`README.md`](README.md) for training and scoring commands.
