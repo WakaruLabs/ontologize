@@ -78,7 +78,7 @@ def layer0_scales(model: Ontologizer, params: PyTree,
         de = module.dictencs[0]
         U, G = de.gainshape_in(Ein)
         P = de.dict.cluster(de.classifier(U), temperature)
-        R = R + de.gained(de.dict.combine(de.dict.hfwd(P)), G)
+        R = R + de.gained(de.dict.combine(de.head_outputs(U, P)), G)
         Y = module.decode(R)
         return (jnp.mean(jnp.linalg.norm(Y, axis=-1)),
                 jnp.mean(jnp.linalg.norm(Y - Xb, axis=-1)),

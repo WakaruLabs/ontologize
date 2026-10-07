@@ -8,19 +8,21 @@ Mechanism. The stock training step (ontostate.update) calls
 runs (ghost=False wires it to None), so this subclass:
 
   1. builds `apply_fn` from a custom probe (`probe_with_codes`) that
-     replicates `Ontologizer.withStats` exactly -- same encode, same
-     `DictEnc.withStats` calls (noise, winner dropout, temperature all
-     flow through kwargs unchanged), same deepsup prefix decodes -- but
-     returns the stacked per-layer classifications (l, b, h*k) in the
-     ghost slot;
-  2. overrides `loss` to consume that tensor: base (whitened) MSE, plus
+     replicates `Ontologizer.withStats` exactly -- same encode, constant
+     coordinate, `DictEnc.withStats` calls (noise, winner dropout,
+     temperature all flow through kwargs unchanged), same deepsup prefix
+     decodes -- but returns the stacked per-layer classifications
+     (l, b, h*k) in the ghost slot;
+  2. overrides `loss` to consume that tensor: the stock
+     `Hyperparams.loss` (whitened MSE, the aux terms with retired
+     columns zeroed, the setpoint-controlled multipliers), plus
      `s_hsic_heads` * mean pairwise-CKA between heads (per layer,
      summed over layers -- the layer-summing convention of the stock
      aux stats) and optionally `s_hsic_res` * HSIC(residual, target);
-  3. keeps the 9-column stats layout: the raw (unweighted) HSIC penalty
-     is recorded in the third column, the one the stock pipeline labels
-     MSE_ghost. loss.csv/plot_loss keep working; that column just
-     changes meaning for these runs.
+  3. keeps the stock stats layout: the raw (unweighted) HSIC penalty is
+     recorded in the third column, the one the stock pipeline labels
+     MSE_ghost (always 0 here, since ghost is off). loss.csv/plot_loss
+     keep working; that column just changes meaning for these runs.
 
 Everything else (schedules, checkpointing, TrainingEnv, resume) is
 inherited: `TrainingEnv(model, HSICHyperparams(...), meta)` works as a
@@ -38,7 +40,7 @@ import jax.numpy as jnp
 
 from ontologize.training.config import Hyperparams
 from ontologize.training.ontostate import OntoState
-from ontologize.fns.keys import get_dtype, get_loss
+from ontologize.fns.keys import get_dtype
 
 try:
     import hsic
@@ -63,11 +65,16 @@ def probe_with_codes(module, X, sd_in=0.0, rng=None, *args, **kwargs):
 
     Returns (Y, P_all, stats, rng): Y as withStats (per-prefix stack
     under deepsup), P_all (l, b, h*k) the flattened post-noise/dropout
-    classifications each layer actually decoded with, stats (l, 6).
-    The body mirrors ontologize/ontologizer.py::withStats line for line;
-    kwargs carry temperature / sd_K / sd_F / p_drop exactly as there."""
+    classifications each layer actually decoded with, stats the stacked
+    per-layer `DictEnc.withStats` rows. The body mirrors
+    ontologize/ontologizer.py::withStats line for line (without
+    `base_aux`, which this harness does not support); kwargs carry
+    temperature / sd_K / sd_F / p_drop exactly as there."""
+    if module.base_aux:
+        raise NotImplementedError("probe_with_codes does not support base_aux")
     E, rng_K = module.encode(X, sd_in, rng)
     R = module.resid(E)
+    E = module.constinput(E)
     stats, Ys, Ks = [], [], []
     for i, dictenc in enumerate(module.dictencs):
         R_0 = R
@@ -123,17 +130,18 @@ class HSICHyperparams(Hyperparams):
             n_stats=self.n_stats, apply_fn=f, params=params, tx=self.opt())
         return state.replace(step=0, stats=state.newstats())
 
-    def loss(self, X, Y, P_all, stats):
+    def loss(self, X, Y, P_all, stats, s_L1F=None, s_kcossim=None):
         """X: decode(s) (b, d) or (l, b, d) under deepsup. Y: target.
         P_all: (l, b, h*k) from the probe (rides in the ghost slot).
-        Returns (L, stats9) with the raw HSIC penalty in column 3."""
-        f = get_loss(self.lossfn)
-        s, _ = self.s_loss()                      # 7: [s_g, ...6 aux...]
-        stats6 = jnp.einsum("...s -> s", stats)   # sum stats over layers
+        `s_L1F`/`s_kcossim` are the setpoint controllers' traced
+        multipliers, as for the stock loss. Returns (L, stats) in the
+        stock layout with the raw HSIC penalty in the third column."""
+        # the stock loss: whitened MSE, aux terms (retired columns zeroed),
+        # the controlled multipliers; ghost is off, so no ghost term
+        L, row = super().loss(X, Y, None, stats, s_L1F, s_kcossim)
         if self.mse_weights:
             rw = jnp.sqrt(_mse_w(self.mse_weights)).astype(X.dtype)
             X, Y = X * rw, Y * rw
-        L2 = f(X, Y)
 
         heads_raw = jnp.zeros((), X.dtype)
         res_raw = jnp.zeros((), X.dtype)
@@ -152,10 +160,5 @@ class HSICHyperparams(Hyperparams):
         # raw (unweighted) penalty sum for the stats column
         pen_raw = heads_raw + res_raw
 
-        # inherited aux terms: s[1:] pairs with the 6 layer-summed stats
-        # [L1_K, L1_F, entropy, cossim_b, cossim_h, KL_m] (ghost dropped)
-        L = (L2 + self.s_hsic_heads * heads_raw
-             + self.s_hsic_res * res_raw + jnp.dot(stats6, s[1:]))
-        stats9 = jnp.concatenate(
-            [jnp.stack([L, L2, pen_raw]), stats6])
-        return L, stats9
+        L = L + self.s_hsic_heads * heads_raw + self.s_hsic_res * res_raw
+        return L, row.at[0].set(L).at[2].set(pen_raw)

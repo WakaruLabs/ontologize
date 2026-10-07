@@ -40,6 +40,7 @@ from pathlib import Path
 
 EXP_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(EXP_DIR))
+sys.path.insert(1, str(EXP_DIR.parents[1]))  # repo root: the ontologize package
 
 # the four live stock aux scales (sonar.py)
 AUX = dict(s_L1F=1e-9, s_bcossim=1e-5, s_hcossim=1e-6, s_Hm=1e-6)
@@ -72,6 +73,14 @@ def parse_args():
                    help="estimator for the residual term")
     p.add_argument("--epochs", type=int, default=24)
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--resid-gain", type=int, choices=[0, 1], default=1,
+                   help="gain-shape residual forwarding. Passed explicitly "
+                        "because the model otherwise takes the dataclass "
+                        "default, which changed (False -> True, "
+                        "2026-09-10); resid_nc_hm itself has it off")
+    p.add_argument("--const0", type=int, choices=[0, 1], default=1,
+                   help="resid_const's coordinate at layer 0 as well "
+                        "(resid_nc_hm predates it: 0)")
     return p.parse_args()
 
 
@@ -109,6 +118,7 @@ def main():
         scaled=False, encoded=False, e_enc=2048,
         forward="resid", deepsup=True, deepsup_sg=False,
         resid_norm=True, resid_const=True,
+        resid_gain=bool(cfg.resid_gain), const0=bool(cfg.const0),
         dtype_str="float32", dtype_p_str="float32")
 
     meta = Metadata(
@@ -121,7 +131,8 @@ def main():
 
     print(f"arm {cfg.arm} -> {out}")
     print(f"  aux={aux}  s_hsic_heads={s_hsic_heads} "
-          f"s_hsic_res={s_hsic_res}")
+          f"s_hsic_res={s_hsic_res}  resid_gain={bool(cfg.resid_gain)} "
+          f"const0={bool(cfg.const0)}")
     env.train(src, encoder=None)
     print("Training Complete!")
 

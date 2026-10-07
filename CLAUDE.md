@@ -28,8 +28,10 @@ which should be used for explaining code structure, usage, and rationale.
 
 ### Writeup
 
-The writeup is compiled using `make`. Compilation uses `xelatex` and `biber` for citations,
-which are stored in `writeup/refs.bib`.
+The writeup is compiled using `make`. Compilation uses `pdflatex` and `biber` for citations,
+which are stored in `writeup/refs.bib`. The toolchain is provided by the root `flake.nix`;
+the Makefiles run `pdflatex`/`biber` through `nix develop` themselves (skipped when already
+inside a nix shell), so plain `make -C writeup` (or `make -C writeup brief`, `make -C description`) works.
 
 Organize sections in `writeup/sections`.
 Reserve `results.tex` for headline results. Keep other results in `appendix.tex`.
@@ -120,6 +122,11 @@ uv run python langprobe.py -h  # SAEBench-style k-sparse probing of language
                                # identity (langs sidecar); dense-probe ceiling
 uv run python refit.py -h      # shrinkage: refit LS coefficients on each frozen
                                # support; selection-vs-magnitude error split
+uv run python assignmap.py -h  # per-layer heatmaps of held-out samples x
+                               # (head, entry) assignment probabilities, rows
+                               # sliced by lang / GPT-2 token class / pos / doc;
+                               # makes head collapse and dead entries visible
+                               # per sample. --replot redraws from assign.npz
 uv run python steerfid.py -h   # steering fidelity: effect (cycle-consistency
                                # activation gain) vs collateral (1-chrF) at matched
                                # magnitude; W_dec / eigenfeature / withArgs steering
@@ -129,7 +136,7 @@ Seed stability: train a replica with `sae.py --seed 43` (run dirs get an
 `_s43` suffix) and feed the pair to `splitting.py` — its "A matched"/"B
 matched" columns are the reproducible-feature fractions.
 
-Tests: the curated suite lives in `tests/`, wired via `[tool.pytest.ini_options] testpaths = ["tests"]` in `pyproject.toml`, so a bare `uv run pytest` runs only it (fast, CPU-only — `tests/conftest.py` forces `JAX_PLATFORMS=cpu`, so it is safe to run alongside a live GPU training run). It covers: `deepsup_sg` gradient semantics, `resid_norm`/`resid_const` conditioning (including bilinear sign-blindness), the `s_Hm`/`KL_m` batch mean-entropy bonus, top-k tag selection (`select="top<k>"`), the `s_L2pwak`/`L2_pwak` noise2self partition score, noise-path NaN regressions, checkpoint save/restore including the `n_stats` stats-width migration and the legacy-spec-key rename, `ConcatDictBlock`'s overridden statistics, the gated SAE encoder's gradient routing, `NLinearBlock.withL1`'s gate-factor L1, `L1_S`'s position in the stats row, `support_overlap` and the retired `cossim_h`/`cossim_flat` slots (`test_support`), fibers and head dropout (`test_fibers`), the SAE modules' layout converters and configuration checks (`test_sae_modules`), and a short end-to-end training loop per live run configuration. The suite's largest block now tests the root eval scripts' pure helpers (`test_sae`, `test_autointerp`, `test_pareto`, `test_headstruct`, `test_headcoh`, `test_compose`, `test_splitting`, `test_textfid`, `test_langprobe`, `test_refit`, `test_steerfid`, `test_encode_acts` import them directly) — breaking `sae.py` or its siblings breaks the suite, so keep those scripts import-safe under `__main__` guards.
+Tests: the curated suite lives in `tests/`, wired via `[tool.pytest.ini_options] testpaths = ["tests"]` in `pyproject.toml`, so a bare `uv run pytest` runs only it (fast, CPU-only — `tests/conftest.py` forces `JAX_PLATFORMS=cpu`, so it is safe to run alongside a live GPU training run). It covers: `deepsup_sg` gradient semantics, `resid_norm`/`resid_const` conditioning (including bilinear sign-blindness), the `s_Hm`/`KL_m` batch mean-entropy bonus, top-k tag selection (`select="top<k>"`), the `s_L2pwak`/`L2_pwak` noise2self partition score, noise-path NaN regressions, checkpoint save/restore including the `n_stats` stats-width migration and the legacy-spec-key rename, `ConcatDictBlock`'s overridden statistics, the gated SAE encoder's gradient routing, `NLinearBlock.withL1`'s gate-factor L1, `L1_S`'s position in the stats row, `support_overlap` and the retired `cossim_h`/`cossim_flat` slots (`test_support`), fibers and head dropout (`test_fibers`), the SAE modules' layout converters and configuration checks (`test_sae_modules`), and a short end-to-end training loop per live run configuration. The suite's largest block now tests the root eval scripts' pure helpers (`test_sae`, `test_autointerp`, `test_pareto`, `test_headstruct`, `test_headcoh`, `test_compose`, `test_splitting`, `test_textfid`, `test_langprobe`, `test_refit`, `test_steerfid`, `test_encode_acts`, `test_assignmap` import them directly) — breaking `sae.py` or its siblings breaks the suite, so keep those scripts import-safe under `__main__` guards.
 
 ```bash
 uv run pytest -v
@@ -198,7 +205,7 @@ Three columns are the same statistic reduced three ways, and only the names dist
 
 `n_stats` on `Hyperparams`/`OntoState` must equal the width. `Hyperparams.s_loss`'s weight vector is 14 wide and pairs positionally against `[MSE_ghost] + <the 13-wide per-layer row>`, **not** against the loss.csv order — so a stat inserted anywhere but the end makes every weight past it multiply the wrong quantity, which is why `DictEnc.withPWAK` says so in its docstring. Each stat keeps the position it was appended at, so `withPWAK` places `L1_S` (11) between `DictBlock`'s eighth entry and anything `DictBlock` appended later (`support`, 12). On resume, the setpoint controllers recover their multipliers from columns 13–14 of the last `loss.csv` row, which every row since they were added reaches, so a widened layout does not restart them.
 
-Not every `loss.csv` uses this layout: `experiments/hsic-bottleneck/hsic_hyperparams.py` overrides `loss` to write a 9-wide row of its own.
+`experiments/hsic-bottleneck/hsic_hyperparams.py` overrides `loss` but keeps this layout: it delegates to the stock loss and records its raw HSIC penalty in column 2 (`MSE_ghost`, otherwise 0 with the ghost path off).
 
 ## Experiments
 

@@ -1,0 +1,133 @@
+\begin{tikzpicture}[
+    font=\footnotesize,
+    >={Stealth[round,length=1.8mm,width=1.6mm]},
+    art/.style={draw, rounded corners=2pt, fill=flockwell, rotate=90,
+                anchor=west, minimum height=4.6mm, inner xsep=3pt,
+                font=\scriptsize},
+    proc/.style={draw, rounded corners=2pt, fill=white, anchor=west,
+                 minimum height=4.8mm, minimum width=22mm, inner xsep=3pt,
+                 font=\scriptsize\ttfamily},
+    qn/.style={draw=pine, rounded corners=2pt, fill=pine!8, anchor=west,
+               minimum height=4.8mm, text width=79mm, align=left, inner xsep=3pt, font=\scriptsize,
+               text=flockink},
+    lab/.style={inner sep=1.5pt, font=\scriptsize, align=center},
+    grp/.style={inner sep=1.5pt, font=\scriptsize\itshape, inkmuted},
+    sig/.style={->, semithick},
+    aux/.style={->, densely dashed, semithick, black!45},
+    rd/.style={fill=flockink},
+    opt/.style={draw=flockink, fill=white, semithick},
+  ]
+  % Columns x = 0, 0.55, ..., 3.3 are the artifacts a script reads; rows
+  % are scripts (y = -0.62 r). A filled mark is a required input, an open
+  % one an optional input or one of several alternatives.
+  \def\dx{0.55}
+  \def\dy{0.62}
+  \def\R{0.075}
+
+  %% ---- artifact headers ----------------------------------------------
+  \node[art] at (0*\dx, 0.25) {cache rows \texttt{.npy}};
+  \node[art] at (1*\dx, 0.25) {\texttt{.langs.npy}};
+  \node[art] at (2*\dx, 0.25) {\texttt{.index.npy}};
+  \node[art] at (3*\dx, 0.25) {\texttt{.mse\_weights.npy}};
+  \node[art] at (4*\dx, 0.25) {Ontologizer ckpt};
+  \node[art] at (5*\dx, 0.25) {\texttt{sae.py} \texttt{params.npz}};
+  \node[art] at (6*\dx, 0.25) {SONAR\,/\,M2M100};
+
+  \draw[flockrule] (-0.2, 2.75) -- (3*\dx+0.2, 2.75);
+  \node[grp, anchor=south] at (1.5*\dx, 2.75) {cache + sidecars};
+  \draw[flockrule] (4*\dx-0.2, 2.75) -- (5*\dx+0.2, 2.75);
+  \node[grp, anchor=south] at (4.5*\dx, 2.75) {models};
+  \node[grp, anchor=south] at (6*\dx, 2.75) {frozen};
+
+  % faint column guides
+  \foreach \c in {0,...,6}
+    \draw[flockrule, very thin] (\c*\dx, 0.15) -- (\c*\dx, -12.5*\dy);
+
+  %% ---- rows: script, inputs, question ---------------------------------
+  % #1 row, #2 required columns, #3 optional/alternative columns
+  \def\marks#1#2#3{%
+    \foreach \c in {#2} \fill[rd] (\c*\dx, -#1*\dy) circle (\R);
+    \foreach \c in {#3} \filldraw[opt] (\c*\dx, -#1*\dy) circle (\R);}
+
+  \def\px{4.05}  % script column
+  \def\qx{6.75}  % question column
+
+  % reconstruction
+  \marks{1}{0,3,4,5}{}
+  \node[proc] (s1) at (\px,-1*\dy) {pareto.py};
+  \node[qn]   (q1) at (\qx,-1*\dy) {whitened FVU vs.\ code capacity, Ontologizer vs.\ $\topk$ SAEs};
+  \marks{2}{0,3}{4,5}
+  \node[proc] (s2) at (\px,-2*\dy) {refit.py};
+  \node[qn]   (q2) at (\qx,-2*\dy) {shrinkage: selection vs.\ magnitude error on a frozen support};
+  \marks{3}{0,6}{4,5}
+  \node[proc] (s3) at (\px,-3*\dy) {textfid.py};
+  \node[qn]   (q3) at (\qx,-3*\dy) {does the reconstruction decode to the same text? (chrF, NLL)};
+
+  % meaning
+  \marks{4}{0,1}{4,5}
+  \node[proc] (s4) at (\px,-4*\dy) {langprobe.py};
+  \node[qn]   (q4) at (\qx,-4*\dy) {is language identity a latent-level concept? ($k$-sparse probes)};
+  \marks{5}{0,6}{1,4,5}
+  \node[proc] (s5) at (\px,-5*\dy) {autointerp.py};
+  \node[qn]   (q5) at (\qx,-5*\dy) {do feature descriptions detect where the feature fires?};
+  \marks{6}{}{3,4,5,6}
+  \node[proc] (s6) at (\px,-6*\dy) {headcoh.py};
+  \node[qn]   (q6) at (\qx,-6*\dy) {do a head's entries decode to semantically similar directions?};
+
+  % structure
+  \marks{7}{0}{4,5}
+  \node[proc] (s7) at (\px,-7*\dy) {headstruct.py};
+  \node[qn]   (q7) at (\qx,-7*\dy) {head-like groups: exhaustive, exclusive, modular?};
+  \marks{8}{0,4}{1,2}
+  \node[proc] (s8) at (\px,-8*\dy) {assignmap.py};
+  \node[qn]   (q8) at (\qx,-8*\dy) {per-sample assignments: head collapse and dead entries};
+  \marks{9}{0}{4,5}
+  \node[proc] (s9) at (\px,-9*\dy) {splitting.py};
+  \node[qn]   (q9) at (\qx,-9*\dy) {feature splitting across widths; seed stability across replicas};
+
+  % intervention
+  \marks{10}{0,3,4}{}
+  \node[proc] (s10) at (\px,-10*\dy) {compose.py};
+  \node[qn]   (q10) at (\qx,-10*\dy) {do two-head set-interventions compose additively?};
+  \marks{11}{0,4}{}
+  \node[proc] (s11) at (\px,-11*\dy) {effinfo.py};
+  \node[qn]   (q11) at (\qx,-11*\dy) {effective information: does forcing a head change later heads?};
+  \marks{12}{0,6}{4,5}
+  \node[proc] (s12) at (\px,-12*\dy) {steerfid.py};
+  \node[qn]   (q12) at (\qx,-12*\dy) {steering effect vs.\ collateral at matched magnitude};
+
+  \foreach \i in {1,...,12} \draw[sig] (s\i.east) -- (q\i.west);
+
+  %% ---- theme separators ------------------------------------------------
+  \foreach \y in {0.5, 3.5, 6.5, 9.5}
+    \draw[flockrule] (-0.75, -\y*\dy) -- (\qx+8.2, -\y*\dy);
+  \foreach \y/\t in {2/reconstruction, 5/meaning, 8/structure,
+                     11/intervention}
+    \node[grp, rotate=90] at (-0.5, -\y*\dy) {\t};
+
+  %% ---- outputs of one script read by another -----------------------------
+  % headcoh.py --desc-dir reads autointerp.py's descriptions;
+  % --assignment reads headstruct.py's discovered groups
+  \draw[aux] (s5.west) to[out=200, in=160] (s6.west);
+  \draw[aux] (s7.west) to[out=160, in=200] (s6.west);
+
+  %% ---- key ------------------------------------------------------------
+  \begin{scope}[shift={(0,-13.35*\dy)}]
+    \node[draw, rounded corners=2pt, fill=flockwell, minimum width=4mm,
+          minimum height=3mm] at (0,0) {};
+    \node[lab, anchor=west] at (0.3,0) {artifact};
+    \node[draw, rounded corners=2pt, fill=white, minimum width=4mm,
+          minimum height=3mm] at (1.6,0) {};
+    \node[lab, anchor=west] at (1.9,0) {evaluation script};
+    \node[draw=pine, rounded corners=2pt, fill=pine!8, minimum width=4mm,
+          minimum height=3mm] at (4.4,0) {};
+    \node[lab, anchor=west] at (4.7,0) {question};
+    \fill[rd] (6.2,0) circle (\R);
+    \node[lab, anchor=west] at (6.35,0) {reads};
+    \filldraw[opt] (7.4,0) circle (\R);
+    \node[lab, anchor=west] at (7.55,0) {optional, or one of the alternatives};
+    \draw[aux] (11.75,0) -- (12.35,0);
+    \node[lab, anchor=west] at (12.4,0) {reads another script's output};
+  \end{scope}
+
+\end{tikzpicture}

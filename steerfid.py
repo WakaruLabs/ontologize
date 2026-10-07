@@ -154,7 +154,9 @@ def load_steerable(path, cfg):
             U, G = de.gainshape_in(E_in)
             P = de.dict.cluster(de.classifier(U), T)
             Ps.append(P)
-            R = R + de.gained(de.dict.combine(de.dict.hfwd(P)), G)
+            # head_outputs applies the router gain and fibers as the
+            # forward does; dict.hfwd(P) alone would drop them
+            R = R + de.gained(de.dict.combine(de.head_outputs(U, P)), G)
             if i < module.l - 1:
                 E_in = module.nextinput(X, R, P.reshape(P.shape[0], -1))
         return jnp.stack(Ps, 1).reshape(X.shape[0], -1)

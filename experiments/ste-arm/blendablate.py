@@ -93,7 +93,7 @@ def forward(module, X: Float[Array, "b d_in"], T: float,
         U, G = de.gainshape_in(Ein)
         Us.append(U)
         P = de.dict.cluster(de.classifier(U), T)
-        R = R + de.gained(de.dict.combine(de.dict.hfwd(P)), G)
+        R = R + de.gained(de.dict.combine(de.head_outputs(U, P)), G)
         if i < module.l - 1:
             Y = module.decode(R)
             # `a` is traced, so the blend is unconditional; a=0 is the

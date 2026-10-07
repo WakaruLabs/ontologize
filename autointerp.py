@@ -393,6 +393,36 @@ def snippet(text, maxlen=240):
 
 # ---------- stage: harvest ----------
 
+def onto_probe(module, X, temperature, inputs=False):
+    """Every layer's assignments (b, l, h, k) on the plain forward pass at
+    `temperature`; with inputs=True also each layer >= 1's input as its
+    classifier sees it (see `onto_acts_fn`). Run under `model.apply`. Each
+    layer writes `DictEnc.head_outputs`, which applies the router gain and
+    fibers as the forward does; without them every layer past the first
+    would classify another model's residual."""
+    import jax.numpy as jnp
+    E, _ = module.encode(X, 0.0, None)
+    R = module.resid(E)
+    E_in = module.constinput(E)
+    Ps, Us = [], []
+    resid_fwd = module.forward in ("resid", "resid_labels")
+    # reproduce the DictEnc's gain-shape split: under `resid_gain` it
+    # classifies the unit-norm SHAPE of its input and scales its
+    # contribution by the measured GAIN. Identity / no-op when off.
+    for i, de in enumerate(module.dictencs):
+        U, G = de.gainshape_in(E_in)
+        if inputs and i > 0:
+            # the residual leads the input, X's width wide
+            Us.append(U[..., :X.shape[-1]] if resid_fwd else U)
+        P = de.dict.cluster(de.classifier(U), temperature)
+        Ps.append(P)
+        R = R + de.gained(de.dict.combine(de.head_outputs(U, P)), G)
+        if i < module.l - 1:
+            E_in = module.nextinput(X, R, P.reshape(P.shape[0], -1))
+    P = jnp.stack(Ps, 1)  # (b, l, h, k)
+    return (P, tuple(Us)) if inputs else P
+
+
 def onto_acts_fn(ckpt, step, temperature, inputs=False):
     """Load an Ontologizer checkpoint and return (acts, embed, F, meta):
     acts(X) is the flattened (b, l*h*k) assignment code, embed decodes
@@ -420,35 +450,15 @@ def onto_acts_fn(ckpt, step, temperature, inputs=False):
     params = {'params': params}
     l, h, k = model.l, model.h, model.k
 
-    def probe(module, X, inputs=False):
-        E, _ = module.encode(X, 0.0, None)
-        R = module.resid(E)
-        E_in = module.constinput(E)
-        Ps, Us = [], []
-        resid_fwd = module.forward in ("resid", "resid_labels")
-        # reproduce the DictEnc's gain-shape split: under `resid_gain` it
-        # classifies the unit-norm SHAPE of its input and scales its
-        # contribution by the measured GAIN. Identity / no-op when off.
-        for i, de in enumerate(module.dictencs):
-            U, G = de.gainshape_in(E_in)
-            if inputs and i > 0:
-                # the residual leads the input, X's width wide
-                Us.append(U[..., :X.shape[-1]] if resid_fwd else U)
-            P = de.dict.cluster(de.classifier(U), temperature)
-            Ps.append(P)
-            R = R + de.gained(de.dict.combine(de.dict.hfwd(P)), G)
-            if i < module.l - 1:
-                E_in = module.nextinput(X, R, P.reshape(P.shape[0], -1))
-        P = jnp.stack(Ps, 1)  # (b, l, h, k)
-        return (P, tuple(Us)) if inputs else P
-
     @jax.jit
     def acts(X):
-        P = model.apply(params, X, method=probe)
+        P = model.apply(params, X, temperature, method=onto_probe)
         return P.reshape(X.shape[0], -1)  # feature f = (l*h + h_i)*k + k_i
 
     def embed(codes):
-        """Decode constant codes (F, l, h, k) through the dict + decoder."""
+        """Decode constant codes (F, l, h, k) through the dict + decoder.
+        There is no input here, so the router gain and fibers, which read
+        it, cannot apply: this is the base dictionary's decode."""
         def probe_c(module, Ps):
             R = jnp.zeros((Ps.shape[0], module.e_lat))
             for i, de in enumerate(module.dictencs):
@@ -464,7 +474,7 @@ def onto_acts_fn(ckpt, step, temperature, inputs=False):
 
     @jax.jit
     def layer_inputs(X):
-        return model.apply(params, X, True, method=probe)[1]
+        return model.apply(params, X, temperature, True, method=onto_probe)[1]
 
     return acts, embed, l * h * k, meta, layer_inputs
 

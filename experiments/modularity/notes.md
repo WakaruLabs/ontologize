@@ -11,9 +11,9 @@ small spread of null means.
 
 ### Ontologizer heads, each layer on its own input (`bl_ctl_full`, step 369500)
 
-5 layers x 32 heads x 32 entries, `--temperature 0.03` (the
-`headstruct.py`/`autointerp.py` default, not checked against this
-model's training schedule). Nulls are permuted within each layer.
+5 layers x 32 heads x 32 entries, `--temperature 0.03`: the run annealed
+1.0 -> 0.03 over its first 50k steps (`log.jsonl` `hyper`), so this is its
+final temperature. Nulls are permuted within each layer.
 
 | layer | graph | real Q | null Q | ratio | z |
 |---|---|---|---|---|---|
@@ -119,14 +119,40 @@ groups must be a multiple of prefixes), scored with
 `--trained-groups --prefix-layers`.
 No such run exists yet.
 
+### Trained-head Matryoshka SAE (`m5120_g160top1_p5`, `--trained-groups --prefix-layers`)
+
+Trained for this experiment: `m5120_g160top1` plus 5 nested prefixes,
+`sae.py --m 5120 --topk 0 --groups 160 --prefixes 5 --lr 4e-4 --epochs 150`
+(144,300 steps; FVU_w 0.2935, 79/5120 dead latents). 160 top-1 heads of
+32, 32 per prefix block; block L scored on its prefix residual.
+
+| block | heads | coverage | real Q | null Q | ratio | z |
+|---|---|---|---|---|---|---|
+| 0 | 32 | 1.000 | 0.0683 | 0.0646 | 1.06 | 2.5 |
+| 1 | 32 | 1.000 | 0.0378 | 0.0393 | 0.96 | -1.5 |
+| 2 | 32 | 1.000 | 0.0316 | 0.0324 | 0.98 | -1.0 |
+| 3 | 32 | 1.000 | 0.0246 | 0.0254 | 0.97 | -1.7 |
+| 4 | 32 | 1.000 | 0.0154 | 0.0157 | 0.98 | -0.9 |
+| all | 160 | | 0.0356 | 0.0354 | 1.01 | 0.2 |
+
+Exact partitions (exhaustiveness and exclusivity 1.000) with full
+coverage in every block -- none of the discovered-group control's thin
+late blocks -- and at their nulls throughout (0.96-1.06), where
+Ontologizer layers 1-4 sit at 2.1-2.9 on the same kind of graph. This
+removes the confound in the discovered-group Matryoshka control: trained
+heads in a coarse-to-fine SAE, scored on matched prefix-residual graphs,
+do not show the effect either.
+
 ## Reading so far
 
 On X, the one graph both families share, neither model's heads or groups
 are communities of the input. The Ontologizer's positive result is
 within-model and depends on scoring each layer on the residual it
-classifies. Scoring a Matryoshka SAE's discovered groups on matched
-prefix-residual graphs does not reproduce it (ratios 0.88-1.03 in the
-blocks with coverage), so the result is not explained by residual graphs
-being more clustered alone. Whether it is specific to the Ontologizer or
-to trained heads in general needs the trained-head Matryoshka control.
-One checkpoint per model, one seed throughout.
+classifies. Neither Matryoshka control reproduces it on matched
+prefix-residual graphs: discovered groups sit at 0.88-1.03 of their
+nulls in the blocks with coverage, and trained top-1 heads at 0.96-1.06
+in every block. So it is not explained by residual graphs being more
+clustered, nor by trained heads in a coarse-to-fine dictionary: what
+differs is that an Ontologizer layer classifies the residual it is
+scored on, while a Matryoshka block is encoded from X and only trained to
+reconstruct that residual. One checkpoint per model, one seed throughout.

@@ -2,7 +2,9 @@
 leak what the score stage grades on, the null control must never grade a
 feature against its own description, and both must be deterministic."""
 import numpy as np
+import pytest
 
+from conftest import KW, X  # noqa: F401  (X is a fixture)
 from autointerp import (CAL_PROMPT_CHARS, CONTRAST_PROMPT, SUMMARIZE_PROMPT,
                         call_weight, contrast_rows, detection_items,
                         cap_pairing, next_slot, null_pairing, read_scores,
@@ -179,3 +181,31 @@ def test_null_items_identical_to_self_items():
     a = detection_items(7, top_i, neg_i, 10, 5, 42)
     b = detection_items(7, top_i, neg_i, 10, 5, 42)
     assert np.array_equal(a[0], b[0]) and a[1] == b[1]
+
+
+@pytest.mark.parametrize("over", [
+    dict(),
+    dict(scaled=True),
+    dict(fiber_rank=2),
+    dict(scaled=True, concat=True),
+])
+def test_onto_probe_matches_the_forward(over, X):
+    # `onto_probe` replays the stack to read every layer's assignments (the
+    # code autointerp, headstruct --onto, splitting and refit consume); with
+    # a router or fibers it must still write what the forward writes, or
+    # every layer past the first classifies another model's residual
+    import jax
+    import jax.numpy as jnp
+    from autointerp import onto_probe
+    from ontologize.ontologizer import Ontologizer
+
+    model = Ontologizer(**{**KW, "select": "ste", "resid_gain": True, **over})
+    params = model.init(jax.random.PRNGKey(0), X)
+    P = model.apply(params, X, 0.5, method=onto_probe)          # (b, l, h, k)
+
+    def forward(module, X):
+        E, _ = module.encode(X, 0.0, None)
+        return module.classify(E, X_ref=X, temperature=0.5)[1]  # (l, b, hk)
+
+    Ps = model.apply(params, X, method=forward)
+    assert jnp.allclose(P, jnp.moveaxis(Ps, 0, 1).reshape(P.shape), atol=1e-6)

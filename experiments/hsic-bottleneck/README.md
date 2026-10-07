@@ -89,6 +89,15 @@ uv run python experiments/hsic-bottleneck/train_hsic.py --arm both --s-hsic-head
 | `--cache` | `data/sonar_embeddings/mc4_4M.npy` | `encode_corpus.py` output |
 | `--mse-weights` | `data/out/sonar/mse_weights.npy` | `''` disables whitening |
 | `--out-base` | `experiments/hsic-bottleneck/runs` | runs land in `<out-base>/<arm>` |
+| `--resid-gain` | `1` | gain-shape forwarding; `resid_nc_hm` has it off (`0`) |
+| `--const0` | `1` | constant coordinate at layer 0; `resid_nc_hm` predates it (`0`) |
+
+`--resid-gain` and `--const0` are passed explicitly because the model
+otherwise takes the dataclass defaults, and `resid_gain`'s changed
+(False -> True on 2026-09-10): which side of that the original arms
+trained on is not recorded (`experiments/layer4-freeze/notes.md`). The
+`aux` and `both` arms set `s_hcossim`, which is retired and now raises;
+only the `hsic` arm runs as specified.
 
 Reference run dirs for comparison:
 `data/out/sonar/multilingual/resid_nc_hm` (the live aux config) and
@@ -97,12 +106,13 @@ Reference run dirs for comparison:
 ## Outputs
 
 Each arm writes a standard run dir (orbax checkpoints, `loss.csv`,
-`log.jsonl`, loss plots). **`loss.csv` caveat:** column 3, labeled
-`MSE_ghost` by the stock pipeline, records the raw (unweighted) HSIC
-penalty in these runs (0 in the `aux` arm). The other 8 columns keep
-their stock meanings -- the internal aux stats are still computed (and
-`stop_gradient`-ed when their scale is 0), so `cossim_h`, `KL_m` etc.
-remain comparable across arms.
+`log.jsonl`, loss plots). **`loss.csv` caveat:** the third column
+(index 2), labeled `MSE_ghost` by the stock pipeline, records the raw
+(unweighted) HSIC penalty in these runs (0 in the `aux` arm). The rest of
+the row is the stock layout (`ontologize/visualize/loss.py:COLUMNS`) --
+the internal aux stats are still computed (and `stop_gradient`-ed when
+their scale is 0), so `KL_m`, `entropy` etc. remain comparable across
+arms.
 
 ## Cost (honest estimate)
 

@@ -55,10 +55,12 @@ import argparse
 import csv
 import functools
 import json
+import sys
 import numpy as np
 from pathlib import Path
 
 EXP_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(EXP_DIR.parents[1]))  # repo root: autointerp
 EPS = 1e-12
 LOG2E = 1.4426950408889634
 
@@ -125,32 +127,18 @@ def restore_params(manager, step):
 def make_acts(model, temperature):
     """Jitted (params, X) -> per-layer classifications (b, l, h, k).
 
-    The probe mirrors autointerp.onto_acts_fn's forward (clean encode, no
-    noise, no winner dropout) but forwards the flattened classification as
-    the next-layer input when forward="labels", so it is also correct on
-    labels-mode checkpoints. Traced once; params vary across checkpoints.
+    The probe is `autointerp.onto_probe`: a clean forward (no noise, no
+    winner dropout) with the constant coordinate, the gain-shape split,
+    the layer gain, the router and fibers applied as the model applies
+    them, and the flattened classification forwarded, so labels-mode
+    checkpoints work too. Traced once; params vary across checkpoints.
     """
     import jax
-    import jax.numpy as jnp
-    import einops
-
-    def probe(module, X):
-        E, _ = module.encode(X, 0.0, None)
-        R = module.resid(E)
-        Ein = E
-        Ps = []
-        for i, de in enumerate(module.dictencs):
-            P = de.dict.cluster(de.classifier(Ein), temperature)
-            Ps.append(P)
-            R = R + de.dict.combine(de.dict.hfwd(P))
-            if i < module.l - 1:
-                Ein = module.nextinput(
-                    X, R, einops.rearrange(P, "... h k -> ... (h k)"))
-        return jnp.stack(Ps, 1)  # (b, l, h, k)
+    from autointerp import onto_probe
 
     @jax.jit
     def acts(params, X):
-        return model.apply(params, X, method=probe)
+        return model.apply(params, X, temperature, method=onto_probe)
 
     return acts
 

@@ -126,7 +126,9 @@ def recon_fn(path, cfg):
         for i, de in enumerate(module.dictencs):
             U, G = de.gainshape_in(E_in)
             P = de.dict.cluster(de.classifier(U), T)
-            R = R + de.gained(de.dict.combine(de.dict.hfwd(P)), G)
+            # head_outputs applies the router gain and fibers as the
+            # forward does; dict.hfwd(P) alone would drop them
+            R = R + de.gained(de.dict.combine(de.head_outputs(U, P)), G)
             if i < module.l - 1:
                 E_in = module.nextinput(X, R, P.reshape(P.shape[0], -1))
         return module.decode(R)

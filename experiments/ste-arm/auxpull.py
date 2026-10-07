@@ -134,11 +134,14 @@ def main() -> None:
                 U, G = de.gainshape_in(Ein)
                 K = de.classifier(U)
                 P = de.dict.cluster(K, cfg.temperature)
-                Fs = de.dict.hfwd(P)
+                # the router gain enters the logged stats as in
+                # DictBlock.withStats: base output and S, no fiber
+                S = de.scale(U) if de.scaled else None
+                Fs = de.dict.hfwd(P, S)
                 acc["L1_K"] += de.classifier.l1(K)
                 acc["L1_F"] += de.dict.l1(Fs)
-                acc["entropy"] += de.dict.entropy(P)
-                acc["cossim_b"] += de.dict.bcossim_tags(P)
+                acc["entropy"] += de.dict.entropy(P, S)
+                acc["cossim_b"] += de.dict.bcossim_tags(P, S)
                 acc["support"] += de.dict.support_overlap(P)
                 acc["cossim_k"] += de.dict.rowcos().mean()
                 acc["KL_m"] += de.dict.hmean_kl(P)
@@ -146,7 +149,7 @@ def main() -> None:
                 # rather than the layer, so it has no gate to force on
                 acc["hsic_heads"] += hsic.pairwise_head_cka(
                     P, cfg.hsic_sigma2, cfg.hsic_estimator)
-                R = R + de.gained(de.dict.combine(Fs), G)
+                R = R + de.gained(de.dict.combine(de.head_outputs(U, P)), G)
                 if i < module.l - 1:
                     Ein = module.nextinput(X, R, P.reshape(X.shape[0], -1))
             return acc, module.decode(R)

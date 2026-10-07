@@ -54,7 +54,7 @@ def build(model: Ontologizer, T: float, const: Sequence[Optional[float]]
             gains.append(G)
             P = de.dict.cluster(de.classifier(U), T)
             g = G if const[i] is None else jnp.full_like(G, const[i])
-            R = R + de.gained(de.dict.combine(de.dict.hfwd(P)), g)
+            R = R + de.gained(de.dict.combine(de.head_outputs(U, P)), g)
             if i < module.l - 1:
                 Ein = module.nextinput(X, R, P.reshape(X.shape[0], -1))
         return module.decode(R), jnp.stack(gains)

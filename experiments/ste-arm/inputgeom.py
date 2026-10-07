@@ -51,7 +51,7 @@ def main(ckpt: str, T: float) -> None:
             U, G = de.gainshape_in(Ein)
             Us.append(U)
             P = de.dict.cluster(de.classifier(U), T)
-            R = R + de.gained(de.dict.combine(de.dict.hfwd(P)), G)
+            R = R + de.gained(de.dict.combine(de.head_outputs(U, P)), G)
             if i < module.l - 1:
                 Ein = module.nextinput(X, R, P.reshape(X.shape[0], -1))
         return jnp.stack(Us)

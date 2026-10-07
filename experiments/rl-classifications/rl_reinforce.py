@@ -158,21 +158,11 @@ def load_frozen(cfg):
     f = (cfg.layer * h + cfg.head) * k + cfg.entry
     T = cfg.temperature
 
-    def probe(module, X):  # steerfid's soft-forward tag-probability probe
-        E, _ = module.encode(X, 0.0, None)
-        R = module.resid(E)
-        Ein = E
-        Ps = []
-        for i, de in enumerate(module.dictencs):
-            P = de.dict.cluster(de.classifier(Ein), T)
-            Ps.append(P)
-            R = R + de.dict.combine(de.dict.hfwd(P))
-            if i < module.l - 1:
-                Ein = module.nextinput(X, R, None)
-        return jnp.stack(Ps, 1).reshape(X.shape[0], -1)
-
-    acts = jax.jit(lambda X: model.apply({"params": mparams}, X,
-                                         method=probe))
+    # every layer's soft assignment on the clean forward, flattened
+    from autointerp import onto_probe
+    acts = jax.jit(lambda X: model.apply({"params": mparams}, X, T,
+                                         method=onto_probe
+                                         ).reshape(X.shape[0], -1))
 
     def run_args(X, arglist):
         Y, _, _, _ = model.apply({"params": mparams}, jnp.asarray(X),
