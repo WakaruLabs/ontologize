@@ -38,7 +38,7 @@ categories, and each category stores one vector; the input is rebuilt as
 the sum of the vectors its categories select. In the models described here
 there are 5 rounds of 32 classifiers with 32 categories each, so an input
 is described by 160 choices --- 800 bits --- plus one number per round
-giving its overall size. Nothing is labelled: classifiers and vectors are
+giving its overall size. Nothing is labeled: classifiers and vectors are
 learned only by asking the rebuilt representation to match the original.
 
 Because a classifier's categories are mutually exclusive, changing one
@@ -52,7 +52,7 @@ network normally sees.
 We study two representations. The main one is GPT-2 small's internal
 state after its first eight blocks~\cite{radford2019}, on web text: there the
 rebuilt state can be put back into the running model, so we can measure
-how much of the model's behaviour survives. The second is SONAR sentence
+how much of the model's behavior survives. The second is SONAR sentence
 embeddings~\cite{sonar}, a fixed-length vector per sentence that can be
 decoded back into text, which makes a steered embedding readable.
 
@@ -63,7 +63,7 @@ differently in a chosen way. The most reliable current method is a
 \emph{steering vector}: average the representations of examples with a
 property, subtract the average of examples without it, and add the
 difference to new inputs~\cite{turner2023,rimsky2024}. This works well,
-but each concept needs a labelled contrastive dataset, and someone must
+but each concept needs a labeled contrastive dataset, and someone must
 already suspect the concept exists.
 
 Sparse autoencoders (SAEs) find features without labels: each input is
@@ -172,7 +172,10 @@ it.
 \begin{center}\small
 \begin{tabular}{@{}llrr@{}}
 \toprule
-GPT-2 small, after 8 blocks, held out & per-token code & unexplained variance & loss recovered \\
+\begin{tabular}[b]{@{}l@{}}GPT-2 small, after 8 blocks,\\held out\end{tabular}
+& per-token code
+& \begin{tabular}[b]{@{}r@{}}unexplained\\variance\end{tabular}
+& \begin{tabular}[b]{@{}r@{}}loss\\recovered\end{tabular} \\
 \midrule
 Ontologizer, 32 categories & 800 bits & 0.186 & 97.5\% \\
 Ontologizer, 64 categories & 960 bits & 0.164 & 97.9\% \\
@@ -222,7 +225,7 @@ Swaps made on the description itself do not have this problem.
 \section*{Next}
 
 The test the method needs is AxBench-style steering toward externally
-defined concepts: difference-of-means vectors from labelled pairs, SAE
+defined concepts: difference-of-means vectors from labeled pairs, SAE
 features and the method's swaps, scored for concept success by a judge at
 matched side effects and fluency, plus detection against a linear probe.
 That benchmark targets Gemma 2, which would mean moving off GPT-2. In

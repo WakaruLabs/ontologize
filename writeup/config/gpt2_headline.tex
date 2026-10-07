@@ -5,7 +5,7 @@
 \toprule
 \multicolumn{2}{@{}l}{\emph{shared by the headline-branch runs of Section~\ref{sec:gpt2hard}}} \\
 \midrule
-input & GPT-2 small, residual entering block 8, $d{=}768$; mean-centred, scaled to unit mean square; FineWeb \\
+input & GPT-2 small, residual entering block 8, $d{=}768$; mean-centered, scaled to unit mean square; FineWeb \\
 shape & $l{=}5$ layers $\times$ $h{=}32$ heads, $k{=}32$ entries per head (800 bits) unless noted \\
 selection & straight-through, temperature $t{=}1 \to 0.03$ over the first 60k steps \\
 classifier & bilinear (order 2) \\
@@ -26,7 +26,7 @@ seed & 42 unless noted \\
 run & dictionary & data \\
 \midrule
 direct + gain + STE & signed atoms in $\mathbb{R}^{768}$, no decoder & 40M tokens, one pass (156k steps) \\
-private heads + gain + STE & non-negative, $e{=}1536$ in 48-dim blocks, shared decoder & 40M tokens, one pass \\
+private heads + gain + STE & non-negative, $e{=}1536$ in 48-dimensional blocks, shared decoder & 40M tokens, one pass \\
 one-epoch ablations & as in Appendix~\ref{sec:gpt2ablation} & 10M tokens \\
 \bottomrule
 \end{tabular}

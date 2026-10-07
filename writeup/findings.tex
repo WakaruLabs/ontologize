@@ -95,7 +95,8 @@ matching supervised diff-of-means vectors and SAE decoder-row addition
 are concept-aligned remain informative about the SAE side but are the
 wrong lens for classifier codes, and we flag them as such where they
 appear. Figure~\ref{fig:teaser} shows the softmax Ontologizer on three
-of question (d)'s criteria.
+of question (d)'s criteria; the hard code steers less reliably than the
+soft one (Section~\ref{sec:steer}).
 
 \begin{figure}[tp]\centering
 \includegraphics[width=\linewidth]{figures/fig-teaser.pdf}
@@ -109,8 +110,7 @@ exactly in the final layer (\texttt{resid\_nc}; Section~\ref{sec:formal}).
 Right: the sparse SAEs' codes lose most text before any intervention
 (round-trip chrF 0.23--0.28 against a 0.20 corpus floor) while the soft
 code keeps it (0.54); the dense \texttt{k5120} keeps more but is not a
-sparse code (Appendix~\ref{sec:textfid}). The hard code steers less
-reliably than the soft one (Section~\ref{sec:steer}).}
+sparse code (Appendix~\ref{sec:textfid}).}
 \label{fig:teaser}
 \end{figure}
 
@@ -123,7 +123,7 @@ result in this document.
 \section{Related work}
 
 No single line of prior work covers this combination; each commitment has
-a nearest neighbour.
+a nearest neighbor.
 
 \paragraph{Discrete and routed dictionaries.}
 A \texttt{DictBlock} head --- a softmax over $k$ entries, summed across
@@ -155,7 +155,7 @@ hierarchies. Rung 3 (\texttt{k32\_p5}) imports exactly the matryoshka
 commitment into the ladder; the Ontologizer's axis is instead
 \emph{partition into exhaustive, mutually exclusive heads}. Both lines ask
 whether an architectural commitment buys interpretability that code
-density alone does not explain --- the auto-interp results below answer
+density alone does not explain --- the autointerp results below answer
 ``not per-latent describability,'' while the description-coherence view is
 where the partition begins to pay.
 
@@ -175,7 +175,7 @@ itself.
 \paragraph{Evaluation stance.}
 SAEBench~\cite{karvonen2025} is the template for the multi-instrument
 battery (\texttt{langprobe.py} is deliberately SAEBench-style), and the
-blinded detection scoring follows the scaled auto-interp
+blinded detection scoring follows the scaled autointerp
 line~\cite{paulo2025}. AxBench~\cite{wu2025axbenchsteeringllmssimple} found that prompting and
 finetuning beat every representation-based steering method, with SAEs
 uncompetitive even at concept detection --- independent support for
@@ -211,8 +211,8 @@ separate GPT-2 setup compares only within that section
 (Appendix~\ref{app:data}).
 
 \paragraph{Objective and score.}
-Every model minimizes the whitened MSE of Equation~\ref{eq:mse}, and we
-report whitened FVU (Equation~\ref{eq:fvu}) on the final 32{,}768 cache
+Every model minimizes the whitened MSE of Eq.~\eqref{eq:mse}, and we
+report whitened FVU (Eq.~\eqref{eq:fvu}) on the final 32{,}768 cache
 rows, which SAEs and straight-through arms never train on. The softmax
 Ontologizers predate that holdout, so their scores are in-sample. Every
 score uses the run's own final temperature.
@@ -244,7 +244,7 @@ partition and by contribution (\texttt{splitting.py}, \texttt{partition.py},
 refitting on a frozen support (\texttt{refit.py}); steering fidelity in
 text and in embedding space (\texttt{steerfid.py}, \texttt{steerembed.py},
 \texttt{steergeom.py}); additivity of paired interventions
-(\texttt{compose.py}); and auto-interpretability (\texttt{autointerp.py}).
+(\texttt{compose.py}); and autointerp (\texttt{autointerp.py}).
 
 \input{sections/results}
 

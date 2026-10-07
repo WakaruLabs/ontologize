@@ -290,3 +290,13 @@ Code identifiers keep their names (`tags()`, `decode_tags.py`, `forward="labels"
 - Every comparison states its null or control; a result without a null of the same shape
   is not reported as a result.
 - One seed per cell is said explicitly where it applies.
+- Cross-references: equations are always `Eq.~\eqref{...}` (`Eqs.` for several), printed
+  "Eq. (5)", including at the start of a sentence; never "Equation" or a bare `\ref` to
+  an `eq:` label. Sections and algorithms are "Section~\ref" and "Algorithm~\ref" in
+  prose and captions; "§" and "Alg." only inside tables.
+- "autointerp" in prose for automated interpretability (the script is
+  `\texttt{autointerp.py}`); not "auto-interp" or "auto-interpretability".
+- American spelling (normalize, centered, labeled, neighbor, behavior, favor).
+- A citation is tied to its word with `~\cite{...}`, never glued (`word\cite`).
+- Quotation marks are ``...''; a straight `"` prints as a closing quote.
+- Floats take `[tp]` or `[htbp]`, never `[h]` alone (LaTeX warns and changes it to `[ht]`).

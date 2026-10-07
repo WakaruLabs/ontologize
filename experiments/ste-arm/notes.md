@@ -1631,6 +1631,47 @@ So the direct-atom test at a weight that moves `sigma` has not been run;
 on GPT-2 the penalty took hold from 1e-5. Results:
 `data/out/headsupport/headsupport_k128.json`.
 
+## Per-layer decoders (`--per-layer-dec`): the shared basis is not what limits depth
+
+Every layer's atoms are decoded by one shared `W_dec`, whose gradient comes
+mostly from layer 0's error, so the deeper layers work in a basis fitted to
+someone else's residual. `Ontologizer.per_layer_dec` gives each layer its
+own decoder (one `Linear` over an `l * e_dec` latent in which layer i
+writes only block i). Pilot on GPT-2, signed dictionary, 3 epochs
+(46,250 steps), one seed, against the shared twin `sigma_pilot/s0`;
+held-out prefix FVU after each layer from `codeuse.py`, with what that
+layer adds in parentheses:
+
+| decoder | layer 0 | 1 | 2 | 3 | 4 (final) | realized bits |
+|---|---|---|---|---|---|---|
+| shared, e 1536 | 0.721 (0.279) | 0.585 (0.136) | 0.510 (0.075) | 0.460 (0.050) | **0.423** (0.036) | 1052 (55%) |
+| per-layer, e 1536 (decoder x5) | 0.728 (0.272) | 0.591 (0.138) | 0.517 (0.074) | 0.467 (0.049) | 0.429 (0.038) | 1022 (54%) |
+| per-layer, e 320 (decoder parameters matched) | 0.768 (0.233) | 0.640 (0.128) | 0.573 (0.067) | 0.528 (0.045) | 0.501 (0.027) | 959 (51%) |
+
+**Separate decoders do not help the deep layers.** At the same `e_dec`,
+every layer adds what it added with the shared decoder, to within 0.007:
+layers 3 and 4 add 0.049 and 0.038 against 0.050 and 0.036, and the
+final FVU is 0.006 worse with five times the decoder's parameters. Matching
+the decoder's parameters instead (`e_dec` 320, so each layer's dictionary
+is 5x narrower) costs layer 0 most (0.233 against 0.279) and ends 0.078
+worse. The small additions of the deep layers are not caused by a basis
+fitted to layer 0.
+
+Caveats: one seed, 3 epochs, codes at 51-55% of their nominal bits (the
+3-epoch arms are partly trained), so differences under about 0.01 are not
+read. The concat variant's coupling of head index across layers is not
+tested here (these heads sum).
+
+```bash
+uv run python experiments/ste-arm/train_ste.py --base gpt2_l8 \
+    --dict-init-scale 1.0 --signed --per-layer-dec --e-dec 1536 --epochs 3 \
+    --out data/out/gpt2_l8/pld_pilot/pld1536     # --e-dec 320 for pld320
+uv run python experiments/ste-arm/codeuse.py --temperature 1.0 \
+    --model data/out/gpt2_l8/pld_pilot/pld1536 \
+    --cache data/activations/gpt2_l8.npy \
+    --mse-weights data/activations/gpt2_l8.mse_weights_matched.npy
+```
+
 ## Head-independence pressure (`--s-hsic-heads`): a measurement artifact
 
 **Everything in this section was chasing estimator bias.** The heads
@@ -2750,7 +2791,18 @@ They now call `DictEnc.head_outputs(U, P)`, which applies both as
 (`tests/test_head_outputs.py`). The scripts covered are `pareto.py`,
 `steerembed.py`, `steergeom.py`, `headcontrib.py`, `partition.py` and
 `headlang.py`. On unrouted models the output is unchanged: the plain
-pair's agreement reproduces to four digits. `headcontrib.py`'s atom
+pair's agreement reproduces to four digits. `autointerp.py`'s probe
+(`onto_probe`, which `headstruct.py --onto`, `splitting.py` and
+`refit.py` consume through `onto_acts_fn`), `textfid.py` and `steerfid.py`
+were migrated on 2026-10-06, with `tests/test_autointerp.py` pinning the
+probe to the forward, followed by `auxpull.py`, `blendablate.py`,
+`codeuse.py`, `gainablate.py`, `initscale.py` and `inputgeom.py` here
+(none had been run on a routed model), and `freeze_diag.py` and
+`rl_reinforce.py`, whose older probes also skipped the constant
+coordinate, the gain-shape split and the gain; they now call `onto_probe`
+(see `experiments/layer4-freeze/notes.md`). On `ste_h20_cat128-sc` the old probe's assignments
+agreed with the forward's on 2.2%, 1.3%, 0.8%, 0.7% of rows in layers 1-4
+(512 tail rows); no recorded analysis had run them on a routed model. `headcontrib.py`'s atom
 decomposition assumes contribution = gain x atom, which the router breaks,
 so it is skipped for routed models.
 

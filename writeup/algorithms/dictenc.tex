@@ -12,14 +12,14 @@
 		part $\mathbf{y}_n$ (the encoded input at layer 0, the residual
 		above) and $n_{\mathrm{const}}$ constant coordinates
 		(\texttt{resid\_const})}
-	\KwData{bilinear classifier (Eq.~\ref{eq:bilinearblock}); router
+	\KwData{bilinear classifier (Eq.~\eqref{eq:bilinearblock}); router
 		(\texttt{scaled}); fiber readouts $A_i \in \mathbb{R}^{r \times d'}$;
 		$\dictblock$ (Algorithm~\ref{alg:dictblock})}
 	\Hyper{logit noise $\sigma_K$; fiber bound $\beta$; the
 		$\dictblock$ hyperparameters}
 	\KwOut{accumulator $R$; assignments
 		$\mathsf{P} \in \mathbb{R}^{b \times h \times k}$; statistics
-		row $\boldsymbol{\psi}$ (Eq.~\ref{eq:stats})}
+		row $\boldsymbol{\psi}$ (Eq.~\eqref{eq:stats})}
 
 	\Begin{
 		$g_n \leftarrow \mathrm{sg}\big[\lVert \mathbf{y}_n\rVert\big]$;\quad
@@ -30,7 +30,7 @@
 			\mathrm{classifier}(\mathbf{u}_{1:b})$
 			\tcp*{L1 of the gate factor}
 		$\mathsf{K} \leftarrow \mathrm{noise}_K(\mathsf{K})$
-			\tcp*{Eq.~\ref{eq:noise_normal} or~\ref{eq:noise_batchnorm}}
+			\tcp*{Eq.~\eqref{eq:noise_normal} or~\eqref{eq:noise_batchnorm}}
 		\eIf{router}{
 			$\Gamma, \mathrm{L1}_S \leftarrow \mathrm{router}(\mathbf{u}_{1:b})$;\quad
 				$\Gamma \leftarrow \lvert \Gamma \rvert$
@@ -39,7 +39,7 @@
 			$\Gamma \leftarrow \mathbf{1}$;\quad $\mathrm{L1}_S \leftarrow 0$\;
 		}
 		$\mathbf{c}_{ni} \leftarrow \beta \tanh(A_i \mathbf{u}_n / \beta)$
-			\tcp*{fiber coordinates, Eq.~\ref{eq:fiber}}
+			\tcp*{fiber coordinates, Eq.~\eqref{eq:fiber}}
 		$F', \mathsf{P}, (\mathrm{L1}, H, \mathrm{cossim}_b,
 			\mathbb{E}\kappa, \max\kappa, \mathrm{KL}_m, \omega)
 			\leftarrow \dictblock(\mathsf{K}, \Gamma, \mathsf{C})$\;

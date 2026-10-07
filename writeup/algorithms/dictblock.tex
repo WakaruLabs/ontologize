@@ -45,7 +45,7 @@
 		$\mathsf{P} \leftarrow \mathrm{select}_k(\mathsf{K}/t)$
 			\tcp*{softmax, \texttt{top}$k_{\mathrm{sel}}$ or straight-through}
 		$H \leftarrow \mathbb{E}_{n,i}\,\mathrm{entropy}_k(\mathbf{p}_{ni})$
-			\tcp*{Eq.~\ref{eq:entropy}}
+			\tcp*{Eq.~\eqref{eq:entropy}}
 		$\bar{\mathbf{p}}_i \leftarrow \mathrm{sg}[\mathbb{E}_n\,
 			\mathbf{p}_{ni}]$ \tcp*{head origin}
 		\ForEach(\tcp*[f]{head dropout}){$(n,i)$}{
@@ -59,18 +59,18 @@
 			$\mathbf{c}_{ni} \leftarrow \mathbf{0}$\;
 		}
 		$\mathbf{f}_{ni} \leftarrow \gamma_{ni} \sum_{j} p'_{nij}\,
-			\mathbf{a}_{ij}$ \tcp*{Eq.~\ref{eq:dictblock}; interventions act
+			\mathbf{a}_{ij}$ \tcp*{Eq.~\eqref{eq:dictblock}; interventions act
 			on $\mathbf{p}'$}
 		$\tilde{\mathsf{F}} \leftarrow \mathrm{noise}_{\mathrm{featvar}}
-			(\mathsf{F})$ \tcp*{Eq.~\ref{eq:noise_featvar}}
+			(\mathsf{F})$ \tcp*{Eq.~\eqref{eq:noise_featvar}}
 		$\mathrm{cossim}_b \leftarrow \mathrm{cossim}_b(\mathsf{P})$
-			\tcp*{Eq.~\ref{eq:cossim_b}, through the Grams}
+			\tcp*{Eq.~\eqref{eq:cossim_b}, through the Grams}
 		$\kappa_i \leftarrow \mathbb{E}_{j \ne j'}
 			\cos(\mathbf{a}_{ij}, \mathbf{a}_{ij'})$
 			\tcp*{within-head atom cosine}
 		$\mathrm{KL}_m \leftarrow \mathbb{E}_i \left[\log_2 k -
 			\mathrm{entropy}_k(\bar{\mathbf{p}}_i)\right]$
-			\tcp*{Eq.~\ref{eq:KL}}
+			\tcp*{Eq.~\eqref{eq:KL}}
 		$\boldsymbol{\pi}_i \leftarrow \sum_j \bar{p}_{ij}\,
 			\lvert\mathbf{a}_{ij}\rvert$;\quad
 			$\omega \leftarrow \mathbb{E}_{i \ne i'}
@@ -80,7 +80,7 @@
 			\lVert \tilde{\mathbf{f}}_{ni} \rVert_1$\;
 		$\mathbf{f}'_n \leftarrow \sum_i \tilde{\mathbf{f}}_{ni}$
 			\tcp*{concatenated, not summed, under $\mathtt{ConcatDictBlock}$}
-		\If(\tcp*[f]{Eq.~\ref{eq:fiber}, then any norm cap}){fibers}{
+		\If(\tcp*[f]{Eq.~\eqref{eq:fiber}, then any norm cap}){fibers}{
 			$\mathbf{f}'_n \leftarrow \mathbf{f}'_n + \sum_i \gamma_{ni}
 				\sum_j p'_{nij}\,U_{ij}\,\mathbf{c}_{ni}$\;
 		}

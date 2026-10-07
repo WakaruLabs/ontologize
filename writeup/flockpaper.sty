@@ -187,10 +187,12 @@
   {0.8em}{}
 \titlespacing*{\subsection}{0pt}{16pt plus 3pt minus 2pt}{6pt}
 
+% run-in: the gap after the period goes in \titlespacing's after-sep, since
+% titlesec drops trailing glue from a run-in title's after-code
 \titleformat{\subsubsection}[runin]
   {\normalfont\normalsize\itshape}
-  {}{0pt}{}[.\hspace{0.6em}]
-\titlespacing*{\subsubsection}{0pt}{12pt plus 2pt}{0pt}
+  {}{0pt}{}[.]
+\titlespacing*{\subsubsection}{0pt}{12pt plus 2pt}{0.6em}
 
 %% ---- running heads ---------------------------------------------------------
 

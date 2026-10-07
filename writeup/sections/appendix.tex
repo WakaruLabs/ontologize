@@ -27,7 +27,7 @@ application, $\mathrm{dec}(R)$. Sets are calligraphic
 ($\mathcal{S}_n$, $\mathcal{G}$). Named statistics, losses and operators
 are roman ($\fvu$, $\mathrm{MSE}$, $\mathrm{KL}_m$, $\mathrm{dec}$,
 $\mathrm{sg}$), as are $H$, entropy, and $L$, the loss; the paragraph
-around Equation~\ref{eq:realized} follows information theory in writing
+around Eq.~\eqref{eq:realized} follows information theory in writing
 random variables in uppercase. A hat marks a reconstruction
 ($\hat{\mathbf{x}}_\ell$), a tilde a noised quantity
 ($\tilde{\mathsf{F}}$, $\tilde{\mathbf{f}}_i$), a bar a mean
@@ -42,7 +42,7 @@ reads state $\ell$ and writes state $\ell+1$. So $\mathbf{r}_0 =
 \mathbf{0}$ and $\mathbf{y}_0 = \mathbf{x}$, the final reconstruction is
 $\hat{\mathbf{x}}_l$, and the deep-supervision prefixes are
 $\hat{\mathbf{x}}_1,\dots,\hat{\mathbf{x}}_l$. Tables and prose name
-layers ("layer 0"), so a table's row for layer $\ell$ reports the prefix
+layers (``layer 0''), so a table's row for layer $\ell$ reports the prefix
 through it, $\hat{\mathbf{x}}_{\ell+1}$.
 
 \paragraph{Indices and sizes.}
@@ -88,68 +88,68 @@ symbol & meaning & defined \\
 \bottomrule
 \endlastfoot
 \multicolumn{3}{@{}l}{\emph{The model}} \\[2pt]
-$\mathbf{x}$, $X$; $\bar{\mathbf{x}}$ & an input ($d$), a batch ($b\times d$); the data mean & Eqs.~\ref{eq:mse}, \ref{eq:fvu} \\
+$\mathbf{x}$, $X$; $\bar{\mathbf{x}}$ & an input ($d$), a batch ($b\times d$); the data mean & Eqs.~\eqref{eq:mse}, \eqref{eq:fvu} \\
 $\mathrm{enc}$ & the encoder, the identity unless stated & Alg.~\ref{alg:ontologizer} \\
-$\mathbf{u}_\ell$, $\mathbf{u}$ & layer $\ell$'s shape: its input's unit direction, with the constant coordinate appended; what the classifier, router and fibers read ($\mathbf{u}$ within a layer) & Eq.~\ref{eq:y_norm} \\
-$\mathsf{W}$, $\mathsf{V}$ & the bilinear classifier's weight tensors & Eq.~\ref{eq:bilinearblock} \\
-$K$, $\mathsf{K}$ & logits, one sample's ($h\times k$) and a batch's & Eq.~\ref{eq:bilinearblock} \\
+$\mathbf{u}_\ell$, $\mathbf{u}$ & layer $\ell$'s shape: its input's unit direction, with the constant coordinate appended; what the classifier, router and fibers read ($\mathbf{u}$ within a layer) & Eq.~\eqref{eq:y_norm} \\
+$\mathsf{W}$, $\mathsf{V}$ & the bilinear classifier's weight tensors & Eq.~\eqref{eq:bilinearblock} \\
+$K$, $\mathsf{K}$ & logits, one sample's ($h\times k$) and a batch's & Eq.~\eqref{eq:bilinearblock} \\
 $t$ & classifier temperature, $P = \mathrm{softmax}_k(K/t)$ & §\ref{sec:labels} \\
 $P$, $\mathsf{P}$; $\mathbf{p}_{ni}$, $p_{nij}$ & assignments, one sample's and a batch's; head $i$'s distribution, one entry's probability & §\ref{sec:labels} \\
-$\bar{\mathbf{p}}_i$ & head $i$'s mean assignment over the data, its usage & Eq.~\ref{eq:KL} \\
+$\bar{\mathbf{p}}_i$ & head $i$'s mean assignment over the data, its usage & Eq.~\eqref{eq:KL} \\
 $p_{\mathrm{drop}}$ & winner-dropout probability & §\ref{sec:bilinear} \\
-$\mathsf{D}$, $D_i$ & the dictionary ($h\times k\times e$), and head $i$'s slice ($k\times e$) & Eq.~\ref{eq:dictblock} \\
-$\mathbf{a}_{ij}$ & an atom: $\lvert\mathsf{D}_{ij\cdot}\rvert$, or $\mathsf{D}_{ij\cdot}$ when signed & Eq.~\ref{eq:dictblock} \\
-$G_i$ & head $i$'s dictionary Gram & Eq.~\ref{eq:cossim_b} \\
-$\mathbf{f}_i$; $F$, $\mathsf{F}$ & head $i$'s output ($e$); stacked over heads, and over heads and samples & Eq.~\ref{eq:dictblock} \\
-$\mathbf{f}'_\ell$, $F'$ & layer $\ell$'s pooled output, and a batch's & Eq.~\ref{eq:pool} \\
-$\boldsymbol{\gamma}$, $\gamma_i$, $\Gamma$ & router scales: per head, one head's, and a batch's & Eq.~\ref{eq:fiber} \\
-$U_{ij}$, $\mathbf{c}_i$; $C$, $\mathsf{C}$ & fiber basis ($e\times r$) and coordinates; one sample's coordinates, and a batch's & Eq.~\ref{eq:fiber} \\
+$\mathsf{D}$, $D_i$ & the dictionary ($h\times k\times e$), and head $i$'s slice ($k\times e$) & Eq.~\eqref{eq:dictblock} \\
+$\mathbf{a}_{ij}$ & an atom: $\lvert\mathsf{D}_{ij\cdot}\rvert$, or $\mathsf{D}_{ij\cdot}$ when signed & Eq.~\eqref{eq:dictblock} \\
+$G_i$ & head $i$'s dictionary Gram & Eq.~\eqref{eq:cossim_b} \\
+$\mathbf{f}_i$; $F$, $\mathsf{F}$ & head $i$'s output ($e$); stacked over heads, and over heads and samples & Eq.~\eqref{eq:dictblock} \\
+$\mathbf{f}'_\ell$, $F'$ & layer $\ell$'s pooled output, and a batch's & Eq.~\eqref{eq:pool} \\
+$\boldsymbol{\gamma}$, $\gamma_i$, $\Gamma$ & router scales: per head, one head's, and a batch's & Eq.~\eqref{eq:fiber} \\
+$U_{ij}$, $\mathbf{c}_i$; $C$, $\mathsf{C}$ & fiber basis ($e\times r$) and coordinates; one sample's coordinates, and a batch's & Eq.~\eqref{eq:fiber} \\
 $\mathsf{A}$, $A_i$; $\beta$, $\rho$ & fiber readout, and head $i$'s; coordinate bound, norm cap & §\ref{sec:router-fiber} \\
-$g_\ell$, $g_n$ & gain: the norm of layer $\ell$'s input, or of one sample's & Eq.~\ref{eq:accum} \\
-$\mathbf{r}_\ell$, $R$ & accumulator after $\ell$ layers, and batched & Eq.~\ref{eq:accum} \\
-$W_{\mathrm{dec}}$, $\mathrm{dec}$ & the decoder shared by all layers & Eq.~\ref{eq:dec} \\
-$\hat{\mathbf{x}}_\ell$, $\hat{X}$ & reconstruction after $\ell$ layers; the final one, batched & Eq.~\ref{eq:dec} \\
-$\mathbf{y}_\ell$ & residual after $\ell$ layers, which is layer $\ell$'s input & Eq.~\ref{eq:L2} \\
-$\mathrm{sg}[\cdot]$ & stop-gradient & Eq.~\ref{eq:L2} \\
+$g_\ell$, $g_n$ & gain: the norm of layer $\ell$'s input, or of one sample's & Eq.~\eqref{eq:accum} \\
+$\mathbf{r}_\ell$, $R$ & accumulator after $\ell$ layers, and batched & Eq.~\eqref{eq:accum} \\
+$W_{\mathrm{dec}}$, $\mathrm{dec}$ & the decoder shared by all layers & Eq.~\eqref{eq:dec} \\
+$\hat{\mathbf{x}}_\ell$, $\hat{X}$ & reconstruction after $\ell$ layers; the final one, batched & Eq.~\eqref{eq:dec} \\
+$\mathbf{y}_\ell$ & residual after $\ell$ layers, which is layer $\ell$'s input & Eq.~\eqref{eq:L2} \\
+$\mathrm{sg}[\cdot]$ & stop-gradient & Eq.~\eqref{eq:L2} \\
 $W_{\mathrm{flat}}$ & the code-to-output map of a model's flattened code, $\hat{\mathbf{x}} = W_{\mathrm{flat}}\mathbf{p}_{\mathrm{flat}}$; its columns are the entries' decode directions & §\ref{app:protocols} \\
 \addlinespace
 \multicolumn{3}{@{}l}{\emph{Noise, statistics and loss}} \\[2pt]
 $\varepsilon$; $\varepsilon_K$, $\varepsilon_F$ & a standard normal draw; the logit and feature noise terms & §\ref{sec:noise} \\
 $\sigma_X$, $\sigma_K$, $\sigma_F$ & noise scales for inputs, logits and features & §\ref{sec:noise} \\
-$\tilde{\mathsf{F}}$, $\tilde{\mathbf{f}}_i$ & noised per-head outputs & Eq.~\ref{eq:L1} \\
-$\epsilon$ & floating-point epsilon of the working dtype & Eq.~\ref{eq:y_norm} \\
+$\tilde{\mathsf{F}}$, $\tilde{\mathbf{f}}_i$ & noised per-head outputs & Eq.~\eqref{eq:L1} \\
+$\epsilon$ & floating-point epsilon of the working dtype & Eq.~\eqref{eq:y_norm} \\
 $\tau_{\mathrm{rev}}$ & dead-entry revival threshold & Alg.~\ref{alg:dictblock} \\
-$\mathrm{entropy}_k$, $H$ & entropy of a head's assignment in bits, and its mean over samples and heads & Eq.~\ref{eq:entropy} \\
-$\mathrm{cossim}_b$ & between-sample similarity of per-head outputs & Eq.~\ref{eq:cossim_b} \\
-$\mathrm{KL}_m$ & divergence of each head's batch-mean assignment from uniform, averaged over heads & Eq.~\ref{eq:KL} \\
-$\kappa_i$, $\bar\kappa$ & mean cosine between head $i$'s atoms, and its mean over heads (row collinearity) & Eq.~\ref{eq:stats}; §\ref{sec:rowcos} \\
-$\boldsymbol{\pi}_i$, $\omega$ & head $i$'s usage-weighted coordinate profile; the support overlap between heads & Eq.~\ref{eq:support} \\
-$\mathrm{L1}$, $\mathrm{L1}_K$, $\mathrm{L1}_S$ & feature L1; the classifier gate's; the router's & Eqs.~\ref{eq:L1}, \ref{eq:stats} \\
-$\mathrm{KL}_{\mathrm{pwak}}$, $\mathrm{L2}_{\mathrm{pwak}}$ & partition-consensus statistics & Eq.~\ref{eq:stats} \\
-$\boldsymbol{\psi}_\ell$ & layer $\ell$'s statistics row & Eq.~\ref{eq:stats} \\
-$\mathbf{w}$ & per-dimension MSE weights: inverse variance, normalized to mean one & Eq.~\ref{eq:mse} \\
-$\mathbf{s}$; $s_g$, $s_\omega$, $s_{\mathrm{L1}}$, \dots & loss weights: the vector paired with $\boldsymbol{\psi}_\ell$, and individual weights & Eq.~\ref{eq:loss_total} \\
-$\mathrm{MSE}$, $L$ & whitened reconstruction error; the total loss & Eqs.~\ref{eq:mse}, \ref{eq:loss_total} \\
+$\mathrm{entropy}_k$, $H$ & entropy of a head's assignment in bits, and its mean over samples and heads & Eq.~\eqref{eq:entropy} \\
+$\mathrm{cossim}_b$ & between-sample similarity of per-head outputs & Eq.~\eqref{eq:cossim_b} \\
+$\mathrm{KL}_m$ & divergence of each head's batch-mean assignment from uniform, averaged over heads & Eq.~\eqref{eq:KL} \\
+$\kappa_i$, $\bar\kappa$ & mean cosine between head $i$'s atoms, and its mean over heads (row collinearity) & Eq.~\eqref{eq:stats}; §\ref{sec:rowcos} \\
+$\boldsymbol{\pi}_i$, $\omega$ & head $i$'s usage-weighted coordinate profile; the support overlap between heads & Eq.~\eqref{eq:support} \\
+$\mathrm{L1}$, $\mathrm{L1}_K$, $\mathrm{L1}_S$ & feature L1; the classifier gate's; the router's & Eqs.~\eqref{eq:L1}, \eqref{eq:stats} \\
+$\mathrm{KL}_{\mathrm{pwak}}$, $\mathrm{L2}_{\mathrm{pwak}}$ & partition-consensus statistics & Eq.~\eqref{eq:stats} \\
+$\boldsymbol{\psi}_\ell$ & layer $\ell$'s statistics row & Eq.~\eqref{eq:stats} \\
+$\mathbf{w}$ & per-dimension MSE weights: inverse variance, normalized to mean one & Eq.~\eqref{eq:mse} \\
+$\mathbf{s}$; $s_g$, $s_\omega$, $s_{\mathrm{L1}}$, \dots & loss weights: the vector paired with $\boldsymbol{\psi}_\ell$, and individual weights & Eq.~\eqref{eq:loss_total} \\
+$\mathrm{MSE}$, $L$ & whitened reconstruction error; the total loss & Eqs.~\eqref{eq:mse}, \eqref{eq:loss_total} \\
 \addlinespace
 \multicolumn{3}{@{}l}{\emph{Evaluation and baselines}} \\[2pt]
-$\fvu$ & whitened fraction of variance unexplained & Eq.~\ref{eq:fvu} \\
-$\nu$, $\mathcal{S}_\nu$; $\mathbf{o}$ & deviations kept per head, and their entries; the origin, the mean assignment & Eq.~\ref{eq:topdev} \\
-$\mathrm{FVU}_{w,\mathrm{G}}$, $n_{\mathrm{bits}}$; $\lambda_j$, $\theta$ & the Gaussian reference at a bit budget; covariance eigenvalues, the water level & Eq.~\ref{eq:ratefloor} \\
-$H_{\mathrm{real}}$ & realized bits: the summed per-head entropy of usage & Eq.~\ref{eq:realized} \\
-$\mathcal{G}$; $\mathrm{exh}$, $\mathrm{exc}$ & a head or latent group; its exhaustiveness and exclusivity & Eq.~\ref{eq:exhaust} \\
-$\kappa(\mathcal{G})$, $\zeta_{\cos}$; $\mathbf{v}_j$ & a group's mean decode-direction cosine, and its standardized score; a decode direction & Eq.~\ref{eq:zcos} \\
-$(\cdot)^{(1)}$, $(\cdot)^{(2)}$ & the two models in a pairwise comparison & Eq.~\ref{eq:headmatch} \\
-$\mathbf{q}^{(1)}_i$; $[M^{\mathrm{part}}]_{ii'}$, $[M^{\mathrm{contr}}]_{ii'}$ & head $i$'s entry choices over the rows; the head-matching matrices & Eq.~\ref{eq:headmatch} \\
-$\boldsymbol{\phi}_{ni}$, $\mathrm{size}_i$ & head $i$'s output contribution on sample $n$; its share of the variance & Eqs.~\ref{eq:headmatch}, \ref{eq:headsize} \\
-$\mathbf{a}^{\mathrm{dec}}_{ij}$, $\bar{\mathbf{a}}^{\mathrm{dec}}_i$ & a decoded atom; head $i$'s usage-weighted mean & Eq.~\ref{eq:headsize} \\
-$\mathrm{recovered}$ & fraction of the next-token loss recovered & Eq.~\ref{eq:lossrec} \\
-$\eta^2$; $\mathcal{C}$, $n_{\mathrm{rows}}$ & variance explained by a partition; its cells, the rows scored & Eq.~\ref{eq:eta} \\
+$\fvu$ & whitened fraction of variance unexplained & Eq.~\eqref{eq:fvu} \\
+$\nu$, $\mathcal{S}_\nu$; $\mathbf{o}$ & deviations kept per head, and their entries; the origin, the mean assignment & Eq.~\eqref{eq:topdev} \\
+$\mathrm{FVU}_{w,\mathrm{G}}$, $n_{\mathrm{bits}}$; $\lambda_j$, $\theta$ & the Gaussian reference at a bit budget; covariance eigenvalues, the water level & Eq.~\eqref{eq:ratefloor} \\
+$H_{\mathrm{real}}$ & realized bits: the summed per-head entropy of usage & Eq.~\eqref{eq:realized} \\
+$\mathcal{G}$; $\mathrm{exh}$, $\mathrm{exc}$ & a head or latent group; its exhaustiveness and exclusivity & Eq.~\eqref{eq:exhaust} \\
+$\kappa(\mathcal{G})$, $\zeta_{\cos}$; $\mathbf{v}_j$ & a group's mean decode-direction cosine, and its standardized score; a decode direction & Eq.~\eqref{eq:zcos} \\
+$(\cdot)^{(1)}$, $(\cdot)^{(2)}$ & the two models in a pairwise comparison & Eq.~\eqref{eq:headmatch} \\
+$\mathbf{q}^{(1)}_i$; $[M^{\mathrm{part}}]_{ii'}$, $[M^{\mathrm{contr}}]_{ii'}$ & head $i$'s entry choices over the rows; the head-matching matrices & Eq.~\eqref{eq:headmatch} \\
+$\boldsymbol{\phi}_{ni}$, $\mathrm{size}_i$ & head $i$'s output contribution on sample $n$; its share of the variance & Eqs.~\eqref{eq:headmatch}, \eqref{eq:headsize} \\
+$\mathbf{a}^{\mathrm{dec}}_{ij}$, $\bar{\mathbf{a}}^{\mathrm{dec}}_i$ & a decoded atom; head $i$'s usage-weighted mean & Eq.~\eqref{eq:headsize} \\
+$\mathrm{recovered}$ & fraction of the next-token loss recovered & Eq.~\eqref{eq:lossrec} \\
+$\eta^2$; $\mathcal{C}$, $n_{\mathrm{rows}}$ & variance explained by a partition; its cells, the rows scored & Eq.~\eqref{eq:eta} \\
 $k_{\mathrm{probe}}$ & the sparse-probing budget & §\ref{app:protocols} \\
-$\mathbf{z}^\star_n$, $\mathcal{S}_n$; $W$, $\mathbf{b}$ & refitted coefficients on a frozen support; a linear code's decode directions (the columns of $W$) and offset & Eq.~\ref{eq:refit} \\
-$\mu_{ni}$; $j_1$, $j_2$; $J_i$; $\alpha$ & a head's logit margin between two entries; the Jacobian of head $i$'s logits; step strength & Eq.~\ref{eq:flip} \\
+$\mathbf{z}^\star_n$, $\mathcal{S}_n$; $W$, $\mathbf{b}$ & refitted coefficients on a frozen support; a linear code's decode directions (the columns of $W$) and offset & Eq.~\eqref{eq:refit} \\
+$\mu_{ni}$; $j_1$, $j_2$; $J_i$; $\alpha$ & a head's logit margin between two entries; the Jacobian of head $i$'s logits; step strength & Eq.~\eqref{eq:flip} \\
 $j^\star$, $\mathrm{dir}$, $\boldsymbol{\xi}_n$ & a steering target, a direction, the random control & Alg.~\ref{alg:steerembed} \\
 $\mathrm{assign}$ & the abstraction map from an input to its code & §\ref{sec:formal} \\
-$\mathbf{z}$, $z_{nj}$ & SAE latent activations & Eq.~\ref{eq:exhaust} \\
+$\mathbf{z}$, $z_{nj}$ & SAE latent activations & Eq.~\eqref{eq:exhaust} \\
 $W_{\mathrm{enc}}$, $\mathbf{b}_{\mathrm{enc}}$; $W_{\mathrm{dec}}$, $\mathbf{b}_{\mathrm{dec}}$ & SAE encoder weights and bias; its decoder, whose columns are the latents' directions, and the pre-subtracted decoder bias & §\ref{sec:models} \\
 $\mathrm{L0}$, $s_{\mathrm{L1}}$, \texttt{aux\_k} & active SAE latents per sample; an L1 SAE's weight; dead-latent revival & §\ref{sec:models}; Table~\ref{tab:cfg-sae} \\
 \end{longtable}
@@ -167,7 +167,7 @@ SONAR sentence embeddings ($d{=}1024$, unit-norm) computed from an
 interleaved 86-language mC4 sample, with a language label sidecar. The
 stream order is deterministic, so raw text is recoverable by row index
 (verified against the language sidecar per row). The cloud is unit-normed
-but not centred: $\lVert\mathbb{E}[\mathbf{x}]\rVert = 0.564$, so it is a
+but not centered: $\lVert\mathbb{E}[\mathbf{x}]\rVert = 0.564$, so it is a
 spherical cap and $0.318$ of every squared norm is one shared direction.
 It is dense without being isotropic --- effective dimension 108 of 1024
 (participation ratio 268 on the whitened eval tail), yet 943 principal
@@ -181,7 +181,7 @@ stream entering block 8 on FineWeb, unwhitened, scored also by GPT-2 loss
 recovered --- whose numbers compare only within that section.
 
 \paragraph{Evaluation.}
-All models minimize the whitened MSE of Equation~\ref{eq:mse}. We report
+All models minimize the whitened MSE of Eq.~\eqref{eq:mse}. We report
 $\fvu$, whitened MSE divided by the whitened variance of a constant
 predictor,
 \begin{equation}
@@ -307,7 +307,7 @@ The implementation logs each layer's statistics as a row whose layout is
 append-only: a new statistic goes on the end and a retired one keeps its
 slot, so a shorter row from an older run still aligns column for column
 and the positional loss weights keep pairing with the right quantity.
-The row of Equation~\ref{eq:stats} is therefore stored with two empty
+The row of Eq.~\eqref{eq:stats} is therefore stored with two empty
 slots,
 \[
 	\begin{gathered}
@@ -457,7 +457,7 @@ statistics are recomputed under the training objective's inverse-variance
 inner product (\texttt{--metric whitened}). $\zeta_{\cos} \gg 0$ means a
 head clusters semantically; $\zeta_{\cos} \ll 0$ means its atoms repel --- the signature of a
 \emph{contrastive classifier}, whose entries' atoms are pushed apart. A
-second view SONAR-encodes auto-interp description texts and tests pooled
+second view SONAR-encodes autointerp description texts and tests pooled
 within-head similarity against a label-permutation null.
 \texttt{--assignment} scores discovered (post-hoc) groups.
 
@@ -466,7 +466,7 @@ The complement on the other axis: do distinct heads occupy distinct
 coordinates, as Section~\ref{sec:disjoint} argues non-negative heads
 should? On a trained checkpoint, each head's usage-weighted coordinate
 profile and their mean pairwise cosine are those of
-Equation~\ref{eq:support}, with $\bar{\mathbf{p}}_i$ the head's mean
+Eq.~\eqref{eq:support}, with $\bar{\mathbf{p}}_i$ the head's mean
 assignment over the evaluation tail at the run's final temperature, from
 the model's own forward. The \emph{decoded} variant replaces each atom by
 $\lvert\mathbf{a}^{\mathrm{dec}}_{ij}\rvert$, with
@@ -495,7 +495,7 @@ fires too; a \emph{match} satisfies both. Splits
 ($\geq 2$ children) are scored by union coverage of the parent's firing
 set and pairwise child overlap. Decoder geometry adds absorption
 candidates (decoder-cosine twins that do not co-fire) and each model's
-nearest-neighbour decoder-cosine distribution vs.\ a random baseline. For
+nearest-neighbor decoder-cosine distribution vs.\ a random baseline. For
 two same-architecture runs differing only in seed, the match fractions
 are the reproducible-feature fractions. For hard-code Ontologizers,
 \texttt{partition.py} matches heads across runs by the NMI of their
@@ -645,6 +645,24 @@ Algorithm~\ref{alg:steerembed} gives the procedure.
 
 \input{algorithms/steerembed}
 
+\paragraph{Eigenvector orientation.}
+\label{sec:eigorient}
+The adjoint direction of a bilinear classifier is an eigenvector of its
+interaction matrix, which \texttt{eigh} returns only up to sign.
+Orienting it by the sign of its eigenvalue, with a leading-coordinate
+tie-break (\texttt{nlinear.orient}), realizes 0.427 of targets on the
+softmax model at strength 0.25, against 0.224 with the sign \texttt{eigh}
+happens to return and 0.446 when each sample is oriented separately. A
+weight-only convention should not be able to do that: a step of $\alpha$
+along $\mathbf{v}$ changes $\mathbf{x}^\top B\mathbf{x}$ by
+$2\alpha\lambda(\mathbf{x}\cdot\mathbf{v})$, a property of the sample. It
+can on SONAR because the embedding is anisotropic, so
+$\mathbf{x}\cdot\mathbf{v}$ is dominated by
+$\mathbb{E}[\mathbf{x}]\cdot\mathbf{v}$, which has a consistent sign; on
+isotropic Gaussian inputs a weight-only direction raises the logit on
+about half the samples. On the hard code the oriented eigendirection is
+below random at every strength.
+
 \paragraph{Linearized collateral (\texttt{steergeom.py}).}
 Separates the direct effect of a step on the other heads of the target's
 layer from the cascade through later layers, by linearizing that layer's
@@ -692,7 +710,7 @@ error between differently-compiled variants --- verified exact in
 float64). All other non-additivity is downstream reclassification:
 later layers re-reading the intervened residual.
 
-\paragraph{Auto-interpretability (\texttt{autointerp.py}).}
+\paragraph{Autointerp (\texttt{autointerp.py}).}
 Four stages: harvest (top-activating rows, negatives, frequency-stratified
 feature selection, parameter-based decode embeddings), texts
 (deterministic mC4 stream replay recovers text by row index, verified
@@ -762,6 +780,36 @@ $\mathbb{E}[\mathbf{p}]$, not in discrete winners --- or the selection must be
 made hard during training, which Section~\ref{sec:ste} does at a far
 smaller cost once the head count is raised.
 
+\subsection{Semantic coherence in detail}
+\label{sec:coherence}
+
+Under the whitened metric the training objective optimizes, the
+Ontologizer's mean $\zeta_{\cos}$ is $-24.4$ ($-17.6$ raw; the fraction of
+heads below $-2$ is unchanged at 0.96), the single-layer soft variant's
+$-14.7$ (unchanged) and the hard variant's $+179.3$ ($+161.3$ raw).
+
+Two heads of the reference softmax model cluster instead of contrasting:
+layer 2's head 25 ($\zeta_{\cos}{=}{+}346$) and layer 3's head 28
+(${+}280$), with the next candidates in the partially frozen layer 4.
+Their sampled entries also decode to generic text, which suggests partial
+head collapse (entries that never differentiated) rather than semantic
+coherence; they have not been inspected further.
+
+The description-text view of coherence is uninformative on plain
+summaries, which are generic for about 77\% of entries and 49\% of
+$k_{\mathrm{SAE}}{=}32$ latents and so inflate the permutation null
+(pooled $\zeta{=}{-}0.25$). On the contrastive descriptions it acquires
+signal. Within-head description similarity clears the head-membership
+permutation null for the single-layer hard variant
+($\zeta{=}{+}2.42$, 62 within-head pairs), is marginal for Ontologizer
+heads (${+}1.92$, 155 pairs), and is absent for the single-layer soft
+variant (${+}0.79$, 217 pairs). Against the geometry, this is the pattern
+that alternative values of one shared dimension predict: Ontologizer
+entries' decode directions repel while their described contents weakly
+cohere. It is also the first measure to separate the Ontologizer from its
+single-layer soft rival, though only suggestively at this coverage (one
+global $\zeta$ per model over the campaign's sampled features).
+
 \subsection{Feature reliability}
 
 Seed stability (\texttt{k32} vs.\ \texttt{k32\_s43}; identical
@@ -772,7 +820,7 @@ are not reproducible across initializations at moderate containment.
 Cross-width splitting (\texttt{k32} $\to$ \texttt{m11264\_k32}): 190 of
 5114 live parents split at $\tau{=}0.7$ (median 3 children; union
 coverage 0.37; child overlap 0.42), with 441 absorption candidates and a
-heavy nearest-neighbour decoder-cosine tail (p50 0.234 vs.\ random
+heavy nearest-neighbor decoder-cosine tail (p50 0.234 vs.\ random
 0.119): splitting is real but is not the dominant organization; topical
 co-firing is. For a steering generator the unit that must reproduce is
 the head's partition rather than the individual feature vector;
@@ -782,7 +830,7 @@ finds it reproduces far \emph{worse} than SAE features do.
 \subsection{Text-space fidelity (collateral ceiling)}
 \label{sec:textfid}
 
-\begin{table}[h]\centering\small
+\begin{table}[htbp]\centering\small
 \begin{tabular}{@{}lrrr@{}}
 \toprule
 model & chrF & exact & NLL (ceil.\ $\approx$1.56--1.63, floor $\approx$3.8) \\
@@ -815,7 +863,7 @@ classifier codes start near zero.
 
 \subsection{Concept (language) localization}
 
-\begin{table}[h]\centering\small
+\begin{table}[htbp]\centering\small
 \begin{tabular}{@{}lrrrr@{}}
 \toprule
 model & F1@1 & F1@4 & F1@16 & dense \\
@@ -881,7 +929,7 @@ $\to$ 0.89), while collateral at these magnitudes ($\approx$0.75) is near
 the random-direction control. Across the Ontologizer selection sweep and
 the straight-through arm, at 64 features per run:
 
-\begin{table}[h]\centering\small\setlength{\tabcolsep}{4pt}
+\begin{table}[htbp]\centering\small\setlength{\tabcolsep}{4pt}
 \begin{tabular}{@{}lrrrrrrrr@{}}
 \toprule
 run & $\fvu$ & chrF & loss rec. & net @0.25 & @0.5 & @1.0 & hit @1.0 & rand.\ hit \\
@@ -957,7 +1005,7 @@ heads at layer 1 at step 10k, with 16, 11 and 4 of 32 at layers 2, 3 and 0
 unfrozen everywhere. \textbf{The mean-entropy bonus prevents the late
 freeze.}
 
-\begin{figure}[h]\centering
+\begin{figure}[htbp]\centering
 \includegraphics[width=\linewidth]{figures/fig-freeze.pdf}
 \caption{Frozen heads per layer over training. Left:
 \texttt{resid\_nc\_hm}, with the mean-entropy bonus, has only an early
@@ -979,7 +1027,7 @@ holding the classification-noise floor at its starting value changes
 nothing (Figure~\ref{fig:variants}). The transient belongs to the
 temperature schedule alone, and every retrain ends unfrozen.
 
-\begin{figure}[h]\centering
+\begin{figure}[htbp]\centering
 \includegraphics[width=\linewidth]{figures/fig-variants.pdf}
 \caption{The early transient under the four retrains, layer-1 frozen
 count. The noise-floor variant overlaps the control exactly and the
@@ -1008,7 +1056,7 @@ bottleneck in direct opposition to the mean-entropy bonus: the bonus
 prevents exactly what HSIC induces. As formulated it is neither a
 replacement nor an addition.
 
-\begin{figure}[h]\centering
+\begin{figure}[htbp]\centering
 \includegraphics[width=\linewidth]{figures/fig-hsic.pdf}
 \caption{Total frozen heads over training for the three loss
 configurations, all on the \texttt{resid\_nc\_hm} configuration at 372k
@@ -1039,7 +1087,7 @@ KL falls toward uniform. Relative to initialization, the consolidation is
 in the geometry the classifications write, while the classifications stay
 soft.
 
-\begin{figure}[h]\centering
+\begin{figure}[htbp]\centering
 \includegraphics[width=\linewidth]{figures/fig-devinterp.pdf}
 \caption{The 448-checkpoint training history of \texttt{resid\_nc\_hm}.
 Left: within-head coherence of refit end-to-end directions, z-scored
@@ -1065,7 +1113,7 @@ this budget (tail MSE $20\times$ the others), so its collapse is not
 evidence (Figure~\ref{fig:scaling}). Seven points at short training are
 weak evidence either way; full-length retrains are the missing control.
 
-\begin{figure}[h]\centering
+\begin{figure}[htbp]\centering
 \includegraphics[width=\linewidth]{figures/fig-scaling.pdf}
 \caption{Head coherence against each parameter axis of the star sweep,
 all runs at 4 epochs (62k steps). No axis delivers the predicted rise;
@@ -1092,7 +1140,7 @@ latents, the same verdict Section~\ref{sec:seeds} reaches for the
 straight-through arm with partition and contribution measures. A replica
 carried to the full 4.4M steps is the remaining control.
 
-\begin{figure}[h]\centering
+\begin{figure}[htbp]\centering
 \includegraphics[width=\linewidth]{figures/fig-seed.pdf}
 \caption{Cross-seed matched-entry fraction on the activation frame by
 threshold. The same-run pair bounds what the metric can detect ($0.65$
@@ -1120,7 +1168,7 @@ difference-of-means and forced-classification arms, with probe and random
 decaying in parallel from ${\sim}0.38$ to ${\sim}0.20$. A blinded
 human-rating sheet (120 items) is prepared but unscored.
 
-\begin{table}[h]\centering\small
+\begin{table}[htbp]\centering\small
 \begin{tabular}{@{}lrrrr@{}}
 \toprule
 arm & effect (native) & effect (dm frame) & hit rate & collateral \\
@@ -1141,7 +1189,7 @@ collateral is content change on unrelated dimensions.}
 \label{tab:steer-overlay}
 \end{table}
 
-\begin{figure}[h]\centering
+\begin{figure}[htbp]\centering
 \includegraphics[width=\linewidth]{figures/fig-naturalness.pdf}
 \caption{chrF between steered and unsteered decodes by intervention
 magnitude. All four arms, the random direction included, damage the
@@ -1158,7 +1206,7 @@ saturating within roughly 40 steps at flat collateral
 (Figure~\ref{fig:rl}). Neither the decode-cycle tier nor a convergence
 race against paired steering has been run.
 
-\begin{figure}[h]\centering
+\begin{figure}[htbp]\centering
 \includegraphics[width=\linewidth]{figures/fig-rl.pdf}
 \caption{REINFORCE against a single frozen classification's
 quantile-normalized score, in-embedding tier. The policy saturates the
@@ -1167,7 +1215,7 @@ level.}
 \label{fig:rl}
 \end{figure}
 
-\subsection{Head-level auto-interpretability}
+\subsection{Head-level autointerp}
 \label{sec:headautointerp}
 
 The per-latent lenses of the description-specificity results mis-measure
@@ -1185,6 +1233,19 @@ distinguishable from zero). The two lenses disagree and neither shows
 above-chance head-level signal, so the mis-measurement argument predicts
 an advantage this sample does not deliver.
 
+\paragraph{Describability against density.} Across the six runs of the
+description-specificity table, the correlation between log nominal
+density and activation-description F1 is $-0.894$, so density alone
+carries about 80\% of the variance. Fitting contrastive-description F1
+linearly in log firing rate on the four \texttt{sae.py} runs with a
+nonzero firing rate (slope $-0.069$, correlation $-0.766$), and holding the
+Ontologizer out, predicts 0.421 against an actual 0.392, a residual of
+$-1.8$ standard errors: the Ontologizer sits on the trend, and
+\texttt{g160top1} lies 0.120 above it. The fit is thin. It rests on four
+runs and a weak correlation, it excludes \texttt{g160softmax}, whose
+thresholded firing rate is exactly zero, and the $2/k$ threshold is not
+monotone in true density.
+
 \section{Supplementary results: the straight-through arm}
 \label{app:ste}
 
@@ -1199,7 +1260,7 @@ $0.0015$) for the whole run. Three settings follow from it.
 \emph{Logit noise must be relative}: $\sigma_K{=}0.02$ is thirteen times
 the logit spread, so the argmax is chosen by noise, while $\sigma_K{=}0$
 removes the only exploration and the codebook collapses;
-\texttt{--noise-k batchnorm} (Equation~\ref{eq:noise_batchnorm}) scales
+\texttt{--noise-k batchnorm} (Eq.~\eqref{eq:noise_batchnorm}) scales
 noise by the logit RMS. \emph{The surrogate temperature must track the
 logit scale}: at the live floor $t{=}0.03$, spread$/t$ is 0.05 and the
 surrogate is flat, so what improves is the dictionary adapting to a fixed
@@ -1235,6 +1296,25 @@ measured once; the principled version normalizes logits per head or
 controls $t$ against a spread$/t$ setpoint.
 
 \subsection{Capacity beyond bits, and training dynamics}
+\label{sec:capacity}
+
+\paragraph{Distance from the Gaussian reference.} Measured against the
+Gaussian reference at each code's own rate, the full stack sits further
+from it than one layer's prefix does. Each ratio bounds that code's
+distance from the optimum at its rate from below, since the optimum for
+real data may lie below the reference:
+
+\begin{center}\small
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+code & Gaussian reference & achieved & ratio \\
+\midrule
+380 bits (one layer's prefix) & 0.4208 & 0.6427 & 1.53$\times$ \\
+1900 bits, $5\times76$ & 0.0499 & 0.1535 & 3.08$\times$ \\
+1900 bits, $5\times380$, $k{=}2$ & 0.0499 & 0.1844 & 3.70$\times$ \\
+\bottomrule
+\end{tabular}
+\end{center}
 
 \paragraph{Bits are not the whole capacity.} At identical bits, 380
 binary heads reach $0.1844$ against 76 thirty-two-way heads at $0.1535$:
@@ -1292,7 +1372,7 @@ shipped initialization's head usage collapses to under half before
 recovering to 90\% (the curve's 91\% over-corrects heads with dead
 entries); at the fixed initialization every head in the stack and the
 flat arm reaches near-uniform usage within 5k steps. An upper bound on the
-information carried, not a measure of it (Equation~\ref{eq:realized}).}
+information carried, not a measure of it (Eq.~\eqref{eq:realized}).}
 \label{fig:realized-bits}
 \end{figure}
 
@@ -1609,7 +1689,7 @@ its size is gain$^2$ times atom spread$^2$ (the usage-weighted RMS
 distance of its decoded atoms from their mean); on both stacks the
 product reproduces the measured size to a log correlation of 1.000.
 
-\begin{table}[h]\centering\small
+\begin{table}[htbp]\centering\small
 \begin{tabular}{@{}lrrrrrr@{}}
 \toprule
 & \multicolumn{3}{c}{GPT-2 concat} & \multicolumn{3}{c}{SONAR stack} \\
@@ -1699,7 +1779,7 @@ $\mathbb{E}[\mathbf{1}\{\text{selected}\}\,\mathrm{gain}^2]\,
 \lVert\text{atom}\rVert^2$. Per layer, over 32{,}768 held-out rows
 (\texttt{entryshare.py}):
 
-\begin{table}[h]\centering\small
+\begin{table}[htbp]\centering\small
 \begin{tabular}{@{}llrrrrr@{}}
 \toprule
 run & layer & Gini & \stackhead[r]{top 10\%\\carry} & \stackhead[r]{max/\\median}
@@ -1780,7 +1860,7 @@ a few heads with outsized atoms --- but not the layer-0 lift: without head
 the deep layers. Head 54 is the topic/genre head of
 Section~\ref{sec:lang}, which recurs across seeds.
 
-\begin{table}[h]\centering\small
+\begin{table}[htbp]\centering\small
 \begin{tabular}{@{}lrrrrr@{}}
 \toprule
 head & agreement & \stackhead[r]{energy\\share} & \stackhead[r]{largest $/$\\layer median}
@@ -1817,7 +1897,7 @@ are. On GPT-2 no head stands out: every head has several large atoms, the
 spread of agreement is narrow, and the head with the largest share of the
 layer's energy (17) has a flat profile --- uniformly large atoms rather
 than a few outsized ones --- yet reproduces no better than its
-neighbours. Peakedness predicts nothing there ($+0.09$).
+neighbors. Peakedness predicts nothing there ($+0.09$).
 
 The large atoms are distinct directions: different heads' largest atoms
 are near orthogonal (median $|\cos|$ 0.022--0.023, below random atom
@@ -1833,7 +1913,7 @@ throughout.
 Held-out language identity over 86 languages (dense ridge ceiling 0.721,
 chance 0.012):
 
-\begin{table}[h]\centering\small
+\begin{table}[htbp]\centering\small
 \begin{tabular}{@{}llrrrr@{}}
 \toprule
 arm & shape & best-head NMI & less null & probe $h'{=}1$ & $h'{=}32$ \\
@@ -1869,7 +1949,7 @@ spreads language over more heads than the unfixed one did (best head
 0.17 against 0.26, 32-head probe 0.42 against 0.38). The stack beats the
 flat arm on probe accuracy at every head budget (0.378 vs.\ 0.257 at
 $h'{=}32$, both unfixed). (\texttt{summary.json}'s
-\texttt{info\_share\_best} favours the flat arm, but it divides by summed
+\texttt{info\_share\_best} favors the flat arm, but it divides by summed
 plug-in MI whose per-head bias differs eightfold between the shapes; do
 not read it across architectures.)
 
@@ -1884,9 +1964,9 @@ combines nearly independently (0.234 against 0.262 predicted) but false
 positives do not (precision 0.43 at $h'{=}2$ against 0.83 if independent): many heads send
 the same confusable rows to the same wrong language --- Finnish with
 Estonian, Japanese with Korean. The code encodes language
-\emph{neighbourhood} rather than identity.
+\emph{neighborhood} rather than identity.
 
-\paragraph{Why neighbourhoods, from the embedding geometry.} The
+\paragraph{Why neighborhoods, from the embedding geometry.} The
 language-agnostic training leaves exactly the residue this pattern
 implies. Language explains 6.51\% of embedding variance and script
 2.26\%; corrected for the number of classes (\texttt{headeta.py}) language is still a
@@ -1900,6 +1980,15 @@ variance, and at 0.30 sd those cuts pass through the language clusters
 rather than around them. Layer-4 heads are near-random
 partitions (2$\times$ baseline), which is Section~\ref{sec:lastlayer}'s
 inert final layer seen from a different direction.
+
+\paragraph{The topic head's entries.} Decoding and autointerp
+were run on the shipped-initialization run's head 54, the head that holds
+the same index in the fixed-initialization run (Section~\ref{sec:lang}).
+Decoded as deviations from the head's mean atom, its entries read as
+topic and genre. Contrastive autointerp (null 0.273) groups them
+as genre or topic (16 entries, F1 0.523), multilingual or code-switched
+passages (8, 0.476), text artifacts such as duplication and mojibake (3,
+0.395), and script or region (5, 0.394); all four beat the null.
 
 \section{Supplementary results: GPT-2 hard codes}
 \label{app:gpt2}
@@ -1941,6 +2030,18 @@ head with dead-latent resampling reaches 0.225 against 0.195 for the dense
 front-end on the same 40M tokens, with 88\% of its layer-1 latents dead at
 no cost to that layer.
 
+\paragraph{The 40M-token runs, layer by layer.} Every layer contributes:
+prefix $\fvu$ runs $0.472 \to 0.347 \to 0.278 \to 0.231 \to 0.195$ for the
+direct code and $0.451 \to 0.186$ for private heads. Entry usage stays
+near uniform in every layer (imbalance 0.01--0.16 bits of 5, and 0.30 at
+the private code's last layer), and the observed gain is close to the
+best per-sample scale for each layer's contribution (optimal rescale
+0.89--1.09, coefficient of variation 0.05--0.08). The runs use two options
+this branch does not implement, \texttt{resid\_first} and
+\texttt{gain\_clip}, so they reproduce only on the \texttt{headline}
+branch; its direct atoms, private heads (this branch's
+\texttt{ConcatDictBlock}), fibers and head dropout have been ported.
+
 \section{Supplementary results: dictionary geometry}
 \label{app:geom}
 
@@ -1972,6 +2073,14 @@ reconstruction gradient in $\ker(W_{\mathrm{dec}})$ was a coordinate
 artifact, 3e-8 with respect to the atoms $\lvert\mathsf{D}\rvert$. How large ``the null part'' is depends
 entirely on the norm asked for: 2.43\% of squared L2, 23.20\% of L2,
 56.55\% of L1.
+
+\paragraph{A random decoder's cone.} Wendel's theorem~\cite{wendel1962}
+gives a geometric reading of the width at which non-negativity stops
+binding: the decoder's $e$ random columns lie in a common halfspace with
+probability $2^{1-e}\sum_{q<d}\binom{e-1}{q}$, exactly $1/2$ at $e{=}2d$,
+so on GPT-2 $e{=}1536$ sits on the threshold at which a random decoder's
+cone $\{W_{\mathrm{dec}}\mathbf{r} : \mathbf{r}\geq0\}$ covers the output
+space at all.
 
 \subsection{Heads share coordinates: no partition}
 \label{sec:support}
