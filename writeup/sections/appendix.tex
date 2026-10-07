@@ -357,7 +357,27 @@ replaced it too.
 
 Each protocol is a standalone script sharing the eval split and activation
 conventions; the root-level ones are unit-tested against planted-structure
-synthetic data.
+synthetic data. Figure~\ref{fig:evalpipeline} shows what each script
+reads and the question it answers.
+
+\begin{figure}[tp]
+\centering
+\resizebox{\linewidth}{!}{\input{tikz/evalpipeline}}
+\caption[What validates what]{\textbf{What validates what.} Columns are
+	the artifacts each evaluation script reads: the embedding or activation
+	cache, whose tail rows are the eval split \texttt{sae.py} excludes from
+	training, with its sidecars; Ontologizer checkpoints; \texttt{sae.py}
+	baselines; and the frozen SONAR encoder and M2M100 decoder. A filled
+	mark is a required input, an open mark an optional input or one of
+	several alternatives (most scripts take either model type;
+	\texttt{splitting.py} takes two runs, such as seed replicas). Dashed
+	arrows are one script's output read by another. \texttt{selection.py},
+	\texttt{enrich.py}, \texttt{assignmap.py}, \texttt{entrydrift.py},
+	\texttt{bilinspec.py}, \texttt{headnmi.py} and \texttt{effinfo.py}
+	(in \texttt{experiments/effective-information/}) are diagnostics with
+	no protocol below; no result in this document comes from them.}
+\label{fig:evalpipeline}
+\end{figure}
 
 \paragraph{Capacity Pareto (\texttt{pareto.py}).}
 Capacity is continuous coefficients transmitted per sample, plus index
@@ -779,6 +799,23 @@ architectures' classifier reading must be cashed out in deviations around
 $\mathbb{E}[\mathbf{p}]$, not in discrete winners --- or the selection must be
 made hard during training, which Section~\ref{sec:ste} does at a far
 smaller cost once the head count is raised.
+Figure~\ref{fig:anatomy-softmax} shows one such soft head of
+\texttt{resid\_nc}.
+
+\begin{figure}[tp]
+\centering
+\includegraphics[width=\linewidth]{figures/fig-anatomy-softmax.pdf}
+\caption[One softmax head, block by block]{\textbf{One softmax head,
+	block by block.} The blocks of Figure~\ref{fig:anatomy} for head 0 of
+	layer 0 of \texttt{resid\_nc} (step 372{,}600, $t{=}0.03$) on $n{=}384$
+	eval-tail rows; one seed. Usage is spread across entries (use 29.9 of
+	$k{=}32$), but each row is a near-uniform mixture (row 23.5), so the
+	neighbor graph is close to the heat kernel alone, with hub columns
+	rather than blocks. $\kappa_i{=}0.138$, $\omega{=}0.901$, $e{=}4096$.
+	As in Figure~\ref{fig:anatomy}, the model was not trained with the
+	statistics that use the graph.}
+\label{fig:anatomy-softmax}
+\end{figure}
 
 \subsection{Semantic coherence in detail}
 \label{sec:coherence}

@@ -330,7 +330,7 @@ def draw(z: dict, coords: int, pdf: Path, png: Path):
     for s in ("top", "right", "left"):
         ax_u.spines[s].set_visible(False)
     ax_u.set_ylabel(r"$\bar p$", rotation=0, labelpad=8, va="center")
-    ax_u.set_title(r"$P_h$ = cluster(classifier($\mathbf{u}$), $t$)"
+    ax_u.set_title(r"head $i$'s assignments $P_i$ at temperature $t$"
                    f"\nuse {use:.1f}, row {reff:.1f} of k={k}",
                    fontsize=7, pad=3)
 
@@ -358,8 +358,8 @@ def draw(z: dict, coords: int, pdf: Path, png: Path):
     ax_g.set_xticks([0, n - 1])
     mono(ax_g)
     ax_g.set_xlabel("neighbor row (same order)")
-    ax_g.set_title(r"diffuse_kl graph: wak($P_hP_h^\top\odot$ affinity"
-                   rf"$(E,\tau{{=}}{tau:g})$)" "\nself-edges zeroed, rows sum to 1",
+    ax_g.set_title(r"PWAK neighbor graph: $P_iP_i^\top\odot$ heat kernel"
+                   f" (bandwidth {tau:g})\nself-edges zeroed, rows sum to 1",
                    fontsize=7, pad=3)
     cbar(im, fig.add_subplot(top[1, 4]), "row weight (clipped at p99)",
          extend="max")
@@ -376,7 +376,7 @@ def draw(z: dict, coords: int, pdf: Path, png: Path):
     ax_c.set_yticks([0, k - 1])
     mono(ax_c)
     ax_c.set_xlabel("entry (by usage)")
-    ax_c.set_title(f"rowcos matrix\ncossim_k = {cosk:.3f}",
+    ax_c.set_title("atom cosines\n" + rf"$\kappa_i$ = {cosk:.3f}",
                    fontsize=7, pad=3)
     cbar(im, fig.add_subplot(bot[1]))
 
@@ -384,7 +384,7 @@ def draw(z: dict, coords: int, pdf: Path, png: Path):
     ax_s = fig.add_subplot(bot[3])
     cax_s = fig.add_subplot(bot[4])
     if S is None:
-        ax_s.text(0.5, 0.5, "support_overlap\n= 0 by construction\n"
+        ax_s.text(0.5, 0.5, r"$\omega$ = 0 by construction" "\n"
                   "(concat: disjoint slices)", ha="center", va="center",
                   transform=ax_s.transAxes, fontsize=6.5)
         ax_s.set_axis_off()
@@ -397,11 +397,11 @@ def draw(z: dict, coords: int, pdf: Path, png: Path):
                                  else PINE, lw=0.9))
         ax_s.set_xticks([0, h - 1])
         ax_s.set_yticks([hd])
-        ax_s.set_yticklabels([f"h{hd}"])
+        ax_s.set_yticklabels([f"i={hd}"])
         mono(ax_s)
-        ax_s.set_xlabel("head")
-        ax_s.set_title("support_overlap"
-                       f"\nsupport = {offdiag_mean(S):.3f}",
+        ax_s.set_xlabel(r"head $i'$")
+        ax_s.set_title(r"profile cosines ($\boldsymbol{\pi}$)" "\n"
+                       rf"$\omega$ = {offdiag_mean(S):.3f}",
                        fontsize=7, pad=3)
         cbar(im, cax_s)
 
@@ -418,8 +418,10 @@ def draw(z: dict, coords: int, pdf: Path, png: Path):
     ax_w.set_xticks([0, len(cols) - 1])
     ax_w.set_yticks([0, k - 1])
     mono(ax_w)
-    ax_w.set_xlabel(f"top {len(cols)} of {W.shape[-1]} coords by " + r"$\mathbf{s}_h$")
-    ax_w.set_title("dicts() rows, column subset", fontsize=7, pad=3)
+    ax_w.set_xlabel(f"top {len(cols)} of {W.shape[-1]} coords by "
+                    + r"$\boldsymbol{\pi}_i$")
+    ax_w.set_title(r"atoms $\mathbf{a}_{ij}$, column subset", fontsize=7,
+                   pad=3)
     cbar(im, fig.add_subplot(bot[7]))
 
     fig.text(0.10, 0.985, f"{z['run']}  step {int(z['step'])}  layer "

@@ -223,6 +223,8 @@ same coordinates in the same proportions (Section~\ref{sec:disjoint}). It
 costs
 $\mathcal{O}(hke + h^2e)$, independent of the batch. Weighting by usage
 keeps dead entries out of it and gives the classifier a gradient path.
+Figure~\ref{fig:anatomy} shows the assignments, the atoms and both
+cosine statistics for one trained head.
 We also collect the sparsity penalty $\mathrm{L1}$ after the noise
 $\varepsilon_F$ is added, $\tilde{\mathsf{F}} := \mathsf{F} +
 \varepsilon_F$. $\mathrm{L1}$ is the batch mean of each sample's norm, so
@@ -238,6 +240,39 @@ is correspondingly small.
 
 $\mathrm{L1}$ tends to decrease with only $\mathrm{MSE}$ loss, but
 incorporating it into the loss speeds up convergence.
+
+\begin{figure}[tp]
+\centering
+\includegraphics[width=\linewidth]{figures/fig-anatomy.pdf}
+\caption[One trained head, block by block]{\textbf{One trained head,
+	block by block.} Head $i{=}0$ of layer 0 of the straight-through model
+	\texttt{ste\_h76\_init01} (step 369{,}500, $t{=}0.00015$) on $n{=}384$
+	rows drawn from the eval tail; one seed. \emph{Top left:} the
+	assignments $P_i$, rows sorted by winning entry and entries by mean
+	usage $\bar{p}_{ij}$ (bars). ``Use'' is the effective number of
+	entries across rows, $\exp H(\bar{\mathbf{p}}_i)$, and ``row'' the
+	effective number within a row, the exponential of the mean per-row
+	entropy: 31.2 and 1.0 of $k{=}32$, a hard code that uses nearly every
+	entry. \emph{Top right:} the neighbor graph that
+	$\mathrm{KL}_{\mathrm{pwak}}$ and $\mathrm{L2}_{\mathrm{pwak}}$
+	(Eq.~\eqref{eq:stats}) diffuse over, in the same row order: the
+	co-assignment matrix $P_iP_i^\top$ times the heat kernel
+	$\exp((\langle\mathbf{u}_n,\mathbf{u}_{n'}\rangle - 1)/0.2)$ of the
+	layer's shapes without their constant coordinate, self-edges removed
+	and each row normalized to sum to one. A hard code makes it
+	block-diagonal by cell. This model was not trained with either
+	statistic, so the graph is the one they would build, not one that
+	shaped it. \emph{Bottom:} cosines between head $i$'s atoms, whose
+	off-diagonal mean is $\kappa_i$ (0.289); cosines between the heads'
+	coordinate profiles $\boldsymbol{\pi}$ (Eq.~\eqref{eq:support}) with
+	$\bar{\mathbf{p}}$ the mean over the $n$ rows, whose off-diagonal mean
+	is $\omega$ (0.967), head $i$'s row outlined; and head $i$'s atoms on
+	the 48 of $e{=}2048$ coordinates where $\boldsymbol{\pi}_i$ is largest,
+	a column subset rather than a projection. Each block has its own
+	scale, white at zero. Figure~\ref{fig:anatomy-softmax} is the same
+	head of a softmax model.}
+\label{fig:anatomy}
+\end{figure}
 
 \paragraph{Disjoint support}
 \label{sec:disjoint}
