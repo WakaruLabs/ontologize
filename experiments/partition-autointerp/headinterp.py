@@ -222,10 +222,11 @@ def read_scores(path):
 
 
 def spearman(a, b):
-    """Spearman rank correlation without scipy."""
-    a, b = np.asarray(a, float), np.asarray(b, float)
-    ra = np.argsort(np.argsort(a)).astype(float)
-    rb = np.argsort(np.argsort(b)).astype(float)
+    """Spearman rank correlation, tied values sharing their mean rank
+    (head accuracies tie at 0 often; ranking ties by position would make
+    the value depend on row order)."""
+    from scipy.stats import rankdata
+    ra, rb = rankdata(a), rankdata(b)
     if ra.std() == 0 or rb.std() == 0:
         return float("nan")
     return float(np.corrcoef(ra, rb)[0, 1])

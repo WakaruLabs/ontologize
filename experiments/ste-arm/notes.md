@@ -163,21 +163,24 @@ while the older Ontologizer rows it sits beside are not.
 
 ## Downstream: textfid and steerfid
 
+Remeasured 2026-10-07 with the eval-mode encoder and SONAR_NORM (see "The
+SONAR encoder ran with dropout" below); the first runs' values are in
+git history.
+
 **Text fidelity adds nothing beyond FVU.** Over the eleven Ontologizer
 runs with both numbers, "loss recovered" is a monotone function of
-soft-forward FVU_w (rank correlation essentially -1). The arm sits
-exactly where its reconstruction predicts, between `top2_shm` and
-`top2`.
+soft-forward FVU_w (rank correlation -1). The arm sits exactly where its
+reconstruction predicts, between `top2_shm` and `top2`.
 
 | run | FVU_w | chrF | loss recovered |
 |---|---|---|---|
-| sweep_softmax_shm | 0.0007 | 0.694 | 0.998 |
-| sweep_top8_shm | 0.0287 | 0.416 | 0.956 |
-| sweep_top4_shm | 0.0761 | 0.360 | 0.897 |
-| sweep_top2_shm | 0.1911 | 0.303 | 0.738 |
-| **ste_h76** | **0.2293** | **0.282** | **0.702** |
-| sweep_top2 | 0.3516 | 0.248 | 0.532 |
-| sweep_top1 | 0.7190 | 0.180 | 0.123 |
+| sweep_softmax_shm | 0.0007 | 0.706 | 0.997 |
+| sweep_top8_shm | 0.0287 | 0.437 | 0.954 |
+| sweep_top4_shm | 0.0761 | 0.375 | 0.892 |
+| sweep_top2_shm | 0.1911 | 0.301 | 0.742 |
+| **ste_h76** | **0.2293** | **0.295** | **0.695** |
+| sweep_top2 | 0.3516 | 0.246 | 0.521 |
+| sweep_top1 | 0.7190 | 0.170 | 0.126 |
 
 So textfid is a check that the whitened objective transports to text,
 not an independent axis. It does.
@@ -188,47 +191,52 @@ effect is feature effect minus the random-direction control, at
 
 | run | FVU_w | net @0.25 | @0.5 | @1.0 | hit @1.0 | random hit |
 |---|---|---|---|---|---|---|
-| sweep_top8 | 0.0370 | 0.131 | 0.303 | 0.580 | 0.713 | 0.277 |
-| topk4_rev | — | 0.103 | 0.266 | 0.520 | 0.640 | 0.275 |
-| sweep_top2 | 0.3516 | 0.125 | 0.289 | 0.474 | 0.564 | 0.217 |
-| sweep_top16 | 0.0052 | 0.065 | 0.119 | 0.243 | 0.313 | 0.139 |
-| sweep_top8_shm | 0.0287 | 0.072 | 0.096 | 0.193 | 0.291 | 0.142 |
-| sweep_softmax_shm | 0.0007 | 0.032 | 0.072 | 0.146 | 0.150 | 0.064 |
-| sweep_top2_shm | 0.1911 | 0.022 | 0.070 | 0.141 | 0.154 | 0.041 |
-| **ste_h76** | **0.2293** | **0.072** | **0.096** | **0.107** | **0.068** | **0.062** |
-| sweep_top1 | 0.7190 | 0.011 | 0.026 | 0.048 | 0.069 | 0.020 |
+| sweep_top8 | 0.0370 | 0.203 | 0.404 | 0.652 | 0.734 | 0.359 |
+| topk4_rev | 0.164 | 0.135 | 0.350 | 0.636 | 0.705 | 0.312 |
+| sweep_top2 | 0.3516 | 0.072 | 0.277 | 0.509 | 0.578 | 0.109 |
+| sweep_top16 | 0.0052 | 0.027 | 0.110 | 0.363 | 0.381 | 0.156 |
+| sweep_top4_shm | 0.0761 | 0.112 | 0.140 | 0.248 | 0.242 | 0.062 |
+| sweep_softmax_shm | 0.0007 | 0.058 | 0.128 | 0.242 | 0.211 | 0.094 |
+| sweep_top2_shm | 0.1911 | 0.018 | 0.071 | 0.196 | 0.150 | 0.016 |
+| sweep_top8_shm | 0.0287 | -0.015 | 0.074 | 0.176 | 0.330 | 0.094 |
+| sweep_top1 | 0.7190 | 0.047 | 0.104 | 0.064 | 0.102 | 0.109 |
+| **ste_h76** | **0.2293** | **0.033** | **0.045** | **-0.020** | **0.055** | **0.125** |
+| SAE m5120_k32 | 0.4994 | 0.048 | 0.187 | 0.402 | 0.260 | 0.016 |
 
-The effect is positive but nearly flat in magnitude, and the hit rate
-(0.068) barely clears its own random control (0.062), so interventions
-change the text as much as a random direction of the same size without
-landing on the intended feature. Only `top1`, whose classifier never
-trains, is weaker.
+The arm's raw effect is flat in magnitude (0.018, 0.014, 0.027) and no
+larger than a random direction's, and its hit rate (0.055) does not
+clear its own random control (0.125): interventions change the text as
+much as a random direction of the same size without landing on the
+intended feature. It is now the weakest arm, below even `top1`, whose
+classifier never trains. The top-k SAE (`sae_conv/m5120_k32`, same 64
+features and protocol) steers in text: net 0.402 at 1.0, hit 0.260
+against 0.016 for random.
 
 **The `s_Hm` confound, tested and rejected.** Every `_shm` variant
-steers about three times worse than its twin (`top2` 0.474 vs
-`top2_shm` 0.141 at `s_Hm` 1e-6 vs 3e-5; `top8` 0.580 vs 0.193), and
+steers about three times worse than its twin (`top2` 0.509 vs
+`top2_shm` 0.196 at `s_Hm` 1e-6 vs 3e-5; `top8` 0.652 vs 0.176), and
 this arm carries `s_Hm` at 1e-4, so the weak steering might have been
 the mean-entropy bonus rather than the argmax. It is not. A second full
 arm trained identically at `--s-hm 1e-6` steers no better:
 
 | arm | s_Hm | FVU_w | raw effect @1.0 | net @1.0 | loss recovered |
 |---|---|---|---|---|---|
-| ste_h76 | 1e-4 | 0.2293 | 0.029 | 0.107 | 0.702 |
-| ste_h76_hm1e6 | 1e-6 | 0.2095 | 0.039 | 0.039 | 0.735 |
-| sweep_top2 | 1e-6 | 0.3516 | 0.493 | 0.474 | 0.532 |
-| sweep_top8 | 1e-6 | 0.0370 | 0.553 | 0.580 | 0.940 |
+| ste_h76 | 1e-4 | 0.2293 | 0.027 | -0.020 | 0.695 |
+| ste_h76_hm1e6 | 1e-6 | 0.2095 | 0.043 | 0.059 | 0.731 |
+| sweep_top2 | 1e-6 | 0.3516 | 0.515 | 0.509 | 0.521 |
+| sweep_top8 | 1e-6 | 0.0370 | 0.623 | 0.652 | 0.941 |
 
 Read the raw effect, not the net: the two arms' random controls differ
-(-0.078 vs 0.000) on only eight directions, and that noise drives most
-of the net gap. On raw effect the two are indistinguishable, 0.029 and
-0.039, and both sit an order of magnitude under `top2` and `top8` at
+(+0.047 vs -0.016) on only eight directions, and that noise drives most
+of the net gap. On raw effect the two are indistinguishable, 0.027 and
+0.043, and both sit an order of magnitude under `top2` and `top8` at
 *the same* `s_Hm` of 1e-6. So the entropy bonus is not what costs this
 arm its steerability; hard argmax selection is.
 
 Removing the bonus does cost what it was added for. Head usage
 imbalance ends at 5.00 bits against 2.71, about 16 effective entries
 per head against 22, and row collinearity rises to 0.727 from 0.686. It
-buys a little reconstruction back (FVU_w 0.2095, loss recovered 0.735),
+buys a little reconstruction back (FVU_w 0.2095, loss recovered 0.731),
 which is again exactly the monotone FVU relationship above.
 
 What remains untested is whether the two effects cancel: the 1e-6 arm
@@ -236,10 +244,11 @@ has more head collapse, and if collapse independently hurts steering it
 could be masking a gain from dropping the bonus. Separating that needs
 an arm that suppresses collapse by some route other than `s_Hm`.
 
-Two measurement caveats. `--n-features 16` is too noisy to quote: at
-16 features this arm's net effect was *negative* at every magnitude and
-at 64 it is positive throughout, so the first run was sampling error.
-And the hit rate is not comparable across hard and soft codes: under
+Two measurement caveats. `--n-features 16` is too noisy to quote, and
+even at 64 this arm's net effect changes sign with its random control:
+negative at every magnitude at 16 features, positive throughout at 64
+in the first run, and +0.033, +0.045, -0.020 in the rerun. Its text-
+cycle effect is within the instrument's noise. And the hit rate is not comparable across hard and soft codes: under
 `ste` an activation is exactly 0 or 1, so q90 and q99 are both 1 and a
 "hit" demands the argmax land exactly on the target entry, where a soft
 code need only cross a fractional threshold.
@@ -2415,7 +2424,10 @@ concentrate.
 Decoded, it reads as topic and genre: crime news (e8, e10), geopolitics
 and parliament (e7, e18, e21), encyclopedic place description (e3, e19),
 manufacturing (e4, e23), marketing and customer service (e9, e27),
-legislative text (e25), entertainment and gaming (e13, e20).
+legislative text (e25), entertainment and gaming (e13, e20). Re-decoded
+at SONAR_NORM after the encoder fix (`decodehead.py --deviation`,
+2026-10-07), every entry reads the same except e19, which now decodes
+to generic text.
 
 **That reading is half the head, not all of it.** `autointerp.py --mode
 cacts` has an LLM describe each entry from its top-activating TEXTS, and
@@ -2493,8 +2505,16 @@ h54's 32 entries:
 | mode | self F1 | null F1 | delta |
 |---|---|---|---|
 | cacts (LLM reads activating texts) | 0.479 | 0.273 | +0.206 |
-| pdev (origin-subtracted decode) | 0.052 | 0.014 | +0.038 |
-| params (raw decode) | 0.031 | 0.000 | +0.031 |
+| pdev (origin-subtracted decode) | 0.079 | 0.021 | +0.058 |
+| params (raw decode) | 0.000 | 0.011 | -0.011 |
+
+The two decode rows were rescored 2026-10-07, decoded at SONAR_NORM after
+the encoder fix (first run: pdev 0.052 / 0.014, params 0.031 / 0.000).
+The first campaign's harvest was not kept, so they come from a fresh
+harvest of the same 32 entries at default settings
+(`autointerp.py harvest --feature-ids 1728..1759`, then `texts`,
+`describe --mode params` / `pdev` and `score --null`, in
+`data/out/sonar/autointerp_h54/`); the cacts row is the first campaign's.
 
 #### Per-latent detection F1 is mostly a density measure
 
@@ -3053,21 +3073,23 @@ uv run python bilinspec.py --ckpt data/out/sonar/multilingual/resid_nc
 
 ## What one head's removal does to the decoded text (`textstrip.py`)
 
-2026-10-07, after the SONAR-encoder dropout fix below. 12 random eval-tail
-rows (seed 42), the 2 heads per layer whose uniform ablation moves x_hat
-furthest, so 120 (row, head) cells per model; one seed and checkpoint each
-(`resid_nc` step 372.6k at t=0.03, `ste_h76_init01` step 369.5k at
-t=0.00015). Every condition is decoded and scored by dNLL: the decoder's
-per-token NLL of a reference decode under the condition's embedding, less
-under the reference's own (decode(x_hat) for ablations and the null,
-decode(x) for recon, prefixes and a head's write alone). chrF between
-decodes is not usable for comparisons: greedy decoding flips on
-rounding-level differences. At the last layer, where the live and frozen
-ablations are one embedding up to float32 rounding (max |diff| 1e-3 and
-4.5e-4), 9/24 (`resid_nc`) and 3/24 (`ste_h76_init01`) pairs decode to
-different text.
+2026-10-07, after the SONAR encoder fix, decoded at SONAR_NORM (see the
+encoder section below; a first pass at the 3-sentence scale, 0.203,
+reached the same conclusions). 12 random eval-tail rows (seed 42), the 2
+heads per layer whose uniform ablation moves x_hat furthest, so 120 (row,
+head) cells per model; one seed and checkpoint each (`resid_nc` step
+372.6k at t=0.03, `ste_h76_init01` step 369.5k at t=0.00015). Every
+condition is decoded and scored by dNLL: the decoder's per-token NLL of a
+reference decode under the condition's embedding, less under the
+reference's own (decode(x_hat) for ablations and the null, decode(x) for
+recon, prefixes and a head's write alone). chrF between decodes is not
+usable for comparisons: greedy decoding flips on rounding-level
+differences. At the last layer, where the live and frozen ablations are
+one embedding up to float32 rounding (max |diff| 1.2e-3 and 4.5e-4),
+5/24 (`resid_nc`) and 3/24 (`ste_h76_init01`) pairs decode to different
+text (9/24 and 3/24 at the 0.203 scale).
 
-Machinery: the probes reproduce the model's forward to 8e-4 / 6e-5 abs;
+Machinery: the probes reproduce the model's forward to 7e-4 / 1e-5 abs;
 per-head contributions sum to x_hat to 6e-4 / 3e-4; a live uniform ablation
 equals `withArgs` with `h_unif` (unit test). Two runs with identical inputs
 agree on 779/780 decodes, max dNLL difference 0.011.
@@ -3077,44 +3099,44 @@ optimistic):
 
 | condition | `resid_nc` | `ste_h76_init01` |
 |---|---|---|
-| recon vs decode(x) | 0.019 ± 0.004 | 0.459 ± 0.103 |
-| prefixes x̂_1..x̂_4 vs decode(x) | 0.149 ± 0.037 | 0.947 ± 0.120 |
-| uniform ablation, live | 0.025 ± 0.005 | 0.086 ± 0.011 |
-| uniform ablation, frozen | 0.051 ± 0.010 | 0.020 ± 0.009 |
-| zero ablation, live | 0.017 ± 0.004 | 0.088 ± 0.012 |
-| null step, frozen's length | 0.040 ± 0.007 | 0.021 ± 0.005 |
-| head's write alone | 2.378 ± 0.123 | 2.356 ± 0.121 |
-| head's mean write alone | 2.456 ± 0.124 | 2.398 ± 0.124 |
+| recon vs decode(x) | 0.022 ± 0.008 | 0.694 ± 0.105 |
+| prefixes x̂_1..x̂_4 vs decode(x) | 0.218 ± 0.044 | 1.385 ± 0.120 |
+| uniform ablation, live | 0.015 ± 0.003 | 0.151 ± 0.018 |
+| uniform ablation, frozen | 0.071 ± 0.011 | 0.042 ± 0.012 |
+| zero ablation, live | 0.015 ± 0.003 | 0.150 ± 0.018 |
+| null step, frozen's length | 0.076 ± 0.013 | 0.028 ± 0.007 |
+| head's write alone | 3.296 ± 0.106 | 3.253 ± 0.107 |
+| head's mean write alone | 3.375 ± 0.113 | 3.314 ± 0.113 |
 
 Live minus frozen, by layer of the ablated head:
 
 | layer | `resid_nc` live / frozen / null | `ste_h76_init01` live / frozen / null |
 |---|---|---|
-| 0 | 0.044 / 0.165 / 0.144 | 0.235 / 0.090 / 0.083 |
-| 1 | 0.022 / 0.022 / 0.028 | 0.117 / 0.003 / 0.007 |
-| 2 | 0.006 / 0.009 / 0.005 | 0.063 / 0.002 / 0.003 |
-| 3 | 0.028 / 0.031 / 0.011 | 0.009 / 0.001 / 0.008 |
-| 4 | 0.026 / 0.026 / 0.011 | 0.006 / 0.006 / 0.005 |
+| 0 | 0.019 / 0.270 / 0.274 | 0.395 / 0.200 / 0.111 |
+| 1 | 0.012 / 0.026 / 0.050 | 0.218 / 0.003 / 0.012 |
+| 2 | 0.000 / 0.012 / 0.011 | 0.104 / 0.000 / 0.001 |
+| 3 | 0.027 / 0.028 / 0.026 | 0.033 / 0.005 / 0.005 |
+| 4 | 0.019 / 0.019 / 0.019 | 0.004 / 0.004 / 0.008 |
 
 - **Removing what a head wrote costs no more text than a random step of
-  the same size.** Frozen ablation minus null: +0.011 (`resid_nc`, worse in
-  50% of cells) and −0.001 (`ste_h76_init01`, 45%). The null steps along the
-  difference of two random tail rows at the frozen delta's whitened length
-  (median 6.5% and 3.4% of x_hat). So at this resolution, the text damage
-  of an ablation is set by its size, not by what the head carried.
+  the same size.** Frozen ablation minus null: −0.005 (`resid_nc`, worse in
+  53% of cells) and +0.015 (`ste_h76_init01`, 56%). The null steps along
+  the difference of two random tail rows at the frozen delta's whitened
+  length (median 6.5% and 3.4% of x_hat). So at this resolution, the text
+  damage of an ablation is set by its size, not by what the head carried.
 - **Downstream layers repair a soft ablation and amplify a hard one.** In
   `resid_nc` the live ablation does less damage than the frozen one
-  (0.025 vs 0.051; layer 0: 0.044 vs 0.165), as later layers re-read the
-  residual and re-classify toward the original. In `ste_h76_init01` it
-  does more (0.086 vs 0.020, live worse in 82% of cells; layer 1: 0.117 vs
-  0.003): later hard classifiers flip, and the flips add error. This fits
-  the residual cascade amplifying disturbance in the depth results, seen
-  here in text.
+  (0.015 vs 0.071, live worse in 30% of cells; layer 0: 0.019 vs 0.270),
+  as later layers re-read the residual and re-classify toward the
+  original. In `ste_h76_init01` it does more (0.151 vs 0.042, live worse
+  in 78% of cells; layer 1: 0.218 vs 0.003): later hard classifiers flip,
+  and the flips add error. This fits the residual cascade amplifying
+  disturbance in the depth results, seen here in text.
 - **A head's write alone carries almost none of the sentence.** Its own
-  write scores 0.04–0.08 nats better than its average write over 1024 tail
-  rows (better in 58–62% of cells), against about 2.4 nats for either.
+  write scores 0.06–0.08 nats better than its average write over 1024 tail
+  rows (better in 54% of cells), against about 3.3 nats for either.
 - The hard code's reconstruction is far from x in decode likelihood
-  (0.459 vs 0.019), consistent with its FVU.
+  (0.694 vs 0.022), consistent with its FVU.
 
 Outputs: `<run>/textstrip/` (`strips.html`, `strips.jsonl`, `summary.json`,
 `meta.json`).
@@ -3221,11 +3243,21 @@ them at or under 0.06, so "at most 0.06 everywhere except the plain SAE"
 no longer holds. The conclusion does: activation-based descriptions of
 the same features score 0.45–0.65.
 
-Still running at the time of writing: the sweep's text fidelity and
-`steerfid.py --n-features 64` over the selection sweep and the
-straight-through arms (ten of twelve done), the text strips, the
-`decodehead.py` decode of L0 h54, the h54 `params`/`pdev` scores and the
-head-level pass in `experiments/partition-autointerp`.
+The sweep's text fidelity and `steerfid.py --n-features 64` (the
+selection sweep, the straight-through arms and now the k32 SAE) are in
+"Downstream: textfid and steerfid" above; the text strips, the
+`decodehead.py` reading of L0 h54 and h54's `params`/`pdev` scores in
+their own sections; the head-level pass in
+`experiments/partition-autointerp/notes.md`.
+
+What changed a conclusion: the straight-through arm's text-cycle
+steering is now indistinguishable from random (hit 0.055 against a
+random 0.125), forcing a classification on `resid_nc_hm` moves decodes
+0.64x as far as supervised steering rather than 0.43x, the hard
+variant's description coherence no longer clears its null, and three
+SAE-family `params` scores rose past 0.06. Everything else held to within
+its noise: text fidelity, the round trip, naturalness, the s_Hm
+confound, the text strips and both head-level lenses.
 
 ## Run
 

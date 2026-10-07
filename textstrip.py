@@ -12,7 +12,7 @@ each condition is scored two ways against a reference decode:
          the strip shows. Greedy decoding over 48 tokens flips on
          rounding-level input differences (at the last layer, where the
          live and frozen ablations below are one embedding up to float32
-         rounding, up to a third of the pairs decode differently), so
+         rounding, up to a fifth of the pairs decode differently), so
          chrF is a display measure, not a comparison one.
   dNLL   the decoder's mean per-token NLL of the reference decode under
          the condition's embedding, less its NLL under the reference's
