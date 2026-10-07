@@ -418,7 +418,12 @@ def draw(z: dict, coords: int, pdf: Path, png: Path):
         ax_s.set_axis_off()
         cax_s.set_axis_off()
     else:
-        im = ax_s.imshow(S, cmap=seq_cmap(INK, "ink"), vmin=0, vmax=1,
+        # omega sits near 1 in trained models, so a 0-based scale renders
+        # the block uniformly dark; start it at the off-diagonal p5, below
+        # which a few outlier heads are clipped (the colorbar's min arrow)
+        off = S[~np.eye(h, dtype=bool)]
+        vs = min(np.floor(np.percentile(off, 5) * 100) / 100, 0.99)
+        im = ax_s.imshow(S, cmap=seq_cmap(INK, "ink"), vmin=vs, vmax=1,
                          interpolation="nearest")
         ax_s.add_patch(Rectangle((-0.5, hd - 0.5), h, 1, fill=False,
                                  ec="#FFFFFF" if S[hd].mean() > 0.5
@@ -431,7 +436,7 @@ def draw(z: dict, coords: int, pdf: Path, png: Path):
         ax_s.set_title(r"profile cosines ($\boldsymbol{\pi}$)" "\n"
                        rf"$\omega$ = {offdiag_mean(S):.3f}",
                        fontsize=7, pad=3)
-        cbar(im, cax_s)
+        cbar(im, cax_s, extend="min" if off.min() < vs else "neither")
     letter(ax_s, "d", 1)
 
     # W_h column subset
