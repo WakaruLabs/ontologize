@@ -13,9 +13,12 @@ import json
 import os
 
 import matplotlib
+import numpy as np
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.ticker import LogLocator, NullFormatter
+from matplotlib.lines import Line2D
+from matplotlib.ticker import (FixedLocator, FuncFormatter, LogLocator,
+                               NullFormatter)
 
 PINE = "#0B5132"
 LEAF = "#2A8C5A"     # data green: separable from ink by lightness

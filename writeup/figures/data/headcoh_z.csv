@@ -1,0 +1,840 @@
+grouping,group,size,z_cos
+g160top1,0,32,252.195
+g160top1,1,32,121.888
+g160top1,2,32,129.303
+g160top1,3,32,106.091
+g160top1,4,32,131.198
+g160top1,5,32,120.192
+g160top1,6,32,126.678
+g160top1,7,32,118.663
+g160top1,8,32,131.533
+g160top1,9,32,131.533
+g160top1,10,32,132.835
+g160top1,11,32,103.338
+g160top1,12,32,125.458
+g160top1,13,32,158.289
+g160top1,14,32,177.966
+g160top1,15,32,164.471
+g160top1,16,32,129.574
+g160top1,17,32,216.212
+g160top1,18,32,302.063
+g160top1,19,32,178.932
+g160top1,20,32,150.959
+g160top1,21,32,136.965
+g160top1,22,32,163.437
+g160top1,23,32,183.894
+g160top1,24,32,164.865
+g160top1,25,32,149.908
+g160top1,26,32,108.692
+g160top1,27,32,276.951
+g160top1,28,32,181.01
+g160top1,29,32,186.963
+g160top1,30,32,210.971
+g160top1,31,32,162.272
+g160top1,32,32,101.387
+g160top1,33,32,254.174
+g160top1,34,32,140.082
+g160top1,35,32,182.2
+g160top1,36,32,270.182
+g160top1,37,32,273.165
+g160top1,38,32,213.741
+g160top1,39,32,145.928
+g160top1,40,32,108.657
+g160top1,41,32,155.363
+g160top1,42,32,287.478
+g160top1,43,32,252.619
+g160top1,44,32,112.028
+g160top1,45,32,167.201
+g160top1,46,32,148.322
+g160top1,47,32,146.612
+g160top1,48,32,177.808
+g160top1,49,32,181.883
+g160top1,50,32,125.845
+g160top1,51,32,95.5305
+g160top1,52,32,153.527
+g160top1,53,32,154.747
+g160top1,54,32,180.91
+g160top1,55,32,223.979
+g160top1,56,32,135.369
+g160top1,57,32,266.418
+g160top1,58,32,213.061
+g160top1,59,32,260.167
+g160top1,60,32,133.418
+g160top1,61,32,195.181
+g160top1,62,32,262.724
+g160top1,63,32,148.95
+g160top1,64,32,141.622
+g160top1,65,32,88.4702
+g160top1,66,32,138.686
+g160top1,67,32,178.313
+g160top1,68,32,143.31
+g160top1,69,32,209.021
+g160top1,70,32,116.232
+g160top1,71,32,50.4134
+g160top1,72,32,180.941
+g160top1,73,32,102.62
+g160top1,74,32,92.4009
+g160top1,75,32,101.609
+g160top1,76,32,178.103
+g160top1,77,32,106.061
+g160top1,78,32,330.797
+g160top1,79,32,128.973
+g160top1,80,32,125.897
+g160top1,81,32,114.896
+g160top1,82,32,170.565
+g160top1,83,32,148.082
+g160top1,84,32,123.106
+g160top1,85,32,392.381
+g160top1,86,32,206.171
+g160top1,87,32,117.611
+g160top1,88,32,123.232
+g160top1,89,32,81.1409
+g160top1,90,32,161.391
+g160top1,91,32,162.221
+g160top1,92,32,90.5163
+g160top1,93,32,211.403
+g160top1,94,32,86.1066
+g160top1,95,32,158.201
+g160top1,96,32,149.069
+g160top1,97,32,187.02
+g160top1,98,32,161.234
+g160top1,99,32,120.83
+g160top1,100,32,135.193
+g160top1,101,32,219.563
+g160top1,102,32,105.403
+g160top1,103,32,140.162
+g160top1,104,32,138.042
+g160top1,105,32,128.515
+g160top1,106,32,104.828
+g160top1,107,32,180.349
+g160top1,108,32,152.091
+g160top1,109,32,119.664
+g160top1,110,32,235.299
+g160top1,111,32,138.962
+g160top1,112,32,104.533
+g160top1,113,32,208.845
+g160top1,114,32,134.58
+g160top1,115,32,168.777
+g160top1,116,32,138.675
+g160top1,117,32,68.2064
+g160top1,118,32,99.4633
+g160top1,119,32,226.337
+g160top1,120,32,189.883
+g160top1,121,32,110.393
+g160top1,122,32,92.0332
+g160top1,123,32,105.968
+g160top1,124,32,125.549
+g160top1,125,32,148.33
+g160top1,126,32,124.886
+g160top1,127,32,268.721
+g160top1,128,32,140.662
+g160top1,129,32,281.364
+g160top1,130,32,168.334
+g160top1,131,32,68.1499
+g160top1,132,32,156.514
+g160top1,133,32,181.694
+g160top1,134,32,186.649
+g160top1,135,32,161.399
+g160top1,136,32,154.001
+g160top1,137,32,129.706
+g160top1,138,32,173.603
+g160top1,139,32,241.614
+g160top1,140,32,275.351
+g160top1,141,32,273.61
+g160top1,142,32,109.901
+g160top1,143,32,157.349
+g160top1,144,32,244.124
+g160top1,145,32,284.747
+g160top1,146,32,101.018
+g160top1,147,32,152.347
+g160top1,148,32,110.029
+g160top1,149,32,313.433
+g160top1,150,32,143.874
+g160top1,151,32,61.3337
+g160top1,152,32,148.783
+g160top1,153,32,107.419
+g160top1,154,32,105.292
+g160top1,155,32,99.7794
+g160top1,156,32,260.105
+g160top1,157,32,94.9935
+g160top1,158,32,99.3556
+g160top1,159,32,125.34
+k32 discovered,0,32,0.536084
+k32 discovered,1,32,0.00220181
+k32 discovered,2,32,-0.571134
+k32 discovered,3,2,-0.524509
+k32 discovered,4,2,-0.325359
+k32 discovered,5,32,0.950064
+k32 discovered,6,2,0.889972
+k32 discovered,7,7,0.0487526
+k32 discovered,8,32,2.45699
+k32 discovered,9,2,-0.523318
+k32 discovered,10,5,-0.69695
+k32 discovered,11,32,2.41172
+k32 discovered,12,32,4.97436
+k32 discovered,13,32,2.39382
+k32 discovered,14,32,0.055151
+k32 discovered,15,32,-1.14244
+k32 discovered,16,32,-0.039452
+k32 discovered,17,32,1.77432
+k32 discovered,18,32,1.5122
+k32 discovered,19,32,-0.563441
+k32 discovered,20,32,0.187551
+k32 discovered,21,32,1.90628
+k32 discovered,22,32,2.40971
+k32 discovered,23,32,-1.94178
+k32 discovered,24,32,3.52586
+k32 discovered,25,32,1.68634
+k32 discovered,26,32,-1.92064
+k32 discovered,27,32,6.93217
+k32 discovered,28,3,-0.629869
+k32 discovered,29,32,2.40225
+k32 discovered,30,32,-0.344629
+k32 discovered,31,32,2.66491
+k32 discovered,32,3,3.27851
+k32 discovered,33,32,0.486744
+k32 discovered,34,2,-1.04133
+k32 discovered,35,32,6.76914
+k32 discovered,36,32,0.712998
+k32 discovered,37,2,2.04501
+k32 discovered,38,32,4.06143
+k32 discovered,39,32,0.196405
+k32 discovered,40,5,-0.940758
+k32 discovered,41,6,0.929986
+k32 discovered,42,32,-0.96189
+k32 discovered,43,32,5.4692
+k32 discovered,44,32,6.60178
+k32 discovered,45,5,0.110467
+k32 discovered,46,32,2.07386
+k32 discovered,47,32,-0.593471
+k32 discovered,48,32,5.50396
+k32 discovered,49,32,1.15505
+k32 discovered,50,32,-0.379902
+k32 discovered,51,4,-0.466185
+k32 discovered,52,32,11.4897
+k32 discovered,53,32,6.64293
+k32 discovered,54,32,1.40802
+k32 discovered,55,32,2.01513
+k32 discovered,56,32,2.38997
+k32 discovered,57,32,0.611191
+k32 discovered,58,32,0.553173
+k32 discovered,59,7,0.637934
+k32 discovered,60,32,1.72113
+k32 discovered,61,32,-1.8303
+k32 discovered,62,2,1.92985
+k32 discovered,63,32,-0.713842
+k32 discovered,64,32,2.8143
+k32 discovered,65,32,5.07056
+k32 discovered,66,32,2.41004
+k32 discovered,67,2,0.881129
+k32 discovered,68,32,5.93367
+k32 discovered,69,32,-1.25164
+k32 discovered,70,2,0.767767
+k32 discovered,71,2,-0.503907
+k32 discovered,72,3,2.42473
+k32 discovered,73,32,7.13737
+k32 discovered,74,32,3.69704
+k32 discovered,75,2,-0.175388
+k32 discovered,76,2,-0.636411
+k32 discovered,77,32,4.00276
+k32 discovered,78,32,-0.495999
+k32 discovered,79,32,5.93565
+k32 discovered,80,32,5.99982
+k32 discovered,81,32,1.03038
+k32 discovered,82,32,-0.00330915
+k32 discovered,83,2,1.98142
+k32 discovered,84,18,-1.42017
+k32 discovered,85,32,1.69722
+k32 discovered,86,32,0.363115
+k32 discovered,87,32,0.467908
+k32 discovered,88,32,1.75583
+k32 discovered,89,32,7.43052
+k32 discovered,90,32,2.76758
+k32 discovered,91,32,6.01163
+k32 discovered,92,2,0.736987
+k32 discovered,93,32,1.10374
+k32 discovered,94,32,-0.605926
+k32 discovered,95,32,8.12641
+k32 discovered,96,2,-1.01102
+k32 discovered,97,32,1.19068
+k32 discovered,98,32,2.12455
+k32 discovered,99,2,0.527011
+k32 discovered,100,32,0.891652
+k32 discovered,101,32,0.973957
+k32 discovered,102,2,0.446624
+k32 discovered,103,32,1.32311
+k32 discovered,104,32,0.0191975
+k32 discovered,105,2,0.467481
+k32 discovered,106,6,-1.66281
+k32 discovered,107,32,-0.149054
+k32 discovered,108,32,1.42743
+k32 discovered,109,32,2.00292
+k32 discovered,110,32,7.77906
+k32 discovered,111,32,4.64083
+k32 discovered,112,3,-0.384069
+k32 discovered,113,32,2.16836
+k32 discovered,114,32,4.49769
+k32 discovered,115,32,1.75816
+k32 discovered,116,4,-0.330587
+k32 discovered,117,32,7.18524
+k32 discovered,118,32,0.26652
+k32 discovered,119,32,4.20058
+k32 discovered,120,2,-1.35573
+k32 discovered,121,32,1.7681
+k32 discovered,122,32,5.30771
+k32 discovered,123,32,0.430592
+k32 discovered,124,32,5.36205
+k32 discovered,125,32,0.507742
+k32 discovered,126,32,0.983238
+k32 discovered,127,32,2.11284
+k32 discovered,128,32,1.04111
+k32 discovered,129,32,-3.29094
+k32 discovered,130,32,1.33921
+k32 discovered,131,32,-1.55867
+k32 discovered,132,32,2.71967
+k32 discovered,133,32,6.07515
+k32 discovered,134,32,1.50381
+k32 discovered,135,4,0.53619
+k32 discovered,136,32,-0.549688
+k32 discovered,137,32,0.0200395
+k32 discovered,138,2,-1.16293
+k32 discovered,139,9,1.16069
+k32 discovered,140,2,1.28038
+k32 discovered,141,4,0.253299
+k32 discovered,142,4,-0.743335
+k32 discovered,143,32,0.159332
+k32 discovered,144,32,0.0625478
+k32 discovered,145,32,3.1424
+k32 discovered,146,32,0.107808
+k32 discovered,147,32,0.610814
+k32 discovered,148,32,1.29453
+k32 discovered,149,32,0.661278
+k32 discovered,150,32,0.689855
+k32 discovered,151,2,1.45922
+k32 discovered,152,5,0.759032
+k32 discovered,153,16,-0.628742
+k32 discovered,154,3,-1.0505
+k32 discovered,155,32,-1.33711
+k32 discovered,156,32,2.37252
+k32 discovered,157,2,-0.877749
+k32 discovered,158,32,2.32681
+k32 discovered,159,32,-0.575672
+k32 discovered,160,2,-0.731236
+k32 discovered,161,32,1.60072
+k32 discovered,162,32,1.75726
+k32 discovered,163,2,0.560953
+k32 discovered,164,32,3.11338
+k32 discovered,165,32,6.3036
+k32 discovered,166,32,2.57774
+k32 discovered,167,32,0.675411
+k32 discovered,168,2,2.07311
+k32 discovered,169,32,0.781938
+k32 discovered,170,32,-1.58996
+k32 discovered,171,32,-1.33087
+k32 discovered,172,32,5.59092
+k32 discovered,173,32,1.5651
+k32 discovered,174,32,9.31203
+k32 discovered,175,32,3.51698
+k32 discovered,176,32,-0.209009
+k32 discovered,177,32,0.599601
+k32 discovered,178,32,5.2873
+k32 discovered,179,32,1.39457
+k32 discovered,180,32,2.80773
+k32 discovered,181,2,0.347516
+k32 discovered,182,32,-0.768126
+k32 discovered,183,32,2.74012
+k32 discovered,184,2,-0.27413
+k32 discovered,185,32,6.62113
+k32 discovered,186,32,0.257215
+k32 discovered,187,32,3.65975
+k32 discovered,188,3,3.22398
+k32 discovered,189,32,0.0441182
+k32 discovered,190,2,1.41385
+k32 discovered,191,32,10.7513
+k32 discovered,192,32,-0.302936
+k32 discovered,193,32,4.04331
+k32 discovered,194,9,-0.907161
+k32 discovered,195,32,7.01238
+k32 discovered,196,12,-1.62033
+k32 discovered,197,32,0.972547
+k32 discovered,198,32,0.00547766
+k32 discovered,199,32,3.12576
+k32 discovered,200,32,-0.646025
+k32 discovered,201,32,2.13242
+k32 discovered,202,32,6.12001
+k32 discovered,203,2,-0.778176
+k32 discovered,204,32,5.77776
+k32 discovered,205,32,0.986588
+k32 discovered,206,32,0.866061
+k32 discovered,207,32,1.40473
+k32 discovered,208,32,1.18347
+k32 discovered,209,32,2.27307
+k32 discovered,210,32,1.69193
+k32 discovered,211,32,-0.508157
+k32 discovered,212,2,-0.928855
+k32 discovered,213,32,4.00597
+k32 discovered,214,32,-0.373829
+k32 discovered,215,32,1.65642
+k32 discovered,216,32,7.4642
+k32 discovered,217,32,-0.329596
+k32 discovered,218,2,0.19628
+k32 discovered,219,32,-0.891198
+k32 discovered,220,32,1.06662
+k32 discovered,221,32,0.865685
+k32 discovered,222,32,0.938284
+k32 discovered,223,32,1.63301
+k32 discovered,224,32,1.08726
+k32 discovered,225,32,2.66842
+k32 discovered,226,32,2.58973
+k32 discovered,227,32,3.05349
+k32 discovered,228,2,-0.852213
+k32 discovered,229,32,1.42035
+k32 discovered,230,32,1.89386
+k32 discovered,231,32,2.1861
+k32 discovered,232,32,8.444
+k32 discovered,233,32,2.65776
+k32 discovered,234,6,0.260619
+k32 discovered,235,32,5.32597
+k32 discovered,236,32,1.21577
+k32 discovered,237,32,3.54262
+k32 discovered,238,3,-1.55936
+k32 discovered,239,16,-1.01512
+k32 discovered,240,2,0.138908
+k32 discovered,241,32,2.65992
+k32 discovered,242,32,5.65523
+k32 discovered,243,2,-0.323472
+k32 discovered,244,32,2.89792
+k32 discovered,245,32,2.32781
+k32 discovered,246,32,-0.145339
+k32 discovered,247,32,3.65565
+k32 discovered,248,32,4.48024
+k32 discovered,249,32,1.80892
+k32 discovered,250,32,1.61375
+k32 discovered,251,32,-0.834303
+k32 discovered,252,20,-1.26212
+k32 discovered,253,32,3.19877
+k32 discovered,254,4,-3.23457
+k32 discovered,255,3,1.36648
+k32 discovered,256,32,1.12556
+k32 discovered,257,32,0.613141
+k32 discovered,258,32,12.0387
+k32 discovered,259,32,2.95303
+k32 discovered,260,32,2.91579
+k32 discovered,261,2,-0.723208
+k32 discovered,262,32,0.0201635
+k32 discovered,263,32,2.65169
+k32 discovered,264,32,-1.98254
+k32 discovered,265,32,1.39866
+k32 discovered,266,32,0.357818
+k32 discovered,267,32,7.04745
+k32 discovered,268,32,0.518167
+k32 discovered,269,32,0.437792
+k32 discovered,270,32,5.97031
+k32 discovered,271,32,2.12185
+k32 discovered,272,2,-2.03249
+k32 discovered,273,32,9.70292
+k32 discovered,274,32,2.59073
+k32 discovered,275,2,1.33605
+k32 discovered,276,32,-0.619165
+k32 discovered,277,32,1.35155
+k32 discovered,278,32,-0.73646
+k32 discovered,279,2,-0.451663
+k32 discovered,280,32,1.50676
+k32 discovered,281,32,4.46442
+k32 discovered,282,32,-1.03155
+k32 discovered,283,32,-0.0105784
+k32 discovered,284,32,4.07147
+k32 discovered,285,3,0.928967
+k32 discovered,286,32,0.810239
+k32 discovered,287,32,5.04155
+k32 discovered,288,32,3.08415
+k32 discovered,289,32,-0.225545
+k32 discovered,290,2,0.784358
+k32 discovered,291,32,0.489089
+k32 discovered,292,32,-0.166638
+k32 discovered,293,32,2.36345
+k32 discovered,294,32,7.73377
+k32 discovered,295,32,0.367392
+k32 discovered,296,32,0.715663
+k32 discovered,297,32,3.29452
+k32 discovered,298,3,-1.12793
+k32 discovered,299,32,-0.146737
+k32 discovered,300,32,5.67494
+k32 discovered,301,32,3.01419
+k32 discovered,302,32,0.344628
+k32 discovered,303,32,1.5995
+k32 discovered,304,32,1.01571
+k32 discovered,305,32,2.37878
+k32 discovered,306,32,2.59863
+k32 discovered,307,32,3.15267
+k32 discovered,308,32,2.56657
+k32 discovered,309,32,9.19018
+k32 discovered,310,32,9.5673
+k32 discovered,311,32,2.86625
+k32 discovered,312,32,3.4833
+k32 discovered,313,32,1.33514
+k32 discovered,314,32,-1.35243
+k32 discovered,315,32,-0.0981513
+k32 discovered,316,12,-1.37495
+k32 discovered,317,32,1.35416
+k32 discovered,318,32,3.77812
+k32 discovered,319,32,-2.50675
+k32 discovered,320,2,-1.38157
+k32 discovered,321,2,0.56941
+k32 discovered,322,32,2.9214
+k32 discovered,323,32,-0.722971
+k32 discovered,324,32,2.37836
+k32 discovered,325,2,-0.193491
+k32 discovered,326,32,0.541667
+k32 discovered,327,32,-1.37512
+k32 discovered,328,32,2.97283
+k32 discovered,329,32,-1.41761
+k32 discovered,330,32,1.5015
+k32 discovered,331,2,-1.00888
+k32 discovered,332,32,1.66523
+k32 discovered,333,32,-2.0398
+k32 discovered,334,4,-2.37035
+k32 discovered,335,32,5.24194
+k32 discovered,336,32,5.81967
+k32 discovered,337,20,0.697225
+k32 discovered,338,2,1.33161
+k32 discovered,339,32,10.1271
+k32 discovered,340,32,1.30721
+k32 discovered,341,2,-1.91134
+k32 discovered,342,32,3.51928
+k32 discovered,343,29,0.0445948
+k32 discovered,344,32,4.89778
+k32 discovered,345,32,2.26577
+k32 discovered,346,32,1.58812
+k32 discovered,347,3,1.3459
+k32 discovered,348,32,2.65592
+k32 discovered,349,2,-1.91103
+k32 discovered,350,32,-0.40266
+k32 discovered,351,2,-0.193965
+k32 discovered,352,32,2.68494
+k32 discovered,353,32,7.88108
+k32 discovered,354,2,-0.575416
+k32 discovered,355,9,-0.999875
+k32 discovered,356,32,0.838411
+k32 discovered,357,2,-1.04112
+k32 discovered,358,2,-4.14997
+onto heads,0,32,-10.9508
+onto heads,1,32,-5.51997
+onto heads,2,32,-8.42515
+onto heads,3,32,5.78703
+onto heads,4,32,-15.0611
+onto heads,5,32,-7.71915
+onto heads,6,32,-11.8002
+onto heads,7,32,-14.6511
+onto heads,8,32,-13.1688
+onto heads,9,32,-13.8292
+onto heads,10,32,-5.41871
+onto heads,11,32,-12.6857
+onto heads,12,32,-13.1293
+onto heads,13,32,-13.1356
+onto heads,14,32,-11.246
+onto heads,15,32,2.97935
+onto heads,16,32,-8.24044
+onto heads,17,32,-14.8411
+onto heads,18,32,-5.60415
+onto heads,19,32,-6.20821
+onto heads,20,32,-12.1526
+onto heads,21,32,-7.80368
+onto heads,22,32,-6.43336
+onto heads,23,32,-3.97925
+onto heads,24,32,-9.91535
+onto heads,25,32,4.85724
+onto heads,26,32,-14.2899
+onto heads,27,32,-10.2403
+onto heads,28,32,-4.4725
+onto heads,29,32,-3.55687
+onto heads,30,32,-3.49529
+onto heads,31,32,-8.95004
+onto heads,32,32,-27.8795
+onto heads,33,32,-28.6916
+onto heads,34,32,-28.7282
+onto heads,35,32,-29.0554
+onto heads,36,32,-28.2182
+onto heads,37,32,-28.8468
+onto heads,38,32,-28.4795
+onto heads,39,32,-28.4549
+onto heads,40,32,-28.2609
+onto heads,41,32,-28.5593
+onto heads,42,32,-28.437
+onto heads,43,32,-28.0369
+onto heads,44,32,-28.1938
+onto heads,45,32,-29.0307
+onto heads,46,32,-27.9554
+onto heads,47,32,-27.3899
+onto heads,48,32,-28.0044
+onto heads,49,32,-27.5933
+onto heads,50,32,-28.249
+onto heads,51,32,-28.4398
+onto heads,52,32,-28.0559
+onto heads,53,32,-27.3544
+onto heads,54,32,-27.91
+onto heads,55,32,-28.4078
+onto heads,56,32,-28.0319
+onto heads,57,32,-27.7851
+onto heads,58,32,-28.1688
+onto heads,59,32,-28.9117
+onto heads,60,32,-27.9044
+onto heads,61,32,-28.1978
+onto heads,62,32,-28.7654
+onto heads,63,32,-27.5282
+onto heads,64,32,-30.3875
+onto heads,65,32,-30.7326
+onto heads,66,32,-30.3531
+onto heads,67,32,-30.8781
+onto heads,68,32,-30.2226
+onto heads,69,32,-30.5229
+onto heads,70,32,-19.0094
+onto heads,71,32,-30.4799
+onto heads,72,32,-30.359
+onto heads,73,32,-31.2565
+onto heads,74,32,-30.5883
+onto heads,75,32,-30.3016
+onto heads,76,32,-30.9664
+onto heads,77,32,-30.7585
+onto heads,78,32,-29.9898
+onto heads,79,32,-30.6081
+onto heads,80,32,-30.8199
+onto heads,81,32,-30.5217
+onto heads,82,32,-30.9762
+onto heads,83,32,-30.9186
+onto heads,84,32,-30.2565
+onto heads,85,32,-30.5282
+onto heads,86,32,-30.5145
+onto heads,87,32,-30.8789
+onto heads,88,32,-31.0513
+onto heads,89,32,346.324
+onto heads,90,32,-30.7761
+onto heads,91,32,-30.6737
+onto heads,92,32,-30.2577
+onto heads,93,32,-30.655
+onto heads,94,32,-30.5081
+onto heads,95,32,-30.6718
+onto heads,96,32,-28.0203
+onto heads,97,32,-28.8748
+onto heads,98,32,-28.2987
+onto heads,99,32,-28.6642
+onto heads,100,32,-28.1228
+onto heads,101,32,-28.4272
+onto heads,102,32,-28.8636
+onto heads,103,32,-28.68
+onto heads,104,32,-28.5317
+onto heads,105,32,-29.1088
+onto heads,106,32,-28.4126
+onto heads,107,32,-28.6422
+onto heads,108,32,-28.1567
+onto heads,109,32,-28.368
+onto heads,110,32,-28.9904
+onto heads,111,32,-28.3335
+onto heads,112,32,-28.7715
+onto heads,113,32,-28.4717
+onto heads,114,32,-28.4302
+onto heads,115,32,-28.8028
+onto heads,116,32,-28.9879
+onto heads,117,32,-28.1243
+onto heads,118,32,-28.5065
+onto heads,119,32,-28.9092
+onto heads,120,32,-28.8028
+onto heads,121,32,-28.6644
+onto heads,122,32,-28.2194
+onto heads,123,32,-28.1411
+onto heads,124,32,279.758
+onto heads,125,32,-14.9916
+onto heads,126,32,-28.7172
+onto heads,127,32,-28.6773
+onto heads,128,32,-15.4617
+onto heads,129,32,-16.8517
+onto heads,130,32,-16.7969
+onto heads,131,32,-16.8558
+onto heads,132,32,-16.7422
+onto heads,133,32,-16.7221
+onto heads,134,32,-16.8585
+onto heads,135,32,-16.8803
+onto heads,136,32,-16.736
+onto heads,137,32,-16.8029
+onto heads,138,32,-15.1163
+onto heads,139,32,-16.5863
+onto heads,140,32,-14.4211
+onto heads,141,32,-16.6448
+onto heads,142,32,-4.34057
+onto heads,143,32,-15.2648
+onto heads,144,32,-15.813
+onto heads,145,32,-16.9962
+onto heads,146,32,-16.8875
+onto heads,147,32,-15.3415
+onto heads,148,32,-4.99237
+onto heads,149,32,-15.4099
+onto heads,150,32,12.8223
+onto heads,151,32,-16.9584
+onto heads,152,32,-16.6987
+onto heads,153,32,-16.6136
+onto heads,154,32,-8.72911
+onto heads,155,32,-16.957
+onto heads,156,32,-15.8498
+onto heads,157,32,-16.7621
+onto heads,158,32,-14.7406
+onto heads,159,32,-16.7815
+g160softmax,0,32,-14.8495
+g160softmax,1,32,-14.9604
+g160softmax,2,32,-15.0247
+g160softmax,3,32,-14.9524
+g160softmax,4,32,-14.554
+g160softmax,5,32,-14.5765
+g160softmax,6,32,-14.6176
+g160softmax,7,32,-14.9253
+g160softmax,8,32,-14.0588
+g160softmax,9,32,-14.7504
+g160softmax,10,32,-14.3595
+g160softmax,11,32,-15.1501
+g160softmax,12,32,-14.5203
+g160softmax,13,32,-15.1086
+g160softmax,14,32,-14.4997
+g160softmax,15,32,-14.1241
+g160softmax,16,32,-14.3146
+g160softmax,17,32,-14.3706
+g160softmax,18,32,-14.6196
+g160softmax,19,32,-14.1135
+g160softmax,20,32,-14.2472
+g160softmax,21,32,-14.9578
+g160softmax,22,32,-14.2954
+g160softmax,23,32,-14.7624
+g160softmax,24,32,-15.0008
+g160softmax,25,32,-14.3542
+g160softmax,26,32,-14.4241
+g160softmax,27,32,-14.4484
+g160softmax,28,32,-15.3891
+g160softmax,29,32,-15.293
+g160softmax,30,32,-14.809
+g160softmax,31,32,-14.1718
+g160softmax,32,32,-14.5806
+g160softmax,33,32,-13.8431
+g160softmax,34,32,-15.1437
+g160softmax,35,32,-14.3006
+g160softmax,36,32,-15.0201
+g160softmax,37,32,-14.9455
+g160softmax,38,32,-14.6869
+g160softmax,39,32,-14.1701
+g160softmax,40,32,-14.8814
+g160softmax,41,32,-13.4558
+g160softmax,42,32,-14.7679
+g160softmax,43,32,-15.3583
+g160softmax,44,32,-14.4039
+g160softmax,45,32,-14.9695
+g160softmax,46,32,-14.7933
+g160softmax,47,32,-14.9346
+g160softmax,48,32,-14.8744
+g160softmax,49,32,-15.1715
+g160softmax,50,32,-14.1837
+g160softmax,51,32,-14.2722
+g160softmax,52,32,-13.5356
+g160softmax,53,32,-14.5901
+g160softmax,54,32,-15.2118
+g160softmax,55,32,-15.0468
+g160softmax,56,32,-14.7378
+g160softmax,57,32,-14.528
+g160softmax,58,32,-14.7899
+g160softmax,59,32,-13.9123
+g160softmax,60,32,-14.5068
+g160softmax,61,32,-14.6685
+g160softmax,62,32,-14.8578
+g160softmax,63,32,-14.1735
+g160softmax,64,32,-15.0677
+g160softmax,65,32,-14.38
+g160softmax,66,32,-14.6582
+g160softmax,67,32,-14.8261
+g160softmax,68,32,-15.4106
+g160softmax,69,32,-14.4284
+g160softmax,70,32,-14.7348
+g160softmax,71,32,-14.7744
+g160softmax,72,32,-14.8936
+g160softmax,73,32,-14.7093
+g160softmax,74,32,-14.9177
+g160softmax,75,32,-15.1522
+g160softmax,76,32,-14.8446
+g160softmax,77,32,-14.3406
+g160softmax,78,32,-14.4204
+g160softmax,79,32,-15.0009
+g160softmax,80,32,-14.9062
+g160softmax,81,32,-15.1826
+g160softmax,82,32,-15.193
+g160softmax,83,32,-14.5693
+g160softmax,84,32,-15.2523
+g160softmax,85,32,-15.0019
+g160softmax,86,32,-14.7005
+g160softmax,87,32,-15.1118
+g160softmax,88,32,-15.0343
+g160softmax,89,32,-14.8571
+g160softmax,90,32,-13.6951
+g160softmax,91,32,-15.0903
+g160softmax,92,32,-14.0614
+g160softmax,93,32,-14.4591
+g160softmax,94,32,-15.0018
+g160softmax,95,32,-13.982
+g160softmax,96,32,-13.9846
+g160softmax,97,32,-15.0079
+g160softmax,98,32,-14.5793
+g160softmax,99,32,-14.1663
+g160softmax,100,32,-14.454
+g160softmax,101,32,-14.5908
+g160softmax,102,32,-14.9307
+g160softmax,103,32,-14.9535
+g160softmax,104,32,-14.5475
+g160softmax,105,32,-14.7458
+g160softmax,106,32,-14.7131
+g160softmax,107,32,-13.6911
+g160softmax,108,32,-13.9351
+g160softmax,109,32,-14.608
+g160softmax,110,32,-14.8637
+g160softmax,111,32,-14.1224
+g160softmax,112,32,-15.1602
+g160softmax,113,32,-14.4976
+g160softmax,114,32,-14.5907
+g160softmax,115,32,-14.6747
+g160softmax,116,32,-14.6873
+g160softmax,117,32,-14.9015
+g160softmax,118,32,-14.471
+g160softmax,119,32,-15.2785
+g160softmax,120,32,-14.6049
+g160softmax,121,32,-14.8346
+g160softmax,122,32,-14.9216
+g160softmax,123,32,-14.7351
+g160softmax,124,32,-13.8491
+g160softmax,125,32,-14.4048
+g160softmax,126,32,-14.5468
+g160softmax,127,32,-14.1438
+g160softmax,128,32,-15.2424
+g160softmax,129,32,-14.5902
+g160softmax,130,32,-14.6812
+g160softmax,131,32,-14.7729
+g160softmax,132,32,-15.5439
+g160softmax,133,32,-14.6244
+g160softmax,134,32,-14.755
+g160softmax,135,32,-15.0162
+g160softmax,136,32,-14.2351
+g160softmax,137,32,-15.0964
+g160softmax,138,32,-15.0022
+g160softmax,139,32,-14.6772
+g160softmax,140,32,-14.1968
+g160softmax,141,32,-14.3244
+g160softmax,142,32,-14.658
+g160softmax,143,32,-14.3601
+g160softmax,144,32,-15.1441
+g160softmax,145,32,-14.49
+g160softmax,146,32,-14.3883
+g160softmax,147,32,-14.5926
+g160softmax,148,32,-15.7626
+g160softmax,149,32,-15.3588
+g160softmax,150,32,-14.3065
+g160softmax,151,32,-15.2343
+g160softmax,152,32,-14.2759
+g160softmax,153,32,-15.0139
+g160softmax,154,32,-14.6295
+g160softmax,155,32,-14.7326
+g160softmax,156,32,-14.4412
+g160softmax,157,32,-14.8767
+g160softmax,158,32,-14.4132
+g160softmax,159,32,-14.1937

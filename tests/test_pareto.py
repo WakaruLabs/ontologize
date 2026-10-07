@@ -1,6 +1,7 @@
 # pareto.py's pure helpers: the deviation-code truncation that generates
-# the Ontologizer's side of the capacity-Pareto curve, and the SAE
-# run-name parsing that pairs each point with its capacity.
+# the Ontologizer's side of the capacity-Pareto curve, the SAE run-name
+# parsing that pairs each point with its capacity, and the Gaussian
+# reference (reverse water-filling) the hard codes are compared against.
 import jax.numpy as jnp
 import numpy as np
 import pytest
@@ -80,3 +81,39 @@ def test_parse_sae_name():
     assert pareto.parse_sae_name("x/m5120_l10.003/params.npz") == (5120, 0)
     with pytest.raises(ValueError):
         pareto.parse_sae_name("x/checkpoint_7/params.npz")
+
+
+def test_gaussian_reference_one_component():
+    # a scalar Gaussian loses a factor of 4 in distortion per bit
+    out = pareto.gaussian_reference(np.array([3.0]), np.array([0.0, 1.0, 2.5]))
+    assert np.allclose(out, [1.0, 0.25, 2.0 ** -5], rtol=1e-6)
+
+
+def test_gaussian_reference_equal_components_share_the_rate():
+    d = 8
+    out = pareto.gaussian_reference(np.full(d, 0.7), np.array([4.0, 16.0]))
+    assert np.allclose(out, 2.0 ** (-2 * np.array([4.0, 16.0]) / d), rtol=1e-6)
+
+
+def test_gaussian_reference_water_level_between_components():
+    # at half a bit the water level 2 sits between the eigenvalues 4 and 1:
+    # only the first component is coded, the second stays at its variance
+    out = pareto.gaussian_reference(np.array([4.0, 1.0, 0.0]), np.array([0.5]))
+    assert np.allclose(out, [(2.0 + 1.0) / 5.0], rtol=1e-6)
+
+
+def test_gaussian_reference_monotone_and_bounded():
+    lam = np.random.default_rng(7).exponential(size=64)
+    out = pareto.gaussian_reference(lam, np.geomspace(1, 2000, 50))
+    assert np.all(np.diff(out) < 0)
+    assert np.all((out > 0) & (out < 1))
+
+
+def test_whitened_spectrum_matches_the_fvu_base():
+    rng = np.random.default_rng(8)
+    X = rng.normal(size=(4096, 6)) @ rng.normal(size=(6, 6)) + 3.0
+    w = rng.uniform(0.5, 2.0, size=6)
+    lam = pareto.whitened_spectrum(X, w)
+    assert np.all(np.diff(lam) <= 0) and lam.min() >= 0
+    # main() divides by mean(var * w), which is the spectrum's mean
+    assert np.isclose(lam.sum() / len(lam), (X.var(0) * w).mean(), rtol=1e-6)

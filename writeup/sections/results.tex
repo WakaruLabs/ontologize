@@ -29,10 +29,27 @@ onto soft ($\nu{=}32$)              & 5120 & 0 & 0.00538 \\
 model (\texttt{resid\_nc}) and the SAEs, on the shared evaluation tail.
 The single-layer variants are \texttt{sae.py} with per-head competition,
 simplified Ontologizers rather than SAEs (Appendix~\ref{sec:models}).}
+\label{tab:pareto}
 \end{table}
 
+\begin{figure}[tp]\centering
+\includegraphics[width=\linewidth]{figures/fig-pareto.pdf}
+\caption[Reconstruction against code size]{Reconstruction against code
+size on the shared evaluation tail, by index bits (a) and by continuous
+coefficients (b): the points of Table~\ref{tab:pareto}, the L1 SAEs at
+all five weights, and the straight-through stack
+(\texttt{ste\_h76\_init01}, Section~\ref{sec:ste}). A code appears only
+where its size is nonzero, so the soft codes are in (b) alone, the
+softmax argmax is in (a) alone, and the straight-through stack is a level
+in (b). The dashed curve is the Gaussian reference
+(Eq.~\eqref{eq:ratefloor}). The softmax model (\texttt{resid\_nc}) saw
+the tail in training and the others hold it out. One seed per point,
+except the $k_{\mathrm{SAE}}{=}32$ SAE's seed-43 replica.}
+\label{fig:pareto}
+\end{figure}
+
 The SAE frontier dominates the soft Ontologizer's code at every capacity
-measured. Truncating the reference model's code to the $\nu$ largest
+measured (Figure~\ref{fig:pareto}b). Truncating the reference model's code to the $\nu$ largest
 deviations per head from its mean assignment (Appendix~\ref{app:protocols}),
 it needs 320 coefficients to reach the $\fvu \approx 0.49$ that the
 $k_{\mathrm{SAE}}{=}32$ SAEs reach with 32, and its coarsest code, one
@@ -49,7 +66,7 @@ heads per layer, against 0.094 at $\nu{=}8$).
 
 The soft model's own discrete reading is not a code. Its argmax
 reconstructs at $\fvu$ 17.3, $77\times$ the Gaussian reference for 800
-bits (0.226), the least distortion an 800-bit code could reach if the
+bits (0.226; Figure~\ref{fig:pareto}a), the least distortion an 800-bit code could reach if the
 embeddings were Gaussian with their measured covariance
 (Eq.~\eqref{eq:ratefloor}). Real embeddings are no harder to compress
 than that, so the argmax is at least $77\times$ from optimal, and on a
@@ -119,9 +136,23 @@ g160softmax (trained, soft)   & 160 & $-14.7$ & 0.00 & \textbf{1.00} \\
 \end{tabular}
 \caption{Within-head decode-direction coherence against size-matched
 nulls drawn from the same pool ($n_{\mathrm{null}}{=}500$).}
+\label{tab:headcoh}
 \end{table}
 
-Hard-trained heads are coherent, and soft-trained heads are contrast sets.
+\begin{figure}[tp]\centering
+\includegraphics[width=\linewidth]{figures/fig-headcoh.pdf}
+\caption[Within-head coherence by head]{Each head's, or discovered
+group's, $\zeta_{\cos}$ against its size-matched null
+(Table~\ref{tab:headcoh}), on a scale linear between the dotted lines at
+$\pm2$ and logarithmic beyond them; bars are means. The soft heads are
+those of \texttt{resid\_nc} and \texttt{g160softmax}, the discovered
+groups those of the $m{=}11264$, $k_{\mathrm{SAE}}{=}32$ SAE. One seed
+per model.}
+\label{fig:headcoh}
+\end{figure}
+
+Hard-trained heads are coherent, and soft-trained heads are contrast sets
+(Figure~\ref{fig:headcoh}).
 Every head of the single-layer hard variant decodes to directions far more
 similar than a random set of the same size: winner-take-all carves the
 data so that each head's atoms tile one region. An SAE's post hoc
@@ -190,7 +221,7 @@ target entry on 82\% of rows for the softmax model at strength 0.25. The
 hard code is the less steerable of the two: it realizes 36\% while
 already disturbing more of the other heads (0.66 against 0.58), because a
 hard argmax has margins a small step cannot cross. Swept over strength,
-its decode direction saturates near 0.65, so a third of its interventions
+its decode direction saturates near 0.65 (Figure~\ref{fig:steer-curves}b), so a third of its interventions
 cannot be realized at any strength, and it passes the soft model only
 beyond collateral 0.85, where most of the other heads have moved too.
 Steering by target layer reverses the aggregate ranking of the decode and
@@ -226,6 +257,24 @@ model, one seed. An SAE's collateral counts its other active latents, so
 compare within a row.}
 \label{tab:steersup}
 \end{table}
+
+\begin{figure}[tp]\centering
+\includegraphics[width=\linewidth]{figures/fig-steer-curves.pdf}
+\caption[Steering against collateral by step strength]{Realization
+against collateral as the step grows from $0.25\lVert\mathbf{x}\rVert$ to
+$4\lVert\mathbf{x}\rVert$, left to right along each curve, on the draw of
+Table~\ref{tab:steersup}. (a) The softmax stack
+(\texttt{sweep\_softmax\_shm}). (b) The hard-code stack
+(\texttt{ste\_h76\_init01}). (c) The flat hard code
+(\texttt{ste\_l1\_h380\_i01\_hm1e4}). (d) The single-layer hard variant
+\texttt{g160top1}. At each strength the models' own directions disturb
+as many other heads as the random step, to within about 0.05, except
+\texttt{g160top1}'s decode direction, which disturbs far fewer; what a
+direction buys is its height above the random curve. The logistic probe
+tracks the difference of means (within 0.03 realized, 0.05 collateral)
+and is not drawn.}
+\label{fig:steer-curves}
+\end{figure}
 
 Only the softmax stack's own direction beats the supervised vectors,
 reaching its categories on 75\% of rows against 46--47\%. The hard-code
@@ -274,16 +323,33 @@ generic description that matches every item scores the null, so generic
 descriptions inflate toward it. Density is nominal code density; freq is
 the firing rate at the $2/k$ threshold. \texttt{k32\_bl}'s pool is only 75
 live features; no null control was recorded for this campaign.}
+\label{tab:autointerp}
 \end{table}
+
+\begin{figure}[tp]\centering
+\includegraphics[width=\linewidth]{figures/fig-autointerp-density.pdf}
+\caption[Describability against code density]{Mean detection F1 per run
+of Table~\ref{tab:autointerp} against code density. (a) Activation
+descriptions against nominal density, the share of a code's coefficients
+that are nonzero. (b) Contrastive descriptions against the firing rate at
+the $2/k$ threshold, with a line fitted in log rate to the four
+\texttt{sae.py} runs that fire; \texttt{g160softmax} never crosses the
+threshold and is not drawn, and the Ontologizer (\texttt{resid\_nc}) is
+held out of the fit. Detection sets are half positives, so a description
+that matches every item scores the always-match null, $2/3$ (dotted).
+One seed per run.}
+\label{fig:autointerp-density}
+\end{figure}
 
 Describability tracks code density, not architecture. Activation-based
 descriptions rank the sparse codes (the $k_{\mathrm{SAE}}{=}32$ SAE and the
 single-layer hard variant, 0.65) above the bilinear SAE (0.58), the
 reference model and the dense control (0.47) and the single-layer soft
-variant (0.45), and density alone carries about 80\% of that variance. The
-reference Ontologizer sits on the SAEs' density trend, while the hard
-variant lies 0.12 above it, unusually describable for its density
-(Appendix~\ref{sec:headautointerp}). Per-latent detection F1 therefore
+variant (0.45), and density alone carries about 80\% of that variance
+(Figure~\ref{fig:autointerp-density}a). The reference Ontologizer sits on
+the SAEs' density trend, while the hard variant lies 0.12 above it,
+unusually describable for its density (Figure~\ref{fig:autointerp-density}b;
+Appendix~\ref{sec:headautointerp}). Per-latent detection F1 therefore
 cannot compare architectures at unmatched density, and every soft
 Ontologizer is dense by construction. The contrastive descriptions
 (\texttt{cacts}) give the honest number: they score below plain summaries
@@ -382,7 +448,7 @@ in Appendix~\ref{sec:steerlayer}.
 
 \paragraph{A purely discrete code beats a sparse linear one.} On one
 frontier of converged SAEs and the single-layer hard variant, all trained
-for about 144k steps:
+for about 144k steps (Figure~\ref{fig:pareto}a):
 
 \begin{center}\small
 \begin{tabular}{@{}lrrr@{}}
@@ -466,7 +532,7 @@ native decode & 0.044 / 0.678 & 0.169 / 0.043 \\
 
 Collateral is not a property of the intervention. In both models every
 direction disturbs as many other heads as a random step of the same
-length, to within 0.05, because the heads sit almost on their decision
+length, to within 0.05 (Figure~\ref{fig:steer-curves}b, c), because the heads sit almost on their decision
 boundaries: the median margin between winner and runner-up logits is
 $1.5\times10^{-4}$, at layer 0 and in the flat arm alike, so a step of a
 quarter of the input's norm crosses many of them. Linearizing each head's
@@ -556,7 +622,19 @@ rows and centered contribution cosine on 8{,}192 rows (null maximum
 \label{tab:gpt2seeds}
 \end{table}
 
-Only layer 0 reproduces, at under a fifth of the control, and each of its
+\begin{figure}[tp]\centering
+\includegraphics[width=\linewidth]{figures/fig-gpt2-seeds.pdf}
+\caption[GPT-2 seed agreement by layer]{Table~\ref{tab:gpt2seeds} by
+layer: what each head separates (a, partition NMI) and what it writes
+(b, centered contribution cosine, log scale), across the two seeds and
+against the first run's own checkpoint at step 350{,}000. Dotted lines are
+the nulls; the band in (b) runs from the null's mean to its maximum. One
+seed pair.}
+\label{fig:gpt2-seeds}
+\end{figure}
+
+Only layer 0 reproduces, at under a fifth of the control
+(Figure~\ref{fig:gpt2-seeds}), and each of its
 heads matches into the other seed's layer 0 on both measures. Layer 1
 keeps its identity (19 and 20 of its 20 heads land in the other seed's
 layer 1) while agreeing on almost nothing it separates or writes; layers

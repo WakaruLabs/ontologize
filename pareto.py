@@ -57,6 +57,7 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 import orbax.checkpoint as ocp
+from jaxtyping import Float
 from pathlib import Path
 
 import sae
@@ -147,6 +148,40 @@ def parse_sae_name(path):
             f"can't parse m/topk from run dir {name!r}; expected the "
             "m{m}_k{topk} or m{m}_l1{l1} naming sae.py uses")
     return int(match.group(1)), int(match.group(2) or 0)
+
+
+def whitened_spectrum(X: Float[np.ndarray, "n d"], w: Float[np.ndarray, "d"]
+                      ) -> Float[np.ndarray, "d"]:
+    """Eigenvalues of the covariance of x * sqrt(w), descending. Their sum
+    is d times `main`'s FVU base, so FVU_w is a total distortion over it."""
+    Y = (X - X.mean(0)) * np.sqrt(w)
+    C = (Y.T @ Y).astype(np.float64) / len(Y)
+    return np.clip(np.linalg.eigvalsh(C)[::-1], 0.0, None)
+
+
+def gaussian_reference(lam: Float[np.ndarray, "d"],
+                       bits: Float[np.ndarray, "r"]) -> Float[np.ndarray, "r"]:
+    """The Gaussian reference FVU at each rate in `bits` (bits per sample):
+    reverse water-filling over a Gaussian source with covariance
+    eigenvalues `lam`, so FVU = sum min(theta, lam) / sum lam with the
+    water level theta set by bits = sum max(0, log2(lam / theta) / 2). A
+    reference, not a floor: a non-Gaussian source with the same covariance
+    can be coded with less distortion."""
+    lam = np.asarray(lam, np.float64)
+    lam = lam[lam > 0]
+    bits = np.atleast_1d(np.asarray(bits, np.float64))
+    # the rate falls monotonically in theta: bisect log theta per target
+    lo = np.full(bits.shape, np.log(lam.min()) - 60.0)
+    hi = np.full(bits.shape, np.log(lam.max()))
+    for _ in range(200):
+        mid = (lo + hi) / 2
+        rate = np.maximum(0.0, np.log2(lam[None] / np.exp(mid)[:, None])
+                          / 2).sum(-1)
+        above = rate > bits
+        lo = np.where(above, mid, lo)
+        hi = np.where(above, hi, mid)
+    theta = np.exp(hi)
+    return np.minimum(theta[:, None], lam[None]).sum(-1) / lam.sum()
 
 
 def onto_points(cfg, X_eval, w, base_w):

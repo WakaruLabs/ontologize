@@ -13,9 +13,12 @@ import json
 import os
 
 import matplotlib
+import numpy as np
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.ticker import LogLocator, NullFormatter
+from matplotlib.lines import Line2D
+from matplotlib.ticker import (FixedLocator, FuncFormatter, LogLocator,
+                               NullFormatter)
 
 PINE = "#0B5132"
 LEAF = "#2A8C5A"     # data green: separable from ink by lightness
@@ -538,3 +541,301 @@ logx(b)
 eyebrow(b, "one burst, then idle")
 letters((a, b))
 save(fig, "fig-kcos")
+
+# ---- headline results, from the eval scripts' own outputs -------------------
+# extract_results.py copies each figure's numbers out of data/out, so none is
+# restated from a table; the GPT-2 seed pair is the one exception, below.
+# Families keep one color across these figures: Ontologizers LEAF, SAEs ink,
+# the single-layer variants muted, references dashed.
+
+def load_rows(name):
+    with open(os.path.join(RESULTS, name)) as f:
+        return list(csv.DictReader(f))
+
+
+def mono_axes(ax):
+    """Mono tick labels that survive a later rescale, which `monoticks`
+    (styling only the labels that exist when called) does not."""
+    ax.tick_params(labelfontfamily="monospace", labelsize=7.0)
+
+
+def percent_axis(axis, ticks):
+    axis.set_major_locator(FixedLocator(ticks))
+    axis.set_major_formatter(FuncFormatter(lambda v, _: f"{100 * v:g}%"))
+    axis.set_minor_formatter(NullFormatter())
+
+
+RING = dict(mec="white", mew=0.6)  # keeps overlapping markers apart
+NULL = dict(color=INKMUT, lw=0.6, ls=(0, (2, 2)))
+
+# reconstruction against code size: the Pareto table, the capacity table
+# and the discrete-versus-linear frontier in one plane, by index bits (a)
+# and by continuous coefficients (b)
+P = load_rows("pareto_sonar.csv")
+G = load_rows("ratefloor_sonar.csv")
+
+
+def frontier(family, axis, kinds=None):
+    """(x, fvu) of a family's points along `axis`, sorted; a point at zero
+    has no place on a log axis and is drawn separately if at all."""
+    pts = [(float(r[axis]), float(r["fvu"])) for r in P
+           if r["family"] == family and (kinds is None or r["kind"] in kinds)]
+    return sorted(p for p in pts if p[0] > 0)
+
+
+TOPK_FRONT = ["m11264_k32", "m11264_k160", "m11264_k5120"]
+TOPK_REST = ["m5120_k32", "m5120_k32_s43", "m5120_k32_p5"]
+ste = next(r for r in P if r["family"] == "ste" and r["kind"] == "hard")
+argmax = next(r for r in P if r["family"] == "softmax" and r["kind"] == "hard")
+fig, (a, b) = plt.subplots(1, 2, figsize=(5.4, 3.0), sharey=True)
+fig.subplots_adjust(wspace=0.08, bottom=0.34, top=0.90, left=0.10, right=0.99)
+a.plot([float(r["bits"]) for r in G], [float(r["fvu"]) for r in G],
+       color=INKMUT, lw=0.9, ls=DASH, label="Gaussian reference", zorder=2)
+for ax, axis in ((a, "bits"), (b, "coeffs")):
+    ax.plot(*zip(*frontier("sae_topk", axis, TOPK_FRONT)), color=INK, lw=1.0,
+            marker="s", ms=3.6, **RING, label=r"$\mathtt{TopK}$ SAE", zorder=3)
+    ax.plot(*zip(*frontier("sae_topk", axis, TOPK_REST)), ls="none",
+            color=INK, marker="s", ms=3.6, **RING, zorder=3)
+    ax.plot(*zip(*frontier("sae_l1", axis)), color=INK, lw=0.8, ls=DOT,
+            marker="o", ms=3.4, mfc="white", label="L1 SAE", zorder=3)
+    ax.plot(*zip(*frontier("sae_bilinear", axis)), ls="none", color=INK,
+            marker="^", ms=3.8, mfc="white", label="bilinear SAE", zorder=3)
+    ax.plot(*zip(*frontier("softmax", axis, ["dev", "soft"])), color=LEAF,
+            lw=1.2, marker="o", ms=3.6, mfc="white",
+            label=r"softmax, top $\nu$ per head", zorder=4)
+    ax.plot(*zip(*frontier("variant", axis)), ls="none", color=INKMUT,
+            marker="v", ms=4.4, **RING, label="single-layer variants",
+            zorder=4)
+a.plot([float(argmax["bits"])], [float(argmax["fvu"])], ls="none",
+       color=LEAF, marker="x", ms=4.5, mew=1.2, zorder=4)
+a.annotate("softmax argmax", xy=(float(argmax["bits"]), float(argmax["fvu"])),
+           xytext=(6, -2), textcoords="offset points", fontsize=6.6,
+           color=INK, va="center")
+a.plot([float(ste["bits"])], [float(ste["fvu"])], ls="none", color=LEAF,
+       marker="D", ms=5.5, **RING, zorder=5,
+       label=r"straight-through, 5$\times$76")
+# the hard code transmits no coefficients, so in (b) it is a level, not a point
+b.axhline(float(ste["fvu"]), color=LEAF, lw=0.8, ls=DASH, zorder=2)
+b.annotate(r"5$\times$76, no coefficients",
+           xy=(3.0, float(ste["fvu"])), xytext=(0, -3),
+           textcoords="offset points", fontsize=6.6, color=INK, ha="left",
+           va="top")
+for ax in (a, b):
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.xaxis.set_minor_formatter(NullFormatter())
+    mono_axes(ax)
+a.set_xlim(30, 4e4)
+b.set_xlim(2.5, 1.6e4)
+a.set_ylim(5e-5, 60)
+a.set_xlabel("index bits per sample")
+b.set_xlabel("continuous coefficients per sample")
+a.set_ylabel(r"FVU$_w$, evaluation tail")
+eyebrow(a, "by bits")
+eyebrow(b, "by coefficients")
+fig.legend(*a.get_legend_handles_labels(), loc="lower center", ncols=4,
+           handlelength=1.8, fontsize=6.6, bbox_to_anchor=(0.5, 0.0))
+letters((a, b))
+save(fig, "fig-pareto")
+
+# steering trade-off: realization against collateral as the step grows from
+# 0.25 to 4 times the input norm, one draw of targets per model
+S = load_rows("steer_sweep.csv")
+
+
+def sweep(model, kind):
+    pts = sorted((float(r["strength"]), float(r["collateral"]),
+                  float(r["hit"])) for r in S
+                 if r["model"] == model and r["kind"] == kind)
+    return [p[1] for p in pts], [p[2] for p in pts]
+
+
+DIRS = [
+    ("decode", "own decode direction", LEAF, "-",
+     dict(marker="o", ms=3.4, **RING)),
+    ("dm", "difference of means (supervised)", INK, "-",
+     dict(marker="s", ms=3.2, **RING)),
+    ("grad", "logit gradient", INK, DASH, dict(marker="^", ms=3.4,
+                                               mfc="white")),
+    ("random", "random direction", INKMUT, DOT, dict(marker="o", ms=3.0,
+                                                     mfc="white")),
+]
+PANELS = [
+    ("softmax stack", "softmax stack"),
+    ("hard-code stack", "hard-code stack, 5×76"),
+    ("hard-code flat", "hard-code flat, 1×380"),
+    ("g160top1", "single-layer hard, g160top1"),
+]
+fig, axs = plt.subplots(2, 2, figsize=(5.4, 4.4), sharex=True, sharey=True)
+fig.subplots_adjust(wspace=0.08, hspace=0.30, bottom=0.18, top=0.94,
+                    left=0.10, right=0.98)
+for ax, (model, title) in zip(axs.flat, PANELS):
+    for kind, label, col, ls, mk in DIRS:
+        ax.plot(*sweep(model, kind), color=col, ls=ls, lw=1.1, label=label,
+                **mk)
+    ax.set_xlim(-0.02, 1.02)
+    ax.set_ylim(-0.04, 1.06)
+    mono_axes(ax)
+    eyebrow(ax, title)
+# the step sizes, once, where the random curve has room above it
+x, y = sweep("g160top1", "random")
+for i, s in ((0, "0.25"), (-1, "4")):
+    axs[1, 1].annotate(s, xy=(x[i], y[i]), xytext=(0, 7),
+                       textcoords="offset points", fontsize=6.2,
+                       family="monospace", color=INKMUT, ha="center")
+fig.supxlabel("collateral (share of the other heads changed)", y=0.095,
+              fontsize=8.5)
+for ax in axs[:, 0]:
+    ax.set_ylabel("realized")
+fig.legend(*axs[0, 0].get_legend_handles_labels(), loc="lower center",
+           ncols=2, handlelength=2.2, fontsize=6.6, bbox_to_anchor=(0.5, 0.0))
+letters(axs.flat)
+save(fig, "fig-steer-curves")
+
+# within-head decode-direction coherence: every head's z against its
+# size-matched null, by grouping
+H = load_rows("headcoh_z.csv")
+GROUPS = [
+    ("g160top1", "g160top1\n(trained, hard)", INKMUT),
+    ("k32 discovered", "$\\mathtt{TopK}$ SAE groups\n(discovered)", INK),
+    ("onto heads", "Ontologizer heads\n(trained, soft)", LEAF),
+    ("g160softmax", "g160softmax\n(trained, soft)", INKMUT),
+]
+rng = np.random.default_rng(0)
+fig, ax = plt.subplots(figsize=(5.4, 2.3))
+fig.subplots_adjust(bottom=0.17, top=0.88, left=0.11, right=0.99)
+for i, (g, _, col) in enumerate(GROUPS):
+    z = np.array([float(r["z_cos"]) for r in H if r["grouping"] == g])
+    ax.plot(i + rng.uniform(-0.22, 0.22, len(z)), z, ls="none", marker="o",
+            ms=2.4, color=col, mec="none", alpha=0.6, zorder=3)
+    ax.plot([i - 0.3, i + 0.3], [z.mean()] * 2, color=INK, lw=1.4,
+            solid_capstyle="butt", zorder=4)
+    ax.text(i, 900, f"{(z > 2).mean():.0%} above +2\n"
+                    f"{(z < -2).mean():.0%} below −2",
+            ha="center", va="center", fontsize=6.2, family="monospace",
+            color=INKMUT)
+for v in (-2, 2):
+    ax.axhline(v, **NULL, zorder=1)
+ax.set_yscale("symlog", linthresh=2, linscale=0.6)
+ticks = [-30, -10, -2, 0, 2, 10, 100]
+ax.yaxis.set_major_locator(FixedLocator(ticks))
+ax.yaxis.set_major_formatter(FuncFormatter(
+    lambda v, _: f"{v:+g}".replace("-", "−") if v else "0"))
+ax.yaxis.set_minor_locator(FixedLocator([]))
+ax.set_ylim(-45, 2500)
+ax.set_xlim(-0.55, 3.55)
+ax.set_xticks(range(len(GROUPS)))
+ax.set_xticklabels([g[1] for g in GROUPS], fontsize=7.0)
+ax.tick_params(axis="x", length=0)
+ax.tick_params(axis="y", labelfontfamily="monospace", labelsize=7.0)
+ax.set_ylabel(r"within-head $\zeta_{\cos}$")
+eyebrow(ax, "hard heads cohere, soft heads repel")
+save(fig, "fig-headcoh")
+
+# describability against code density: (a) activation descriptions by
+# nominal density, (b) contrastive descriptions by firing rate, fitted on the
+# sae.py runs with the Ontologizer held out
+A = load_rows("autointerp_density.csv")
+FAM = {"onto": (LEAF, "o"), "k32": (INK, "s"), "k32_bl": (INK, "s"),
+       "k5120": (INK, "s"), "g160top1": (INKMUT, "v"),
+       "g160softmax": (INKMUT, "v")}
+NAME = {"onto": "resid_nc"}
+# label offsets (points) that keep the six names apart
+OFF_A = {"onto": (0, 8, "center"), "k32": (6, 1, "left"),
+         "k32_bl": (6, -1, "left"), "k5120": (-6, -1, "right"),
+         "g160top1": (6, 2, "left"), "g160softmax": (0, -8, "center")}
+OFF_B = {"onto": (6, -4, "left"), "k32": (6, 2, "left"),
+         "k32_bl": (6, -3, "left"), "k5120": (-6, -5, "right"),
+         "g160top1": (6, 2, "left")}
+fig, (a, b) = plt.subplots(1, 2, figsize=(5.4, 2.7), sharey=True)
+fig.subplots_adjust(wspace=0.08, bottom=0.31, top=0.89, left=0.10, right=0.99)
+for ax, xkey, ykey, off in ((a, "density", "acts", OFF_A),
+                            (b, "freq", "cacts", OFF_B)):
+    for r in A:
+        x, y = float(r[xkey]), float(r[ykey])
+        if x <= 0:
+            continue  # g160softmax never crosses the firing threshold
+        col, mk = FAM[r["run"]]
+        ax.plot([x], [y], ls="none", color=col, marker=mk, ms=4.6, **RING,
+                zorder=4)
+        dx, dy, ha = off[r["run"]]
+        ax.annotate(NAME.get(r["run"], r["run"]), xy=(x, y), xytext=(dx, dy),
+                    textcoords="offset points", fontsize=6.0,
+                    family="monospace", color=INK, ha=ha, va="center")
+    # a description that matches every item scores F1 = 2/3 on balanced sets
+    ax.axhline(2 / 3, **NULL, zorder=1)
+    ax.set_xscale("log")
+    mono_axes(ax)
+b.text(0.28, 2 / 3, "always-match null", fontsize=6.2, color=INKMUT,
+       ha="right", va="bottom", family="monospace")
+x = np.log([float(r["density"]) for r in A])
+y = [float(r["acts"]) for r in A]
+a.text(0.97, 0.05, f"correlation {np.corrcoef(x, y)[0, 1]:+.2f}",
+       transform=a.transAxes, ha="right", fontsize=6.4, color=INK,
+       family="monospace")
+fit = [r for r in A if r["sae_py"] == "1" and float(r["freq"]) > 0]
+slope, icept = np.polyfit(np.log([float(r["freq"]) for r in fit]),
+                          [float(r["cacts"]) for r in fit], 1)
+xs = np.geomspace(0.004, 0.3, 50)
+b.plot(xs, icept + slope * np.log(xs), color=INK, lw=0.8, zorder=2,
+       label="fit to the sae.py runs")
+# the one run well off the fit, measured to it
+top1 = next(r for r in A if r["run"] == "g160top1")
+fx, fy = float(top1["freq"]), float(top1["cacts"])
+on_fit = icept + slope * np.log(fx)
+b.plot([fx, fx], [on_fit, fy], color=INKMUT, lw=0.6, ls=DOT, zorder=2)
+b.annotate(f"{fy - on_fit:+.2f}", xy=(fx, (fy + on_fit) / 2), xytext=(4, 0),
+           textcoords="offset points", fontsize=6.2, family="monospace",
+           color=INKMUT, va="center")
+percent_axis(a.xaxis, [0.01, 0.1, 1.0])
+percent_axis(b.xaxis, [0.01, 0.1])
+a.set_xlim(0.0035, 2.2)
+b.set_xlim(0.004, 0.3)
+a.set_ylim(0.3, 0.72)
+a.set_xlabel("nominal code density")
+b.set_xlabel(r"firing rate at the $2/k$ threshold")
+a.set_ylabel("detection F1")
+eyebrow(a, "activation descriptions")
+eyebrow(b, "contrastive descriptions")
+handles = [Line2D([], [], ls="none", color=c, marker=m, ms=4.6, **RING)
+           for c, m in ((LEAF, "o"), (INK, "s"), (INKMUT, "v"))]
+handles += [Line2D([], [], color=INK, lw=0.8)]
+fig.legend(handles, ["Ontologizer", "SAEs", "single-layer variants",
+                     "fit to the sae.py runs"],
+           loc="lower center", ncols=4, handlelength=1.8, fontsize=6.6,
+           bbox_to_anchor=(0.5, 0.0))
+letters((a, b))
+save(fig, "fig-autointerp-density")
+
+# GPT-2 concatenated-head seed pair by layer (tab:gpt2seeds). partition.py
+# and headcontrib.py print rather than save; these are their outputs as
+# recorded in experiments/ste-arm/notes.md, "The same picture on GPT-2".
+LAYERS = [0, 1, 2, 3, 4]
+SEEDS = {"partition NMI": ([0.359, 0.188, 0.186, 0.186, 0.186],
+                           [0.976, 0.766, 0.602, 0.538, 0.510], 0.179, None),
+         "contribution cosine": ([0.171, 0.017, 0.007, 0.005, 0.004],
+                                 [0.956, 0.758, 0.588, 0.516, 0.483],
+                                 0.0017, 0.0030)}
+fig, (a, b) = plt.subplots(1, 2, figsize=(5.4, 2.3))
+fig.subplots_adjust(wspace=0.32, bottom=0.30, top=0.88, left=0.10, right=0.99)
+for ax, (measure, (seeds, ctrl, null, null_max)) in zip((a, b), SEEDS.items()):
+    ax.plot(LAYERS, ctrl, color=INK, lw=1.1, marker="s", ms=3.6, **RING,
+            label="same run, step 350k (control)", zorder=3)
+    ax.plot(LAYERS, seeds, color=LEAF, lw=1.2, marker="o", ms=4.0, **RING,
+            label="across seeds", zorder=4)
+    ax.axhline(null, **NULL, label="null", zorder=1)
+    if null_max is not None:
+        ax.axhspan(null, null_max, color=INKMUT, alpha=0.15, lw=0, zorder=1)
+    ax.set_xticks(LAYERS)
+    ax.set_xlabel("layer")
+    ax.set_ylabel(measure)
+    mono_axes(ax)
+a.set_ylim(0, 1.04)
+b.set_yscale("log")
+b.set_ylim(1e-3, 1.5)
+eyebrow(a, "what each head separates")
+eyebrow(b, "what each head writes")
+fig.legend(*a.get_legend_handles_labels(), loc="lower center", ncols=3,
+           handlelength=1.8, fontsize=6.6, bbox_to_anchor=(0.5, 0.0))
+letters((a, b))
+save(fig, "fig-gpt2-seeds")

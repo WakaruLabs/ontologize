@@ -1,0 +1,33 @@
+family,kind,nu,label,coeffs,bits,fvu
+softmax,origin,,onto m=0 (meanp origin),0,0,1.0011
+softmax,hard,,onto hard (argmax),0,800,17.3378
+softmax,dev,1,onto dev m=1,160,800,0.677354
+softmax,dev,2,onto dev m=2,320,1600,0.496674
+softmax,dev,4,onto dev m=4,640,3200,0.288604
+softmax,dev,8,onto dev m=8,1280,6400,0.0937613
+softmax,dev,16,onto dev m=16,2560,12800,0.00821151
+softmax,soft,,onto m=32 (soft),5120,0,0.00537777
+ste,origin,,onto m=0 (meanp origin),0,0,1.00221
+ste,hard,,onto hard (argmax),0,1900,0.153555
+sae_l1,m5120_l10.0003,,sae m5120_l10.0003,4,55,0.83928
+sae_bilinear,m5120_k32_bl,,sae m5120_k32_bl,32,394,0.601905
+sae_topk,m5120_k32_p5,,sae m5120_k32_p5,32,394,0.508948
+sae_topk,m5120_k32,,sae m5120_k32,32,394,0.499424
+sae_topk,m5120_k32_s43,,sae m5120_k32_s43,32,394,0.496717
+sae_topk,m11264_k32,,sae m11264_k32,32,431,0.494013
+sae_l1,m5120_l10.0001,,sae m5120_l10.0001,60,745,0.551976
+variant,g160top1,,sae m5120_g160top1,160,1972,0.274111
+sae_topk,m11264_k160,,sae m11264_k160,160,2154,0.258472
+ste,dev,1,onto dev m=1,380,1900,0.258663
+sae_l1,m5120_l13e-05,,sae m5120_l13e-05,519,6390,0.219469
+ste,dev,2,onto dev m=2,760,3800,0.254247
+ste,dev,3,onto dev m=3,1140,5700,0.250123
+sae_l1,m5120_l11e-05,,sae m5120_l11e-05,1438,17723,0.0475278
+ste,dev,4,onto dev m=4,1520,7600,0.246011
+sae_topk,m11264_k5120,,sae m11264_k5120,1520,20455,0.000105637
+sae_l1,m5120_l13e-06,,sae m5120_l13e-06,1637,20166,0.00523965
+ste,dev,6,onto dev m=6,2280,11400,0.238001
+ste,dev,8,onto dev m=8,3040,15200,0.230201
+variant,g160softmax,,sae m5120_g160softmax,5120,0,0.00436022
+ste,dev,16,onto dev m=16,6080,30400,0.200147
+ste,soft,,onto m=32 (soft),12160,0,0.153555

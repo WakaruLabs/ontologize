@@ -1,0 +1,146 @@
+model,run,kind,strength,hit,collateral,n_targets,n_rows
+softmax stack,sweep_softmax_shm,decode,0.25,0.751563,0.567505,60,32
+softmax stack,sweep_softmax_shm,decode,0.5,0.676042,0.761786,60,32
+softmax stack,sweep_softmax_shm,decode,1.0,0.5625,0.873208,60,32
+softmax stack,sweep_softmax_shm,decode,2.0,0.522917,0.915605,60,32
+softmax stack,sweep_softmax_shm,decode,4.0,0.510417,0.931227,60,32
+softmax stack,sweep_softmax_shm,grad,0.25,0.408333,0.612556,60,32
+softmax stack,sweep_softmax_shm,grad,0.5,0.406771,0.776605,60,32
+softmax stack,sweep_softmax_shm,grad,1.0,0.41875,0.864092,60,32
+softmax stack,sweep_softmax_shm,grad,2.0,0.431771,0.904648,60,32
+softmax stack,sweep_softmax_shm,grad,4.0,0.434896,0.923061,60,32
+softmax stack,sweep_softmax_shm,margin,0.25,0.142187,0.577005,60,32
+softmax stack,sweep_softmax_shm,margin,0.5,0.214583,0.760656,60,32
+softmax stack,sweep_softmax_shm,margin,1.0,0.263542,0.862487,60,32
+softmax stack,sweep_softmax_shm,margin,2.0,0.282813,0.909136,60,32
+softmax stack,sweep_softmax_shm,margin,4.0,0.283854,0.928105,60,32
+softmax stack,sweep_softmax_shm,adjoint,0.25,0.411458,0.592207,60,32
+softmax stack,sweep_softmax_shm,adjoint,0.5,0.5125,0.761511,60,32
+softmax stack,sweep_softmax_shm,adjoint,1.0,0.50625,0.861986,60,32
+softmax stack,sweep_softmax_shm,adjoint,2.0,0.480729,0.90755,60,32
+softmax stack,sweep_softmax_shm,adjoint,4.0,0.480208,0.927444,60,32
+softmax stack,sweep_softmax_shm,adjoint_or,0.25,0.422917,0.597239,60,32
+softmax stack,sweep_softmax_shm,adjoint_or,0.5,0.505208,0.763509,60,32
+softmax stack,sweep_softmax_shm,adjoint_or,1.0,0.504167,0.86268,60,32
+softmax stack,sweep_softmax_shm,adjoint_or,2.0,0.480729,0.907839,60,32
+softmax stack,sweep_softmax_shm,adjoint_or,4.0,0.479687,0.927303,60,32
+softmax stack,sweep_softmax_shm,dm,0.25,0.464062,0.45985,60,32
+softmax stack,sweep_softmax_shm,dm,0.5,0.443229,0.676245,60,32
+softmax stack,sweep_softmax_shm,dm,1.0,0.492708,0.825,60,32
+softmax stack,sweep_softmax_shm,dm,2.0,0.518229,0.893527,60,32
+softmax stack,sweep_softmax_shm,dm,4.0,0.515104,0.918819,60,32
+softmax stack,sweep_softmax_shm,probe,0.25,0.46875,0.504707,60,32
+softmax stack,sweep_softmax_shm,probe,0.5,0.457813,0.714374,60,32
+softmax stack,sweep_softmax_shm,probe,1.0,0.510938,0.844762,60,32
+softmax stack,sweep_softmax_shm,probe,2.0,0.519792,0.901998,60,32
+softmax stack,sweep_softmax_shm,probe,4.0,0.531771,0.922458,60,32
+softmax stack,sweep_softmax_shm,random,0.25,0.0192708,0.55966,60,32
+softmax stack,sweep_softmax_shm,random,0.5,0.028125,0.751061,60,32
+softmax stack,sweep_softmax_shm,random,1.0,0.0307292,0.866165,60,32
+softmax stack,sweep_softmax_shm,random,2.0,0.0338542,0.910744,60,32
+softmax stack,sweep_softmax_shm,random,4.0,0.0411458,0.926831,60,32
+hard-code stack,ste_h76_init01,decode,0.25,0.370312,0.656398,60,32
+hard-code stack,ste_h76_init01,decode,0.5,0.509375,0.775258,60,32
+hard-code stack,ste_h76_init01,decode,1.0,0.608333,0.875963,60,32
+hard-code stack,ste_h76_init01,decode,2.0,0.65,0.932683,60,32
+hard-code stack,ste_h76_init01,decode,4.0,0.650521,0.955446,60,32
+hard-code stack,ste_h76_init01,grad,0.25,0.305729,0.646307,60,32
+hard-code stack,ste_h76_init01,grad,0.5,0.171354,0.771402,60,32
+hard-code stack,ste_h76_init01,grad,1.0,0.103125,0.874037,60,32
+hard-code stack,ste_h76_init01,grad,2.0,0.0875,0.930443,60,32
+hard-code stack,ste_h76_init01,grad,4.0,0.0854167,0.952875,60,32
+hard-code stack,ste_h76_init01,margin,0.25,0.160938,0.655786,60,32
+hard-code stack,ste_h76_init01,margin,0.5,0.222917,0.775022,60,32
+hard-code stack,ste_h76_init01,margin,1.0,0.273958,0.874221,60,32
+hard-code stack,ste_h76_init01,margin,2.0,0.297917,0.929156,60,32
+hard-code stack,ste_h76_init01,margin,4.0,0.297917,0.951455,60,32
+hard-code stack,ste_h76_init01,adjoint,0.25,0.0015625,0.656227,60,32
+hard-code stack,ste_h76_init01,adjoint,0.5,0.000520833,0.776804,60,32
+hard-code stack,ste_h76_init01,adjoint,1.0,0.000520833,0.875467,60,32
+hard-code stack,ste_h76_init01,adjoint,2.0,0.000520833,0.930394,60,32
+hard-code stack,ste_h76_init01,adjoint,4.0,0.000520833,0.952489,60,32
+hard-code stack,ste_h76_init01,adjoint_or,0.25,0.0015625,0.655578,60,32
+hard-code stack,ste_h76_init01,adjoint_or,0.5,0.000520833,0.776528,60,32
+hard-code stack,ste_h76_init01,adjoint_or,1.0,0.000520833,0.876,60,32
+hard-code stack,ste_h76_init01,adjoint_or,2.0,0.000520833,0.931064,60,32
+hard-code stack,ste_h76_init01,adjoint_or,4.0,0.000520833,0.952831,60,32
+hard-code stack,ste_h76_init01,dm,0.25,0.909896,0.628415,60,32
+hard-code stack,ste_h76_init01,dm,0.5,0.994792,0.748051,60,32
+hard-code stack,ste_h76_init01,dm,1.0,0.997917,0.856783,60,32
+hard-code stack,ste_h76_init01,dm,2.0,0.998958,0.922503,60,32
+hard-code stack,ste_h76_init01,dm,4.0,1,0.949285,60,32
+hard-code stack,ste_h76_init01,probe,0.25,0.939063,0.640265,60,32
+hard-code stack,ste_h76_init01,probe,0.5,0.997396,0.760494,60,32
+hard-code stack,ste_h76_init01,probe,1.0,0.998958,0.865536,60,32
+hard-code stack,ste_h76_init01,probe,2.0,1,0.926307,60,32
+hard-code stack,ste_h76_init01,probe,4.0,1,0.951113,60,32
+hard-code stack,ste_h76_init01,random,0.25,0.0213542,0.653801,60,32
+hard-code stack,ste_h76_init01,random,0.5,0.0270833,0.774331,60,32
+hard-code stack,ste_h76_init01,random,1.0,0.025,0.874082,60,32
+hard-code stack,ste_h76_init01,random,2.0,0.0322917,0.929058,60,32
+hard-code stack,ste_h76_init01,random,4.0,0.0348958,0.952278,60,32
+hard-code flat,ste_l1_h380_i01_hm1e4,decode,0.25,0.996094,0.328219,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,decode,0.5,0.997559,0.551185,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,decode,1.0,0.986816,0.774026,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,decode,2.0,0.97168,0.900733,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,decode,4.0,0.962891,0.947427,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,grad,0.25,0.390625,0.379655,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,grad,0.5,0.225586,0.613634,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,grad,1.0,0.138672,0.814148,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,grad,2.0,0.109863,0.914097,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,grad,4.0,0.0952148,0.950988,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,margin,0.25,0.0761719,0.378928,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,margin,0.5,0.123047,0.602846,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,margin,1.0,0.165039,0.795947,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,margin,2.0,0.185547,0.898979,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,margin,4.0,0.192383,0.939983,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,adjoint,0.25,0,0.379118,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,adjoint,0.5,0,0.603669,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,adjoint,1.0,0,0.798232,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,adjoint,2.0,0,0.901206,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,adjoint,4.0,0,0.941235,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,adjoint_or,0.25,0,0.380764,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,adjoint_or,0.5,0,0.607231,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,adjoint_or,1.0,0,0.802419,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,adjoint_or,2.0,0,0.904106,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,adjoint_or,4.0,0,0.943622,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,dm,0.25,0.973633,0.274082,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,dm,0.5,0.998535,0.471186,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,dm,1.0,1,0.699208,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,dm,2.0,1,0.859698,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,dm,4.0,1,0.928384,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,probe,0.25,0.994629,0.313379,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,probe,0.5,1,0.523573,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,probe,1.0,1,0.741838,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,probe,2.0,1,0.877891,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,probe,4.0,1,0.93376,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,random,0.25,0.00537109,0.367801,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,random,0.5,0.015625,0.590886,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,random,1.0,0.0234375,0.790509,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,random,2.0,0.0322266,0.898403,64,32
+hard-code flat,ste_l1_h380_i01_hm1e4,random,4.0,0.0351562,0.940681,64,32
+g160top1,g160top1,decode,0.25,0.582031,0.0263641,64,32
+g160top1,g160top1,decode,0.5,0.912598,0.0671034,64,32
+g160top1,g160top1,decode,1.0,0.996582,0.183121,64,32
+g160top1,g160top1,decode,2.0,1,0.403974,64,32
+g160top1,g160top1,decode,4.0,1,0.608193,64,32
+g160top1,g160top1,grad,0.25,0.755371,0.191885,64,32
+g160top1,g160top1,grad,0.5,0.720703,0.327185,64,32
+g160top1,g160top1,grad,1.0,0.713867,0.494168,64,32
+g160top1,g160top1,grad,2.0,0.701172,0.647639,64,32
+g160top1,g160top1,grad,4.0,0.698242,0.738711,64,32
+g160top1,g160top1,dm,0.25,0.936035,0.13108,64,32
+g160top1,g160top1,dm,0.5,0.952148,0.244184,64,32
+g160top1,g160top1,dm,1.0,0.945801,0.414063,64,32
+g160top1,g160top1,dm,2.0,0.937988,0.593897,64,32
+g160top1,g160top1,dm,4.0,0.9375,0.708039,64,32
+g160top1,g160top1,probe,0.25,0.947266,0.141586,64,32
+g160top1,g160top1,probe,0.5,0.953125,0.261835,64,32
+g160top1,g160top1,probe,1.0,0.955566,0.43676,64,32
+g160top1,g160top1,probe,2.0,0.946777,0.613165,64,32
+g160top1,g160top1,probe,4.0,0.94043,0.718649,64,32
+g160top1,g160top1,random,0.25,0.0361328,0.231584,64,32
+g160top1,g160top1,random,0.5,0.0576172,0.397396,64,32
+g160top1,g160top1,random,1.0,0.090332,0.579854,64,32
+g160top1,g160top1,random,2.0,0.107422,0.706138,64,32
+g160top1,g160top1,random,4.0,0.113281,0.767133,64,32

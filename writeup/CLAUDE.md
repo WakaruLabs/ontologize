@@ -134,7 +134,12 @@ reader needs it to interpret the number.
 Diagram bodies live in `tikz/` as bare `tikzpicture` environments with no float, caption
 or label; `sections/methods.tex` holds the floats and captions. Only `tikz` with
 `arrows.meta` is loaded, so diagrams are written to that budget. Result figures are PDFs in
-`figures/`, regenerated in `../description/figures/` by `make_figs.py`.
+`figures/`, drawn by `figures/make_figs.py` from the CSVs in `figures/data/` (the proposal
+keeps its own copy of the script for its teaser). The CSVs are copied out of `../data/out`
+by `figures/extract_results.py`, which reads eval-script outputs on CPU, and
+`figures/extract_curves.py`, which scores checkpoints on GPU. Extract a figure's numbers
+rather than retyping them from a table; the teaser and the GPT-2 seed figure are the
+exceptions, restated from outputs their scripts print rather than save.
 
 A `\caption` containing a blank line needs the optional short argument
 (`\caption[short]{...}`), or `caption`+`hyperref` aborts.
