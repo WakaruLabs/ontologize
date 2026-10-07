@@ -41,7 +41,7 @@
 
   % faint column guides
   \foreach \c in {0,...,6}
-    \draw[flockrule, very thin] (\c*\dx, 0.15) -- (\c*\dx, -12.5*\dy);
+    \draw[flockrule, very thin] (\c*\dx, 0.15) -- (\c*\dx, -17.5*\dy);
 
   %% ---- rows: script, inputs, question ---------------------------------
   % #1 row, #2 required columns, #3 optional/alternative columns
@@ -56,63 +56,82 @@
   \marks{1}{0,3,4,5}{}
   \node[proc] (s1) at (\px,-1*\dy) {pareto.py};
   \node[qn]   (q1) at (\qx,-1*\dy) {whitened FVU vs.\ code capacity, Ontologizer vs.\ $\topk$ SAEs};
-  \marks{2}{0,3}{4,5}
-  \node[proc] (s2) at (\px,-2*\dy) {refit.py};
-  \node[qn]   (q2) at (\qx,-2*\dy) {shrinkage: selection vs.\ magnitude error on a frozen support};
-  \marks{3}{0,6}{4,5}
-  \node[proc] (s3) at (\px,-3*\dy) {textfid.py};
-  \node[qn]   (q3) at (\qx,-3*\dy) {does the reconstruction decode to the same text? (chrF, NLL)};
+  \marks{2}{0,4}{3}
+  \node[proc] (s2) at (\px,-2*\dy) {selection.py};
+  \node[qn]   (q2) at (\qx,-2*\dy) {noise2self score and FVU over a sweep, vs.\ trivial baselines};
+  \marks{3}{0,3}{4,5}
+  \node[proc] (s3) at (\px,-3*\dy) {refit.py};
+  \node[qn]   (q3) at (\qx,-3*\dy) {shrinkage: selection vs.\ magnitude error on a frozen support};
+  \marks{4}{0,6}{4,5}
+  \node[proc] (s4) at (\px,-4*\dy) {textfid.py};
+  \node[qn]   (q4) at (\qx,-4*\dy) {does the reconstruction decode to the same text? (chrF, NLL)};
 
   % meaning
-  \marks{4}{0,1}{4,5}
-  \node[proc] (s4) at (\px,-4*\dy) {langprobe.py};
-  \node[qn]   (q4) at (\qx,-4*\dy) {is language identity a latent-level concept? ($k$-sparse probes)};
-  \marks{5}{0,6}{1,4,5}
-  \node[proc] (s5) at (\px,-5*\dy) {autointerp.py};
-  \node[qn]   (q5) at (\qx,-5*\dy) {do feature descriptions detect where the feature fires?};
-  \marks{6}{}{3,4,5,6}
-  \node[proc] (s6) at (\px,-6*\dy) {headcoh.py};
-  \node[qn]   (q6) at (\qx,-6*\dy) {do a head's entries decode to semantically similar directions?};
+  \marks{5}{0,1}{4,5}
+  \node[proc] (s5) at (\px,-5*\dy) {langprobe.py};
+  \node[qn]   (q5) at (\qx,-5*\dy) {is language identity a latent-level concept? ($k$-sparse probes)};
+  \marks{6}{0,4}{1,2}
+  \node[proc] (s6) at (\px,-6*\dy) {enrich.py};
+  \node[qn]   (q6) at (\qx,-6*\dy) {which entries are enriched for a label value? (Fisher, FDR)};
+  \marks{7}{0,6}{1,4,5}
+  \node[proc] (s7) at (\px,-7*\dy) {autointerp.py};
+  \node[qn]   (q7) at (\qx,-7*\dy) {do feature descriptions detect where the feature fires?};
+  \marks{8}{}{3,4,5,6}
+  \node[proc] (s8) at (\px,-8*\dy) {headcoh.py};
+  \node[qn]   (q8) at (\qx,-8*\dy) {do a head's entries decode to semantically similar directions?};
 
   % structure
-  \marks{7}{0}{4,5}
-  \node[proc] (s7) at (\px,-7*\dy) {headstruct.py};
-  \node[qn]   (q7) at (\qx,-7*\dy) {head-like groups: exhaustive, exclusive, modular?};
-  \marks{8}{0,4}{1,2}
-  \node[proc] (s8) at (\px,-8*\dy) {assignmap.py};
-  \node[qn]   (q8) at (\qx,-8*\dy) {per-sample assignments: head collapse and dead entries};
   \marks{9}{0}{4,5}
-  \node[proc] (s9) at (\px,-9*\dy) {splitting.py};
-  \node[qn]   (q9) at (\qx,-9*\dy) {feature splitting across widths; seed stability across replicas};
+  \node[proc] (s9) at (\px,-9*\dy) {headstruct.py};
+  \node[qn]   (q9) at (\qx,-9*\dy) {head-like groups: exhaustive, exclusive, modular?};
+  \marks{10}{0,4}{1,2}
+  \node[proc] (s10) at (\px,-10*\dy) {assignmap.py};
+  \node[qn]   (q10) at (\qx,-10*\dy) {per-sample assignments: head collapse and dead entries};
+  \marks{11}{0}{4,5}
+  \node[proc] (s11) at (\px,-11*\dy) {splitting.py};
+  \node[qn]   (q11) at (\qx,-11*\dy) {feature splitting across widths; seed stability across replicas};
+  \marks{12}{0,4}{}
+  \node[proc] (s12) at (\px,-12*\dy) {entrydrift.py};
+  \node[qn]   (q12) at (\qx,-12*\dy) {do entries keep their usage and direction across steps?};
+  \marks{13}{4}{}
+  \node[proc] (s13) at (\px,-13*\dy) {bilinspec.py};
+  \node[qn]   (q13) at (\qx,-13*\dy) {is each classifier feature near rank-1? (weights only)};
+  \marks{14}{0,4}{}
+  \node[proc] (s14) at (\px,-14*\dy) {headnmi.py};
+  \node[qn]   (q14) at (\qx,-14*\dy) {heads redundant within or across layers? (partition NMI)};
 
   % intervention
-  \marks{10}{0,3,4}{}
-  \node[proc] (s10) at (\px,-10*\dy) {compose.py};
-  \node[qn]   (q10) at (\qx,-10*\dy) {do two-head set-interventions compose additively?};
-  \marks{11}{0,4}{}
-  \node[proc] (s11) at (\px,-11*\dy) {effinfo.py};
-  \node[qn]   (q11) at (\qx,-11*\dy) {effective information: does forcing a head change later heads?};
-  \marks{12}{0,6}{4,5}
-  \node[proc] (s12) at (\px,-12*\dy) {steerfid.py};
-  \node[qn]   (q12) at (\qx,-12*\dy) {steering effect vs.\ collateral at matched magnitude};
+  \marks{15}{0,4}{}
+  \node[proc] (s15) at (\px,-15*\dy) {effinfo.py};
+  \node[qn]   (q15) at (\qx,-15*\dy) {effective information: does forcing a head change later heads?};
+  \marks{16}{0,3,4}{}
+  \node[proc] (s16) at (\px,-16*\dy) {compose.py};
+  \node[qn]   (q16) at (\qx,-16*\dy) {do two-head set-interventions compose additively?};
+  \marks{17}{0,6}{4,5}
+  \node[proc] (s17) at (\px,-17*\dy) {steerfid.py};
+  \node[qn]   (q17) at (\qx,-17*\dy) {steering effect vs.\ collateral at matched magnitude};
 
-  \foreach \i in {1,...,12} \draw[sig] (s\i.east) -- (q\i.west);
+  \foreach \i in {1,...,17} \draw[sig] (s\i.east) -- (q\i.west);
 
   %% ---- theme separators ------------------------------------------------
-  \foreach \y in {0.5, 3.5, 6.5, 9.5}
+  \foreach \y in {0.5, 4.5, 8.5, 14.5}
     \draw[flockrule] (-0.75, -\y*\dy) -- (\qx+8.2, -\y*\dy);
-  \foreach \y/\t in {2/reconstruction, 5/meaning, 8/structure,
-                     11/intervention}
+  \foreach \y/\t in {2.5/reconstruction, 6.5/meaning, 11.5/structure,
+                     16/intervention}
     \node[grp, rotate=90] at (-0.5, -\y*\dy) {\t};
 
   %% ---- outputs of one script read by another -----------------------------
-  % headcoh.py --desc-dir reads autointerp.py's descriptions;
-  % --assignment reads headstruct.py's discovered groups
-  \draw[aux] (s5.west) to[out=200, in=160] (s6.west);
-  \draw[aux] (s7.west) to[out=160, in=200] (s6.west);
+  % selection.py reads pareto.py's pareto.csv when one exists;
+  % headcoh.py --desc-dir reads autointerp.py's descriptions and
+  % --assignment headstruct.py's discovered groups;
+  % headnmi.py --ei reads effinfo.py's EI matrix
+  \draw[aux] (s1.west) to[out=200, in=160] (s2.west);
+  \draw[aux] (s7.west) to[out=200, in=160] (s8.west);
+  \draw[aux] (s9.west) to[out=160, in=200] (s8.west);
+  \draw[aux] (s15.west) to[out=160, in=200] (s14.west);
 
   %% ---- key ------------------------------------------------------------
-  \begin{scope}[shift={(0,-13.35*\dy)}]
+  \begin{scope}[shift={(0,-18.35*\dy)}]
     \node[draw, rounded corners=2pt, fill=flockwell, minimum width=4mm,
           minimum height=3mm] at (0,0) {};
     \node[lab, anchor=west] at (0.3,0) {artifact};

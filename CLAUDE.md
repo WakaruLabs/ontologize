@@ -127,6 +127,25 @@ uv run python assignmap.py -h  # per-layer heatmaps of held-out samples x
                                # sliced by lang / GPT-2 token class / pos / doc;
                                # makes head collapse and dead entries visible
                                # per sample. --replot redraws from assign.npz
+                               # (every script below has --replot too)
+uv run python enrich.py -h     # entry x label enrichment dotplot (hypergeometric
+                               # with correct tails, Haldane 2x2 log2OR, BH FDR) +
+                               # head x label NMI over a shuffled null; --by as assignmap
+uv run python headnmi.py -h    # within-model (l*h)x(l*h) head-partition NMI on the
+                               # tail, chance-adjusted, layer-blocked or hclust-ordered;
+                               # --ei <ckpt>/effinfo adds the EI panel + NMI-vs-EI scatter
+uv run python entrydrift.py -h # (layer, head, entry) x condition heatmap: usage /
+                               # decoded-direction drift / Hungarian-matched cos over one
+                               # run's steps (--ckpt) or index-aligned fine-tunes (--runs;
+                               # refuses independent seeds)
+uv run python bilinspec.py -h  # classifier geometry from weights only: |cos(w,v)|,
+                               # eigen-spectrum and resid_const odd share per feature,
+                               # per layer and vs step
+uv run python selection.py -h  # held-out noise2self partition score vs a sweep key
+                               # with unpartitioned + size-matched random baselines
+                               # drawn; --grid ROW COL = pareto.py's FVU over a grid
+uv run python anatomy.py -h    # one (layer, head) as a block figure for the methods
+                               # section: P_h, PWAK kernel, rowcos, support_overlap, W_h
 uv run python steerfid.py -h   # steering fidelity: effect (cycle-consistency
                                # activation gain) vs collateral (1-chrF) at matched
                                # magnitude; W_dec / eigenfeature / withArgs steering
@@ -136,7 +155,7 @@ Seed stability: train a replica with `sae.py --seed 43` (run dirs get an
 `_s43` suffix) and feed the pair to `splitting.py` — its "A matched"/"B
 matched" columns are the reproducible-feature fractions.
 
-Tests: the curated suite lives in `tests/`, wired via `[tool.pytest.ini_options] testpaths = ["tests"]` in `pyproject.toml`, so a bare `uv run pytest` runs only it (fast, CPU-only — `tests/conftest.py` forces `JAX_PLATFORMS=cpu`, so it is safe to run alongside a live GPU training run). It covers: `deepsup_sg` gradient semantics, `resid_norm`/`resid_const` conditioning (including bilinear sign-blindness), the `s_Hm`/`KL_m` batch mean-entropy bonus, top-k tag selection (`select="top<k>"`), the `s_L2pwak`/`L2_pwak` noise2self partition score, noise-path NaN regressions, checkpoint save/restore including the `n_stats` stats-width migration and the legacy-spec-key rename, `ConcatDictBlock`'s overridden statistics, the gated SAE encoder's gradient routing, `NLinearBlock.withL1`'s gate-factor L1, `L1_S`'s position in the stats row, `support_overlap` and the retired `cossim_h`/`cossim_flat` slots (`test_support`), fibers and head dropout (`test_fibers`), the SAE modules' layout converters and configuration checks (`test_sae_modules`), and a short end-to-end training loop per live run configuration. The suite's largest block now tests the root eval scripts' pure helpers (`test_sae`, `test_autointerp`, `test_pareto`, `test_headstruct`, `test_headcoh`, `test_compose`, `test_splitting`, `test_textfid`, `test_langprobe`, `test_refit`, `test_steerfid`, `test_encode_acts`, `test_assignmap` import them directly) — breaking `sae.py` or its siblings breaks the suite, so keep those scripts import-safe under `__main__` guards.
+Tests: the curated suite lives in `tests/`, wired via `[tool.pytest.ini_options] testpaths = ["tests"]` in `pyproject.toml`, so a bare `uv run pytest` runs only it (fast, CPU-only — `tests/conftest.py` forces `JAX_PLATFORMS=cpu`, so it is safe to run alongside a live GPU training run). It covers: `deepsup_sg` gradient semantics, `resid_norm`/`resid_const` conditioning (including bilinear sign-blindness), the `s_Hm`/`KL_m` batch mean-entropy bonus, top-k tag selection (`select="top<k>"`), the `s_L2pwak`/`L2_pwak` noise2self partition score, noise-path NaN regressions, checkpoint save/restore including the `n_stats` stats-width migration and the legacy-spec-key rename, `ConcatDictBlock`'s overridden statistics, the gated SAE encoder's gradient routing, `NLinearBlock.withL1`'s gate-factor L1, `L1_S`'s position in the stats row, `support_overlap` and the retired `cossim_h`/`cossim_flat` slots (`test_support`), fibers and head dropout (`test_fibers`), the SAE modules' layout converters and configuration checks (`test_sae_modules`), and a short end-to-end training loop per live run configuration. The suite's largest block now tests the root eval scripts' pure helpers (`test_sae`, `test_autointerp`, `test_pareto`, `test_headstruct`, `test_headcoh`, `test_compose`, `test_splitting`, `test_textfid`, `test_langprobe`, `test_refit`, `test_steerfid`, `test_encode_acts`, `test_assignmap`, `test_enrich`, `test_headnmi`, `test_entrydrift`, `test_bilinspec`, `test_selection`, `test_anatomy` import them directly) — breaking `sae.py` or its siblings breaks the suite, so keep those scripts import-safe under `__main__` guards.
 
 ```bash
 uv run pytest -v

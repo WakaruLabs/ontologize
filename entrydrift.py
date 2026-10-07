@@ -261,9 +261,7 @@ CLABEL = {"usage": "p̄ (tail mean assignment probability)",
 def cmap_bad(name: str):
     """`name` with NaN cells drawn mid-grey."""
     import matplotlib
-    cm = matplotlib.colormaps[name].copy()
-    cm.set_bad("0.6")
-    return cm
+    return matplotlib.colormaps[name].with_extremes(bad="0.6")
 
 
 def draw_page(panels: dict, rows: Int[np.ndarray, "r 3"],

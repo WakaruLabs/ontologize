@@ -32,8 +32,14 @@ series are
                smoother. Horizontal on layer 0, where every run shares the
                input; above it each run has its own residual, so it is a
                per-run baseline.
-The star is the argmin of the partition series; the corner text compares
-it with the best baseline in the panel. All-singletons is not drawn: every
+The star is the argmin of the partition series; the corner text gives the
+same run's baselines beside it. The lower row redraws every series minus
+its own run's unpartitioned score, so a curve that falls only because the
+residual it scores got easier (upper layers of a better-reconstructing
+run) reads flat there; below 0 the partition beats the plain smoother.
+Per-head scores depend on cell size relative to --b (a hard head with k
+cells leaves ~b/k neighbours per sample), so compare across k against the
+size-matched random series, not against 1. All-singletons is not drawn: every
 row of G is zero there, so it predicts 0 for every sample, a fixed
 function of E rather than a property of any partition.
 
@@ -69,9 +75,10 @@ env_config field (l, h, k, select, e_dec, s_Hm, temperature_end, ...):
       --sae-csv data/out/sonar/pareto_unified/pareto.csv
   uv run python selection.py --replot --out <dir>          # either figure
 
-Writes <out>/n2s.csv (long form: run, x, hue, layer, s, stat, value) and
-n2s_s<S>.png, or grid.csv and grid.png; --replot redraws from the CSV
-(with --grid for the grid). NOTE: Ontologizer checkpoints restore on GPU
+Writes <out>/n2s.csv (long form: run, x, hue, layer, s, stat, value),
+n2s.json (the keys, tau and row settings) and n2s_s<S>.png, or grid.csv
+and grid.png; --replot redraws from them (pass --grid with any two keys
+for the grid; the CSV records the real ones). NOTE: Ontologizer checkpoints restore on GPU
 JAX only.
 """
 # disable preallocation so this can share the GPU (same as sonar.py)
@@ -82,6 +89,7 @@ os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"] = "platform"
 import argparse
 import csv
 import glob
+import json
 import math
 import re
 from pathlib import Path
@@ -349,11 +357,12 @@ def draw_curve(rows, s: int, xkey: str, hkey: Optional[str], title: str,
     for r in rows:
         runs[r[0]] = (r[1], r[2])
 
-    fig, axes = plt.subplots(1, len(layers), sharey=True, squeeze=False,
-                             figsize=(2.2 + 3.0 * len(layers), 4.2))
-    for ax, L in zip(axes[0], layers):
+    fig, axes = plt.subplots(
+        2, len(layers), sharey="row", sharex=True, squeeze=False,
+        figsize=(2.2 + 3.0 * len(layers), 7.0),
+        gridspec_kw={"height_ratios": [3, 2], "hspace": 0.08})
+    for ax, dax, L in zip(axes[0], axes[1], layers):
         best = (np.inf, None)
-        base = np.inf
         for c, hu in enumerate(hues):
             col = COLORS[c % len(COLORS)]
             names = sorted([n for n, (x, h_) in runs.items()
@@ -366,33 +375,40 @@ def draw_curve(rows, s: int, xkey: str, hkey: Optional[str], title: str,
             xi = xi + (c - (len(hues) - 1) / 2) * 0.08
             g = lambda st: np.array([val[(n, L, st)] for n in names])
             part, rnd, sd = g("partition"), g("random"), g("random_sd")
-            ax.fill_between(xi, g("partition_p10"), g("partition_p90"),
-                            color=col, alpha=0.15, lw=0)
-            ax.plot(xi, part, "-o", color=col, lw=2, ms=6, zorder=3)
-            ax.plot(xi, g("joint"), "-.", marker="D", mfc="none", color=col,
-                    lw=1.2, ms=5)
-            ax.errorbar(xi, rnd, yerr=sd, fmt=":s", color=col, lw=1.2, ms=4,
-                        mfc="white", capsize=3)
-            ax.plot(xi, g("unpartitioned"), "--", color="black", lw=1.2,
-                    marker="_", ms=12, zorder=2)
+            unp = g("unpartitioned")
+            for a, ref in ((ax, 0.0), (dax, unp)):
+                a.fill_between(xi, g("partition_p10") - ref,
+                               g("partition_p90") - ref,
+                               color=col, alpha=0.15, lw=0)
+                a.plot(xi, part - ref, "-o", color=col, lw=2, ms=6, zorder=3)
+                a.plot(xi, g("joint") - ref, "-.", marker="D", mfc="none",
+                       color=col, lw=1.2, ms=5)
+                a.errorbar(xi, rnd - ref, yerr=sd, fmt=":s", color=col,
+                           lw=1.2, ms=4, mfc="white", capsize=3)
+            ax.plot(xi, unp, "--", color="black", lw=1.2, marker="_", ms=12,
+                    zorder=2)
             j = int(np.argmin(part))
             if part[j] < best[0]:
-                best = (part[j], (xi[j], names[j]))
-            base = min(base, g("unpartitioned").min(), rnd.min())
+                best = (part[j], (xi[j], unp[j], rnd[j]))
         ax.axhline(1.0, color="0.6", ls=":", lw=1)
+        dax.axhline(0.0, color="black", ls="--", lw=1.2)
         if best[1] is not None:
             ax.plot(best[1][0], best[0], marker="*", ms=16, color="gold",
                     mec="black", zorder=5)
-            ax.text(0.03, 0.03, f"best partition {best[0]:.3f}\n"
-                    f"best baseline {base:.3f}", transform=ax.transAxes,
-                    fontsize=8, va="bottom",
+            ax.text(0.03, 0.03, f"argmin partition {best[0]:.3f}\n"
+                    f"same run: unpartitioned {best[1][1]:.3f}\n"
+                    f"               random {best[1][2]:.3f}",
+                    transform=ax.transAxes, fontsize=8, va="bottom",
                     bbox=dict(fc="white", ec="0.7", alpha=0.9))
-        ax.set_xticks(range(len(xs)), [str(x) for x in xs], fontsize=8)
-        ax.set_xlim(-0.5, len(xs) - 0.5)
+        dax.set_xticks(range(len(xs)), [str(x) for x in xs], fontsize=8)
+        dax.set_xlim(-0.5, len(xs) - 0.5)
         ax.set_title(f"layer {L}", fontsize=10)
-        ax.set_xlabel(xkey)
-        ax.grid(True, axis="y", alpha=0.3)
+        dax.set_xlabel(xkey)
+        for a in (ax, dax):
+            a.grid(True, axis="y", alpha=0.3)
     axes[0][0].set_ylabel(f"noise2self error / batch variance (s={s})")
+    axes[1][0].set_ylabel("minus the same run's\nunpartitioned score\n"
+                          "(< 0: partition helps)")
     handles = [
         Line2D([], [], color="0.2", ls="-", marker="o", lw=2,
                label="partition (head mean; band 10-90%)"),
@@ -411,7 +427,8 @@ def draw_curve(rows, s: int, xkey: str, hkey: Optional[str], title: str,
                ncol=min(len(handles), 5), bbox_to_anchor=(0.5, -0.02),
                frameon=False)
     fig.suptitle(title, fontsize=10)
-    fig.tight_layout(rect=(0, 0.1 if len(handles) <= 5 else 0.14, 1, 1))
+    fig.subplots_adjust(left=0.07, right=0.99, top=0.92, wspace=0.08,
+                        bottom=0.14 if len(handles) <= 5 else 0.17)
     fig.savefig(path, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
@@ -647,6 +664,8 @@ def main():
 
     if cfg.replot:
         rows = read_rows(out / "n2s.csv")
+        meta = json.loads((out / "n2s.json").read_text())
+        cfg.x, cfg.hue, cfg.tau = meta["x"], meta["hue"], meta["tau"]
     else:
         runs = expand_runs(cfg.runs, cfg.exclude)
         assert cfg.rows % cfg.b == 0, "--rows must be a multiple of --b"
@@ -670,6 +689,11 @@ def main():
             wr = csv.writer(f)
             wr.writerow(["run", "x", "hue", "layer", "s", "stat", "value"])
             wr.writerows(rows)
+        (out / "n2s.json").write_text(json.dumps(
+            {"x": cfg.x, "hue": cfg.hue, "tau": cfg.tau, "rows": cfg.rows,
+             "b": cfg.b, "nulls": cfg.nulls, "max_heads": cfg.max_heads,
+             "cache": cfg.cache, "eval_rows": cfg.eval_rows,
+             "runs": runs}, indent=1))
         print(f"-> {out / 'n2s.csv'}")
     for s in sorted({r[4] for r in rows}):
         path = out / f"n2s_s{s}.png"
