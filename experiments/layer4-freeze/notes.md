@@ -64,7 +64,9 @@ steps follow the 24-epoch run's path. Training was healthy to step
 ~700 steps (final rows: MSE 1.7e-2, KL_m 4.3), so only checkpoints
 through 90k are read below.
 
-Frozen heads per layer 0-4, both probes on the same checkpoints:
+Frozen heads per layer 0-4, both probes on the same checkpoints
+(`freeze_diag.py` and `old_probe_diag.py`, outputs in
+`data/out/sonar/hsic_check/diag_fixed` and `diag_old`):
 
 | step | fixed probe | old probe |
 |---|---|---|

@@ -21,6 +21,11 @@ both harnesses import from the repo.
   argmax **churn** between consecutive checkpoints, mean per-sample soft
   entropy and per-head `KL_m` at `--temperature`, and a `frozen` flag
   (`top_share >= 0.95` and `churn <= 0.02` by default).
+- `old_probe_diag.py` -- `freeze_diag.py` run with the probe it used
+  before `autointerp.onto_probe` (no constant coordinate, gain-shape
+  split, gain, router or fibers), kept only to audit results that probe
+  produced (notes.md). Exact on `resid_nc`/`resid_nc_hm`, wrong past
+  layer 0 on gain-shape models; not for diagnosing runs.
 - `retrain_variants.py` -- full training runs against the resid_nc_hm
   baseline config with exactly one mitigation changed per variant:
   `baseline`, `slow_anneal` (anneal_steps 50k -> 150k), `drop_ramp`
