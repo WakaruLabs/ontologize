@@ -37,6 +37,7 @@
 **/tmp/
 **/build/
 **/old/
+**/scratch/
 
 # embedding caches, run checkpoints, and eval artifacts (19G+)
 /data/

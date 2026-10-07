@@ -17,10 +17,10 @@
 
   %% ---- layer row --------------------------------------------------
   \node[lab] (x)  at (-1.5,0) {$\mathbf{x}\in\mathbb{R}^{d}$};
-  \node[blk] (D0) at ( 0.3,0) {$\mathtt{DictEnc}_1$};
-  \node[blk] (D1) at ( 4.3,0) {$\mathtt{DictEnc}_2$};
+  \node[blk] (D0) at ( 0.3,0) {$\mathtt{DictEnc}_0$};
+  \node[blk] (D1) at ( 4.3,0) {$\mathtt{DictEnc}_1$};
   \node      (Dd) at ( 7.8,0) {$\cdots$};
-  \node[blk] (DL) at ( 9.7,0) {$\mathtt{DictEnc}_{l}$};
+  \node[blk] (DL) at ( 9.7,0) {$\mathtt{DictEnc}_{l-1}$};
 
   \draw[sig] (x) -- (D0);
 
@@ -32,15 +32,15 @@
   \node[add] (A1) at ( 6.1,2.6) {$+$};
   \node[add] (AL) at (11.9,2.6) {$+$};
 
-  \node[lab] (R0) at (0.6,2.6) {$R_0\!=\!0$};
+  \node[lab] (R0) at (0.6,2.6) {$\mathbf{r}_{-1}\!=\!\mathbf{0}$};
   \draw[sig]      (R0) -- (A0);
   \draw[sig]      (A0) -- (A1);
   \draw[sig]      (A1) -- (AL);
   \draw[semithick] (AL) -- (12.35,2.6);
 
-  %\node[lab] at (8.9,3.05) {$R\in\mathbb{R}^{e}$: residual accumulator};
+  %\node[lab] at (8.9,3.05) {$\mathbf{r}\in\mathbb{R}^{e}$: residual accumulator};
 
-  %% ---- per-layer contributions F_i (enter from below) --------------
+  %% ---- per-layer contributions f'_l (enter from below) -------------
   \draw[sig] (D0.north) -- ++(0,1.1) -| (A0.south);
   \draw[sig] (D1.north) -- ++(0,1.1) -| (A1.south);
   \draw[sig] (DL.north) -- ++(0,1.1) -| (AL.south);
@@ -59,32 +59,32 @@
   \fill ( 2.75,2.6) circle (1.1pt);
   \fill ( 6.55,2.6) circle (1.1pt);
 
-  \node[lab,anchor=west] at ( 2.85,1.0) {$R_1$};
-  \node[lab,anchor=west] at ( 6.65,1.0) {$R_2$};
-  \node[lab,anchor=west] at (12.45,1.0) {$R_l$};
+  \node[lab,anchor=west] at ( 2.85,1.0) {$\mathbf{r}_0$};
+  \node[lab,anchor=west] at ( 6.65,1.0) {$\mathbf{r}_1$};
+  \node[lab,anchor=west] at (12.45,1.0) {$\mathbf{r}_{l-1}$};
 
   %% ---- deep supervision --------------------------------------------
-  \node[lab] (L1) at ( 0.9,-1.9) {$\mathrm{MSE}(\mathbf{x},\hat{\mathbf{x}}_1)$};
-  \node[lab] (L2) at ( 4.9,-1.9) {$\mathrm{MSE}(\mathbf{x},\hat{\mathbf{x}}_2)$};
-  \node[lab] (LL) at (10.7,-1.9) {$\mathrm{MSE}(\mathbf{x},\hat{\mathbf{x}}_l)$};
+  \node[lab] (L1) at ( 0.9,-1.9) {$\mathrm{MSE}(\mathbf{x},\hat{\mathbf{x}}_0)$};
+  \node[lab] (L2) at ( 4.9,-1.9) {$\mathrm{MSE}(\mathbf{x},\hat{\mathbf{x}}_1)$};
+  \node[lab] (LL) at (10.7,-1.9) {$\mathrm{MSE}(\mathbf{x},\hat{\mathbf{x}}_{l-1})$};
   \draw[aux] (Y1.west) -- (L1);
   \draw[aux] (Y2.west) -- (L2);
   \draw[aux] (YL.west) -- (LL);
 
   %% ---- residual forwarding ------------------------------------------
   \node[cond] (C1) at (2.75,-3.9)
-  {$\mathrm{sg}\,(\mathbf{x}-\hat{\mathbf{x}}_1)$\\ normalise, $\oplus\,1$};
+  {$\mathrm{sg}\,(\mathbf{x}-\hat{\mathbf{x}}_0)$\\ normalise, $\oplus\,1$};
   \node[cond] (C2) at (6.55,-3.9)
-  {$\mathrm{sg}\,(\mathbf{x}-\hat{\mathbf{x}}_2)$\\ normalise, $\oplus\,1$};
-  \draw[sig] (Y1) -- node[right,lab]{$\hat{\mathbf{x}}_1$} (C1);
-  \draw[sig] (Y2) -- node[right,lab]{$\hat{\mathbf{x}}_2$} (C2);
+  {$\mathrm{sg}\,(\mathbf{x}-\hat{\mathbf{x}}_1)$\\ normalise, $\oplus\,1$};
+  \draw[sig] (Y1) -- node[right,lab]{$\hat{\mathbf{x}}_0$} (C1);
+  \draw[sig] (Y2) -- node[right,lab]{$\hat{\mathbf{x}}_1$} (C2);
 
-  \draw[sig] (C1.east) -- node[left,lab,pos=0.72]{$\tilde{\mathbf{y}}_1$} (D1.south);
-  \draw[sig] (C2.east) -- node[left,lab,pos=0.72]{$\tilde{\mathbf{y}}_2$} (7.8,-0.5);
+  \draw[sig] (C1.east) -- node[left,lab,pos=0.72]{$\tilde{\mathbf{y}}_0$} (D1.south);
+  \draw[sig] (C2.east) -- node[left,lab,pos=0.72]{$\tilde{\mathbf{y}}_1$} (7.8,-0.5);
 
   %% ---- model output --------------------------------------------------
   \node[lab] (out) at (12.35,-3.9) {$\hat{\mathbf{x}}$};
-  \draw[sig,thick] (YL) -- node[right,lab]{$\hat{\mathbf{x}}_l$} (out);
+  \draw[sig,thick] (YL) -- node[right,lab]{$\hat{\mathbf{x}}_{l-1}$} (out);
 
   %% ---- x broadcast to every conditioning step -------------------------
   \draw[aux] (x.south) -- (-1.5,-5.3) -- (2.75,-5.3) -- (C1.south);

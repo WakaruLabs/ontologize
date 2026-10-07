@@ -12,8 +12,8 @@ such classifiers finds the most natural contrastive clusters in the
 embedding space. Interpretability value is then expected from
 \emph{MoEfication}: decomposing the space into small classification tasks
 --- one per head --- each nameable in isolation, with within-head entry
-swaps as the steering primitive (forcing head $h$ from its argmax entry to
-entry $k'$ moves the decode along exactly the dimension head $h$
+swaps as the steering primitive (forcing head $i$ from its argmax entry to
+entry $j'$ moves the decode along exactly the dimension head $i$
 classifies).
 
 Under this frame the evaluation questions are: (a)~what does contrast-set
@@ -80,7 +80,7 @@ SAEs over dense text embeddings became a subfield in 2025--2026:
 discretizing retrieval embeddings~\cite{park2025decodingdenseembeddingssparse}, data-analysis
 toolkits~\cite{jiang2026interpretableembeddingssparseautoencoders},
 human-concept alignment~\cite{shin2026aligningsentenceembeddingshuman}. All
-are single-layer top-$k$ SAEs, and none address SONAR, where the stakes
+are single-layer $\topk$ SAEs, and none address SONAR, where the stakes
 are higher --- Large Concept Models generate directly in SONAR
 space~\cite{lcmteam2024largeconceptmodelslanguage} --- and where the paired M2M100 decoder supplies a
 semantic oracle: where embedding-inversion work must train an

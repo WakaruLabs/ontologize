@@ -1,5 +1,5 @@
 % One head's geometry with a fiber, extending tikz/dict.tex: the head
-% selects entry |d_{i2}|; its fiber is the plane U_{i2} spans at that entry,
+% selects the entry with atom a_{i2}; its fiber is the plane U_{i2} spans at that entry,
 % and the coordinates c_i place the output within it. The dashed circle is
 % the norm cap (`fiber_eps`); the dotted ray is the radial variant, which
 % only rescales the entry. Coordinates are precomputed (no calc library):
@@ -13,12 +13,12 @@
   \fill (0,0) circle (1.2pt) node[below left,lab]{$\mathbf{0}$};
   \fill[black!8]   (1.0,2.6) -- (3.6,3.2) -- (2.6,0.9) -- cycle;
   \draw[semithick] (1.0,2.6) -- (3.6,3.2) -- (2.6,0.9) -- cycle;
-  \fill (1.0,2.6) circle (1.5pt) node[left,lab]{$\lvert\mathbf{d}_{i1}\rvert$};
-  \fill (2.6,0.9) circle (1.5pt) node[below right,lab]{$\lvert\mathbf{d}_{i3}\rvert$};
+  \fill (1.0,2.6) circle (1.5pt) node[left,lab]{$\mathbf{a}_{i1}$};
+  \fill (2.6,0.9) circle (1.5pt) node[below right,lab]{$\mathbf{a}_{i3}$};
 
   %% ---- radial variant: a per-entry gain along the entry's own ray ------
   \draw[densely dotted, black!55] (0,0) -- (4.5,4.0)
-    node[above right,lab,align=left]{radial:\\ $(1+c_i)\,\lvert\mathbf{d}_{i2}\rvert$};
+    node[above right,lab,align=left]{radial:\\ $(1+c_i)\,\mathbf{a}_{i2}$};
 
   %% ---- the fiber at the selected entry ---------------------------------
   \fill[black!18, opacity=0.8]
@@ -26,7 +26,7 @@
   \draw[black!60]
     (4.02,3.83) -- (4.26,2.87) -- (3.18,2.57) -- (2.94,3.53) -- cycle;
   \draw[densely dashed, black!55] (3.6,3.2) circle (0.75);
-  \node[lab, black!55] at (4.75,2.25) {$\lVert U_{i2}\mathbf{c}_i\rVert \le \varepsilon$};
+  \node[lab, black!55] at (4.75,2.25) {$\lVert U_{i2}\mathbf{c}_i\rVert \le \rho$};
 
   \draw[->, semithick] (3.6,3.2) -- (4.14,3.35)
     node[right,lab]{$U_{i2}\mathbf{e}_1$};
@@ -34,18 +34,18 @@
     node[above left,lab]{$U_{i2}\mathbf{e}_2$};
 
   \fill (3.6,3.2) circle (1.5pt);
-  \node[lab, anchor=east] at (2.9,3.25) {$\lvert\mathbf{d}_{i2}\rvert$};
+  \node[lab, anchor=east] at (2.9,3.25) {$\mathbf{a}_{i2}$};
 
   %% ---- the output: base point plus its fiber offset ---------------------
   \draw[->, thick] (3.6,3.2) -- (3.98,3.605);
   \fill (3.98,3.605) circle (1.8pt);
   \node[lab, anchor=south west] at (3.98,3.62)
-    {$F_i = \lvert\mathbf{d}_{i2}\rvert + U_{i2}\mathbf{c}_i$};
+    {$\mathbf{f}_i = \mathbf{a}_{i2} + U_{i2}\mathbf{c}_i$};
 
   %% ---- legend ------------------------------------------------------------
   \node[lab, anchor=north west, align=left] at (-0.3,-0.45)
-    {$\mathbf{c}_i = b\tanh(A_i\mathbf{u}/b)$ is read from the layer input;\\
+    {$\mathbf{c}_i = \beta\tanh(A_i\mathbf{u}/\beta)$ is read from the layer input;\\
      the selected entry is the discrete base point, the fiber the continuous\\
-     correction. Fiber-free, the head emits $\lvert\mathbf{d}_{i2}\rvert$:
+     correction. Fiber-free, the head emits $\mathbf{a}_{i2}$:
      the base-only output.};
 \end{tikzpicture}

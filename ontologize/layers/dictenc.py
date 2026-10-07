@@ -31,6 +31,13 @@ class DictEnc(nn.Module):
     gainshape: bool = False
     n_const: int = 0
 
+    # placement in a latent wider than this layer's own output (set from
+    # `Ontologizer.per_layer_dec`): `gained` writes the `d_out`-wide
+    # contribution at offset `e_off` of an `e_lat`-wide vector, so each
+    # layer owns a block of the decoder's input. 0 leaves it unplaced.
+    e_off: int = 0
+    e_lat: int = 0
+
     n: int = 2
     gate: str = "none"
     activation_cl: str = "none"
@@ -306,13 +313,28 @@ class DictEnc(nn.Module):
             C = jnp.broadcast_to(C, C.shape[:-2] + (self.h, self.fiber_rank))
         return C
 
-    def gained(self, Y: Array, G: Optional[Float[Array, "... 1"]]) -> Array:
-        """Scale a layer contribution by the measured input gain. A zero
-        gain (perfectly reconstructed residual) zeroes the contribution,
-        so the eps-normalized zero direction never reaches the output."""
-        if G is None:
+    def place(self, Y: Float[Array, "... d_out"]) -> Float[Array, "... e_lat"]:
+        """Zero-pad a layer-output vector into this layer's block of the
+        `e_lat`-wide latent; the identity when `e_lat` is 0."""
+        if not self.e_lat:
             return Y
-        return Y * G.astype(self.dtype)
+        pad = [(0, 0)] * (Y.ndim - 1) + [
+            (self.e_off, self.e_lat - self.e_off - Y.shape[-1])]
+        return jnp.pad(Y, pad)
+
+    def gained(self, Y: Array, G: Optional[Float[Array, "... 1"]]) -> Array:
+        """Scale a layer contribution by the measured input gain and
+        `place` it. A zero gain (perfectly reconstructed residual) zeroes
+        the contribution, so the eps-normalized zero direction never
+        reaches the output.
+
+        Every path that adds a layer's contribution to the running
+        residual goes through here, so this is where a per-layer decoder's
+        block placement happens. Analyses that decode dictionary vectors
+        without a gain (atoms, entries) call `place` themselves."""
+        if G is not None:
+            Y = Y * G.astype(self.dtype)
+        return self.place(Y)
 
     def classify(self, E: Float[Array, "... d_in"], *args, **kwargs) -> Float[Array, "... h k"]:
         """Forward pass up to `DictBlock.cluster`. Returns the classification tensor.

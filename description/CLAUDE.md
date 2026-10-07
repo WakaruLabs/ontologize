@@ -125,21 +125,31 @@ editing figures or captions.
 
 ## Notation
 
+The proposal shares its notation with the findings writeup, and the Notation section of
+`../writeup/CLAUDE.md` is authoritative: fonts by rank, index letters, and the table of
+reserved symbols. The proposal restates the writeup's headline methods, so a symbol that
+changes there changes here too. In brief:
+
 Use lowercase characters for scalars, `$\mathbf{}$` for vectors, capitals for matrices,
-and `$\mathsf{}$` for 3-tensors or greater.
+and `$\mathsf{}$` for 3-tensors or greater; a subscripted object takes the font of what it
+is (`$p_{ij}$` is an entry, `$\mathbf{p}_{ni}$` a vector slice).
 Use `$\tilde{}$` for noised variables and `$\hat{}$` for reconstructed variables.
 Use `$\odot$` for elementwise multiplication and `$\oplus$` for concatenation.
 
-`$b$` is the batch dimension. `$d$` is the input dimension. `$k$` is the number of labels.
-`$e$` is the output dimension. `$l$` is number of labels.
+Counts: `$b$` batch, `$l$` layers, `$h$` heads, `$k$` entries per head, `$d$` input
+dimension, `$e$` dictionary width. Indices: sample `$n$`, layer `$\ell$` (0-indexed, with
+`$-1$` the state before layer 0), head `$i$`, entry `$j$`, coordinate `$q$`.
 
 `$X$` are input data in `$\mathbb{R}^{b \times d}$`.
-`$K$` are logits in `$\mathbb{R}^{h \times k}$`.
-`$\mathsf{K}$` are logits in `$\mathbb{R}^{b \times h \times k}$`.
-`$\mathsf{F}$` are embeddings in `$\mathbb{R}^{b \times h \times e}$`.
-`$F'$` are pooled embeddings in `$\mathbb{R}^{b \times e}$`.
-`$R$`is the accumulator in `$\mathbb{R}^{b \times e}$`.
+`$K$` are one sample's logits in `$\mathbb{R}^{h \times k}$`, and `$\mathsf{K}$` a batch's in
+`$\mathbb{R}^{b \times h \times k}$`.
+`$\mathsf{F}$` are per-head outputs in `$\mathbb{R}^{b \times h \times e}$`.
+`$\mathbf{f}'$` is one sample's pooled output in `$\mathbb{R}^{e}$`, and `$F'$` a batch's in
+`$\mathbb{R}^{b \times e}$`.
+`$\mathbf{r}_\ell$` is the accumulator after layer `$\ell$`, and `$R$` the batched one in
+`$\mathbb{R}^{b \times e}$`.
 
 `$t$` is temperature. `$\sigma_X$` is SD of noise added to `$X$`.
 `$\sigma_K$` is SD of noise added to `$K$`. `$\sigma_F$` is SD of noise added to `$F$`.
+`$\sigma$` appears only with these subscripts; the support overlap is `$\omega$`.
 

@@ -5,17 +5,17 @@
 \toprule
 \multicolumn{2}{@{}l}{\emph{shared by every SONAR straight-through arm}} \\
 \midrule
-input & SONAR mC4 embeddings, $d = 1024$; eval tail held out \\
+input & SONAR mC4 embeddings, $d{=}1024$; eval tail held out \\
 selection & straight-through (\texttt{ste}): argmax forward, softmax backward \\
-classifier & bilinear ($n = 2$), no gate \\
-dictionary & non-negative, $e = 2048$, shared linear decoder \\
+classifier & bilinear (order 2), no gate \\
+dictionary & non-negative, $e{=}2048$, shared linear decoder \\
 forward & residual; \texttt{resid\_norm}, \texttt{resid\_const}, \texttt{resid\_gain}; joint deep supervision \\
 optimizer & Adam, lr $10^{-5}$, gradient clip 1.0, batch 256, 24 epochs \\
-temperature & $1.5\times10^{-4}$, constant \\
-noise & logits batchnorm, $\sigma_K = 0.3$; features featvar, $\sigma_F = 0.1$; input off \\
-winner dropout & $p_{\mathrm{drop}} = 0.1$ \\
-loss & whitened MSE; $s_{\mathrm{L1}} = 10^{-9}$, $s_{\mathrm{cossim}_b} = 10^{-5}$,
-$s_{\mathrm{cossim}_h} = 10^{-6}$; ghost path off \\
+temperature & $t{=}1.5\times10^{-4}$, constant \\
+noise & logits batchnorm, $\sigma_K{=}0.3$; features featvar, $\sigma_F{=}0.1$; input off \\
+winner dropout & $p_{\mathrm{drop}}{=}0.1$ \\
+loss & whitened MSE; $s_{\mathrm{L1}}{=}10^{-9}$, $s_{\mathrm{cossim}_b}{=}10^{-5}$,
+$s_{\mathrm{cossim}_h}{=}10^{-6}$; ghost path off \\
 seed & 42 unless noted \\
 \bottomrule
 \end{tabular}
@@ -40,14 +40,14 @@ arm & shape & $k$ & bits & $s_{\mathrm{KL}_m}$ & init scale & other & steps \\
 \texttt{ste\_l1\_h380\_i01} & $1\times380$ & 32 & 1900 & $5\times10^{-4}$ & 0.1 & & 369.5k \\
 \texttt{ste\_l1\_h380\_i01\_s43} & $1\times380$ & 32 & 1900 & $5\times10^{-4}$ & 0.1 & seed 43 & 369.5k \\
 \texttt{ste\_l1\_h380\_i01\_hm1e4} & $1\times380$ & 32 & 1900 & $10^{-4}$ & 0.1 & & 369.5k \\
-\texttt{ste\_k128\_h54} & $5\times54$ & 128 & 1890 & $10^{-4}$ & 0.1 & $s_\sigma = 10^{-6}$$^\ddagger$ & training \\
-\texttt{ste\_k128\_h54\_direct} & $5\times54$ & 128 & 1890 & $10^{-4}$ & 0.1 & signed direct atoms, $s_\sigma = 10^{-6}$$^\ddagger$ & training \\
+\texttt{ste\_k128\_h54} & $5\times54$ & 128 & 1890 & $10^{-4}$ & 0.1 & $s_\omega{=}10^{-6}$$^\ddagger$ & 369.5k \\
+\texttt{ste\_k128\_h54\_direct} & $5\times54$ & 128 & 1890 & $10^{-4}$ & 0.1 & signed direct atoms, $s_\omega{=}10^{-6}$$^\ddagger$ & 369.5k \\
 \bottomrule
 \end{tabular}
 \caption{SONAR straight-through configurations. Init scale is
 \texttt{--dict-init-scale}: each dictionary rescaled at initialization so
 a layer writes that fraction of its input (--- leaves the default
 initialization). $^\dagger$Changed at a resume. $^\ddagger$Trained after
-$\mathrm{cossim}_h$ was retired, so $s_\sigma$ takes its place.}
+$\mathrm{cossim}_h$ was retired, so $s_\omega$ takes its place.}
 \label{tab:cfg-ste-sonar}
 \end{table}

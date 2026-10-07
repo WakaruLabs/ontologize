@@ -5,16 +5,16 @@
 \toprule
 \multicolumn{2}{@{}l}{\emph{shared by every GPT-2 straight-through arm on this branch}} \\
 \midrule
-input & GPT-2 small, residual leaving block 8, $d = 768$; document-level holdout \\
+input & GPT-2 small, residual leaving block 8, $d{=}768$; document-level holdout \\
 selection & straight-through (\texttt{ste}) \\
-classifier & bilinear ($n = 2$) \\
+classifier & bilinear (order 2) \\
 forward & residual; \texttt{resid\_norm}, \texttt{resid\_const}, \texttt{resid\_gain}; joint deep supervision \\
 optimizer & Adam, lr $5\times10^{-5}$, gradient clip 1.0, batch 256, 24 epochs \\
-temperature & 1.0, constant \\
-noise & logits normal, $\sigma_K = 0.02$; features featvar, $\sigma_F = 0.1$; input off \\
-winner dropout & $p_{\mathrm{drop}} = 0.1$ \\
-loss & MSE weighted by \texttt{gpt2\_l8.mse\_weights\_matched}; $s_{\mathrm{L1}} = 10^{-9}$,
-$s_{\mathrm{cossim}_b} = 10^{-5}$, $s_{\mathrm{cossim}_h} = 10^{-6}$, $s_{\mathrm{KL}_m} = 10^{-6}$ \\
+temperature & $t{=}1.0$, constant \\
+noise & logits normal, $\sigma_K{=}0.02$; features featvar, $\sigma_F{=}0.1$; input off \\
+winner dropout & $p_{\mathrm{drop}}{=}0.1$ \\
+loss & MSE weighted by \texttt{gpt2\_l8.mse\_weights\_matched}; $s_{\mathrm{L1}}{=}10^{-9}$,
+$s_{\mathrm{cossim}_b}{=}10^{-5}$, $s_{\mathrm{cossim}_h}{=}10^{-6}$, $s_{\mathrm{KL}_m}{=}10^{-6}$ \\
 \bottomrule
 \end{tabular}
 
@@ -23,13 +23,13 @@ $s_{\mathrm{cossim}_b} = 10^{-5}$, $s_{\mathrm{cossim}_h} = 10^{-6}$, $s_{\mathr
 \toprule
 arm & shape & $k$ & dictionary & gate & init scale, seed & steps \\
 \midrule
-\texttt{ste\_h76} & $5\times76$ & 32 & non-negative, $e = 1536$ & none & 1.0, 42 & 371.9k \\
-\texttt{ste\_h76\_e768} & $5\times76$ & 32 & non-negative, $e = 768$ & none & 1.0, 42 & 371.9k \\
-\texttt{ste\_h76\_sgn} & $5\times76$ & 32 & signed, $e = 1536$ & none & 1.0, 42 & 371.9k \\
-\texttt{ste\_h76\_sgn768} & $5\times76$ & 32 & signed, $e = 768$ & none & 1.0, 42 & 371.9k \\
-\texttt{ste\_h76\_cat32} & $5\times76$ & 32 & non-negative, concat, $d_{\mathrm{head}} = 32$ & none & 1.0, 42 & 371.9k \\
-\texttt{ste\_h20\_cat128} & $5\times20$ & 256 & signed, concat, $d_{\mathrm{head}} = 128$ & sigmoid & ---, 42 & 371.9k \\
-\texttt{ste\_h20\_cat128-43} & $5\times20$ & 256 & signed, concat, $d_{\mathrm{head}} = 128$ & sigmoid & ---, 43 & 371.9k \\
+\texttt{ste\_h76} & $5\times76$ & 32 & non-negative, $e{=}1536$ & none & 1.0, 42 & 371.9k \\
+\texttt{ste\_h76\_e768} & $5\times76$ & 32 & non-negative, $e{=}768$ & none & 1.0, 42 & 371.9k \\
+\texttt{ste\_h76\_sgn} & $5\times76$ & 32 & signed, $e{=}1536$ & none & 1.0, 42 & 371.9k \\
+\texttt{ste\_h76\_sgn768} & $5\times76$ & 32 & signed, $e{=}768$ & none & 1.0, 42 & 371.9k \\
+\texttt{ste\_h76\_cat32} & $5\times76$ & 32 & non-negative, concat, $d_{\mathrm{head}}{=}32$ & none & 1.0, 42 & 371.9k \\
+\texttt{ste\_h20\_cat128} & $5\times20$ & 256 & signed, concat, $d_{\mathrm{head}}{=}128$ & sigmoid & ---, 42 & 371.9k \\
+\texttt{ste\_h20\_cat128-43} & $5\times20$ & 256 & signed, concat, $d_{\mathrm{head}}{=}128$ & sigmoid & ---, 43 & 371.9k \\
 \texttt{ste\_h20\_cat128-sc} & $5\times20$ & 256 & as above, plus router & sigmoid & ---, 42 & 371.75k \\
 \texttt{ste\_h20\_cat128-sc43} & $5\times20$ & 256 & as above, plus router & sigmoid & ---, 43 & 371.75k \\
 \bottomrule

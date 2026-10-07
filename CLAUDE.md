@@ -93,7 +93,12 @@ uv run python pareto.py        # reconstruction-vs-code-capacity Pareto table:
 uv run python autointerp.py -h # 4-stage auto-interp pipeline (harvest/texts/
                                # describe/score) over Ontologizer tags & SAE latents
 uv run python headstruct.py -h # post-hoc head-structure discovery: do SAE latents
-                               # form exhaustive/exclusive groups? (split-half + nulls)
+                               # form exhaustive/exclusive groups? (split-half + nulls);
+                               # --modularity also scores each group's sample partition
+                               # by soft modularity on the input heat-kernel graph;
+                               # --onto CKPT scores an Ontologizer's heads instead,
+                               # each layer on its own input; --prefix-layers treats a
+                               # Matryoshka SAE's blocks as layers (experiments/modularity)
 uv run python headcoh.py -h    # head/group SEMANTIC coherence: within-head decode-
                                # direction similarity vs size-matched nulls (quota-
                                # free), plus description-text view over autointerp

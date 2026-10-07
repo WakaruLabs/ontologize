@@ -16,7 +16,7 @@
   \node[blk] (SM) at ( 4.9,0) {$\mathrm{softmax}_k(\cdot/t)$};
   \node[blk] (DB) at ( 9.4,0) {$\dictblock^{h \times k \to h \times e}$};
   \node[blk] (SU) at (12.3,0) {$\sum^{h}_{i=1}$};
-  \node[lab] (F)  at (13.6,0) {$F'$\\ pooled\\ features};
+  \node[lab] (F)  at (13.6,0) {$\mathbf{f}'$\\ pooled\\ features};
 
   \draw[sig] (E)  -- (CL);
   \draw[sig] (CL) -- node[below,lab]{$K$\\ logits}   (SM);
@@ -37,7 +37,7 @@
   \node[hook] (lp) at (4.9,-1.8)
     {$H$\quad $\mathrm{KL}_m$\quad $\mathrm{cossim}_b$};
   \node[hook] (lf) at (9.4,-1.8)
-    {$\mathrm{L1}$\quad $\sigma$};
+    {$\mathrm{L1}$\quad $\omega$};
   \draw[aux] (SM.south) -- (lp);
   \draw[aux] (DB.south) -- (lf);
 

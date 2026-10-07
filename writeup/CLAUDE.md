@@ -52,8 +52,9 @@ add amssymb, whose symbols clash with newpxmath's. It also provides the author b
 A failed run can leave a malformed `build/findings.bcf` that makes biber refuse every
 later run; `make clean && make` fixes it.
 
-TeX is not installed on the machine Claude Code usually runs on, so edits are checked
-statically. After any structural change, run:
+TeX is not usable on the machine Claude Code usually runs on: `pdflatex` and `xelatex` are
+on the PATH, but the TeX Live install has no `texmf.cnf`, format files or `biber`. So edits
+are checked statically. After any structural change, run:
 
 ```bash
 F="findings.tex sections/*.tex tikz/*.tex algorithms/*.tex config/*.tex"
@@ -130,6 +131,83 @@ A `\caption` containing a blank line needs the optional short argument
   names in `../ontologize/`. Add a keyword there rather than hardcoding `\texttt{}` in an
   algorithm block.
 - `\todo{...}` marks open items in red.
+
+## Notation
+
+**Fonts by rank.** Lowercase italic for scalars, `\mathbf` for vectors, uppercase italic
+for matrices, `\mathsf` for tensors of rank three or more. A subscripted object takes the
+font of what it *is*, not of its parent: $p_{nij}$ is a scalar entry of $\mathsf{P}$,
+$\mathbf{p}_{ni}$ a vector slice, $D_i := \mathsf{D}_{i\cdot\cdot}$ a matrix slice. Name a
+slice that is used repeatedly rather than writing the parent with dots. Batching adds a
+rank: one sample's assignments $P \in \mathbb{R}^{h\times k}$, a batch's
+$\mathsf{P} \in \mathbb{R}^{b\times h\times k}$. Use `\tilde{}` for noised and `\hat{}` for
+reconstructed variables, `\odot` for elementwise multiplication and `\oplus` for
+concatenation. `../description/CLAUDE.md` defers to this section. Where a lowercase entry
+would read as a reserved count ($k$, $m$), write it bracketed: $[M^{\mathrm{part}}]_{ii'}$,
+$[\mathsf{K}]_{nij}$. Pearson's $r$, $R^2$ and $t$-statistics are written in words, since
+$r$, $R$ and $t$ are reserved.
+
+Exceptions: sets are calligraphic ($\mathcal{S}_n$, $\mathcal{G}$); named statistics and
+losses are roman ($\mathrm{FVU}$ via `\fvu`, $\mathrm{MSE}$, $\mathrm{KL}_m$, $\mathrm{L1}$,
+$\mathrm{cossim}_b$), as are $H$ (entropy) and $L$ (the loss); and the realized-bits
+paragraph uses the information-theory convention of uppercase random variables
+($A_{\ell i}$, $\mathbf{A}$, $\mathbf{X}$), which it says where it starts.
+
+**Indices and counts.** Sample $n$, layer $\ell$ (0-indexed, $\ell = 0,\dots,l-1$, matching
+"layer 0" in prose, tables and code), head $i$ and $i'$, entry $j$ and $j'$, coordinate
+$q$. Index $-1$ is the state before layer 0: $\mathbf{r}_{-1} := \mathbf{0}$,
+$\mathbf{y}_{-1} := \mathbf{x}$, so the gain $g_\ell := \mathrm{sg}[\mathrm{L2}(\mathbf{y}_{\ell-1})]$
+needs no special case. Counts: batch $b$, layers $l$, heads $h$, entries $k$, input
+dimension $d$, dictionary width $e$, fiber rank $r$, SAE width $m$. Inline settings use
+`{=}`: $k{=}32$, $e{=}1536$.
+
+**Reserved symbols.** Each has one meaning; do not reuse them.
+
+| symbol | meaning |
+|---|---|
+| $t$ | classifier temperature (`softmax`$_k(K/t)$) |
+| $\tau$ | thresholds (containment, judge) |
+| $\omega$, $s_\omega$ | between-head support overlap and its loss weight (code: `support`, `s_support`) |
+| $\boldsymbol{\pi}_i$ | head $i$'s usage-weighted coordinate profile, from which $\omega$ is computed |
+| $\sigma_X, \sigma_K, \sigma_F$ | noise scales; $\sigma$ appears only with these subscripts |
+| $\varepsilon$, $\varepsilon_K$, $\varepsilon_F$ | noise draws and terms |
+| $\epsilon$ | floating-point epsilon |
+| $\rho$ | fiber norm cap |
+| $\beta$ | fiber bound in $\mathbf{c}_i = \beta\tanh(A_i\mathbf{u}/\beta)$ |
+| $\mathbf{c}_i$, $C$, $\mathsf{C}$ | fiber coordinates (one head, one sample's $h\times r$, a batch) |
+| $\mathsf{A}$, $A_i$ | fiber readout tensor and its per-head matrix |
+| $\mathsf{D}$, $D_i$ | dictionary tensor $(h,k,e)$ and head $i$'s $(k,e)$ matrix |
+| $\mathbf{a}_{ij}$ | atom: $\lvert\mathsf{D}_{ij\cdot}\rvert$, or $\mathsf{D}_{ij\cdot}$ when signed |
+| $\mathbf{a}^{\mathrm{dec}}_{ij}$ | decoded atom; $\bar{\mathbf{a}}^{\mathrm{dec}}_i$ its usage-weighted mean |
+| $G_i$ | head $i$'s dictionary Gram $D_iD_i^\top$ |
+| $g_\ell$, $g_n$ | gain (scalar), per layer or per sample |
+| $\boldsymbol{\gamma}_n$, $\Gamma$ | router scales, one sample $(h)$ or a batch $(b,h)$; $\gamma_{ni}$ one head |
+| $\mathbf{f}_i$, $\mathbf{f}'$ | one head's output, and a layer's pooled output ($e$); $F$, $\mathsf{F}$ when stacked over heads, or heads and samples |
+| $\mathbf{r}_\ell$, $R$ | accumulator after layer $\ell$ (one sample), and batched |
+| $\hat{\mathbf{x}}_\ell$, $\mathbf{y}_\ell$ | prefix reconstruction and residual after layer $\ell$ |
+| $\kappa_i$, $\bar\kappa$ | within-head mean atom cosine, and its mean over heads (formerly row collinearity $c$) |
+| $\boldsymbol{\psi}_\ell$ | layer $\ell$'s statistics row (Eq.~stats); $\mathbf{s}$ the loss-weight vector |
+| $\boldsymbol{\phi}_{ni}$ | head $i$'s output contribution on sample $n$ (`headcontrib.py`) |
+| $\hat H$ | realized bits, $\sum_{\ell,i} H(A_{\ell i})$ |
+| $n_{\mathrm{bits}}$ | bit budget in the Gaussian reference $\mathrm{FVU}_{w,\mathrm{G}}$ |
+| $n_{\mathrm{const}}$ | number of trailing constant input coordinates |
+| $k_{\mathrm{SAE}}$ | an SAE's active-latent count; $k$ alone is always Ontologizer entries |
+| $\topk$ | the SAE family, written "$\topk$ SAE" (never "top-$k$ SAE", whose $k$ would read as entries); $\mathrm{L0}$ its sparsity |
+| $k_{\mathrm{sel}}$ | entries kept by the `top`$k_{\mathrm{sel}}$ selection rule |
+| $\nu$ | Pareto deviations per head (`pareto.py --ms`), support set $\mathcal{S}_\nu$ |
+| $\zeta$ | $z$-scores ($\zeta_{\cos}$); $\mathbf{z}$ is reserved for SAE latents |
+| $\mathcal{G}$ | a head or latent group; $\kappa(\mathcal{G})$ its within-group cosine |
+| $\alpha$ | steering step strength |
+| $\lambda_j$ | eigenvalues (Gaussian reference, eigen-steering); an SAE's L1 weight is $s_{\mathrm{L1}}$ like every other loss weight |
+| $\mathrm{assign}$ | the abstraction map from an input to its code, in the formal reading |
+| $h'$ | a number of heads kept, probed or conjoined (out of $h$) |
+| $k_{\mathrm{probe}}$ | the sparse-probing budget (SAEBench) |
+| $W_{\mathrm{flat}}$ | the flat code-to-output map of a one-layer model |
+| $\tau_{\mathrm{rev}}$ | the dead-entry revival threshold |
+| $^{(1)}, ^{(2)}$ | the two models in a pairwise comparison (not $A$/$B$) |
+
+Run names in `\texttt{}` keep their spelling (`m5120\_k32`), even where the notation
+would now write $k_{\mathrm{SAE}}{=}32$.
 
 ## Bibliography
 

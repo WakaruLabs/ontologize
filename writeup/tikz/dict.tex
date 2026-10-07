@@ -6,25 +6,25 @@
   %% ---- head i --------------------------------------------------------
   \fill[black!8]   (0,0) -- (2.4,0) -- (1.2,2.0) -- cycle;
   \draw[semithick] (0,0) -- (2.4,0) -- (1.2,2.0) -- cycle;
-  \fill (0,0)     circle (1.5pt) node[below,lab]{$\lvert \mathbf{d}_{i,1,\cdot}\rvert$};
-  \fill (2.4,0)   circle (1.5pt) node[below,lab]{$\lvert \mathbf{d}_{i,2,\cdot}\rvert$};
-  \fill (1.2,2.0) circle (1.5pt) node[above,lab]{$\lvert \mathbf{d}_{i,3,\cdot}\rvert$};
-  \fill (1.05,0.72) circle (1.7pt) node[left,lab]{$F_i$};
+  \fill (0,0)     circle (1.5pt) node[below,lab]{$\mathbf{a}_{i1}$};
+  \fill (2.4,0)   circle (1.5pt) node[below,lab]{$\mathbf{a}_{i2}$};
+  \fill (1.2,2.0) circle (1.5pt) node[above,lab]{$\mathbf{a}_{i3}$};
+  \fill (1.05,0.72) circle (1.7pt) node[left,lab]{$\mathbf{f}_i$};
 
-  %% ---- head j -------------------------------------------------------
+  %% ---- head i' ------------------------------------------------------
   \fill[black!8]   (5.0,0) -- (7.4,0) -- (6.2,2.0) -- cycle;
   \draw[semithick] (5.0,0) -- (7.4,0) -- (6.2,2.0) -- cycle;
-  \fill (5.0,0)   circle (1.5pt) node[below,lab]{$\lvert \mathbf{d}_{j,1,\cdot}\rvert$};
-  \fill (7.4,0)   circle (1.5pt) node[below,lab]{$\lvert \mathbf{d}_{j,2,\cdot}\rvert$};
-  \fill (6.2,2.0) circle (1.5pt) node[above,lab]{$\lvert \mathbf{d}_{j,3,\cdot}\rvert$};
-  \fill (6.55,0.60) circle (1.7pt) node[right,lab]{$F_{j}$};
+  \fill (5.0,0)   circle (1.5pt) node[below,lab]{$\mathbf{a}_{i'1}$};
+  \fill (7.4,0)   circle (1.5pt) node[below,lab]{$\mathbf{a}_{i'2}$};
+  \fill (6.2,2.0) circle (1.5pt) node[above,lab]{$\mathbf{a}_{i'3}$};
+  \fill (6.55,0.60) circle (1.7pt) node[right,lab]{$\mathbf{f}_{i'}$};
 
   \draw[<->, densely dashed, semithick, black!55] (1.35,0.71) -- (6.30,0.61);
   \node[lab] at (3.85,1.35)
-    {$\sigma$ penalizes heads $i$, $j$ sharing coordinates};
+    {$\omega$ penalizes heads $i$, $i'$ sharing coordinates};
 
   \node[lab, anchor=north, align=center] at (3.7,-0.9)
-  {$F'=\sum^h_{i=1} F_i$,\qquad
-  $F_i=\sum^k_{j=1} p_{i,j}\lvert \mathbf{d}_{i,j,\cdot}\rvert$,\qquad $\sum^k_{j=1} p_{i,j}=1$};
+  {$\mathbf{f}'=\sum^h_{i=1} \mathbf{f}_i$,\qquad
+  $\mathbf{f}_i=\sum^k_{j=1} p_{ij}\,\mathbf{a}_{ij}$,\qquad $\sum^k_{j=1} p_{ij}=1$};
 \end{tikzpicture}
 

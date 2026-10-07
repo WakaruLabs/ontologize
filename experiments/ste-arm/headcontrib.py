@@ -163,7 +163,7 @@ def atoms_and_codes(ckpt: str, step: int, T: float,
             f"atom, which the router (scaled) and fibers break")
 
     def atoms(module) -> Float[Array, "lh k d_out"]:
-        zero = module.decode(jnp.zeros((1, module.e_dec), module.dtype))
+        zero = module.decode(jnp.zeros((1, module.e_lat), module.dtype))
         out = []
         for de in module.dictencs:
             h = de.dict.h
@@ -173,7 +173,7 @@ def atoms_and_codes(ckpt: str, step: int, T: float,
             P = P.at[jnp.arange(k), :, jnp.arange(k)].set(1.0)
             Y = de.dict.hfwd(P)                                # (k, h, dh)
             Yh = Y[:, None] * jnp.eye(h, dtype=Y.dtype)[None, :, :, None]
-            out.append(module.decode(de.dict.combine(Yh)) - zero)
+            out.append(module.decode(de.place(de.dict.combine(Yh))) - zero)
         return jnp.concatenate(out, 1).transpose(1, 0, 2)
 
     def codes(module, Xb: Float[Array, "b d_in"]

@@ -1,6 +1,7 @@
 \begin{algorithm}[tp]
 	\caption{Steering scored in embedding space (\texttt{steerembed.py}).
-	For an Ontologizer a target is an entry $(l, h, k)$ and a choice is
+	For an Ontologizer a target $j^\star$ is an entry, of some head $i$ in
+	some layer $\ell$, and a choice is
 	a head's argmax; for an SAE with heads a target is a latent and a
 	choice is its head's winner (a top-1 head that abstains counts as its
 	own outcome); for an SAE without heads a target is a latent, it is
@@ -9,41 +10,43 @@
 	\label{alg:steerembed}
 	\DontPrintSemicolon
 
-	\KwIn{model; held-out rows $X$; strengths $s \in \{0.25, 0.5, 1, 2,
+	\KwIn{model; held-out rows $X$; strengths $\alpha \in \{0.25, 0.5, 1, 2,
 		4\}$; 64 targets per model, stratified by layer, each selected
 		on at least 0.5\% of reference rows}
 	\KwOut{realization and collateral per direction and strength, and at
 		the native step}
 
 	\Begin{
-		\ForEach{target $t$}{
-			$X_t \leftarrow$ 32 rows on which $t$ is \emph{not} already
-				selected\;
-			$C^{0} \leftarrow$ every head's choice on $X_t$\;
-			\ForEach{direction $D \in \{$\texttt{decode}, \texttt{grad},
+		\ForEach{target $j^\star$}{
+			$X_{j^\star} \leftarrow$ 32 rows on which $j^\star$ is \emph{not}
+				already selected\;
+			record every head's choice on $X_{j^\star}$\;
+			\ForEach{direction $\mathrm{dir} \in \{$\texttt{decode}, \texttt{grad},
 				\texttt{margin}, \texttt{adjoint}, \texttt{random}$\}$}{
-				$\mathbf{v}_n \leftarrow D(\mathbf{x}_n, t) / \lVert D(\mathbf{x}_n, t)\rVert$
+				$\mathbf{v}_n \leftarrow \mathrm{dir}(\mathbf{x}_n, j^\star) /
+					\lVert \mathrm{dir}(\mathbf{x}_n, j^\star)\rVert$
 					\tcp*{unit direction per row}
-				\ForEach{strength $s$}{
-					$\mathbf{x}'_n \leftarrow \mathbf{x}_n + s\,\lVert\mathbf{x}_n\rVert\,
+				\ForEach{strength $\alpha$}{
+					$\mathbf{x}'_n \leftarrow \mathbf{x}_n + \alpha\,\lVert\mathbf{x}_n\rVert\,
 						\mathbf{v}_n$;\quad
 						$\mathbf{x}'_n \leftarrow \mathbf{x}'_n\,
 						\lVert\mathbf{x}_n\rVert / \lVert\mathbf{x}'_n\rVert$
 						\tcp*{rescale to $\lVert\mathbf{x}\rVert$}
-					$C' \leftarrow$ every head's choice on $X'_t$\;
-					realization $\leftarrow \mathbb{E}_n\,\mathbf{1}[t$
-						selected in $C'_n]$\;
+					recompute every head's choice on the steered rows\;
+					realization $\leftarrow \mathbb{E}_n\,\mathbf{1}[j^\star$
+						selected on $\mathbf{x}'_n]$\;
 					collateral $\leftarrow$ share of (row, other head)
-						pairs with $C'_{nh} \neq C^{0}_{nh}$\;
+						pairs whose choice changed\;
 				}
 			}
 			$\boldsymbol{\delta}_n \leftarrow
-				\hat{\mathbf{x}}_n(\text{$t$ forced}) - \hat{\mathbf{x}}_n$,
-				or $\bar{a}_t\,W_{\mathrm{dec},t}$ for an SAE latent
+				\hat{\mathbf{x}}_n(\text{$j^\star$ forced}) - \hat{\mathbf{x}}_n$,
+				or, for an SAE, the latent's decoder row times
+				$\bar{z}_{j^\star}$, its mean activation when it fires
 				\tcp*{native step}
 			score $\mathbf{x}_n + \boldsymbol{\delta}_n$, unrescaled, and the
 				control $\mathbf{x}_n + \lVert\boldsymbol{\delta}_n\rVert\,
-				\mathbf{r}_n$ for a random unit $\mathbf{r}_n$\;
+				\boldsymbol{\xi}_n$ for a random unit $\boldsymbol{\xi}_n$\;
 		}
 		\Return{the means over targets}\;
 	}

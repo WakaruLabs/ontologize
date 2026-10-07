@@ -8,29 +8,29 @@
 	\DontPrintSemicolon
 
 	\KwIn{batch $X \in \mathbb{R}^{b \times d}$}
-	\KwData{encoder $\mathrm{enc}$; layers $\dictenc_1, \dots, \dictenc_l$
+	\KwData{encoder $\mathrm{enc}$; layers $\dictenc_0, \dots, \dictenc_{l-1}$
 		(Algorithm~\ref{alg:dictenc}); decoder $\mathrm{dec}$
 		(Eq.~\ref{eq:dec}); MSE weights $\mathbf{w}$; loss weights
 		$\mathbf{s}$, $s_g$}
 	\Hyper{input noise $\sigma_X$; deep supervision; \texttt{deepsup\_sg};
 		\texttt{resid\_norm}, \texttt{resid\_const}, \texttt{resid\_gain}}
-	\KwOut{loss $L$; per-layer statistics $\mathbf{m}_1, \dots,
-		\mathbf{m}_l$}
+	\KwOut{loss $L$; per-layer statistics $\boldsymbol{\psi}_0, \dots,
+		\boldsymbol{\psi}_{l-1}$}
 
 	\Begin{
 		$E \leftarrow \mathrm{enc}\big(\mathrm{noise}_X(X)\big)$
 			\tcp*{Eq.~\ref{eq:noise_batchnorm}}
 		$R \leftarrow \mathbf{0} \in \mathbb{R}^{b \times e}$;\quad
 			$E \leftarrow E \oplus [1]$ \tcp*{if \texttt{resid\_const}}
-		\For{$i \leftarrow 1$ \KwTo $l$}{
+		\For{$\ell \leftarrow 0$ \KwTo $l-1$}{
 			$R_{\mathrm{prev}} \leftarrow R$\;
-			$R, \mathsf{P}_i, \mathbf{m}_i \leftarrow \dictenc_i(R, E)$\;
+			$R, \mathsf{P}_\ell, \boldsymbol{\psi}_\ell \leftarrow \dictenc_\ell(R, E)$\;
 			\If(\tcp*[f]{a decode per prefix}){deep supervision}{
-				$\hat{X}_i \leftarrow \mathrm{dec}\big(R - R_{\mathrm{prev}}
+				$\hat{X}_\ell \leftarrow \mathrm{dec}\big(R - R_{\mathrm{prev}}
 					+ \mathrm{sg}[R_{\mathrm{prev}}]\big)$
 					\tcp*{$\mathrm{dec}(R)$ without \texttt{deepsup\_sg}}
 			}
-			\If{$i < l$}{
+			\If{$\ell < l-1$}{
 				$Y \leftarrow \mathrm{sg}\big[X - \mathrm{dec}(R)\big]$
 					\tcp*{Eq.~\ref{eq:L2}}
 				$E \leftarrow Y / (\mathrm{L2}(Y) + \epsilon)$
@@ -40,14 +40,14 @@
 					\tcp*{if \texttt{resid\_const}}
 			}
 		}
-		\lIf{not deep supervision}{$\hat{X}_l \leftarrow \mathrm{dec}(R)$}
-		$\mathrm{MSE} \leftarrow \mathbb{E}_i\,
-			\mathrm{MSE}_{\mathbf{w}}(X, \hat{X}_i)$
+		\lIf{not deep supervision}{$\hat{X}_{l-1} \leftarrow \mathrm{dec}(R)$}
+		$\mathrm{MSE} \leftarrow \mathbb{E}_\ell\,
+			\mathrm{MSE}_{\mathbf{w}}(X, \hat{X}_\ell)$
 			\tcp*{Eq.~\ref{eq:mse}; each prefix weighted $1/l$}
 		$L \leftarrow \mathrm{MSE} + s_g\,\mathrm{MSE}_g
-			+ \mathbf{s} \cdot \sum_{i=1}^{l} \mathbf{m}_i$
+			+ \mathbf{s} \cdot \sum_{\ell=0}^{l-1} \boldsymbol{\psi}_\ell$
 			\tcp*{Eq.~\ref{eq:loss_total}; $\mathrm{MSE}_g = 0$ without
 			ghosts}
-		\Return{$L$, $(\mathbf{m}_i)_{i=1}^{l}$}\;
+		\Return{$L$, $(\boldsymbol{\psi}_\ell)_{\ell=0}^{l-1}$}\;
 	}
 \end{algorithm}

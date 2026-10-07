@@ -156,8 +156,9 @@ def atoms(model, params) -> tuple:
     def get(module):
         W = [d.dict.tags().reshape(module.h, module.k, -1)
              for d in module.dictencs]
-        Z = module.decode(jnp.zeros_like(W[0][0, 0]))
-        return W, [module.decode(w) - Z for w in W]
+        Z = module.decode(module.dictencs[0].place(jnp.zeros_like(W[0][0, 0])))
+        return W, [module.decode(d.place(w)) - Z
+                   for d, w in zip(module.dictencs, W)]
     W, D = model.apply({"params": params}, method=get)
     return [np.asarray(w) for w in W], [np.asarray(d) for d in D]
 

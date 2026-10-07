@@ -1498,8 +1498,8 @@ So the `cossim_h` penalty at the weights used did not produce the
 partition the architecture argument assumes, and the within-head
 orthogonality measured earlier is the only one the trained models have.
 `ConcatDictBlock` is the only way these models got disjoint support, and
-by construction. Whether `s_support` as a loss term can produce it is
-untested: no run has trained with it.
+by construction. `s_support` as a loss term does not produce it either:
+it is satisfied in the decoder's null space (next section).
 
 `resid_nc_hm`, the reference configuration trained 22 times longer, is
 the one model whose heads do anything like avoid each other. Its
@@ -1522,6 +1522,114 @@ uv run python experiments/ste-arm/headsupport.py \
 ```
 
 Results: `data/out/headsupport/headsupport.json`.
+
+## Training with the support overlap (`--s-support`): satisfied in the null space
+
+A pilot on GPT-2 with a signed dictionary (e_dec 1536, so a 768-dimensional
+decoder null space), four weights, 3 epochs (46,250 steps) each, one seed:
+
+```bash
+uv run python experiments/ste-arm/train_ste.py --base gpt2_l8 \
+    --dict-init-scale 1.0 --signed --s-support W --epochs 3 \
+    --out data/out/gpt2_l8/sigma_pilot/sW      # W in 0, 1e-5, 1e-4, 1e-3
+```
+
+Held-out final-output FVU at the last checkpoint; `sigma` and spread from
+`headsupport.py`, averaged over layers; logged `support` (summed over
+layers) at the start and end:
+
+| `s_support` | held-out FVU | logged `support` | `sigma` dict (null) | spread | `sigma` decoded (null) |
+|---|---|---|---|---|---|
+| 0 | 0.423 | 4.92 → 4.77 | 0.862 (0.854) | 0.85 | 0.891 (0.826) |
+| 1e-5 | 0.467 | 4.92 → 0.44 | 0.065 (0.063) | 0.06 | 0.869 (0.797) |
+| 1e-4 | 0.512 | 4.92 → 0.050 | 0.0061 (0.0099) | 0.01 | 0.852 (0.778) |
+| 1e-3 | 0.603 | 4.91 → 0.0057 | 0.0005 (0.0037) | 0.00 | 0.803 (0.735) |
+
+The penalty drives the dictionary-space `sigma` to its target and, from
+1e-4, below its shuffle null (ratio 0.61 and 0.15): read as stated, a
+partition. It costs 10%, 21% and 43% of held-out FVU over the unpenalized
+twin. Decoded, nothing changes: every arm sits 8-10% above its null, as
+the unpenalized one does.
+
+Splitting each atom into the decoder's row space (visible) and null space,
+as in the previous section, shows where the partition went:
+
+| `s_support` | null-space energy | `sigma` visible (null) | visible spread | `sigma` null part (null) | null-part spread |
+|---|---|---|---|---|---|
+| 0 | 0.23 | 0.880 (0.871) | 0.87 | 0.915 (0.912) | 0.91 |
+| 1e-5 | 0.73 | 0.794 (0.709) | 0.71 | 0.074 (0.067) | 0.07 |
+| 1e-4 | 0.90 | 0.759 (0.646) | 0.65 | 0.0084 (0.0123) | 0.01 |
+| 1e-3 | 0.95 | 0.679 (0.568) | 0.57 | 0.0055 (0.0108) | 0.01 |
+
+**The partition is in the invisible part.** The penalized arms move 73-95%
+of atom energy into the null space, where each head's profile is a few
+large coordinates disjoint from other heads'; those dominate `|W|`, so the
+profile's cosine is small. The visible part, the only part reconstruction
+sees, stays dense (spread 0.57-0.71, against about 0.03 for a partition at
+`h = 32`) and overlaps *more* than its null as the weight rises (ratio
+1.12-1.20 against 1.01 unpenalized). `sigma` on `|W|` is a gauge-dependent
+measure whenever the decoder has a null space, and the penalty took the
+gauge. The FVU cost is plausibly norm: under `norm_rows` the null spikes
+take a fixed atom norm away from visible content, though that is not
+measured here.
+
+### A square decoder does not close the gauge
+
+The same pilot with `--e-dec 768`, so the decoder is square and has no
+exact null space (`data/out/gpt2_l8/sigma_pilot768`):
+
+| `s_support` | held-out FVU | logged `support` | `sigma` dict (null) | spread | `sigma` decoded (null) |
+|---|---|---|---|---|---|
+| 0 | 0.432 | 4.92 → 4.79 | 0.878 (0.876) | 0.88 | 0.889 (0.822) |
+| 1e-5 | 0.474 | 4.92 → 0.43 | 0.073 (0.063) | 0.06 | 0.872 (0.799) |
+| 1e-4 | 0.526 | 4.91 → 0.055 | 0.0079 (0.0118) | 0.01 | 0.838 (0.782) |
+| 1e-3 | 0.605 | 4.91 → 0.0068 | 0.0008 (0.0043) | 0.00 | 0.804 (0.755) |
+
+The same table as at e_dec 1536, to within a few percent: below the
+null from 1e-4 (ratio 0.67, 0.19), the same FVU cost (+10%, +22%, +40%),
+decoded `sigma` 6-9% above its null throughout. The decoder grew a soft
+null space in place of the missing exact one:
+
+| `s_support` | decoder condition number | directions below 0.1 `s_max` | atom energy there | energy in a head's top 8 coordinates | per-head effective rank, dict / decoded |
+|---|---|---|---|---|---|
+| 0 | 1.0e4 | 472 of 768 | 0.43 | 0.02 | 24.7 / 21.8 |
+| 1e-5 | 6.9e4 | 371 | 0.83 | 0.79 | 6.4 / 19.9 |
+| 1e-4 | 5.9e4 | 322 | 0.93 | 0.94 | 2.0 / 17.3 |
+| 1e-3 | 5.1e5 | 282 | 0.95 | 0.97 | 1.5 / 14.3 |
+
+Each penalized head puts nearly all its atom energy on a few coordinates
+of its own, in directions the decoder shrinks tenfold or more; its atoms
+collapse to effective rank 1.5-2 in the dictionary space while their
+decoded images keep rank 14-17. The content rides on the small
+remainder, which the decoder amplifies, and that remainder overlaps
+between heads as before. So a learned decoder makes `sigma` on the
+dictionary weights gameable whatever its shape: removing the exact null
+space only moves the exploit to the near-null one.
+
+A penalty the gauge cannot satisfy has to be measured where the decoder
+cannot rescale it: on the decoded atoms (`sigma` decoded, which no arm
+has moved), or with `--direct`, where the dictionary space is the output
+space and there is no decoder at all. Output coordinates are not
+privileged axes, so a disjoint-coordinate partition there is a strong
+and somewhat arbitrary constraint, but it cannot be faked.
+
+The k = 128 SONAR runs already trained with the penalty, at `sonar.py`'s
+default `s_support` 1e-6 (which replaced the retired `s_hcossim` 1e-6),
+direct pair included. It is too weak to act: the logged `support` moves
+from 4.85 to 4.82 (decoded) and 4.79 to 4.37 (direct) over 369,500
+steps, and at the end all four runs sit at or above their nulls, with
+dense profiles:
+
+| run | `sigma` dict (null) | spread | `sigma` decoded (null) |
+|---|---|---|---|
+| `ste_k128_h54` | 0.973 (0.972) | 0.97 | 0.992 (0.954) |
+| `ste_k128_h54_s43` | 0.971 (0.971) | 0.97 | 0.992 (0.954) |
+| `ste_k128_h54_direct` | 0.894 (0.863) | 0.87 | = dict |
+| `ste_k128_h54_direct_s43` | 0.890 (0.859) | 0.86 | = dict |
+
+So the direct-atom test at a weight that moves `sigma` has not been run;
+on GPT-2 the penalty took hold from 1e-5. Results:
+`data/out/headsupport/headsupport_k128.json`.
 
 ## Head-independence pressure (`--s-hsic-heads`): a measurement artifact
 
@@ -2742,16 +2850,95 @@ at k = 128 (1,890 bits, matching the k = 32 stack's 1,900):
 Both train cleanly. The initialization fix works for both: a signed
 dictionary's layer-0 output starts at 7.3, against 30 for `abs()` rows,
 since signed rows partly cancel, and both are rescaled to the 0.1 target.
-The direct pilot is ahead of the decoded one and the k = 32 stack at
-matched step, which at under 1% of a run ranks nothing. The full runs, both
-variants at seeds 42 and 43, are proposed but not started.
+The direct pilot was ahead of the decoded one and the k = 32 stack at
+matched step, which at under 1% of a run ranked nothing.
+
+### Converged: twice the k = 32 stack's error
+
+Both variants at seeds 42 and 43, 24 epochs (369,500 steps), scored on
+the held-out tail at T = 0.00015 with the training MSE weights. Per-layer
+prefix FVU from `codeuse.py`, against the k = 32 stack `ste_h76_init01`:
+
+| run | layer 0 | 1 | 2 | 3 | 4 (final) | realized bits |
+|---|---|---|---|---|---|---|
+| `ste_h76_init01`, 5x76, k = 32 | 0.537 | 0.372 | 0.266 | 0.195 | **0.1535** | 1895 (99.7%) |
+| `ste_k128_h54` | 0.657 | 0.476 | 0.364 | 0.328 | 0.3207 | 1866 (98.7%) |
+| `ste_k128_h54_s43` | 0.658 | 0.477 | 0.365 | 0.331 | 0.3238 | 1865 (98.7%) |
+| `ste_k128_h54_direct` | 0.656 | 0.480 | 0.367 | 0.321 | 0.3119 | 1868 (98.8%) |
+| `ste_k128_h54_direct_s43` | 0.655 | 0.481 | 0.369 | 0.325 | 0.3152 | 1868 (98.8%) |
+
+**At matched bits, k = 128 is twice as far off as k = 32**, and 6.2-6.5x
+the 1890-bit Gaussian reference (0.0499) against 3.1x. Both fill their
+codes, so this is not utilization. It is behind at every layer, and the
+gap widens with depth: layers 3 and 4 add 0.034-0.046 and 0.007-0.010,
+against 0.071 and 0.042 at k = 32. Per layer the k = 128 code sums 54
+atoms rather than 76; for an additive code the number of summed vectors
+may matter more than the size of each codebook, though nothing here
+separates that from the other difference: the temperature, learning
+rate and `s_Hm` were tuned at k = 32 and carried over. The direct variant
+is ahead of the decoded one by 0.009 at both seeds, which is three times
+the seed spread (0.003); the decoder buys nothing.
+
+**Seed reproducibility is lower than at k = 32.** `partition.py`, seed 42
+against 43 within each variant:
+
+| pair | mean matched NMI | null | max | same layer (null) |
+|---|---|---|---|---|
+| decoded, 42 vs 43 | 0.0638 | 0.0590 | 0.186 | 64% (22%) |
+| direct, 42 vs 43 | 0.0640 | 0.0591 | 0.220 | 53% (22%) |
+| decoded vs direct, both seed 42 | **0.1800** | 0.0590 | 0.432 | **100%** (27%) |
+
+NMI at k = 128 has a larger chance floor than at k = 32 (0.059 against
+0.005), so read the excess: +0.005 here, against +0.007 for the k = 32
+pair. Layer 0 is again the only layer above the rest (0.076-0.078), and
+the depth order reproduces loosely, as at k = 32.
+
+The third row is the striking one. **Two different architectures from the
+same seed share their partitions far more than one architecture across
+seeds**: every head matches the head at its own index (100% same layer;
+the other heads' same-index median NMI at layer 0 is 0.35), falling from
+0.375 at layer 0 to 0.080 at layer 4. The seed sets the classifier
+initialization, which has the same shape in both variants; whatever
+carves the partitions is fixed largely by it, not by the dictionary or
+whether a decoder follows it. That is consistent
+with the seed section's conclusion -- the function is determined by the
+data, the features by the initialization -- and sharpens it: the
+partitions are not even a property of the architecture.
+
+**A strongest layer-0 head recurs, more weakly.** `topichead.py`, keyed on
+seed 42's top head by eta^2:
+
+| variant | seed 42 top head (eta^2) | seed 43 top head (eta^2) | best match across seeds | other heads' same-index median |
+|---|---|---|---|---|
+| decoded | h34 (0.083) | h19 (0.103) | h19, NMI 0.132 | 0.038 |
+| direct | h22 (0.094) | h19 (0.091) | h6 (seed 43's second, 0.088), NMI 0.198 | 0.039 |
+| k = 32 stack | h54 (0.117) | h14 (0.122) | h14, NMI 0.413 | 0.010 |
+
+In each variant the strongest head's best match across seeds is a top-two
+head of the other seed, so a dominant partition recurs, but its
+agreement is a third to a half of the k = 32 topic head's and its eta^2
+0.7-0.9x. Whether it is the same topic-and-genre variable has not been
+checked (no decoding or auto-interp). Seed 42's top heads in both variants
+(h34, h22) are the decoded run's top two and the direct run's first and
+second -- the same-seed sharing again.
 
 ```bash
+M=data/out/sonar/multilingual; W=data/out/sonar/mse_weights.npy
 uv run python experiments/ste-arm/train_ste.py --h 54 --k 128 \
     --temperature 0.00015 --lr 1e-5 --noise-k batchnorm --sd-k 0.3 \
     --s-hm 1e-4 --dict-init-scale 0.1 --signed --direct \
-    --out data/out/sonar/multilingual/ste_k128_h54_direct
+    --out $M/ste_k128_h54_direct          # --seed 43 for the _s43 replica
+uv run python pareto.py --ckpt $M/ste_k128_h54 --temperature 0.00015 \
+    --mse-weights $W --ms 1 --b 1024 --out $M/ste_k128_h54/pareto
+uv run python experiments/ste-arm/codeuse.py --model $M/ste_k128_h54 \
+    --temperature 0.00015 --mse-weights $W
+uv run python experiments/ste-arm/partition.py --a $M/ste_k128_h54 \
+    --b $M/ste_k128_h54_s43 --temperature 0.00015
+uv run python experiments/ste-arm/topichead.py --temperature 0.00015 \
+    --head 34 --model $M/ste_k128_h54 $M/ste_k128_h54_s43
 ```
+
+Logs: `experiments/logs/eval_k128/`.
 
 ## Run
 

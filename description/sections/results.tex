@@ -11,7 +11,7 @@ preparation; distributed with this proposal.}.
 Three models recur. The softmax Ontologizer \texttt{resid\_nc} has $l{=}5$
 layers of $h{=}32$ heads with $k{=}32$ entries, a soft code. The
 straight-through Ontologizer \texttt{ste\_h76\_init01} has $5\times76$
-heads at $k{=}32$, a hard code of 1900 bits. The SAEs are top-$k$ SAEs
+heads at $k{=}32$, a hard code of 1900 bits. The SAEs are $\topk$ SAEs
 on the same cache and objective. Scores are $\mathrm{FVU}_w$ on the
 final 32{,}768 cache rows, which the SAEs and the straight-through arms
 never train on; the softmax Ontologizers predate that holdout, so their
@@ -21,7 +21,7 @@ scores are in-sample.
 \label{sec:prelim-pareto}
 Contrast-set structure is expensive in a soft code. The plain-SAE
 frontier dominates the softmax Ontologizer's deviation code (each head's
-$m$ entries furthest from the mean assignment kept, the rest pinned to
+$\nu$ entries furthest from the mean assignment kept, the rest pinned to
 it) at every capacity measured (Table~\ref{tab:prelim-pareto}): at
 $\mathrm{FVU}_w \approx 0.49$ the SAE transmits 32 coefficients where the
 Ontologizer needs 320, and at matched budgets an unstructured code
@@ -38,23 +38,23 @@ embedding. That is the motivation for the hard code.
 \toprule
 point & coeffs & index bits & $\mathrm{FVU}_w$ \\
 \midrule
-onto $m{=}0$ (mean-assignment origin) & 0 & 0 & 1.001 \\
+onto $\nu{=}0$ (mean-assignment origin) & 0 & 0 & 1.001 \\
 onto hard (argmax)                  & 0 & 800 & 17.34 \\
 \emph{Gaussian reference, 800 bits} & 0 & 800 & \emph{0.226} \\
-SAE $k{=}32$ tier                   & 32 & $\sim$400 & 0.494--0.509 \\
-onto dev $m{=}1$                    & 160 & 800 & 0.677 \\
-SAE $k{=}160$                       & 160 & 2154 & 0.258 \\
-onto dev $m{=}4$                    & 640 & 3200 & 0.289 \\
-onto dev $m{=}8$                    & 1280 & 6400 & 0.094 \\
-SAE $k{=}5120$ ($L_0{\approx}1520$) & 1520 & 20455 & \textbf{0.00011} \\
+SAE $k_{\mathrm{SAE}}{=}32$ tier    & 32 & $\sim$400 & 0.494--0.509 \\
+onto dev $\nu{=}1$                  & 160 & 800 & 0.677 \\
+SAE $k_{\mathrm{SAE}}{=}160$        & 160 & 2154 & 0.258 \\
+onto dev $\nu{=}4$                  & 640 & 3200 & 0.289 \\
+onto dev $\nu{=}8$                  & 1280 & 6400 & 0.094 \\
+SAE $k_{\mathrm{SAE}}{=}5120$ ($\mathrm{L0}{\approx}1520$) & 1520 & 20455 & \textbf{0.00011} \\
 1-layer soft variant \texttt{g160softmax} & 5120 & 0 & 0.00436 \\
-onto soft ($m{=}32$)                & 5120 & 0 & 0.00538 \\
+onto soft ($\nu{=}32$)              & 5120 & 0 & 0.00538 \\
 \bottomrule
 \end{tabular}
 \caption{Reconstruction against code capacity for the softmax
 Ontologizer \texttt{resid\_nc}. Ontologizer points truncate each head to
-its $m$ largest deviations from the mean assignment; SAE points use
-measured $L_0$. The Gaussian reference is reverse water-filling on the
+its $\nu$ largest deviations from the mean assignment; SAE points use
+measured $\mathrm{L0}$. The Gaussian reference is reverse water-filling on the
 evaluation tail's whitened covariance\cite{cover2006}: the least
 distortion at that rate for a Gaussian source of that covariance, which
 real data can beat.}
@@ -77,7 +77,7 @@ layer gives the opposite signature, heads that tile one region.
 
 The other orthogonality the architecture was designed for did not
 emerge. No trained model partitions its dictionary space between heads:
-the support overlap $\sigma$ (Equation~\ref{eq:support}) sits at or above
+the support overlap $\omega$ (Equation~\ref{eq:support}) sits at or above
 a null that shuffles each head's coordinates, in every model measured, and
 each head's usage covers 52--98\% of the coordinates where a partition
 into 32 heads needs about 3\%. This holds for the part of each atom the
@@ -87,16 +87,17 @@ that share their coordinates.
 \begin{table}[tp]\centering\small
 \begin{tabular}{@{}lrrrr@{}}
 \toprule
-heads or grouping & count & mean $z_{\cos}$ & frac $z{>}2$ & frac $z{<}{-}2$ \\
+heads or grouping & count & mean $\zeta_{\cos}$ & frac $\zeta{>}2$ & frac $\zeta{<}{-}2$ \\
 \midrule
 \texttt{g160top1} (trained, hard)   & 160 & $+161.3$ & 1.00 & 0.00 \\
-$k{=}32$ SAE, discovered groups     & 359 & $+1.7$ & 0.36 & 0.02 \\
+$k_{\mathrm{SAE}}{=}32$ SAE, discovered groups & 359 & $+1.7$ & 0.36 & 0.02 \\
 Ontologizer heads (trained, soft)   & 160 & $-17.6$ & 0.04 & \textbf{0.96} \\
 \texttt{g160softmax} (trained, soft) & 160 & $-14.7$ & 0.00 & \textbf{1.00} \\
 \bottomrule
 \end{tabular}
-\caption{Within-head decode-direction coherence, $z$-scored against
-size-matched same-pool nulls ($n_{\text{null}}{=}500$). Soft heads are
+\caption{Within-head decode-direction coherence $\zeta_{\cos}$,
+standardized against size-matched same-pool nulls
+($n_{\text{null}}{=}500$). Soft heads are
 anti-coherent: their atoms are pushed apart.}
 \label{tab:prelim-headcoh}
 \end{table}
@@ -106,7 +107,7 @@ anti-coherent: their atoms are pushed apart.}
 Under straight-through selection the forward pass is the argmax, and the
 discrete code is the model. At 1900 index bits and no continuous
 coefficients the hard code reaches $\mathrm{FVU}_w$ $0.154$, $40\%$
-below a top-$k$ SAE at matched bits that also transmits 160
+below a $\topk$ SAE at matched bits that also transmits 160
 coefficients, and $30\%$ below an L1 SAE spending $3.4\times$ the bits
 plus 519 coefficients (Table~\ref{tab:prelim-ste}). It sits $3.1\times$
 above the Gaussian reference for its rate, so at least that far from the
@@ -123,7 +124,7 @@ its entries.
 code & coeffs & index bits & $\mathrm{FVU}_w$ \\
 \midrule
 \textbf{straight-through Ontologizer, $5\times76$} & \textbf{0} & \textbf{1900} & \textbf{0.154} \\
-SAE, top-$k$, $k{=}160$ & 160 & 2154 & 0.258 \\
+SAE, $\topk$, $k_{\mathrm{SAE}}{=}160$ & 160 & 2154 & 0.258 \\
 SAE, ReLU+L1 $3\times10^{-5}$ & 519 & 6390 & 0.220 \\
 SAE, ReLU+L1 $10^{-5}$ & 1438 & 17723 & 0.048 \\
 1-layer hard variant \texttt{g160top1} & 160 & 1972 & 0.274 \\
@@ -210,7 +211,7 @@ against $0.002$, while a run against its own earlier checkpoint scores
 $0.38$ on partitions. GPT-2 replicates the pattern: only the first
 layer reproduces, at under a fifth of a same-run control. The softmax
 Ontologizer fares no better, matching at most $0.1\%$ of entries across
-seeds where the $k{=}32$ SAE pair matches 3--31\%. The first layer is the
+seeds where the $k_{\mathrm{SAE}}{=}32$ SAE pair matches 3--31\%. The first layer is the
 only one whose input does not depend on upstream choices, and one head
 in it does recur: the strongest head in every run, found at different
 indices in different seeds, encodes topic and genre (its entries decode
@@ -224,7 +225,7 @@ and never by one, as a language-agnostic embedding should give.
 \label{sec:prelim-gpt2}
 On GPT-2 small, with signed atoms in activation space and no decoder, an
 800-bit hard code recovers $97.6\%$ of the model's loss when its
-reconstruction is spliced back in, against $96.2\%$ for a $k{=}32$ SAE at
+reconstruction is spliced back in, against $96.2\%$ for a $k_{\mathrm{SAE}}{=}32$ SAE at
 nearly the same $\mathrm{FVU}_w$ (Table~\ref{tab:prelim-gpt2}); across
 architectures, $\mathrm{FVU}_w$ does not order downstream loss. Fibers
 trained on top of the frozen discrete code recover $99.9\%$ while leaving
@@ -238,8 +239,8 @@ model & code per token & $\mathrm{FVU}$ & loss recovered \\
 \midrule
 \textbf{hard code, direct atoms} & 800 bits & 0.195 & \textbf{97.6\%} \\
 hard code, private heads, $k{=}64$ & 960 bits & \textbf{0.164} & \textbf{97.9\%} \\
-top-$k$ SAE, $k{=}32$ & 32 coeffs + $\sim$394 bits & 0.189 & 96.2\% \\
-top-$k$ SAE, $k{=}128$ & 128 coeffs + $\sim$1580 bits & 0.116 & 98.6\% \\
+$\topk$ SAE, $k_{\mathrm{SAE}}{=}32$ & 32 coeffs + $\sim$394 bits & 0.189 & 96.2\% \\
+$\topk$ SAE, $k_{\mathrm{SAE}}{=}128$ & 128 coeffs + $\sim$1580 bits & 0.116 & 98.6\% \\
 \bottomrule
 \end{tabular}
 \caption{GPT-2 small, residual stream entering block 8, held-out

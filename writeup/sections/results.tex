@@ -8,21 +8,21 @@
 \toprule
 point & coeffs & index bits & $\fvu$ \\
 \midrule
-onto $m{=}0$ ($\mathbb{E}[p]$ origin) & 0 & 0 & 1.001 \\
+onto $\nu{=}0$ ($\mathbb{E}[\mathbf{p}]$ origin) & 0 & 0 & 1.001 \\
 onto hard (argmax)                  & 0 & 800 & 17.34 \\
 \emph{Gaussian reference, 800 bits} & 0 & 800 & \emph{0.226} \\
 sae k32 tier ($m{=}5120/11264$, incl.\ p5, s43) & 32 & $\sim$400 & 0.494--0.509 \\
 sae k32 bilinear                    & 32 & 394 & 0.602 \\
-onto dev $m{=}1$                    & 160 & 800 & 0.677 \\
+onto dev $\nu{=}1$                  & 160 & 800 & 0.677 \\
 1-layer hard variant \texttt{g160top1} & 160 & 1972 & 0.274 \\
 sae k160 ($m{=}11264$)              & 160 & 2154 & 0.258 \\
-onto dev $m{=}2$                    & 320 & 1600 & 0.497 \\
-onto dev $m{=}4$                    & 640 & 3200 & 0.289 \\
-onto dev $m{=}8$                    & 1280 & 6400 & 0.094 \\
-sae k5120 ($m{=}11264$, $L_0{\approx}1520$) & 1520 & 20455 & \textbf{0.00011} \\
-onto dev $m{=}16$                   & 2560 & 12800 & 0.0082 \\
+onto dev $\nu{=}2$                  & 320 & 1600 & 0.497 \\
+onto dev $\nu{=}4$                  & 640 & 3200 & 0.289 \\
+onto dev $\nu{=}8$                  & 1280 & 6400 & 0.094 \\
+sae k5120 ($m{=}11264$, $\mathrm{L0}{\approx}1520$) & 1520 & 20455 & \textbf{0.00011} \\
+onto dev $\nu{=}16$                 & 2560 & 12800 & 0.0082 \\
 1-layer soft variant \texttt{g160softmax} & 5120 & 0 & \textbf{0.00436} \\
-onto soft ($m{=}32$)                & 5120 & 0 & 0.00538 \\
+onto soft ($\nu{=}32$)              & 5120 & 0 & 0.00538 \\
 \bottomrule
 \end{tabular}
 \caption{Reconstruction vs.\ code capacity for \texttt{resid\_nc}, shared
@@ -35,7 +35,7 @@ Ontologizers rather than SAEs (Appendix~\ref{sec:models}).}
 
 Findings. (1) At matched $\fvu \approx 0.49$, the SAE transmits 32
 coefficients where the Ontologizer needs 320 (a 10$\times$
-coefficient-efficiency gap), with the caveat that top-$m$ points are
+coefficient-efficiency gap), with the caveat that top-$\nu$ points are
 post-hoc truncations of a model never trained to truncate. (2) The
 Ontologizer's granularity floor (one deviation per head, 160 coefficients,
 $\fvu\,0.677$) is worse than the SAE's 32-coefficient point --- the very
@@ -43,15 +43,15 @@ sparse regime is structurally closed to it. (3) The parameter- and
 coefficient-matched dense control (\texttt{k5120}) reaches
 $\fvu\,1.1\times10^{-4}$ with $3.4\times$ fewer active coefficients than
 the soft Ontologizer: unstructured reconstruction is $\sim$50$\times$
-better at matched budgets. (4) Head-level codes (mean-ablate all but the
-$m$ lowest-entropy heads) are far weaker than deviation codes at matched
-coefficients (heads $8/32$: $0.50$ vs.\ dev $m{=}8$: $0.094$):
+better at matched budgets. (4) Head-level codes (mean-ablate all but a
+layer's lowest-entropy heads) are far weaker than deviation codes at matched
+coefficients (heads $8/32$: $0.50$ vs.\ dev $\nu{=}8$: $0.094$):
 reconstruction information is spread near-evenly across all 160 heads ---
 under the classifier reading, every head's assignment carries signal for
 every input, which is what a MoEfied code should look like, and why
 per-sample head \emph{confidence} does not localize reconstruction.
 (5) Uniform-origin truncation is strictly worse than
-$\mathbb{E}[p]$-origin (dev $m{=}1$: $0.98$ vs.\ $0.68$): the measured
+$\mathbb{E}[\mathbf{p}]$-origin (dev $\nu{=}1$: $0.98$ vs.\ $0.68$): the measured
 mean classification, not uniform, is the code's true origin; neutral
 ablations and steering baselines should pin to it. (6) The soft model's
 own discrete reading is not a code at all. The argmax row is 77$\times$
@@ -74,7 +74,7 @@ it.
 \begin{table}[h]\centering\small
 \begin{tabular}{@{}lrrl@{}}
 \toprule
-rung & $\fvu$ & $L_0$ & note \\
+rung & $\fvu$ & $\mathrm{L0}$ & note \\
 \midrule
 k32 baseline    & 0.499 & 32   & 0 dead \\
 g160top1        & 0.274 & 160  & 1434/5120 dead (28\%) \\
@@ -124,7 +124,7 @@ shrinkage --- is in Appendix~\ref{app:soft}.
 \begin{table}[h]\centering\small
 \begin{tabular}{@{}lrrrr@{}}
 \toprule
-heads or grouping & count & mean $z_{\cos}$ & frac $z{>}2$ & frac $z{<}{-}2$ \\
+heads or grouping & count & mean $\zeta_{\cos}$ & frac $\zeta{>}2$ & frac $\zeta{<}{-}2$ \\
 \midrule
 g160top1 (trained, hard)      & 160 & $+161.3$ & 1.00 & 0.00 \\
 k32 discovered (\texttt{m11264}) & 359 & $+1.7$ & 0.36 & 0.02 \\
@@ -133,7 +133,7 @@ g160softmax (trained, soft)   & 160 & $-14.7$ & 0.00 & \textbf{1.00} \\
 \bottomrule
 \end{tabular}
 \caption{Within-head decode-direction coherence vs.\ size-matched
-same-pool nulls (\texttt{headcoh.py}, $n_{\text{null}}{=}500$).}
+same-pool nulls (\texttt{headcoh.py}, $n_{\mathrm{null}}{=}500$).}
 \end{table}
 
 This is the sharpest dissociation in the battery, and the one the
@@ -151,8 +151,8 @@ moves along the head's own dimension. Notably the signature is shared by
 the Ontologizer and single-layer \texttt{g160softmax} with near-identical
 strength. The choice of inner product is not doing the work: recomputed
 under the whitened metric the training objective actually optimizes, the
-repulsion \emph{strengthens} for the Ontologizer (mean $z_{\cos}$
-$-24.4$ vs.\ $-17.6$ raw; frac $z{<}{-}2$ unchanged at $0.96$) and is
+repulsion \emph{strengthens} for the Ontologizer (mean $\zeta_{\cos}$
+$-24.4$ vs.\ $-17.6$ raw; frac $\zeta{<}{-}2$ unchanged at $0.96$) and is
 essentially unchanged for \texttt{g160softmax} ($-14.7$) and
 \texttt{g160top1} ($+179.3$ vs.\ $+161.3$).
 
@@ -165,32 +165,32 @@ reading is dominated by the decoder's null space and should not be used
 (Appendix~\ref{sec:rowcos}). Of the two orthogonalities in
 Section~\ref{sec:disjoint}, then, the within-head one holds in both code
 types. \textbf{The between-head one does not}: no trained model partitions
-its dictionary space between heads. The support overlap $\sigma$ sits at
+its dictionary space between heads. The support overlap $\omega$ sits at
 or above a null that shuffles each head's coordinates, and each head's
 usage covers 52--98\% of the coordinates where a partition into 32 heads
 needs about 3\% (Appendix~\ref{sec:support}). Heads are contrast sets that
 share their coordinates.
 
-Two \texttt{resid\_nc} outlier heads (layer-2 h25, $z{+}346$; layer-3
-h28, $z{+}280$; the next candidates sit in the partially frozen layer 4)
+Two \texttt{resid\_nc} outlier heads (layer-2 h25, $\zeta{=}{+}346$; layer-3
+h28, $\zeta{=}{+}280$; the next candidates sit in the partially frozen layer 4)
 cluster instead of contrasting --- their sampled entries also decode to
 generic text, so we suspect partial head collapse (entries never
 differentiated), not semantic coherence; targeted inspection pending.
 The description-text view was uninformative on plain summaries
 ($\sim$77\% generic corpus descriptions for entries, 49\% for k32 latents,
-inflating the permutation null: pooled $z=-0.25$); re-run on the
+inflating the permutation null: pooled $\zeta{=}{-}0.25$); re-run on the
 contrastive \texttt{cacts} descriptions it acquires signal. Within-head
 description similarity clears the head-membership permutation null for
-\texttt{g160top1} ($z{=}{+}2.42$, 62 within-head pairs), is marginal for
-Ontologizer heads ($z{=}{+}1.92$, 155 pairs), and is absent for
-\texttt{g160softmax} ($z{=}{+}0.79$, 217 pairs). Read against the
+\texttt{g160top1} ($\zeta{=}{+}2.42$, 62 within-head pairs), is marginal for
+Ontologizer heads ($\zeta{=}{+}1.92$, 155 pairs), and is absent for
+\texttt{g160softmax} ($\zeta{=}{+}0.79$, 217 pairs). Read against the
 geometry this is the pattern ``alternative values of one shared
 dimension'' predicts: Ontologizer entries' decode \emph{directions}
 repel while their described \emph{contents} weakly cohere. It is also
 the first instrument in the battery to separate the Ontologizer from
 its single-layer soft rival, whose head contents show no description
 coherence at all --- suggestive rather than significant at this
-coverage (one global $z$ per model over the campaign's sampled
+coverage (one global $\zeta$ per model over the campaign's sampled
 features).
 
 \subsection{Steering fidelity}
@@ -245,10 +245,12 @@ sign came from LAPACK. \texttt{nlinear.orient} now fixes it by the
 eigenvalue's sign with a leading-coordinate tie-break. The fix roughly
 doubles eigenvector steering on the soft model (0.224 $\to$ 0.427 at
 0.25), within noise of orienting per sample (0.446). That is more than
-theory allows: moving $x$ along $v$ changes $x^\top Bx$ by
-$2\epsilon\lambda (x\cdot v)$, a property of the sample that a weight-only
+theory allows: moving $\mathbf{x}$ by $\alpha$ along $\mathbf{v}$ changes
+$\mathbf{x}^\top B\mathbf{x}$ by $2\alpha\lambda (\mathbf{x}\cdot\mathbf{v})$,
+a property of the sample that a weight-only
 convention should not be able to supply. It can here because SONAR is
-anisotropic --- $x\cdot v$ is dominated by $\mathbb{E}[x]\cdot v$, which
+anisotropic --- $\mathbf{x}\cdot\mathbf{v}$ is dominated by
+$\mathbb{E}[\mathbf{x}]\cdot\mathbf{v}$, which
 has a consistent sign --- whereas on isotropic Gaussian inputs (the unit
 test) a weight-only direction raises the logit on about half the samples.
 On the hard code the oriented eigendirection is dead, below random at
@@ -277,12 +279,12 @@ hard-code stack & 0.37 / 0.66 & \textbf{0.91} / 0.63 & \textbf{0.94} / 0.64 & 0.
 hard-code flat & 1.00 / 0.33 & 0.97 / 0.27 & 1.00 / 0.31 & 0.01 / 0.37 \\
 \texttt{g160top1} & 0.58 / \textbf{0.03} & 0.94 / 0.13 & 0.95 / 0.14 & 0.04 / 0.23 \\
 \texttt{g160softmax} & 1.00 / 0.30 & 0.99 / 0.27 & 1.00 / 0.31 & 0.01 / 0.34 \\
-SAE, top-$k$ 32 ($m{=}11264$) & 1.00 / 0.21 & 0.92 / 0.21 & 0.97 / 0.23 & 0.00 / 0.25 \\
+$\topk$ SAE, $k_{\mathrm{SAE}}{=}32$ ($m{=}11264$) & 1.00 / 0.21 & 0.92 / 0.21 & 0.97 / 0.23 & 0.00 / 0.25 \\
 SAE, bilinear encoder & 1.00 / 0.07 & 0.97 / 0.12 & 0.99 / 0.11 & 0.01 / 0.13 \\
 \bottomrule
 \end{tabular}
 \caption{Each model's own steering direction against supervised vectors
-fitted to the same targets, step $0.25\lVert x\rVert$; 64 targets
+fitted to the same targets, step $0.25\lVert \mathbf{x}\rVert$; 64 targets
 $\times$ 32 held-out rows per model, one seed.}
 \label{tab:steersup}
 \end{table}
@@ -320,7 +322,7 @@ agrees, and sharpens the reading:
 \begin{table}[h]\centering\small
 \begin{tabular}{@{}lrrrrrrr@{}}
 \toprule
-model & density & freq & \texttt{params} & \texttt{eig} & \texttt{acts} & \texttt{cacts} & $n$ \\
+model & density & freq & \texttt{params} & \texttt{eig} & \texttt{acts} & \texttt{cacts} & features \\
 \midrule
 onto (resid\_nc)   & 100\%  & 10.80\% & 0.020 & ---   & 0.473 & 0.392 & 225 \\
 k32                & 0.6\%  & 0.61\%  & 0.158 & ---   & 0.645 & 0.603 & 250 \\
@@ -344,13 +346,13 @@ not architecture.} Activation-based descriptions rank
 (0.58) $>$ onto ${\approx}$ \texttt{k5120} (0.47) $>$
 \texttt{g160softmax} (0.45). Pearson(log nominal density, \texttt{acts})
 is $-0.894$ across the six runs, so density alone carries $\sim$80\% of
-the variance. Fitting $\texttt{cacts} \sim a + b\log(\text{firing rate})$
+the variance. Fitting \texttt{cacts} linearly in $\log(\text{firing rate})$
 on the four \texttt{sae.py} runs with nonzero firing rate (slope
-$-0.069$, $r = -0.766$) and holding the Ontologizer out predicts $0.421$
+$-0.069$, Pearson $-0.766$) and holding the Ontologizer out predicts $0.421$
 against an actual $0.392$, a residual of $-1.8$ sem: the Ontologizer sits
 on the trend. \texttt{g160top1} is the real outlier, $+0.120$ above it ---
 the Ontologizer's categorical code in single-layer form, and unusually
-describable for its density. The fit is thin ($n{=}4$, weak $r$;
+describable for its density. The fit is thin (four runs, weak correlation;
 \texttt{g160softmax} is excluded because its thresholded firing rate is
 exactly 0, and the $2/k$ threshold is non-monotone in true density), but
 the lesson is durable: \textbf{per-latent detection F1 cannot compare
@@ -417,7 +419,8 @@ configuration is in Table~\ref{tab:cfg-ste-sonar}.
 
 The dictionary is \texttt{abs()}'d, so a layer's $h$ rows sum coherently
 and its output scales with $h$; the per-layer gain compounds that, so the
-initial residual grows as roughly $(c\,h)^l$. The shipped arm starts at
+initial residual grows geometrically with depth, by a factor proportional
+to $h$ per layer. The shipped arm starts at
 $1.84\times10^8$ where it should start near 1.
 \texttt{--dict-init-scale 0.1} rescales each dictionary so a layer
 contributes about a tenth of its input, which divides $h$ out and starts
@@ -476,12 +479,12 @@ SAE ReLU+L1 $10^{-5}$ & 1438 & 17723 & 0.048 \\
 \end{center}
 
 At matched index bits ($\sim$2{,}000) the discrete code is 40\% below the
-top-$k$ SAE that additionally transmits 160 continuous coefficients, and
+$\topk$ SAE that additionally transmits 160 continuous coefficients, and
 30\% below an L1 SAE spending 3.4$\times$ the bits plus 519 coefficients.
 It is also 44\% below \texttt{g160top1}, which shares its hard per-head
 selection but has one layer of linear classifiers and keeps a ReLU
-magnitude on each winner. Truncation rows (\texttt{dev} $m$) are
-\emph{worse} than the hard row on this arm ($0.259$ at $m{=}1$): pinning entries toward the origin adds mass
+magnitude on each winner. Truncation rows (\texttt{dev} $\nu$) are
+\emph{worse} than the hard row on this arm ($0.259$ at $\nu{=}1$): pinning entries toward the origin adds mass
 the model was never trained to decode, so for a hard model the honest
 capacity axis is $l\cdot h\log_2 k$ itself. Measured against the Gaussian
 reference at each code's own rate, the full stack sits further from it
@@ -510,7 +513,7 @@ rather than $h\log_2 k$ (Appendix~\ref{app:ste}).
 
 Five layers of 76 heads and one layer of 380 have the same nominal
 capacity (1900 bits) and exactly the same parameter count (51.93M; both
-the dictionary $h k e$ and the classifier $h k d n$ depend on $l$ and $h$
+the dictionary $hke$ and the bilinear classifier $2hkd$ depend on $l$ and $h$
 only through $l\cdot h$). At the fixed initialization every head in both
 uses its entries almost uniformly (summed head entropy 99.7\% and 99.9\%
 of nominal), and \textbf{depth is worth $1.79\times$ the reconstruction
@@ -575,7 +578,7 @@ downstream layers reclassifying a changed residual. \textbf{The cascade
 roughly doubles collateral; it is not the only source of it.} At the
 model's own scale --- the forced entry's output change, without
 rescaling --- the flat arm's step is small (median 0.028 of $\lVert
-x\rVert$) and moves 4\% of the other heads, while the stack's (0.13)
+\mathbf{x}\rVert$) and moves 4\% of the other heads, while the stack's (0.13)
 realizes 8\% of targets across layers and moves 54\%, exactly what a
 random step of that length does. This is the steering-side counterpart of
 \texttt{compose.py}'s finding that non-additivity decays with the number
@@ -638,7 +641,7 @@ the k32 SAE pair matches 3--31\% (Figure~\ref{fig:softseed}).
 
 \texttt{gpt2\_l8/ste\_h20\_cat128} and its seed-43 twin differ only in
 seed: $5\times20$ heads, $k{=}256$, \texttt{ConcatDictBlock} at
-$d_{\text{head}}{=}128$, both at 371{,}900 steps, scored on the held-out
+$d_{\mathrm{head}}{=}128$, both at 371{,}900 steps, scored on the held-out
 tail. Each measure is run across seeds and, as the positive control,
 against the seed-42 run's own checkpoint at step 350{,}000:
 
@@ -763,8 +766,9 @@ corpus does not carry.
 A second line of straight-through runs (\texttt{experiments/gpt2}, from the
 \texttt{headline} branch) takes the hard code to GPT-2 small and adds the
 measure an embedding substrate lacks: the fraction of GPT-2's loss
-recovered when the reconstruction is spliced back into the model, $(CE_{\rm
-ablate} - CE_{\rm recon})/(CE_{\rm ablate} - CE_{\rm clean})$ with the
+recovered when the reconstruction is spliced back into the model,
+$(\mathrm{CE}_{\mathrm{ablate}} - \mathrm{CE}_{\mathrm{recon}})
+/(\mathrm{CE}_{\mathrm{ablate}} - \mathrm{CE}_{\mathrm{clean}})$ with the
 residual mean-ablated as the floor.
 
 \paragraph{Setup, and what is not comparable.} Activations are the residual
@@ -786,8 +790,9 @@ space itself, with no latent dictionary space and no decoder, so every
 atom is literally a steering direction. \emph{Gain-shape on every layer}:
 layer 0 too classifies the unit direction of what it corrects
 (\texttt{resid\_first}), and each layer's contribution is scaled by the
-observed residual norm, clipped at $\lVert X\rVert$, which makes the model
-positively homogeneous, $f(cX) = c\,f(X)$. \emph{Annealed straight-through
+observed residual norm, clipped at $\lVert \mathbf{x}\rVert$, which makes the model
+positively homogeneous, $f(\xi\mathbf{x}) = \xi f(\mathbf{x})$ for $\xi > 0$.
+\emph{Annealed straight-through
 selection}: argmax forward, softmax backward, with the temperature
 annealed early in training (Table~\ref{tab:cfg-gpt2-headline}). With
 $5\times32$ heads of 32 entries the code is 800 bits per token with no
@@ -802,8 +807,8 @@ model & atoms & code per token & $\fvu$ & loss recovered \\
 private heads + gain + STE & 48-dim blocks, shared decoder & 800 bits & 0.186 & 97.5\% \\
 private heads, $k{=}64$ & 48-dim blocks, shared decoder & 960 bits & \textbf{0.164} & \textbf{97.9\%} \\
 \midrule
-top-$k$ SAE, $k{=}32$, $m{=}5120$ & --- & 32 coeffs + $\sim$394 bits & 0.189 & 96.2\% \\
-top-$k$ SAE, $k{=}128$, $m{=}5120$ & --- & 128 coeffs + $\sim$1580 bits & 0.116 & 98.6\% \\
+$\topk$ SAE, $k_{\mathrm{SAE}}{=}32$, $m{=}5120$ & --- & 32 coeffs + $\sim$394 bits & 0.189 & 96.2\% \\
+$\topk$ SAE, $k_{\mathrm{SAE}}{=}128$, $m{=}5120$ & --- & 128 coeffs + $\sim$1580 bits & 0.116 & 98.6\% \\
 soft Ontologizer (1 epoch) & --- & 4960 mixture weights & 0.016 & 99.85\% \\
 \bottomrule
 \end{tabular}
@@ -814,8 +819,8 @@ the direct code reaches 3.914.}
 \label{tab:gpt2hard}
 \end{table}
 
-\textbf{A discrete 800-bit code recovers more of GPT-2's loss than a $k{=}32$
-SAE at nearly the same $\fvu$}: 97.6\% against 96.2\%, at 0.195 against
+\textbf{A discrete 800-bit code recovers more of GPT-2's loss than a
+$k_{\mathrm{SAE}}{=}32$ SAE at nearly the same $\fvu$}: 97.6\% against 96.2\%, at 0.195 against
 0.189. Across architectures, then, $\fvu$ does not order downstream loss
 --- the SAE's slightly lower error costs the model more --- where within
 the Ontologizer family on SONAR text fidelity was a monotone function of
@@ -853,7 +858,7 @@ unconstrained fibers & --- & --- ($\sim$10) & --- \\
 \end{center}
 
 Fibers recover far more than the SAE's $\fvu$ advantage, but they carry
-hundreds of continuous numbers per token --- more than the $k{=}32$ SAE's 32
+hundreds of continuous numbers per token --- more than the $k_{\mathrm{SAE}}{=}32$ SAE's 32
 coefficients --- so this is not a matched-capacity comparison. The
 question they raise is what keeps the discrete base honest. Unconstrained,
 the fibers take over (base-only $\fvu$ $\sim$10); fiber dropout holds the
@@ -888,7 +893,7 @@ becomes inert once the error before it is small
 \label{sec:gpt2}
 
 Non-negativity binds through the Gram, not the null space: two
-non-negative vectors have $\langle a,a'\rangle\geq0$ exactly, so for
+non-negative vectors have $\langle \mathbf{a},\mathbf{a}'\rangle\geq0$ exactly, so for
 independent $\lvert\mathcal{N}(0,1)\rvert$ coordinates the chance pairwise
 cosine is $2/\pi = 0.637$, with minimum $+0.58$ over 4000 draws; signed
 draws give 0.000. \texttt{--signed} drops the \texttt{abs()} in
@@ -900,13 +905,13 @@ checkpoint):
 \begin{table}[h]\centering\small
 \begin{tabular}{@{}lrrrr@{}}
 \toprule
-arm & $c$ (row cosine) & eff.\ rank & $\fvu$ & at step 90k \\
+arm & $\bar\kappa$ (row cosine) & eff.\ rank & $\fvu$ & at step 90k \\
 \midrule
 signed, $e{=}1536$ & $+0.0009$ & 27.37 & \textbf{0.1540} & 0.2910 \\
 signed, $e{=}768$  & $+0.0019$ & 26.95 & 0.1543 & 0.2942 \\
 abs, $e{=}1536$    & $+0.3038$ &  9.15 & 0.1934 & 0.3962 \\
 abs, $e{=}768$     & $+0.4543$ &  5.41 & 0.2927 & 0.4631 \\
-concat, $d_{\text{head}}{=}32$ & $+0.5353$ & 3.30 & 0.4155 & 0.8055 \\
+concat, $d_{\mathrm{head}}{=}32$ & $+0.5353$ & 3.30 & 0.4155 & 0.8055 \\
 \bottomrule
 \end{tabular}
 \caption{Non-negativity $\times$ width on GPT-2 layer-8 residuals, held-out
@@ -916,7 +921,7 @@ tail. No collinearity penalty is active in any arm.}
 
 \textbf{The forced collinearity costs reconstruction.} At $e{=}1536$,
 \texttt{abs} runs at a third of the signed effective rank and 26\% more
-held-out error; at $e{=}768$, 90\% more. Across the five arms $c$ orders
+held-out error; at $e{=}768$, 90\% more. Across the five arms $\bar\kappa$ orders
 the error exactly at convergence (Spearman $+1.00$; $+0.90$ at step 90k,
 where concat is the single inversion). The cost is also an
 \emph{interaction}: narrowing $e$ costs $+0.2\%$ signed and $+51\%$ under
@@ -928,10 +933,11 @@ than signed at both widths, and its gap at $e{=}1536$ grew
 from 8\% at step 20k to 50\% at 200k and has since narrowed to 26\%
 (Figure~\ref{fig:orthant-curves}), so \texttt{abs} may be partly slower,
 but it has not caught up by the end of a full run. A geometric reading via
-Wendel's theorem~\cite{wendel1962}: $m$ random columns lie in a common
-halfspace with probability $2^{1-m}\sum_{i<d}\binom{m-1}{i}$, exactly
-$1/2$ at $m{=}2d$, so $e{=}1536$ sits on the threshold where a random
-decoder's cone $\{Da : a\geq0\}$ covers the output space at all.
+Wendel's theorem~\cite{wendel1962}: the decoder's $e$ random columns lie in
+a common halfspace with probability $2^{1-e}\sum_{q<d}\binom{e-1}{q}$,
+exactly $1/2$ at $e{=}2d$, so $e{=}1536$ sits on the threshold where a random
+decoder's cone $\{W_{\mathrm{dec}}\mathbf{r} : \mathbf{r}\geq0\}$ covers the
+output space at all.
 
 \begin{figure}[tp]\centering
 \includegraphics[width=\linewidth]{figures/fig-orthant-curves.pdf}
@@ -946,7 +952,7 @@ Removing \texttt{abs} therefore buys both: a decorrelated,
 near-full-effective-rank dictionary and lower error, which is roughly what
 the collinearity setpoint exists to buy. Signed atoms give up two things:
 subtractive features are harder to read as ``this concept is present'', and
-the $\lvert F\rvert_1 \geq h$ floor under \texttt{norm\_rows}, which rests
+the $\lVert F\rVert_1 \geq h$ floor under \texttt{norm\_rows}, which rests
 on non-cancellation, disappears. Concatenated heads, which face a collapsed
 tradeoff rather than a raised floor, are the worst arm
 (Appendix~\ref{sec:concatgeom}).

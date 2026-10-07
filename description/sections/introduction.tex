@@ -47,7 +47,7 @@ supervised steering itself and $5\times$ further than probe directions
 point where the summed single interventions point, exactly in the final
 layer. Right: the sparse SAEs' codes lose most text before any
 intervention (round-trip chrF 0.23--0.28 against a 0.20 corpus floor)
-while the soft code keeps it (0.54); the dense $k{=}5120$ SAE keeps more
+while the soft code keeps it (0.54); the dense $k_{\mathrm{SAE}}{=}5120$ SAE keeps more
 but is not a sparse code.}
 \label{fig:teaser}
 \end{figure}
@@ -147,7 +147,7 @@ underparameterization, a really bad optimizer, bad initialization, a bad
 loss term.
 
 \paragraph{Not orthogonal in the limit}
-The support overlap $\sigma$ (Section~\ref{sec:disjoint}) penalizes heads
+The support overlap $\omega$ (Section~\ref{sec:disjoint}) penalizes heads
 sharing coordinates but does not guarantee disjoint support at
 convergence, and the measured answer is that it does not arrive: within a
 head atoms come apart, but no trained model partitions its coordinates

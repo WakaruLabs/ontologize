@@ -6,21 +6,21 @@ vocabulary, and stating it makes several instruments in the battery
 estimators of named quantities rather than ad hoc scores.
 
 \paragraph{Definitions.}
-Read the Ontologizer as a structural causal model: each head $(l,h)$ is a
+Read the Ontologizer as a structural causal model: each head $(\ell,i)$ is a
 candidate high-level \emph{variable} with value space $\{1,\dots,k\}$
 (soft state: its simplex), the residual stack is the causal graph (with
-residual forwarding, layer $i{+}1$'s classifier reads the residual
-written by layers $\le i$, so every earlier head is a parent of every
+residual forwarding, layer $\ell{+}1$'s classifier reads the residual
+written by layers $\le \ell$, so every earlier head is a parent of every
 later one), and \texttt{withArgs} set-interventions are the
-$\mathrm{do}$-operator: $\mathrm{do}[(l,h){=}k']$ forces the head's
+$\mathrm{do}$-operator: $\mathrm{do}[(\ell,i){=}j']$ forces the head's
 assignment while leaving all non-descendants untouched by construction.
-The abstraction map $\tau$ sends an embedding $x$ to its per-head
-assignment profile $P(x)$. Under this reading: \texttt{steerembed.py}'s
+The abstraction map $\mathrm{assign}$ sends an embedding $\mathbf{x}$ to its
+per-head assignments. Under this reading: \texttt{steerembed.py}'s
 realization rate is an estimator of whether an \emph{input-space}
-intervention implements $\mathrm{do}[(l,h){=}k']$, and its collateral of
+intervention implements $\mathrm{do}[(\ell,i){=}j']$, and its collateral of
 how far it also intervenes on other variables;
 \texttt{steerfid.py}'s cycle-consistency gain estimates
-\emph{interchange-intervention accuracy} in the closed loop $\tau \circ
+\emph{interchange-intervention accuracy} in the closed loop $\mathrm{assign} \circ
 \mathrm{encode} \circ \mathrm{decode}$, bounded above by the
 $\sim$12\% round-trip survival of Section~\ref{sec:steer}; and seed-to-seed
 matching is \emph{empirical identifiability}. What the softmax leaves
@@ -71,7 +71,7 @@ pairs):
 \begin{center}
 \begin{tabular}{@{}lrrrr@{}}
 \toprule
-stratum & $n$ & cos & rel.\ err & note \\
+stratum & pairs & cos & rel.\ err & note \\
 \midrule
 same-layer L0 & 28 & 0.959 & 0.350 & 4 downstream layers \\
 same-layer L1 & 28 & 0.947 & 0.354 & 3 \\
@@ -132,7 +132,7 @@ temperature matched to the logit scale, relative logit noise, a rescaled
 entropy bonus, and an initialization fix worth a third of its error.
 \item \textbf{The discrete code holds up downstream.} On GPT-2 small, an
 800-bit hard code with signed atoms in activation space and gain-shape
-on every layer recovers 97.6\% of GPT-2's loss, more than a $k{=}32$ SAE
+on every layer recovers 97.6\% of GPT-2's loss, more than a $k_{\mathrm{SAE}}{=}32$ SAE
 at nearly the same $\fvu$ (96.2\%), and 64 entries per head pass it on
 both measures. Across architectures $\fvu$ does not order downstream
 loss. Fibers on top of a frozen discrete base recover almost all the rest
@@ -195,7 +195,7 @@ head, consistent with languages being weakly separated regions of SONAR
 space. On that probe the hard code carries four times what the softmax
 reference does, so partitions do align with known factors; a test of
 whether heads are natural variables needs topic or genre labels.
-\item \textbf{Per-latent lenses mis-measure classifier codes.} $k$-sparse
+\item \textbf{Per-latent lenses mis-measure classifier codes.} Sparse
 probing ranks the Ontologizer worst while partition-level analysis finds
 verified causal language heads; detection F1 is $\sim$80\% explained by
 code density, and the Ontologizer sits on the SAE density trend.
@@ -235,7 +235,7 @@ Section~\ref{sec:gpt2hard}'s runs need \texttt{direct},
 here and lets the same design run on SONAR, where its 800-bit code can be
 compared with the straight-through arm's 1900 bits. Direct atoms also
 make steering literal --- a set-intervention adds
-$\lVert n\rVert(g_{\rm new} - g_{\rm old})$ at one layer --- and that has
+$g_\ell(\mathbf{a}_{ij'} - \mathbf{a}_{ij})$ at one layer --- and that has
 not been measured.
 \item \textbf{Fibers on a frozen base.} The two-stage recipe kept the base
 exact and matched unconstrained fibers' reconstruction; it should be the
@@ -258,7 +258,7 @@ partition-vs-label-library MI, led by topic and genre (from a labelled
 corpus or unsupervised topic clusters) since those are what the
 embedding is organized by, with length, formatting/noise and script as
 secondary factors; \emph{sibling-contrastive}
-descriptions (positives where entry $k$ wins within head $h$, background
+descriptions (positives where entry $j$ wins within head $i$, background
 where its siblings win), validated by blinded assignment accuracy vs.\
 $1/k$; and FLORES parallel-text invariance to split content heads from
 form heads. Run identically on Ontologizer heads and \texttt{g160softmax}'s
@@ -272,17 +272,17 @@ buys steerability acts on a statistic that is mostly gauge; repeat it on
 the decoded statistic, and on signed dictionaries.
 \item \textbf{Train with the support overlap.} No model attains between-head
 disjoint support (Appendix~\ref{sec:support}), and none has trained with
-$\sigma$ as a loss term rather than its predecessor; whether it can buy the
+$\omega$ as a loss term rather than its predecessor; whether it can buy the
 partition, and at what reconstruction price, is open. Concatenated heads
 are the comparison that already has it.
 \item \textbf{Logit-scale control for straight-through training.}
-Normalize logits per head, or control $T$ against a spread$/T$ setpoint,
+Normalize logits per head, or control $t$ against a spread$/t$ setpoint,
 in place of the hand-matched temperature.
 \item \textbf{Fresh-encoded eval set.} New runs hold the tail out; the
 softmax Ontologizers do not, and every comparison against them inherits
 that asymmetry.
-\item \textbf{A top-$k$ sweep at matched bits.} The converged frontier
-has top-$k$ points only at $k{=}32$ and $160$; a $k$ sweep through the
+\item \textbf{A $\topk$ sweep at matched bits.} The converged frontier
+has $\topk$ points only at $k_{\mathrm{SAE}}{=}32$ and $160$; a $k_{\mathrm{SAE}}$ sweep through the
 1{,}900-bit region would pin the discrete-vs-linear comparison at
 exactly matched rate.
 \item \textbf{Winner dropout for the one-layer variants.} \texttt{g160top1}'s
@@ -290,8 +290,8 @@ exactly matched rate.
 \item \textbf{Trained truncatability.} A deviation-sparsity penalty at
 training time would show whether the soft Pareto curve can shift left.
 \item \textbf{Rung composition and frontier fill.} \texttt{groups+prefixes}
-(2b+3), the one-layer variants at $m{=}11264$, the mid-range top-$k$ sweep
-($k \in \{512, 2048\}$); random-support and nonnegative-LS refit controls.
+(2b+3), the one-layer variants at $m{=}11264$, the mid-range $\topk$ sweep
+($k_{\mathrm{SAE}} \in \{512, 2048\}$); random-support and nonnegative-LS refit controls.
 \item \textbf{Closed.} HSIC head independence (heads are already
 independent), decoder sparsification and bias (no structure; $<1\%$),
 code-forwarding alongside the residual, input whitening (subsumed by

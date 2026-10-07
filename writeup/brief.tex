@@ -42,15 +42,15 @@ giving its overall size. Nothing is labelled: classifiers and vectors are
 learned only by asking the rebuilt representation to match the original.
 
 Because a classifier's categories are mutually exclusive, changing one
-classifier's choice for an input --- from category $a$ to category $b$ ---
+classifier's choice for an input --- from category $j$ to category $j'$ ---
 swaps one stored vector for another. That swap is the steering move the
-method is built around: it moves the representation from $a$ to $b$ along
+method is built around: it moves the representation from $j$ to $j'$ along
 one axis the method found, and the result is always another valid
 description, so the edited representation stays within the range the
 network normally sees.
 
 We study two representations. The main one is GPT-2 small's internal
-state entering its eighth block~\cite{radford2019}, on web text: there the
+state after its first eight blocks~\cite{radford2019}, on web text: there the
 rebuilt state can be put back into the running model, so we can measure
 how much of the model's behaviour survives. The second is SONAR sentence
 embeddings~\cite{sonar}, a fixed-length vector per sentence that can be
@@ -133,8 +133,8 @@ be read and swapped.
 Three tests so far, none of them yet the decisive one.
 \begin{itemize}
 \item \emph{Swaps are specific (GPT-2).} Swapping a token's category from
-$a$ to $b$ moves the model's output toward $b$'s typical output: among 31
-alternatives, $b$ ranks 1.4--4 on average, and still 2--6 at four times
+$j$ to $j'$ moves the model's output toward $j'$'s typical output: among 31
+alternatives, $j'$ ranks 1.4--4 on average, and still 2--6 at four times
 the step, where a random step of the same size ranks 10--16. That is
 specificity against an internal control, not success at a named concept.
 \item \emph{Language (sentence embeddings).} Forcing one of the method's
@@ -172,7 +172,7 @@ it.
 \begin{center}\small
 \begin{tabular}{@{}llrr@{}}
 \toprule
-GPT-2 small, block 8, held out & per-token code & unexplained variance & loss recovered \\
+GPT-2 small, after 8 blocks, held out & per-token code & unexplained variance & loss recovered \\
 \midrule
 Ontologizer, 32 categories & 800 bits & 0.186 & 97.5\% \\
 Ontologizer, 64 categories & 960 bits & 0.164 & 97.9\% \\

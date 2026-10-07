@@ -1,7 +1,7 @@
 % DictEnc with the router (`scaled`) and fibers (`fiber_rank`). Three
 % branches read the shaped input u and meet in the dictionary lookup:
-% the classifier picks entries (P), the router scales each head (S), and
-% the fiber read gives each head local coordinates (c). Dashed boxes above
+% the classifier picks entries (P), the router scales each head (gamma),
+% and the fiber read gives each head local coordinates (C). Dashed boxes above
 % an arrow act on it in training; dashed boxes below are statistics.
 \begin{tikzpicture}[
     font=\footnotesize,
@@ -33,8 +33,8 @@
   \node[blk] (CL) at (4.4, 0)   {$\bilinearblock^{d \to h \times k}$\\ classifier};
   \node[blk] (SM) at (7.4, 0)   {$\mathrm{softmax}_k(\cdot/t)$\\ or STE};
   % fiber read: r local coordinates per head
-  \node[blk] (FR) at (4.4,-2.2) {$A \in \mathbb{R}^{h \times r \times d}$\\ fiber read};
-  \node[blk] (TB) at (7.4,-2.2) {$b\tanh(\cdot/b)$};
+  \node[blk] (FR) at (4.4,-2.2) {$\mathsf{A} \in \mathbb{R}^{h \times r \times d}$\\ fiber read};
+  \node[blk] (TB) at (7.4,-2.2) {$\beta\tanh(\cdot/\beta)$};
 
   \draw[sig] (B) |- (RT.west);
   \draw[sig] (B) -- (CL.west);
@@ -46,24 +46,24 @@
   %% ---- the lookup ----------------------------------------------------------
   \node[blk, minimum height=5.6cm, text width=3.5cm] (DB) at (11.7,0)
     {$\dictblock$\\[6pt]
-     $F_i = S_i \sum_{k} P_{ik}\,\big(\lvert\mathbf{d}_{ik}\rvert
-            + U_{ik}\,\mathbf{c}_i\big)$\\[6pt]
-     {\scriptsize entry $\lvert\mathbf{d}_{ik}\rvert$, fiber basis
-      $U_{ik}\in\mathbb{R}^{e \times r}$}};
+     $\mathbf{f}_i = \gamma_i \sum_{j} p_{ij}\,\big(\mathbf{a}_{ij}
+            + U_{ij}\,\mathbf{c}_i\big)$\\[6pt]
+     {\scriptsize atom $\mathbf{a}_{ij}$, fiber basis
+      $U_{ij}\in\mathbb{R}^{e \times r}$}};
 
-  \draw[sig] (AB) -- node[above,lab,pos=0.35]{$S\in\mathbb{R}^{h}$} (AB -| DB.west);
+  \draw[sig] (AB) -- node[above,lab,pos=0.35]{$\boldsymbol{\gamma}\in\mathbb{R}^{h}$} (AB -| DB.west);
   \draw[sig] (SM) -- node[below,lab,pos=0.3]{$P\in\Delta_k^{h}$} (DB.west |- SM);
-  \draw[sig] (TB) -- node[above,lab,pos=0.35]{$\mathbf{c}\in\mathbb{R}^{h \times r}$} (TB -| DB.west);
+  \draw[sig] (TB) -- node[above,lab,pos=0.35]{$C\in\mathbb{R}^{h \times r}$} (TB -| DB.west);
 
   %% ---- combine heads, restore the gain --------------------------------------
   \node[blk] (CB) at (15.5,0) {$\sum_i$ \ or\ $\bigoplus_i$\\ {\scriptsize (concat)}};
   \node[mul] (MG) at (17.3,0) {$\times$};
-  \node[lab] (F)  at (18.6,0) {$F'$\\ layer\\ output};
+  \node[lab] (F)  at (18.6,0) {$g\,\mathbf{f}'$\\ layer\\ output};
   \draw[sig] (DB.east |- CB) -- node[below,lab]{$F$} (CB);
-  \draw[sig] (CB) -- (MG);
+  \draw[sig] (CB) -- node[above,lab]{$\mathbf{f}'$} (MG);
   \draw[sig] (MG) -- (F);
   \draw[sig] (GS.south) -- (0.6,-4.1) -| node[pos=0.25,below,lab]
-       {$G=\lVert\tilde{\mathbf{y}}\rVert$, stop-gradient} (MG.south);
+       {$g=\lVert\tilde{\mathbf{y}}\rVert$, stop-gradient} (MG.south);
 
   %% ---- training-time hooks and the intervention interface (above) -------------
   \node[hook] (nk) at (5.9, 1.0) {$+\,\varepsilon_K$, winner dropout};
@@ -83,9 +83,9 @@
   \node[hook] (ss) at (7.4, 3.45) {$\mathrm{L1}_S$};
   \draw[aux] (AB.north) -- (ss);
   \node[hook] (sf) at (11.7,-3.45)
-    {$\mathrm{L1}$\quad support\quad $\mathrm{cossim}_k$\\ (base output and entries)};
+    {$\mathrm{L1}$\quad $\omega$\quad $\kappa_i$\\ (base output and atoms)};
   \draw[aux] (DB.south) -- (sf);
-  \node[hook] (ba) at (15.5,-1.9) {fiber-free $F^{\mathrm{base}}$\\
+  \node[hook] (ba) at (15.5,-1.9) {fiber-free $\mathbf{f}'_{\mathrm{base}}$\\
                                    (\texttt{base\_aux})};
   \draw[aux] (DB.east |- ba) -- (ba);
 

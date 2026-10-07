@@ -15,13 +15,13 @@ The classifier splits the input into $h$ independent soft assignment
 vectors, each over one head's $k$ entries.
 The dictionary maps each entry to an atom.
 Each layer writes a weighted average of these atoms to an accumulator.
-At each layer, the accumulator $R_i$ is decoded and the residual
-$X - \mathrm{dec}(R_i)$ is passed to the next layer.
+At each layer, the accumulator $\mathbf{r}_\ell$ is decoded and the residual
+$\mathbf{x} - \mathrm{dec}(\mathbf{r}_\ell)$ is passed to the next layer.
 Deep supervision is used to constrain each layer to reconstructing the input.
 
 Because entries within a head are mutually exclusive rather than independent,
 each dictionary head serves as a contrastive set.
-An auxiliary loss term minimizing the heads' support overlap $\sigma$
+An auxiliary loss term minimizing the heads' support overlap $\omega$
 (Eq.~\ref{eq:support}) pushes each head onto its own coordinates of the
 dictionary space (Figure~\ref{fig:head-simplex}).
 Because the dictionary returns a linear combination of representative vectors,
@@ -54,30 +54,33 @@ subspaces are convex.
 \resizebox{\linewidth}{!}{\input{tikz/ontologizer}}
 \caption[\texttt{Ontologizer} architecture]{\textbf{\texttt{Ontologizer} architecture.}
 	An \texttt{Ontologizer} consists of $l$ stacked \texttt{DictEnc} layers.
-	Each returns a feature vector $F_i\in\mathbb{R}^{e}$,
-	which is written to a residual accumulator $R$.
-	For each layer $i$, $R_i = R_{i-1} + F_i$; a stop-gradient variant
-	($\mathrm{sg}$ on $R_{i-1}$, available but off in the live
+	Each returns a feature vector $\mathbf{f}'_\ell\in\mathbb{R}^{e}$,
+	which is written, scaled by its input's gain $g_\ell$, to a residual
+	accumulator $\mathbf{r}$.
+	For each layer $\ell = 0, \dots, l-1$,
+	$\mathbf{r}_\ell = \mathbf{r}_{\ell-1} + g_\ell\,\mathbf{f}'_\ell$ with
+	$\mathbf{r}_{-1} := \mathbf{0}$; a stop-gradient variant
+	($\mathrm{sg}$ on $\mathbf{r}_{\ell-1}$, available but off in the live
 	configuration) would prevent gradient communication between layers.
 	$\mathrm{dec}$ is a linear decoder with shape $\mathbb{R}^{d \times e}$.
 	It uses deep supervision to obtain a coarse-to-fine representation where
 	the component encoded by previous layers is inaccessible to later layers.
-	At each layer $i$, $\hat{\mathbf{x}}_i = \mathrm{dec}(R_i)$.
+	At each layer $\ell$, $\hat{\mathbf{x}}_\ell = \mathrm{dec}(\mathbf{r}_\ell)$.
 	The same decoder is shared by all layers.
-	The component left unexplained after layer $i$ is given by
-	$\mathbf{y}_i = \mathbf{x} - \hat{\mathbf{x}}_i$.
-	The input to layer $i+1$ is given by
-	$\tilde{\mathbf{y}}_i
-	  = \mathbf{y}_i / \mathrm{L2}(\mathbf{y}_i) \oplus [1]$
+	The component left unexplained after layer $\ell$ is given by
+	$\mathbf{y}_\ell = \mathbf{x} - \hat{\mathbf{x}}_\ell$.
+	The input to layer $\ell+1$ is given by
+	$\tilde{\mathbf{y}}_\ell
+	  = \mathbf{y}_\ell / \mathrm{L2}(\mathbf{y}_\ell) \oplus [1]$
 	where $\mathrm{L2}$ is the unit norm. This prevents exploding gradients from repeated
 	application of bilinear layers, as each scales its input by $\lVert\cdot\rVert^{2}$.
 	A constant coordinate $[1]$ is appended, giving a dimension of $d+1$.
-	This prevents the sign information of $\mathbf{y}_i$ from being lost
+	This prevents the sign information of $\mathbf{y}_\ell$ from being lost
 	by the bilinear transformation.
 	Effectively, it adds a bias to an otherwise unbiased linear form
 	while preserving eigendecomposition.
 
-	$\mathrm{MSE}(\mathbf{x},\mathrm{dec}(R_i))$ is computed separately for each layer.
+	$\mathrm{MSE}(\mathbf{x},\mathrm{dec}(\mathbf{r}_\ell))$ is computed separately for each layer.
 
 	The input-noise hook drawn on $\mathbf{x}$ is available but disabled
 	in every model reported here.
@@ -114,7 +117,7 @@ Algorithm~\ref{alg:ontologizer} the stack and its loss.
 	which may be a residual from a previous layer.
 	Optional noise terms $\varepsilon_K$ and $\varepsilon_F$ may be added
 	(see §\ref{sec:noise}).
-	Winner dropout sets $\mathrm{argmax}_k(K_{h,\cdot})$ to $-\infty$
+	Winner dropout sets each head's largest logit to $-\infty$
 	with probability $p_{\mathrm{drop}}$.
 
 	Soft assignments $P$ are given by $\mathrm{softmax}_{k}(K/t)$
@@ -127,11 +130,12 @@ Algorithm~\ref{alg:ontologizer} the stack and its loss.
 	A $\dictblock$ accepts assignments
 	$P \in \mathbb{R}^{h \times k}$
 	and returns features $F \in \mathbb{R}^{h \times e}$ (Eq.~\ref{eq:dictblock}).
-	From $P$ and the atoms we collect the heads' support overlap $\sigma$
+	From $P$ and the atoms we collect the heads' support overlap $\omega$
 	(Eq.~\ref{eq:support}), and from $F$ the sparsity penalty $\mathrm{L1}$
 	(Eq.~\ref{eq:L1}).
-	$\mathsf{F}$ is summed over the head dimension to obtain
-	pooled features $F' \in \mathbb{R}^{e}$, which are added to $R$.
+	$F$ is summed over the head dimension to obtain
+	pooled features $\mathbf{f}' \in \mathbb{R}^{e}$, which are added to
+	the accumulator $\mathbf{r}$.
 }
 \label{fig:dictenc}
 \end{figure}
@@ -142,14 +146,14 @@ A $\bilinearblock$ accepts inputs $\mathbf{x} \in \mathbb{R}^d$.
 It returns logits $K \in \mathbb{R}^{h \times k}$ given by
 
 \begin{equation}
-	\bilinearblock([\mathsf{W},\mathsf{V}],\mathbf{x}) := 
-	\left(\sum^{d}_{j=1}W_{\cdot,\cdot,j}x_j\right)
-	 \odot \left(\sum^{d}_{j=1}V_{\cdot,\cdot,j}x_j\right)
+	\bilinearblock([\mathsf{W},\mathsf{V}],\mathbf{x}) :=
+	\left(\sum^{d}_{q=1}W_{\cdot,\cdot,q}\,x_q\right)
+	 \odot \left(\sum^{d}_{q=1}V_{\cdot,\cdot,q}\,x_q\right)
 	 \label{eq:bilinearblock}
 \end{equation}
 
 An optional noise term $\varepsilon_K$ may be added.
-Winner dropout sets $\mathrm{argmax}_k(K_{h,\cdot})$ to $-\infty$
+Winner dropout sets each head's largest logit to $-\infty$
 with probability $p_{\mathrm{drop}}$.
 
 \subsubsection{Assignments}
@@ -162,11 +166,11 @@ From $P$ we collect per-sample entropy $H$, in bits, so a head
 saturates at $\log_2 k = 5$ bits,
 
 \begin{equation}
-	\mathrm{entropy}_k(P)_i :=
-	-\sum^{k}_{j=1}P_{i,j}\log_2 P_{i,j},
+	\mathrm{entropy}_k(\mathbf{p}) :=
+	-\sum^{k}_{j=1}p_{j}\log_2 p_{j},
 	\qquad
-	H := \mathbb{E}_{b}\,\mathbb{E}_{h}\!\left[
-	\mathrm{entropy}_k(\mathsf{P})\right]
+	H := \mathbb{E}_{n}\,\mathbb{E}_{i}\!\left[
+	\mathrm{entropy}_k(\mathbf{p}_{ni})\right]
 	\label{eq:entropy}
 \end{equation}
 
@@ -176,23 +180,24 @@ of samples,
 
 \begin{equation}
 	\mathrm{cossim}_b(\mathsf{P}) :=
-	\mathbb{E}_{n,q}\left[\left\lvert
-	\frac{\langle \mathbf{f}_{n}, \mathbf{f}_{q}\rangle}
-	     {\lVert \mathbf{f}_{n}\rVert \lVert \mathbf{f}_{q}\rVert}
+	\mathbb{E}_{n,n'}\left[\left\lvert
+	\frac{\langle \mathbf{f}_{n}, \mathbf{f}_{n'}\rangle}
+	     {\lVert \mathbf{f}_{n}\rVert \lVert \mathbf{f}_{n'}\rVert}
 	\right\rvert\right],
 	\qquad
-	\langle \mathbf{f}_{n}, \mathbf{f}_{q}\rangle
-	= \sum^{h}_{i=1}\mathbf{p}_{n,i}^{\top}G_{i}\,\mathbf{p}_{q,i}
+	\langle \mathbf{f}_{n}, \mathbf{f}_{n'}\rangle
+	= \sum^{h}_{i=1}\mathbf{p}_{ni}^{\top}G_{i}\,\mathbf{p}_{n'i}
 	\label{eq:cossim_b}
 \end{equation}
 
-where $\mathbf{f}_{n,i} := \mathsf{F}_{n,i,\cdot} \in \mathbb{R}^{e}$ is
+where $\mathbf{f}_{ni} := \mathsf{F}_{ni\cdot} \in \mathbb{R}^{e}$ is
 head $i$'s feature vector for sample $n$,
-$\mathbf{f}_n = \map_{i=1}^{h}\mathbf{f}_{n,i}$ is their concatenation,
+$\mathbf{f}_n = \map_{i=1}^{h}\mathbf{f}_{ni}$ is their concatenation,
 and
 $G_i = \lvert D_{i}\rvert \lvert D_{i}\rvert^{\top} \in \mathbb{R}^{k \times k}$
-is head $i$'s dictionary Gram. The implementation evaluates
-Equation~\ref{eq:cossim_b} in entry space through $G$ rather than
+is head $i$'s dictionary Gram, with $D_i := \mathsf{D}_{i\cdot\cdot}$ its
+$k \times e$ dictionary. The implementation evaluates
+Equation~\ref{eq:cossim_b} in entry space through the $G_i$ rather than
 materializing $\mathsf{F}$; the two are identical in value and gradient,
 but $\mathcal{O}(hk^2e + b^2hk)$ instead of $\mathcal{O}(b^2he)$.
 
@@ -200,56 +205,63 @@ Finally, $\mathrm{KL}_m$ is the divergence of the batch-mean assignment
 vector from uniform, in bits, averaged over heads.
 
 \begin{equation}
-	\mathrm{KL}_m(\mathsf{P}) := \mathbb{E}_{h}\!\left[\log_2 k -
-	\mathrm{entropy}_k\!\left(\mathbb{E}_b[\mathsf{P}]\right)\right]
+	\mathrm{KL}_m(\mathsf{P}) := \mathbb{E}_{i}\!\left[\log_2 k -
+	\mathrm{entropy}_k\!\left(\bar{\mathbf{p}}_i\right)\right],
+	\qquad
+	\bar{\mathbf{p}}_i := \mathbb{E}_{n}\,[\mathbf{p}_{ni}]
 	\label{eq:KL}
 \end{equation}
 
 In practice $H$ is not needed, as including a
 $\mathrm{cossim}_b$ loss also minimizes $H$.
 $\mathrm{KL}_m$ serves to anchor the batch mean of each assignment vector
-$\mathbf{p}_{i,\cdot}$ to a uniform distribution.
-This results in a uniform $\mathbf{p}_{i,\cdot}$ code corresponding
+$\mathbf{p}_{ni}$ to a uniform distribution.
+This results in a uniform $\mathbf{p}_{ni}$ code corresponding
 to a maximally generic feature vector.
 
 \subsubsection{Dictionary}
 \label{sec:dict}
 A $\dictblock$ accepts assignments
 $P \in \mathbb{R}^{h \times k}$
-and returns features $F \in \mathbb{R}^{h \times e}$ given by
+and returns features $F \in \mathbb{R}^{h \times e}$, whose row
+$\mathbf{f}_i$ is head $i$'s output, given by
 
 \begin{equation}
-	\dictblock(\mathsf{D},P) := 
-	\sum^{k}_{j=1}\lvert D_{\cdot,j,\cdot}\rvert \, P_{\cdot,j}
+	\dictblock(\mathsf{D},P)_{i\cdot} = \mathbf{f}_i :=
+	\sum^{k}_{j=1} p_{ij}\,\mathbf{a}_{ij},
+	\qquad
+	\mathbf{a}_{ij} := \lvert \mathsf{D}_{ij\cdot}\rvert
 	\label{eq:dictblock}
 \end{equation}
 
-Because $\lvert D_{\cdot,j,\cdot}\rvert$ is an absolute value
-and $P_{hj} \in [0,1]$, features are strictly additive.
+where the atom $\mathbf{a}_{ij}$ is the absolute value of head $i$'s
+dictionary row for entry $j$ ($\mathsf{D}_{ij\cdot}$ itself when the
+dictionary is signed). Because atoms are absolute values
+and $p_{ij} \in [0,1]$, features are strictly additive.
 Algorithm~\ref{alg:dictblock} gives the full training pass, with the
 regularizing perturbations and statistics around this lookup.
 
 \input{algorithms/dictblock}
 
 From the assignments and the atoms we collect the heads' support overlap
-$\sigma$, the mean cosine over ordered pairs of distinct heads between
-their usage-weighted coordinate profiles,
+$\omega$, the mean cosine over ordered pairs of distinct heads between
+their usage-weighted coordinate profiles $\boldsymbol{\pi}_i$,
 
 \begin{equation}
-	\mathbf{s}_i := \sum^{k}_{j=1} \bar{p}_{i,j}\,
-	\lvert \mathbf{d}_{i,j,\cdot}\rvert,
+	\boldsymbol{\pi}_i := \sum^{k}_{j=1} \bar{p}_{ij}\,
+	\lvert \mathbf{a}_{ij}\rvert,
 	\qquad
-	\sigma := \mathbb{E}_{i \neq i'}\,
-	\frac{\langle \mathbf{s}_i, \mathbf{s}_{i'}\rangle}
-	     {\lVert \mathbf{s}_i\rVert \lVert \mathbf{s}_{i'}\rVert},
-	\qquad
-	\bar{\mathbf{p}}_i := \mathbb{E}_{b}\,[\mathbf{p}_{n,i}]
+	\omega := \mathbb{E}_{i \neq i'}\,
+	\frac{\langle \boldsymbol{\pi}_i, \boldsymbol{\pi}_{i'}\rangle}
+	     {\lVert \boldsymbol{\pi}_i\rVert \lVert \boldsymbol{\pi}_{i'}\rVert}
 	\label{eq:support}
 \end{equation}
 
-which is zero exactly when no two heads share a coordinate of the
-dictionary space and one when every head uses the same coordinates in
-the same proportions (Section~\ref{sec:disjoint}). It costs
+with $\bar{\mathbf{p}}_i$ the batch-mean assignment of
+Equation~\ref{eq:KL}. The overlap is zero exactly when no two heads share
+a coordinate of the dictionary space and one when every head uses the
+same coordinates in the same proportions (Section~\ref{sec:disjoint}). It
+costs
 $\mathcal{O}(hke + h^2e)$, independent of the batch. Weighting by usage
 keeps dead entries out of it and gives the classifier a gradient path.
 We also collect the sparsity penalty $\mathrm{L1}$ after the noise
@@ -260,8 +272,8 @@ is correspondingly small.
 
 \begin{equation}
 	\mathrm{L1}(\tilde{\mathsf{F}}) :=
-	\frac{1}{b}\sum^{b}_{n=1}\sum^{h}_{i=1}\sum^{e}_{j=1}
-	\lvert \tilde{\mathsf{F}}_{n,i,j}\rvert
+	\frac{1}{b}\sum^{b}_{n=1}\sum^{h}_{i=1}\sum^{e}_{q=1}
+	\lvert \tilde{f}_{niq}\rvert
 	\label{eq:L1}
 \end{equation}
 
@@ -271,18 +283,18 @@ incorporating it into the loss speeds up convergence.
 \paragraph{Disjoint support}
 \label{sec:disjoint}
 Between heads, orthogonality of nonnegative features is not a rotation
-constraint but a support-partition constraint. Every $\mathbf{f}_{n,i}$
+constraint but a support-partition constraint. Every $\mathbf{f}_{ni}$
 lies in the nonnegative orthant of
-$\mathbb{R}^e$: the dictionary contributes $\lvert D \rvert \geq 0$ and
-the assignments $P \geq 0$. For nonnegative $\mathbf{u}, \mathbf{v}$ the
-inner product $\langle \mathbf{u},\mathbf{v}\rangle = \sum_j u_j v_j$ is
+$\mathbb{R}^e$: the dictionary contributes $\lvert \mathsf{D} \rvert \geq 0$ and
+the assignments $P \geq 0$. For nonnegative $\mathbf{v}, \mathbf{v}'$ the
+inner product $\langle \mathbf{v},\mathbf{v}'\rangle = \sum_q v_q v'_q$ is
 a sum of nonnegative terms, so it vanishes if and only if every term
 does,
 
 \begin{equation}
-	\langle \mathbf{u},\mathbf{v}\rangle = 0
+	\langle \mathbf{v},\mathbf{v}'\rangle = 0
 	\iff
-	\mathrm{supp}(\mathbf{u}) \cap \mathrm{supp}(\mathbf{v}) = \emptyset
+	\mathrm{supp}(\mathbf{v}) \cap \mathrm{supp}(\mathbf{v}') = \emptyset
 	\label{eq:disjoint}
 \end{equation}
 
@@ -296,29 +308,27 @@ from the atoms and the batch-mean assignment rather than from noised
 features, which leave the orthant and the argument with it.
 
 The constraint binds the dictionary, not merely one sample's features.
-Because $P$ is a softmax, $p_{i,a} > 0$ for every entry, and expanding
+Because the assignments are a softmax, $p_{nij} > 0$ for every entry, and expanding
 Equation~\ref{eq:dictblock} gives
 
 \begin{equation}
-	\langle \mathbf{f}_{n,i},\mathbf{f}_{n,j}\rangle =
-	\sum^{k}_{a=1}\sum^{k}_{b=1} p_{i,a}\,p_{j,b}
-	\left\langle \lvert \mathbf{d}_{i,a,\cdot}\rvert,
-	\lvert \mathbf{d}_{j,b,\cdot}\rvert \right\rangle
+	\langle \mathbf{f}_{ni},\mathbf{f}_{ni'}\rangle =
+	\sum^{k}_{j=1}\sum^{k}_{j'=1} p_{nij}\,p_{ni'j'}
+	\left\langle \mathbf{a}_{ij}, \mathbf{a}_{i'j'} \right\rangle
 	\label{eq:cross_head}
 \end{equation}
 
 a strictly positive combination of all $k^2$ cross-head atom overlaps.
-A single sample on which heads $i$ and $j$ are orthogonal therefore
-forces $\langle \lvert \mathbf{d}_{i,a,\cdot}\rvert, \lvert
-\mathbf{d}_{j,b,\cdot}\rvert\rangle = 0$ for every pair of atoms
-$(a,b)$: the two heads own disjoint blocks of coordinates as a property
-of $\mathsf{D}$, holding for all inputs rather than on the data that
-happened to be measured. That is the premise a static reading of the
-dictionary needs, and it is stronger than what any signed-feature
+A single sample on which heads $i$ and $i'$ are orthogonal therefore
+forces $\langle \mathbf{a}_{ij}, \mathbf{a}_{i'j'}\rangle = 0$ for every
+pair of atoms $(j,j')$: the two heads own disjoint blocks of coordinates
+as a property of $\mathsf{D}$, holding for all inputs rather than on the
+data that happened to be measured. That is the premise a static reading
+of the dictionary needs, and it is stronger than what any signed-feature
 architecture can ask for. The budget is not tight either. In the softmax
-configuration (Table~\ref{tab:cfg-softmax}), $h = 32$ heads partitioning
-$e = 2048$ coordinates leaves
-64 dimensions per head to hold $k = 32$ atoms, which need not be
+configuration (Table~\ref{tab:cfg-softmax}), $h{=}32$ heads partitioning
+$e{=}2048$ coordinates leaves
+64 dimensions per head to hold $k{=}32$ atoms, which need not be
 disjoint from each other within a head; head-disjointness is most of
 what the width $e > d$ buys.
 
@@ -327,40 +337,40 @@ is architectural. Disjoint support assigns each head a block of
 coordinates; \emph{within} a head the $k$ atoms are contrastive
 alternatives spread apart inside that block
 (Figure~\ref{fig:head-simplex}). Section~\ref{sec:prelim-orth} measures
-the second. Neither is guaranteed at convergence: $\sigma$ is a penalty,
+the second. Neither is guaranteed at convergence: $\omega$ is a penalty,
 and the geometry is built to make a support partition the cheap solution
 rather than to force one. Measured on the trained models, the cheap
 solution was not taken: the within-head orthogonality holds, and no model
 partitions its coordinates between heads (Appendix~\ref{sec:support}).
 Under $\mathtt{ConcatDictBlock}$ heads write disjoint slices by
-construction and $\sigma$ is identically zero.
+construction and $\omega$ is identically zero.
 
 We add noise $\varepsilon_F$ to $F$, then sum over the head dimension to obtain
-pooled features $F' \in \mathbb{R}^{e}$, which are added to $R$.
+pooled features $\mathbf{f}' \in \mathbb{R}^{e}$, which are added to the
+accumulator $\mathbf{r}$.
 
 \begin{equation}
-	F' = \sum^{h}_{i=1}\tilde{F}_{i,\cdot}
+	\mathbf{f}' = \sum^{h}_{i=1}\tilde{\mathbf{f}}_{i}
 	\label{eq:pool}
 \end{equation}
 
 \begin{figure}[tp]
 \centering
 \input{tikz/dict}
-\caption[Per-head geometry]{\texttt{DictBlock} \textbf{head geometry} for $h=2$; $k=3$.
-	The output space of a head $i$ forms a simplex with the rows of the matrix
-	$D_{i,\cdot,\cdot}$ as the vertices.
-	The row vectors $\mathbf{d}_{i,j,\cdot}$ form the spanning set of the
-	feature space. Any $F_i$ must be a linear combination of the rows of
-	$D_{i,\cdot,\cdot}$.
+\caption[Per-head geometry]{\texttt{DictBlock} \textbf{head geometry} for $h{=}2$, $k{=}3$.
+	The output space of a head $i$ forms a simplex with its atoms
+	$\mathbf{a}_{ij}$, the rows of $\lvert D_i\rvert$, as the vertices.
+	The atoms form the spanning set of the
+	feature space. Any $\mathbf{f}_i$ must be a linear combination of them.
 	As $F$ becomes sparser, these vectors become more approximately
 	orthogonal, allowing them to be treated as a basis.
 	The assignment code $P$ corresponds to soft assignments to mutually
 	contrastive categories rather than independently firing features.
 	Because elements of $P$, $p_{ij} \in [0,1]$,
-	outputs must be within the convex hull of $D_{i,\cdot,\cdot}$.
-	Because $\lvert D\rvert\geq0$ and $P\geq0$, $F\geq0$;
-	therefore $\cos(F_i, F_j) \in [0,1]$, and driving the support
-	overlap $\sigma$ to zero asks the heads to partition the
+	outputs must be within the convex hull of head $i$'s atoms.
+	Because $\lvert \mathsf{D}\rvert\geq0$ and $P\geq0$, $F\geq0$;
+	therefore $\cos(\mathbf{f}_i, \mathbf{f}_{i'}) \in [0,1]$, and driving the support
+	overlap $\omega$ to zero asks the heads to partition the
 	coordinates of $\mathbb{R}^e$ between them
 	(Section~\ref{sec:disjoint}).
 }
@@ -369,51 +379,52 @@ pooled features $F' \in \mathbb{R}^{e}$, which are added to $R$.
 
 \subsubsection{Decoder}
 \label{sec:decoder}
-Each $\dictenc$ output $F'_i$, scaled by its input's gain $g_i$, is
-added to an accumulator $R$.
+Each $\dictenc$ output $\mathbf{f}'_\ell$, scaled by its input's gain
+$g_\ell$, is added to an accumulator $\mathbf{r}$.
 
 \begin{equation}
-	R_i = \sum_{j=1}^i g_j\,F'_j,
+	\mathbf{r}_\ell = \sum_{\ell'=0}^{\ell} g_{\ell'}\,\mathbf{f}'_{\ell'},
 	\qquad
-	g_j := \mathrm{sg}\!\left[\mathrm{L2}(\mathbf{y}_{j-1})\right]
+	g_\ell := \mathrm{sg}\!\left[\mathrm{L2}(\mathbf{y}_{\ell-1})\right]
 \end{equation}
 
 Under \texttt{resid\_gain} a layer classifies only the direction of its
 input, so the gain carries the magnitude it cannot see; without it
-$g_j = 1$. Layer 0's input is the encoded input itself, whose gain is
-identically 1 on unit-norm SONAR embeddings.
+$g_\ell = 1$. Layer 0's input is the encoded input itself,
+$\mathbf{y}_{-1} := \mathbf{x}$, whose gain is identically 1 on unit-norm
+SONAR embeddings.
 
-A single-layer unbiased linear decoder $\mathrm{dec}$ projects $R_i$ back
-to the input space $\mathbb{R}^d$. Weights
+A single-layer unbiased linear decoder $\mathrm{dec}$ projects
+$\mathbf{r}_\ell$ back to the input space $\mathbb{R}^d$. Weights
 $W_{\mathrm{dec}} \in \mathbb{R}^{d \times e}$
-are shared for all $\mathtt{DictEnc}_i$.
+are shared for all $\mathtt{DictEnc}_\ell$.
 
 \begin{equation}
-	\hat{X}_i = W_{\mathrm{dec}}R_i
+	\hat{\mathbf{x}}_\ell = W_{\mathrm{dec}}\,\mathbf{r}_\ell
 	\label{eq:dec}
 \end{equation}
 
-The residual $Y_i$ is given by $X - \hat{X}_i$, stop-gradiented so that
+The residual $\mathbf{y}_\ell$ is given by $\mathbf{x} - \hat{\mathbf{x}}_\ell$, stop-gradiented so that
 lower layers cannot write a communication code into the residual instead
 of reducing it.
 It is normalized by the unit norm $\mathrm{L2}$, with $\epsilon$ the
 floating-point epsilon of the working dtype.
 
 \begin{equation}
-	Y_i = \mathrm{sg}\!\left[X - \hat{X}_i\right],
+	\mathbf{y}_\ell = \mathrm{sg}\!\left[\mathbf{x} - \hat{\mathbf{x}}_\ell\right],
 	\qquad
-	\mathrm{L2}(\mathbf{y}) := \sqrt{\sum^{d}_{j=1} y_j^2}
+	\mathrm{L2}(\mathbf{y}) := \sqrt{\sum^{d}_{q=1} y_q^2}
 	\label{eq:L2}
 \end{equation}
 
 \begin{equation}
-	\tilde{\mathbf{y}}_i =
-	\frac{\mathbf{y}_i}{\mathrm{L2}(\mathbf{y}_i) + \epsilon} \oplus [1]
+	\tilde{\mathbf{y}}_\ell =
+	\frac{\mathbf{y}_\ell}{\mathrm{L2}(\mathbf{y}_\ell) + \epsilon} \oplus [1]
 	\label{eq:y_norm}
 \end{equation}
 
 A constant coordinate $[1]$ is appended, giving a dimension of $d+1$.
-This prevents the sign information of $\mathbf{y}_i$ from being lost
+This prevents the sign information of $\mathbf{y}_\ell$ from being lost
 by the bilinear transformation.
 Effectively, it adds a bias to an otherwise unbiased linear form
 while preserving eigendecomposition.
@@ -452,7 +463,7 @@ deviation across the batch.
 \begin{equation}
 	\mathrm{noise}_{\mathrm{featvar}}(\mathsf{F}) := \mathsf{F} +
 	\sigma_F\,\varepsilon \odot \mathrm{sg}\!\left[
-	\sqrt{\mathrm{var}_b(\mathsf{F}) + \epsilon}\right]
+	\sqrt{\mathrm{var}_n(\mathsf{F}) + \epsilon}\right]
 	\label{eq:noise_featvar}
 \end{equation}
 
@@ -475,18 +486,20 @@ classifier and meet it in the dictionary lookup
 them are listed in Appendix~\ref{app:configs}.
 
 The \emph{router} (\texttt{scaled}) is a second bilinear map, from
-$\mathbf{u}$ to one scale per head, made non-negative by an absolute value
-(\texttt{router\_signed} drops it). It multiplies its head's whole output, so
+$\mathbf{u}$ to one scale per head, $\boldsymbol{\gamma} \in \mathbb{R}^h$,
+made non-negative by an absolute value
+(\texttt{router\_signed} drops it). Its scale $\gamma_i$ multiplies head
+$i$'s whole output, so
 the classifier decides \emph{what} a head says and the router \emph{how
 much}; its own L1, $\mathrm{L1}_S$, prices the router alone, where
 $\mathrm{L1}$ on the output can be paid down by either factor.
 
 \emph{Fibers} (\texttt{fiber\_rank} $r$) give every entry a local basis
-$U_{ik} \in \mathbb{R}^{e \times r}$ (in its head's slice under
+$U_{ij} \in \mathbb{R}^{e \times r}$ (in its head's slice under
 $\mathtt{ConcatDictBlock}$), and each head reads $r$ coordinates
-$\mathbf{c}_i = b\tanh(A_i\mathbf{u}/b)$ from the input, so
+$\mathbf{c}_i = \beta\tanh(A_i\mathbf{u}/\beta)$ from the input, so
 \begin{equation}
-	F_i = S_i \sum^{k}_{j=1} P_{ij}\,\big(\lvert\mathbf{d}_{ij}\rvert
+	\mathbf{f}_i = \gamma_i \sum^{k}_{j=1} p_{ij}\,\big(\mathbf{a}_{ij}
 	      + U_{ij}\,\mathbf{c}_i\big).
 	\label{eq:fiber}
 \end{equation}
@@ -494,10 +507,10 @@ Under a hard code the selected entry is a discrete base point and the
 fiber a continuous correction within the plane its basis spans
 (Figure~\ref{fig:fiber}). Unconstrained, the correction can take over and
 leave the base meaningless, so the base is kept honest by fiber dropout, a
-norm cap ($\lVert U_{ij}\mathbf{c}_i\rVert \le \varepsilon$ per head, or
+norm cap ($\lVert U_{ij}\mathbf{c}_i\rVert \le \rho$ per head, or
 summed over heads), a base-only deep-supervision term (\texttt{base\_aux},
 which also decodes the fiber-free output), or training the fibers after
-freezing the base. A radial fiber ($r=1$, no basis) only rescales the
+freezing the base. A radial fiber ($r{=}1$, no basis) only rescales the
 selected entry. Statistics describe the base output. Head dropout
 (\texttt{p\_head\_drop}) is the third addition here: in training it
 replaces a head's classification by the batch mean, its origin, so heads
@@ -509,12 +522,12 @@ cannot co-adapt and ablating one to its origin stays in distribution.
 \caption[\texttt{DictEnc} with router and fibers]{\textbf{\texttt{DictEnc}
 	with router and fibers.} The gain--shape split hands the unit input
 	$\mathbf{u}$ to three branches: the classifier (which entry, $P$),
-	the router (how much, $S$, one non-negative scale per head) and the
-	fiber read (where within the entry's fiber, $\mathbf{c}$, $r$
+	the router (how much, $\boldsymbol{\gamma}$, one non-negative scale per
+	head) and the fiber read (where within the entry's fiber, $C$, $r$
 	coordinates per head). They meet in the lookup
 	(Equation~\ref{eq:fiber}); heads are summed, or concatenated under
 	$\mathtt{ConcatDictBlock}$, and the result is scaled by the measured
-	gain $G$. Dashed boxes above an arrow act on it during training;
+	gain $g$. Dashed boxes above an arrow act on it during training;
 	dashed boxes below are statistics, which describe the fiber-free
 	base output. That output is also returned on its own for
 	\texttt{base\_aux}.}
@@ -526,7 +539,7 @@ cannot co-adapt and ablating one to its origin stays in distribution.
 \input{tikz/fiber}
 \caption[Fiber geometry]{\textbf{Fiber geometry} for one head, extending
 	Figure~\ref{fig:head-simplex}. The head selects the entry with atom
-	$\lvert\mathbf{d}_{i2}\rvert$; its fiber is the plane spanned by
+	$\mathbf{a}_{i2}$; its fiber is the plane spanned by
 	$U_{i2}$ at that point, and the coordinates $\mathbf{c}_i$ place the
 	output within it. The dashed circle is the per-head norm cap; the
 	dotted ray is the radial variant, which moves the output only along
@@ -558,8 +571,8 @@ Reconstruction fidelity is trained with $\mathrm{MSE}$, where
 $\mathbf{w} \in \mathbb{R}^d$ is a fixed per-dimension weight vector.
 
 \begin{equation}
-	\mathrm{MSE}(X,\hat{X}) := \frac{1}{bd}\sum^{b}_{n=1}\sum^{d}_{j=1}
-	w_j\left(\hat{x}_{n,j} - x_{n,j}\right)^2
+	\mathrm{MSE}(X,\hat{X}) := \frac{1}{bd}\sum^{b}_{n=1}\sum^{d}_{q=1}
+	w_q\left(\hat{x}_{nq} - x_{nq}\right)^2
 	\label{eq:mse}
 \end{equation}
 
@@ -570,7 +583,7 @@ auxiliary statistics, each weighted by a scalar. Statistics are
 \begin{equation}
 	L := \mathrm{MSE}(X,\hat{X})
 	+ s_g\,\mathrm{MSE}(\hat{X}_g,\, X - \hat{X})
-	+ \sum^{l}_{i=1}\mathbf{s}\cdot\mathbf{m}_i
+	+ \sum^{l-1}_{\ell=0}\mathbf{s}\cdot\boldsymbol{\psi}_\ell
 	\label{eq:loss_total}
 \end{equation}
 
@@ -578,20 +591,20 @@ Each layer contributes the statistics (Algorithms~\ref{alg:dictblock}
 and~\ref{alg:dictenc})
 
 \begin{equation}
-	\mathbf{m}_i = \big[\,
+	\boldsymbol{\psi}_\ell = \big[\,
 	\mathrm{L1}_K \;\; \mathrm{L1} \;\; H \;\; \mathrm{cossim}_b \;\;
-	\mathbb{E}_h\kappa_h \;\; \max_h \kappa_h \;\;
+	\mathbb{E}_i\kappa_i \;\; \max_i \kappa_i \;\;
 	\mathrm{KL}_m \;\; \mathrm{KL}_{\mathrm{pwak}} \;\; \mathrm{L2}_{\mathrm{pwak}}
-	\;\; \mathrm{L1}_S \;\; \sigma
-	\,\big]^{\top}_i
+	\;\; \mathrm{L1}_S \;\; \omega
+	\,\big]^{\top}_\ell
 	\label{eq:stats}
 \end{equation}
 
-where $\mathrm{L1}_K$ is the L1 of the classifier's gate, $\kappa_h$ the
-mean within-head cosine between a head's atoms,
+where $\mathrm{L1}_K$ is the L1 of the classifier's gate, $\kappa_i$ the
+mean within-head cosine between head $i$'s atoms,
 $\mathrm{KL}_{\mathrm{pwak}}$ and $\mathrm{L2}_{\mathrm{pwak}}$ the two
 partition-consensus statistics, and $\mathrm{L1}_S$ the router's L1. The
-max of $\kappa_h$ is logged for a setpoint controller and never itself
+max of $\kappa_i$ is logged for a setpoint controller and never itself
 penalized. Appendix~\ref{app:stats} gives the implementation's row
 layout.
 
@@ -603,14 +616,14 @@ softmax selection and absolute-valued dictionaries never produce.
 \input{algorithms/ontologizer}
 
 Reconstruction is trained with deep supervision:
-$\mathrm{MSE}(X, \mathrm{dec}(R_i))$ is computed separately at
+$\mathrm{MSE}(X, \mathrm{dec}(R_\ell))$ is computed separately at
 every layer and averaged, so each prefix carries weight $1/l$ and each
 layer must explain what previous layers left
 unexplained. The MSE is whitened: $\mathbf{w}$ in
 Equation~\ref{eq:mse} is the per-dimension inverse variance, normalized
 to mean one, the same whitening the evaluation applies. The
 implementation applies $\sqrt{\mathbf{w}}$ to $X$ and
-$\mathrm{dec}(R_i)$ before the squared error, which is equivalent.
+$\mathrm{dec}(R_\ell)$ before the squared error, which is equivalent.
 Four statistics are active as loss terms in the reported models
 (Figure~\ref{fig:dictenc}; Appendix~\ref{app:configs}):
 between-sample similarity $\mathrm{cossim}_b$, computed from $P$
@@ -621,9 +634,9 @@ each head's mean
 assignment vector to a uniform distribution so that a uniform code
 corresponds to a maximally generic feature; an $\mathrm{L1}$ penalty on
 features; and a between-head disjointness term, the support overlap
-$\sigma$, which measures the extent to which heads use nonoverlapping
+$\omega$, which measures the extent to which heads use nonoverlapping
 coordinates of the dictionary space. Most reported models trained before
-$\sigma$ existed and used its predecessor (Appendix~\ref{app:stats}).
+$\omega$ existed and used its predecessor (Appendix~\ref{app:stats}).
 $\mathrm{L1}$ tends to fall under MSE alone; including it in the loss
 speeds up convergence. Classification sharpness is controlled by the
 temperature. Winner dropout and the noise terms
@@ -631,7 +644,7 @@ $\varepsilon_K$ and $\varepsilon_F$ regularize classifications and
 features respectively.
 
 \subsection{Evaluation}
-Evaluation runs against top-$k$ SAEs trained on identical cached SONAR
+Evaluation runs against $\topk$ SAEs trained on identical cached SONAR
 embeddings under an identical whitened reconstruction objective. The
 battery is deliberately SAEBench-style\cite{karvonen2025}: a
 reconstruction-versus-capacity Pareto; categorical-form and

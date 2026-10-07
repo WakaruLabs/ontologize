@@ -7,7 +7,7 @@
 	\DontPrintSemicolon
 
 	\KwIn{logits $\mathsf{K} \in \mathbb{R}^{b \times h \times k}$;
-		router scales $S \in \mathbb{R}_{\ge 0}^{b \times h}$ (all ones
+		router scales $\Gamma \in \mathbb{R}_{\ge 0}^{b \times h}$ (all ones
 		without a router); fiber coordinates
 		$\mathsf{C} \in \mathbb{R}^{b \times h \times r}$ (none without
 		fibers)}
@@ -15,34 +15,35 @@
 		fiber bases $U_{ij} \in \mathbb{R}^{e \times r}$}
 	\Hyper{temperature $t$; feature noise $\sigma_F$; winner dropout
 		$p_{\mathrm{drop}}$; revival rate $p_{\mathrm{rev}}$ and threshold
-		$\rho$; head dropout $p_{\mathrm{head}}$; fiber dropout
+		$\tau_{\mathrm{rev}}$; head dropout $p_{\mathrm{head}}$; fiber dropout
 		$p_{\mathrm{fib}}$; entries kept per head $k_{\mathrm{sel}}$
-		($1$ under \texttt{ste}/\texttt{argmax}, $m$ under
-		\texttt{top}$m$, $k$ under softmax)}
+		($1$ under \texttt{ste}/\texttt{argmax}, $k$ under softmax, and
+		the rule's own value under \texttt{top}$k_{\mathrm{sel}}$, e.g.\ 4
+		for \texttt{top4})}
 	\KwOut{pooled features $F' \in \mathbb{R}^{b \times e}$; assignments
 		$\mathsf{P} \in \mathbb{R}^{b \times h \times k}$; statistics
 		$(\mathrm{L1}, H, \mathrm{cossim}_b, \mathbb{E}_i\kappa_i,
-		\max_i \kappa_i, \mathrm{KL}_m, \sigma)$}
+		\max_i \kappa_i, \mathrm{KL}_m, \omega)$}
 
 	\Begin{
-		$\mathbf{d}_{ij} \leftarrow \lvert \mathsf{D}_{ij\cdot} \rvert$
+		$\mathbf{a}_{ij} \leftarrow \lvert \mathsf{D}_{ij\cdot} \rvert$
 			\tcp*{atoms; $\mathsf{D}_{ij\cdot}$ itself if signed}
 		\If(\tcp*[f]{revive starved entries}){$k_{\mathrm{sel}} < k$}{
-			$u_{ij} \leftarrow \mathbb{E}_n\,\mathbf{1}\{K_{nij}$ is among
-				head $i$'s top $k_{\mathrm{sel}}$ logits$\}$\;
+			$\mathrm{use}_{ij} \leftarrow$ share of rows on which entry $j$
+				is among head $i$'s top $k_{\mathrm{sel}}$ logits\;
 			\ForEach{$(n,i)$ with probability $p_{\mathrm{rev}}$}{
-				draw $j$ uniformly from $\{j : u_{ij} <
-					\rho\,k_{\mathrm{sel}}/k\}$, if any\;
-				$K_{nij} \leftarrow \max_{j'} K_{nij'}$
+				draw $j$ uniformly from $\{j : \mathrm{use}_{ij} <
+					\tau_{\mathrm{rev}}\,k_{\mathrm{sel}}/k\}$, if any\;
+				raise entry $j$'s logit on row $n$ to head $i$'s maximum
 					\tcp*{tie the leader}
 			}
 		}
 		\ForEach(\tcp*[f]{winner dropout}){$(n,i)$ with probability
 			$p_{\mathrm{drop}}$}{
-			$K_{n,i,\arg\max_j K_{nij}} \leftarrow -\infty$\;
+			set head $i$'s largest logit on row $n$ to $-\infty$\;
 		}
 		$\mathsf{P} \leftarrow \mathrm{select}_k(\mathsf{K}/t)$
-			\tcp*{softmax, top-$m$ or straight-through}
+			\tcp*{softmax, \texttt{top}$k_{\mathrm{sel}}$ or straight-through}
 		$H \leftarrow \mathbb{E}_{n,i}\,\mathrm{entropy}_k(\mathbf{p}_{ni})$
 			\tcp*{Eq.~\ref{eq:entropy}}
 		$\bar{\mathbf{p}}_i \leftarrow \mathrm{sg}[\mathbb{E}_n\,
@@ -57,34 +58,34 @@
 			$p_{\mathrm{fib}}$}{
 			$\mathbf{c}_{ni} \leftarrow \mathbf{0}$\;
 		}
-		$\mathbf{f}_{ni} \leftarrow S_{ni} \sum_{j} p'_{nij}\,
-			\mathbf{d}_{ij}$ \tcp*{Eq.~\ref{eq:dictblock}; interventions act
+		$\mathbf{f}_{ni} \leftarrow \gamma_{ni} \sum_{j} p'_{nij}\,
+			\mathbf{a}_{ij}$ \tcp*{Eq.~\ref{eq:dictblock}; interventions act
 			on $\mathbf{p}'$}
 		$\tilde{\mathsf{F}} \leftarrow \mathrm{noise}_{\mathrm{featvar}}
 			(\mathsf{F})$ \tcp*{Eq.~\ref{eq:noise_featvar}}
 		$\mathrm{cossim}_b \leftarrow \mathrm{cossim}_b(\mathsf{P})$
 			\tcp*{Eq.~\ref{eq:cossim_b}, through the Grams}
 		$\kappa_i \leftarrow \mathbb{E}_{j \ne j'}
-			\cos(\mathbf{d}_{ij}, \mathbf{d}_{ij'})$
-			\tcp*{within-head row cosine}
+			\cos(\mathbf{a}_{ij}, \mathbf{a}_{ij'})$
+			\tcp*{within-head atom cosine}
 		$\mathrm{KL}_m \leftarrow \mathbb{E}_i \left[\log_2 k -
 			\mathrm{entropy}_k(\bar{\mathbf{p}}_i)\right]$
 			\tcp*{Eq.~\ref{eq:KL}}
-		$\mathbf{s}_i \leftarrow \sum_j \bar{p}_{ij}\,
-			\lvert\mathbf{d}_{ij}\rvert$;\quad
-			$\sigma \leftarrow \mathbb{E}_{i \ne i'}
-			\cos(\mathbf{s}_i, \mathbf{s}_{i'})$
+		$\boldsymbol{\pi}_i \leftarrow \sum_j \bar{p}_{ij}\,
+			\lvert\mathbf{a}_{ij}\rvert$;\quad
+			$\omega \leftarrow \mathbb{E}_{i \ne i'}
+			\cos(\boldsymbol{\pi}_i, \boldsymbol{\pi}_{i'})$
 			\tcp*{support overlap}
 		$\mathrm{L1} \leftarrow \mathbb{E}_n \sum_i
 			\lVert \tilde{\mathbf{f}}_{ni} \rVert_1$\;
 		$\mathbf{f}'_n \leftarrow \sum_i \tilde{\mathbf{f}}_{ni}$
 			\tcp*{concatenated, not summed, under $\mathtt{ConcatDictBlock}$}
 		\If(\tcp*[f]{Eq.~\ref{eq:fiber}, then any norm cap}){fibers}{
-			$\mathbf{f}'_n \leftarrow \mathbf{f}'_n + \sum_i S_{ni}
+			$\mathbf{f}'_n \leftarrow \mathbf{f}'_n + \sum_i \gamma_{ni}
 				\sum_j p'_{nij}\,U_{ij}\,\mathbf{c}_{ni}$\;
 		}
 		\Return{$F'$, $\mathsf{P}$,
 			$(\mathrm{L1}, H, \mathrm{cossim}_b, \mathbb{E}_i\kappa_i,
-			\max_i \kappa_i, \mathrm{KL}_m, \sigma)$}\;
+			\max_i \kappa_i, \mathrm{KL}_m, \omega)$}\;
 	}
 \end{algorithm}

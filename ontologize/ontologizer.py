@@ -167,6 +167,15 @@ class Ontologizer(nn.Module):
     # abs()'d entry in output space could only add along the positive
     # orthant, which a residual's sign does not respect.
     direct: bool = False
+    # one decoder per layer instead of one shared by all. Implemented as a
+    # single Linear over an `l * e_dec` latent in which layer i writes only
+    # block i (`DictEnc.place`), so `decode(R)` is the sum of each layer's
+    # own decode and every caller keeps a single `R`. With the shared
+    # decoder every layer's atoms are read in the same basis, fitted mostly
+    # to layer 0's error; this gives each layer its own. Needs a residual
+    # forward mode: labels forwarding feeds one layer's output into the
+    # next layer's dictionary space, which no longer exists.
+    per_layer_dec: bool = False
 
     # encoder (Linear) args
     encoded: bool = False
@@ -206,14 +215,17 @@ class Ontologizer(nn.Module):
     dtype_str: str = "float32"
     dtype_p_str: str = "float32"
 
-    def dictenc(self, d_enc: int, n_const: int = 0) -> DictEnc:
+    def dictenc(self, d_enc: int, n_const: int = 0, i: int = 0) -> DictEnc:
         """Initialize `DictEnc`s for a specified input dimension with all other properties
         taken from the `Ontologizer`. `n_const` is the number of trailing
         constant input coordinates (resid_const) the layer's gain-shape
-        split must exclude from the norm."""
+        split must exclude from the norm; `i` is the layer index, which
+        places its output under `per_layer_dec`."""
         return DictEnc(
             d_enc, self.e_dec, self.k, self.h,
             gainshape=self.resid_gain, n_const=n_const,
+            e_off=i * self.e_dec if self.per_layer_dec else 0,
+            e_lat=self.e_lat if self.per_layer_dec else 0,
             n=self.n,
             gate=self.gate, activation_cl=self.activation_cl, 
             biased_cl=self.biased_cl, 
@@ -251,6 +263,8 @@ class Ontologizer(nn.Module):
         coordinate."""
         self.n_tags = self.k * self.h * self.l
         self.n_feat = self.e_dec * self.h * self.l
+        # width of the decoder's input, which `resid` accumulates in
+        self.e_lat = self.e_dec * (self.l if self.per_layer_dec else 1)
         self.dtype = get_dtype(self.dtype_str)
         self.dtype_p = get_dtype(self.dtype_p_str)
 
@@ -264,6 +278,17 @@ class Ontologizer(nn.Module):
             raise ValueError(
                 "base_aux appends a fiber-free decode to the deep-supervision "
                 "stack, so it needs fiber_rank > 0 and deepsup")
+        if self.per_layer_dec and self.direct:
+            raise ValueError(
+                "per_layer_dec gives each layer its own decoder, and direct "
+                "has none")
+        if self.per_layer_dec and self.forward not in ("resid",
+                                                        "resid_labels"):
+            raise ValueError(
+                "per_layer_dec needs a residual forward mode: labels "
+                "forwarding adds later layers' output to an earlier layer's "
+                "dictionary vectors (`decodeLayerEntries`), and each layer "
+                "now has its own block")
 
         if self.encoded and self.e_enc > 0:
             d_enc = self.e_enc
@@ -303,8 +328,8 @@ class Ontologizer(nn.Module):
 
         n_const0 = n_const if self.const0 else 0
         dictencs = [self.dictenc(d_enc + n_const0, n_const0)]
-        for _ in range(self.l - 1):
-            dictencs.append(self.dictenc(d_next, n_up))
+        for i in range(1, self.l):
+            dictencs.append(self.dictenc(d_next, n_up, i))
 
         self.dictencs = dictencs
 
@@ -324,7 +349,7 @@ class Ontologizer(nn.Module):
             self.decoder = None
         else:
             self.decoder = Linear(
-                d_in=self.e_dec,
+                d_in=self.e_lat,
                 d_out=self.d_out,
                 biased=self.biased_dec,
                 activation=self.activation_dec,
@@ -351,9 +376,9 @@ class Ontologizer(nn.Module):
         return R
 
     def resid(self, X: Float[Array, "... d_in"]
-              ) -> Float[Array, "... e_dec"]:
+              ) -> Float[Array, "... e_lat"]:
         shape = list(X.shape)
-        shape[-1] = self.e_dec
+        shape[-1] = self.e_lat
         R = jnp.zeros(shape, self.dtype)
         return R
 
@@ -590,9 +615,9 @@ class Ontologizer(nn.Module):
         pass of the remaining layers. The classification for each is taken to be a
         1-hot vector of shape `h * k`. With `forward == "resid"` there is no
         label path into later layers -- contributions are additive through
-        the shared decoder -- so entries decode directly."""
+        the decoder -- so entries decode directly."""
         dictenc = self.dictencs[layer]
-        R = dictenc.tags()
+        R = dictenc.place(dictenc.tags())
         K = jnp.eye(self.h * self.k, dtype=R.dtype)
         if self.forward == "labels":
             for i in range(layer + 1, self.l):
@@ -617,7 +642,7 @@ class Ontologizer(nn.Module):
         pass of the remaining layers. The classification for each is taken to be a
         1-hot vector of shape `h * k`."""
         dictenc = self.dictencs[layer]
-        R = dictenc.decodeUniform()
+        R = dictenc.place(dictenc.decodeUniform())
         K = dictenc.dict.uniformTags()
         import einops
         K = einops.rearrange(K, "... h k -> ... (h k)")

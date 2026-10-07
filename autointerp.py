@@ -393,7 +393,14 @@ def snippet(text, maxlen=240):
 
 # ---------- stage: harvest ----------
 
-def onto_acts_fn(ckpt, step, temperature):
+def onto_acts_fn(ckpt, step, temperature, inputs=False):
+    """Load an Ontologizer checkpoint and return (acts, embed, F, meta):
+    acts(X) is the flattened (b, l*h*k) assignment code, embed decodes
+    constant codes. With inputs=True a fifth element, layer_inputs(X),
+    returns each layer >= 1's own input as the classifier sees it: the
+    output-space residual (under a residual forward mode; the constant and
+    previous-code coordinates dropped) or the forwarded code (under
+    forward="labels"). Layer 0's input is X itself, so it is not repeated."""
     import jax
     import jax.numpy as jnp
     import orbax.checkpoint as ocp
@@ -413,22 +420,27 @@ def onto_acts_fn(ckpt, step, temperature):
     params = {'params': params}
     l, h, k = model.l, model.h, model.k
 
-    def probe(module, X):
+    def probe(module, X, inputs=False):
         E, _ = module.encode(X, 0.0, None)
         R = module.resid(E)
         E_in = module.constinput(E)
-        Ps = []
+        Ps, Us = [], []
+        resid_fwd = module.forward in ("resid", "resid_labels")
         # reproduce the DictEnc's gain-shape split: under `resid_gain` it
         # classifies the unit-norm SHAPE of its input and scales its
         # contribution by the measured GAIN. Identity / no-op when off.
         for i, de in enumerate(module.dictencs):
             U, G = de.gainshape_in(E_in)
+            if inputs and i > 0:
+                # the residual leads the input, X's width wide
+                Us.append(U[..., :X.shape[-1]] if resid_fwd else U)
             P = de.dict.cluster(de.classifier(U), temperature)
             Ps.append(P)
             R = R + de.gained(de.dict.combine(de.dict.hfwd(P)), G)
             if i < module.l - 1:
                 E_in = module.nextinput(X, R, P.reshape(P.shape[0], -1))
-        return jnp.stack(Ps, 1)  # (b, l, h, k)
+        P = jnp.stack(Ps, 1)  # (b, l, h, k)
+        return (P, tuple(Us)) if inputs else P
 
     @jax.jit
     def acts(X):
@@ -438,16 +450,23 @@ def onto_acts_fn(ckpt, step, temperature):
     def embed(codes):
         """Decode constant codes (F, l, h, k) through the dict + decoder."""
         def probe_c(module, Ps):
-            R = jnp.zeros((Ps.shape[0], module.e_dec))
+            R = jnp.zeros((Ps.shape[0], module.e_lat))
             for i, de in enumerate(module.dictencs):
-                R = R + de.dict.combine(de.dict.hfwd(Ps[:, i]))
+                R = R + de.place(de.dict.combine(de.dict.hfwd(Ps[:, i])))
             return module.decode(R)
         return np.asarray(model.apply(params, jnp.asarray(codes),
                                       method=probe_c))
 
     meta = {"model": "onto", "step": int(step), "l": l, "h": h, "k": k,
             "temperature": temperature}
-    return acts, embed, l * h * k, meta
+    if not inputs:
+        return acts, embed, l * h * k, meta
+
+    @jax.jit
+    def layer_inputs(X):
+        return model.apply(params, X, True, method=probe)[1]
+
+    return acts, embed, l * h * k, meta, layer_inputs
 
 
 def sae_acts_fn(ckpt, topk):

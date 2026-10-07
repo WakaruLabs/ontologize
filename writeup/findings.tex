@@ -44,13 +44,13 @@ embedding space should discover the space's natural contrastive clusters,
 MoEfying the representation into small, nameable classification tasks
 whose within-head entry swaps are steering moves. We compare a softmax
 (soft-code) Ontologizer and a straight-through (hard-code) arm against
-top-$k$ sparse autoencoders (SAEs) on SONAR sentence embeddings under the
+$\topk$ sparse autoencoders (SAEs) on SONAR sentence embeddings under the
 same whitened objective, and the hard code on GPT-2 small residuals.
 Soft heads are contrast sets --- within-head decode directions repel ---
 but their argmax is not the model's code, and the plain-SAE frontier
 dominates them in reconstruction. The straight-through arm makes the
 discrete code the model: at 1900 index bits and no continuous
-coefficients it reaches $\fvu$ $0.154$, against $0.258$ for a top-$k$ SAE
+coefficients it reaches $\fvu$ $0.154$, against $0.258$ for a $\topk$ SAE
 at matched bits that also transmits 160 coefficients. At fixed capacity
 the residual cascade is worth $1.79\times$ over a flat layer, but doubles
 the collateral of a single-head intervention (66\% of other heads
@@ -59,7 +59,7 @@ seeds reach identical error while no head past the first layer
 reproduces. The strongest head encodes topic and genre rather than
 language, as a language-agnostic embedding should be organized. On GPT-2,
 an 800-bit hard code of signed activation-space directions recovers
-97.6\% of the model's loss, more than a $k{=}32$ SAE at nearly the same
+97.6\% of the model's loss, more than a $k_{\mathrm{SAE}}{=}32$ SAE at nearly the same
 $\fvu$.
 \end{abstract}
 
@@ -75,8 +75,8 @@ such classifiers finds the most natural contrastive clusters in the
 embedding space. Interpretability value is then expected from
 \emph{MoEfication}: decomposing the space into small classification tasks
 --- one per head --- each nameable in isolation, with within-head entry
-swaps as the steering primitive (forcing head $h$ from its argmax entry to
-entry $k'$ moves the decode along exactly the dimension head $h$
+swaps as the steering primitive (forcing head $i$ from its argmax entry to
+entry $j'$ moves the decode along exactly the dimension head $i$
 classifies).
 
 Under this frame the evaluation questions are: (a)~what does contrast-set
@@ -160,7 +160,7 @@ SAEs over dense text embeddings became a subfield in 2025--2026:
 discretizing retrieval embeddings~\cite{park2025decodingdenseembeddingssparse}, data-analysis
 toolkits~\cite{jiang2026interpretableembeddingssparseautoencoders},
 human-concept alignment~\cite{shin2026aligningsentenceembeddingshuman}. All
-are single-layer top-$k$ SAEs, and none address SONAR, where the stakes
+are single-layer $\topk$ SAEs, and none address SONAR, where the stakes
 are higher --- Large Concept Models generate directly in SONAR
 space~\cite{lcmteam2024largeconceptmodelslanguage} --- and where the paired M2M100 decoder supplies a
 semantic oracle: where embedding-inversion work must train an
@@ -217,7 +217,7 @@ score uses the run's own final temperature.
 The reference softmax Ontologizer \texttt{resid\_nc} has $l{=}5$ residual
 layers of $h{=}32$ heads with $k{=}32$ entries; a selection sweep varies
 only its selection rule, and the straight-through arm
-(Section~\ref{sec:ste}) replaces it with hard codes. The SAEs are top-$k$
+(Section~\ref{sec:ste}) replaces it with hard codes. The SAEs are $\topk$
 SAEs after Gao et al.~\cite{gao2024}, plus a structural-ablation ladder
 that adds one Ontologizer constraint at a time. Two of its rungs,
 \texttt{g160top1} and \texttt{g160softmax} (160 heads of hard or softmax

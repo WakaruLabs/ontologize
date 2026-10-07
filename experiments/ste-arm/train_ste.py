@@ -308,6 +308,13 @@ def parse_args():
                    help="no latent space and no decoder: entries live in "
                         "output space (e_dec = d), each one a direction in "
                         "embedding space. Needs --signed")
+    p.add_argument("--per-layer-dec", action="store_true",
+                   help="one decoder per layer instead of one shared by all "
+                        "(Ontologizer.per_layer_dec): each layer's atoms are "
+                        "read in their own basis rather than one fitted "
+                        "mostly to layer 0's error. Multiplies the decoder's "
+                        "parameters by l; pair with --e-dec e_dec/l to "
+                        "match them")
     p.add_argument("--biased-dec", action="store_true",
                    help="give the decoder a bias. The dictionary is "
                         "abs()'d, so the accumulated R is a sum of "
@@ -387,6 +394,8 @@ def main() -> None:
                               and not cfg.d_head and not cfg.biased_dec), \
         "--direct needs --signed and fixes e_dec at d: drop --concat, " \
         "--e-dec, --d-head and --biased-dec"
+    assert not (cfg.direct and cfg.per_layer_dec), \
+        "--direct has no decoder to give each layer"
     if cfg.direct:
         e_dec = base.d
     elif cfg.concat and cfg.d_head:
@@ -422,6 +431,10 @@ def main() -> None:
     if cfg.direct:
         print(f"  direct: signed entries in the {base.d}-dim output, no "
               f"decoder; dictionary {l * h * k * base.d / 1e6:.2f}M")
+    if cfg.per_layer_dec:
+        print(f"  per-layer decoders: {l} x ({base.d}, {e_dec}), "
+              f"{l * base.d * e_dec / 1e6:.2f}M against "
+              f"{base.d * e_dec / 1e6:.2f}M shared")
     if cfg.concat:
         null = max(d_head - base.d, 0)
         print(f"  concat: {d_head} dims per head, e_dec={e_dec}; dictionary "
@@ -537,6 +550,7 @@ def main() -> None:
         biased_enc=bool(cfg.zca) or _needs_encoder(
             cfg.biased_enc, cfg.encoded or base.encoded),
         biased_dec=cfg.biased_dec, direct=cfg.direct,
+        per_layer_dec=cfg.per_layer_dec,
         forward=cfg.forward or base.fwd_mode, deepsup=base.deepsup,
         deepsup_sg=base.deepsup_sg,
         resid_norm=base.resid_norm, resid_const=base.resid_const,

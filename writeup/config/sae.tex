@@ -6,10 +6,10 @@
 \toprule
 \multicolumn{2}{@{}l}{\emph{shared by every \texttt{sae.py} run}} \\
 \midrule
-input & the SONAR cache and eval tail of the Ontologizers, $d = 1024$ \\
+input & the SONAR cache and eval tail of the Ontologizers, $d{=}1024$ \\
 objective & whitened MSE, as the Ontologizers \\
 architecture & pre-subtracted decoder bias, unit-norm decoder rows, tied initialization \\
-dead latents & aux-$k$ 512 (top-$k$ runs) or neuron resampling every 5000 steps (L1 runs) \\
+dead latents & \texttt{aux\_k} 512 ($\topk$ runs) or neuron resampling every 5000 steps (L1 runs) \\
 optimizer & Adam, batch 4096 \\
 \bottomrule
 \end{tabular}
@@ -23,19 +23,20 @@ run & $m$ & sparsity & encoder & structure & lr & steps \\
 \texttt{m5120\_k32\_s43} & 5120 & top-32 & linear & seed 43 & $4\times10^{-4}$ & 144.3k \\
 \texttt{m5120\_k32\_bl} & 5120 & top-32 & bilinear & --- & $4\times10^{-4}$ & 144.3k \\
 \texttt{m5120\_k32\_p5} & 5120 & top-32 & linear & 5 nested prefixes (Matryoshka) & $4\times10^{-4}$ & 144.3k \\
-\texttt{m5120\_l1}$\lambda$ & 5120 & L1, $\lambda \in \{3\!\times\!10^{-6}, \dots, 3\!\times\!10^{-4}\}$ & linear & --- & $4\times10^{-4}$ & 144.3k \\
+\texttt{m5120\_l1}$\ast$ & 5120 & L1, $s_{\mathrm{L1}} \in \{3\!\times\!10^{-6}, \dots, 3\!\times\!10^{-4}\}$ & linear & --- & $4\times10^{-4}$ & 144.3k \\
 \texttt{m11264\_k32} & 11264 & top-32 & linear & --- & $10^{-4}$ & 336k \\
 \texttt{m11264\_k160} & 11264 & top-160 & linear & --- & $10^{-4}$$^\dagger$ & 336k \\
-\texttt{m11264\_k5120} & 11264 & top-5120 & linear & --- (dense, $L_0 \approx 1520$) & $10^{-4}$ & 22k \\
+\texttt{m11264\_k5120} & 11264 & top-5120 & linear & --- (dense, $\mathrm{L0} \approx 1520$) & $10^{-4}$ & 22k \\
 \midrule
 \texttt{m5120\_g160top1} & 5120 & 160 heads, top-1 & linear & one-layer hard variant & $4\times10^{-4}$ & 144.3k \\
 \texttt{m5120\_g160softmax} & 5120 & 160 heads, softmax & linear & one-layer soft variant & $4\times10^{-4}$ & 144.3k \\
 \bottomrule
 \end{tabular}
 \caption{SAE baselines (above the rule) and the single-layer variants
-(below it; Section~\ref{sec:models}). The L1 sweep's five $\lambda$ are
-$3\times10^{-6}$, $10^{-5}$, $3\times10^{-5}$, $10^{-4}$ and
-$3\times10^{-4}$. $^\dagger$Not recorded; inferred from the run sharing
+(below it; Section~\ref{sec:models}). The L1 sweep's five weights
+$s_{\mathrm{L1}}$ are $3\times10^{-6}$, $10^{-5}$, $3\times10^{-5}$, $10^{-4}$
+and $3\times10^{-4}$; $\ast$ is the weight as the run name spells it
+(\texttt{m5120\_l13e-05}). $^\dagger$Not recorded; inferred from the run sharing
 \texttt{m11264\_k32}'s step count.}
 \label{tab:cfg-sae}
 \end{table}

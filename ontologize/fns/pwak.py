@@ -25,7 +25,7 @@ the diffusion is used to reconstruct something, which is what `pwak_l2`
 does -- it scores the partition by how well a sample's own layer input is
 predicted by its neighbours' -- while `pwak_kl` uses the same graph only
 to build a KL target, where the mechanism is absent by construction (see
-MEASURED BEHAVIOUR). The construction itself: within a head, the batch's
+BEHAVIOUR). The construction itself: within a head, the batch's
 classifications P are a soft partition
 matrix PP^T -- exactly `partitionmat` with the indicators relaxed. Gate the
 input affinity with it, zero the diagonal, row-normalize (the WAK function),
@@ -48,36 +48,23 @@ semantic neighbours. Two properties temperature lacks:
 P^(s) also stays in the convex hull of the neighbourhood's classifications,
 so it cannot manufacture confidence the data does not support.
 
-*** MEASURED BEHAVIOUR, and it contradicts the name of this module. ***
-The 2x2 factorial (data/out/sonar/act_i/pwak/eval.json, arm logs beside
-it; not yet written up in findings.tex) says this term does NOT harden. It
-softens: +0.32 bits of classification entropy in both temperature rows,
-dead consistent, and KL_pwak never converges -- it
-climbs 0.13 -> 0.47 bits and plateaus, i.e. the model holds a permanent
-disagreement with its consensus instead of reaching a fixed point.
+*** BEHAVIOUR: unmeasured, and probably not what the name says. ***
+No controlled measurement of either term exists. One informal run
+suggested `pwak_kl` softens classifications rather than hardening them, and
+the KL direction below predicts exactly that. KL(T || P) is mode-COVERING:
+minimizing it forces P to put mass wherever T has mass, so a disagreeing
+neighbourhood (whose consensus is flatter than the sample's own belief)
+pulls the sample toward softness. The mode-SEEKING KL(P || T) is the one
+that concentrates mass on whichever tag the neighbourhood supports --
+swapping the arguments in the return statement of `pwak_kl` gives it. But
+note the deeper mismatch recorded at the top: the hardening-by-deeper-
+diffusion hypothesis assumed the diffused labels feed the reconstruction
+of F, as the diffused embeddings do in DeePWAK. As a KL regularizer,
+neither direction implements that mechanism.
 
-One cause is the KL direction below. KL(T || P) is mode-COVERING: minimizing
-it forces P to put mass wherever T has mass, so a disagreeing neighbourhood
-(whose consensus is flatter than the sample's own belief) pulls the sample
-toward softness. The mode-SEEKING KL(P || T) is the one that concentrates
-mass on whichever tag the neighbourhood supports -- swapping the arguments
-in the return statement of `pwak_kl` and re-running the factorial would test
-that. But note the deeper mismatch recorded at the top: the
-hardening-by-deeper-diffusion hypothesis assumed the diffused labels feed
-the reconstruction of F, as the diffused embeddings do in DeePWAK. As a
-KL regularizer, neither
-direction implements that mechanism.
-
-What it DOES do, unclaimed in advance: it regularizes. Training MSE +1.4%,
-held-out MSE -0.3%, both rows; held-out slow-mode alignment 0.813 vs 0.754
-for the control. Label degeneracy is row-dependent: 0.155 vs 0.211 in the
-hard-T row, REVERSED in the soft-T row (0.272 vs 0.232, pwak worse) -- the
-one endpoint the designed config loses to its control. So it earns its
-keep as a generalization term, not as a hardening term.
-
-Untested: the frozen-head claim that motivated the whole thing. All four arms
-had zero frozen heads and zero dead tags, controls included -- h=5, k=10 with
-s_Hm active never gets sick. That needs h=32, five layers, s_Hm off.
+Also untested: the frozen-head claim that motivated the whole thing. A
+test needs a regime where heads actually freeze (h=32, five layers, s_Hm
+off), with the frozen-head count compared against a control.
 
 Used as a stop-gradiented target with a KL pull (not in the forward path):
 per-sample inference semantics stay intact for `withArgs` and the
@@ -87,11 +74,10 @@ passes `pwak_s` traced, so without that gate every run -- pwak or not --
 would build the (h, b, b) graph as a loop constant XLA cannot prune.
 
 CAVEAT, recorded here because it is easy to forget: training against a
-similarity operator makes "the dictionary's cells align with the slow modes
-of the discourse operator" true by construction. The crossref experiments in
-findings.tex 13-15 are evidence only because nothing in training ever
-mentioned a kernel. Any run using this needs a different null -- score
-against an affinity the training never saw.
+similarity operator makes "the dictionary's cells align with that
+operator's slow modes" true by construction. Any run using this needs a
+different null for such alignments -- score against an affinity the
+training never saw.
 """
 import jax
 import jax.numpy as jnp
