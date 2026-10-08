@@ -411,11 +411,14 @@ def draw_page(P: Float[np.ndarray, "n h k"], heads: Sequence[int],
     cols = [Q.shape[1] * k]
     if sae is not None:
         cols.append(sae.Q.shape[1] * sae.Q.shape[2])
-    w = min(4 + sum(cols) / 40, 40)
+    total = sum(cols)
+    w = min(4 + total / 40, 40)
     fig = plt.figure(figsize=(w, 3 + n / 120))
-    gs = fig.add_gridspec(2, len(cols) + 1, height_ratios=[1, 8],
-                          width_ratios=cols + [0.015 * sum(cols)],
-                          hspace=0.04, wspace=0.03)
+    # [heads | gap for the SAE strip's tick labels | SAE | colourbars]
+    widths = cols[:1] + ([0.06 * total] + cols[1:] if sae is not None else []) \
+        + [0.015 * total]
+    gs = fig.add_gridspec(2, len(widths), height_ratios=[1, 8],
+                          width_ratios=widths, hspace=0.04, wspace=0.03)
     ax_u = fig.add_subplot(gs[0, 0])
     ax = fig.add_subplot(gs[1, 0], sharex=ax_u)
     im = draw_block(ax_u, ax, Q, [f"h{hd}" for hd in heads],
@@ -423,8 +426,8 @@ def draw_page(P: Float[np.ndarray, "n h k"], heads: Sequence[int],
                     "Blues", vmax)
     ax_u.set_ylabel("p̄", rotation=0, labelpad=10)
     ax.set_xlabel("head (entries sorted by usage within each head)")
-    ax_u.set_title(title + f"   [per head, of k={k}: use = exp H(p̄), "
-                   "row = exp mean H(p_i)]", fontsize=9)
+    fig.suptitle(title + f"   [per head, of k={k}: use = exp H(p̄), "
+                 "row = exp mean H(p_i)]", fontsize=9)
     edges = np.cumsum(slices)
     mids = edges - np.asarray(slices) / 2 - 0.5
     ax.set_yticks(mids, names, fontsize=7)
@@ -433,8 +436,8 @@ def draw_page(P: Float[np.ndarray, "n h k"], heads: Sequence[int],
     cgs = gs[:, -1].subgridspec(len(cols), 1, hspace=0.3)
     cbs = [(im, "assignment probability", vmax, fig.add_subplot(cgs[0]))]
     if sae is not None:
-        ax_su = fig.add_subplot(gs[0, 1])
-        ax_s = fig.add_subplot(gs[1, 1], sharex=ax_su, sharey=ax)
+        ax_su = fig.add_subplot(gs[0, 2])
+        ax_s = fig.add_subplot(gs[1, 2], sharex=ax_su, sharey=ax)
         notes = []
         for e, r, f, ms in zip(sae.eff, sae.reff, sae.fire, sae.mass):
             notes.append(f"use {e:.1f}\nrow {r:.1f}"
@@ -448,7 +451,7 @@ def draw_page(P: Float[np.ndarray, "n h k"], heads: Sequence[int],
             if sae.names == ["code"]
             else "group (latents sorted by usage within each group)")
         ax_su.set_title(sae.title + f"   [per unit, of {sae.width}]",
-                        fontsize=9)
+                        fontsize=9, loc="left")
         maps.append(ax_s)
         cbs.append((im_s, "share of the unit's activation", sae.vmax,
                     fig.add_subplot(cgs[1])))
