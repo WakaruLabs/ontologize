@@ -18,6 +18,10 @@ data/out and keeps only what a figure plots:
               coherence table
   autointerp  autointerp.py's mean detection F1 per description mode, the
               harvest's mean firing rate, and the code's nominal density
+  bilinspec   bilinspec.py's per-(step, layer) classifier geometry for the
+              softmax and hard-code stacks
+  modularity  headstruct.py --modularity's real and null modularity per
+              layer or prefix block, from each run's summary.json
 
   uv run python writeup/figures/extract_results.py [pareto|ratefloor|...]
 """
@@ -70,6 +74,28 @@ AUTOINTERP = [
     ("m5120_g160top1/sae", "g160top1", 160 / 5120, True),
     ("m5120_g160softmax/sae", "g160softmax", 1.0, True),
     ("m11264_k5120/sae", "k5120", 5120 / 11264, True),
+]
+
+
+# (model, run) whose bilinspec.py output the classifier-geometry figure draws
+BILINSPEC = [
+    ("softmax stack", "resid_nc"),
+    ("hard-code stack", "ste_h76_init01"),
+]
+
+# (model, headstruct.py --modularity output dir) for the modularity figure,
+# as experiments/modularity/run.sh writes them
+MODULARITY = [
+    ("Ontologizer", OUT / "sonar" / "multilingual" / "bl_ctl_full"
+     / "headstruct"),
+    ("Matryoshka, trained heads", OUT / "sonar" / "sae_conv"
+     / "m5120_g160top1_p5" / "headstruct_mod"),
+    ("Matryoshka, discovered groups", OUT / "sonar" / "sae_conv"
+     / "m5120_k32_p5" / "headstruct_mod"),
+    ("flat, trained heads", OUT / "sonar" / "sae_conv" / "m5120_g160top1"
+     / "headstruct_mod"),
+    ("flat, discovered groups", OUT / "sonar" / "sae_conv" / "m5120_k32"
+     / "headstruct_mod"),
 ]
 
 
@@ -183,12 +209,46 @@ def extract_autointerp() -> None:
                                      "sae_py"], rows)
 
 
+def extract_bilinspec() -> None:
+    keep = ("abscos_med", "abscos_q25", "abscos_q75", "frac_negdom",
+            "rho_w_med", "odd_med")
+    rows = []
+    for model, run in BILINSPEC:
+        path = OUT / "sonar" / "multilingual" / run / "bilinspec"
+        for r in read(path / "bilinspec.csv"):
+            rows.append([model, run, r["step"], r["layer"]]
+                        + [f"{float(r[k]):.6g}" for k in keep])
+    write("bilinspec.csv", ["model", "run", "step", "layer", *keep], rows)
+
+
+def extract_modularity() -> None:
+    rows = []
+    for model, path in MODULARITY:
+        d = json.loads((path / "summary.json").read_text())
+        for r in d["table"]:
+            if r["metric"] != "modularity":
+                continue
+            # a flat model has only the whole-model row; a layered one's
+            # whole-model row averages over layers and is not drawn
+            block = r.get("block", "")
+            if block == "" and any("block" in t for t in d["table"]):
+                continue
+            rows.append([model, block, f"{r['real']:.6g}",
+                         f"{r['null']:.6g}", f"{r['null_sd']:.6g}",
+                         f"{r['z']:.6g}", r.get("groups", ""),
+                         f"{r['coverage']:.6g}" if "coverage" in r else ""])
+    write("modularity.csv", ["model", "block", "real", "null", "null_sd", "z",
+                             "groups", "coverage"], rows)
+
+
 FAMILIES = {
     "pareto": extract_pareto,
     "ratefloor": extract_ratefloor,
     "steer": extract_steer,
     "headcoh": extract_headcoh,
     "autointerp": extract_autointerp,
+    "bilinspec": extract_bilinspec,
+    "modularity": extract_modularity,
 }
 
 if __name__ == "__main__":

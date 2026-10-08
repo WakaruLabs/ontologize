@@ -839,3 +839,164 @@ fig.legend(*a.get_legend_handles_labels(), loc="lower center", ncols=3,
            handlelength=1.8, fontsize=6.6, bbox_to_anchor=(0.5, 0.0))
 letters((a, b))
 save(fig, "fig-gpt2-seeds")
+
+# classifier geometry from the weights (bilinspec.py): |cos(w, v)| of each
+# bilinear feature's pair, 1 when the feature is rank 1, by layer at the final
+# checkpoint (a) and over training (b, c). The reference is the median |cos|
+# of a random pair in the d = 1024 semantic block, 0.6745 / sqrt(d)
+BL = load_rows("bilinspec.csv")
+RANDOM_COS = 0.6745 / np.sqrt(1024)
+STACKS = [("softmax stack", LEAF, "o"), ("hard-code stack", INK, "s")]
+LAYER_COLS = [matplotlib.colors.LinearSegmentedColormap.from_list(
+    "layers", [PINE50, LEAF, PINE, INK])(v) for v in np.linspace(0, 1, 5)]
+
+
+def geometry(model, step=None):
+    """{layer: row} at `step` (default: the run's last checkpoint)."""
+    rows = [r for r in BL if r["model"] == model]
+    step = step or max(int(r["step"]) for r in rows)
+    return {int(r["layer"]): r for r in rows if int(r["step"]) == step}
+
+
+def spread(ys, gap):
+    """Label heights for line ends at `ys`, pushed apart to at least `gap`
+    while keeping their order."""
+    order = np.argsort(ys)
+    out = np.array(ys, float)
+    for a, b in zip(order[:-1], order[1:]):
+        out[b] = max(out[b], out[a] + gap)
+    return out
+
+
+fig, axs = plt.subplots(1, 3, figsize=(5.4, 2.45), sharey=True,
+                        gridspec_kw=dict(width_ratios=[0.9, 1, 1]))
+fig.subplots_adjust(wspace=0.12, bottom=0.30, top=0.88, left=0.10, right=0.98)
+a = axs[0]
+for (model, col, mk), dx in zip(STACKS, (-0.12, 0.12)):
+    g = geometry(model)
+    xs = np.arange(5) + dx
+    med = [float(g[l]["abscos_med"]) for l in range(5)]
+    lo = [med[l] - float(g[l]["abscos_q25"]) for l in range(5)]
+    hi = [float(g[l]["abscos_q75"]) - med[l] for l in range(5)]
+    a.errorbar(xs, med, yerr=[lo, hi], ls="none", color=col, marker=mk,
+               ms=4.0, elinewidth=0.9, capsize=0, label=model, zorder=3,
+               **RING)
+a.set_xticks(range(5))
+a.set_xlabel("layer")
+a.set_ylabel(r"median $|\cos(\mathbf{w}, \mathbf{v})|$")
+eyebrow(a, "final checkpoint")
+for ax, (model, _, _) in zip(axs[1:], STACKS):
+    rows = [r for r in BL if r["model"] == model]
+    ends = []
+    for l in range(5):
+        pts = sorted((int(r["step"]), float(r["abscos_med"])) for r in rows
+                     if int(r["layer"]) == l)
+        ax.plot(*zip(*pts), color=LAYER_COLS[l], lw=1.1, marker="o", ms=2.4,
+                zorder=3)
+        ends.append(pts[-1])
+    # the layer number at each line's end, kept legible where lines converge
+    for l, ((x, _), y) in enumerate(zip(ends, spread([e[1] for e in ends],
+                                                        0.05))):
+        ax.annotate(str(l), xy=(x, y), xytext=(4, 0),
+                    textcoords="offset points", fontsize=6.2,
+                    family="monospace", color=LAYER_COLS[l], va="center")
+    ax.set_xscale("log")
+    ax.xaxis.set_major_locator(FixedLocator([1e4, 3e4, 1e5, 3e5]))
+    ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v / 1e3:g}k"))
+    ax.xaxis.set_minor_formatter(NullFormatter())
+    ax.set_xlim(8e3, 5.2e5)
+    ax.set_xlabel("training step")
+    eyebrow(ax, model)
+# the softmax stack's temperature anneal ends at 50k; the hard-code stack's
+# temperature is constant
+axs[1].axvline(5e4, color=INKMUT, lw=0.6, ls=DOT, zorder=1)
+axs[1].text(5.4e4, 0.97, "anneal\nends", fontsize=6.0, family="monospace",
+            color=INKMUT, va="top")
+for ax in axs:
+    ax.axhline(RANDOM_COS, **NULL, zorder=1)
+    ax.set_ylim(0, 1.0)
+    mono_axes(ax)
+axs[1].text(5.0e5, RANDOM_COS + 0.015, "random pair", fontsize=6.2,
+            color=INKMUT, ha="right", va="bottom", family="monospace")
+handles = [Line2D([], [], ls="none", color=c, marker=m, ms=4.0, **RING)
+           for _, c, m in STACKS]
+fig.legend(handles, [s[0] for s in STACKS], loc="lower center", ncols=2,
+           handlelength=1.0, fontsize=6.6, bbox_to_anchor=(0.5, 0.0))
+letters(axs)
+save(fig, "fig-bilinspec")
+
+# head partitions as communities of the input (headstruct.py --modularity):
+# soft modularity over its size-matched null, (a) for every model scored on
+# the input itself and (b) by depth, each layer or prefix block on the graph
+# of its own input. Bars are +-2 null standard deviations carried to the
+# ratio; a ratio whose null is within two of its spread of 0 is not drawn
+MD = load_rows("modularity.csv")
+MOD_STYLE = {
+    "Ontologizer": (LEAF, "o"),
+    "Matryoshka, trained heads": (INK, "s"),
+    "Matryoshka, discovered groups": (INKMUT, "^"),
+    "flat, trained heads": (INK, "s"),
+    "flat, discovered groups": (INKMUT, "^"),
+}
+
+
+def ratio(r):
+    """(real / null, its 2-sigma half-width), or None for an unstable null."""
+    real, null, sd = float(r["real"]), float(r["null"]), float(r["null_sd"])
+    if null <= 2 * sd:
+        return None
+    return real / null, 2 * real * sd / null ** 2
+
+
+fig, (a, b) = plt.subplots(1, 2, figsize=(5.4, 2.5),
+                           gridspec_kw=dict(width_ratios=[1, 1.15]))
+fig.subplots_adjust(wspace=0.55, bottom=0.30, top=0.88, left=0.23, right=0.98)
+ON_X = [("Ontologizer", "0", "Ontologizer, layer 0"),
+        ("Matryoshka, trained heads", "0", "Matryoshka, trained"),
+        ("Matryoshka, discovered groups", "0", "Matryoshka, discovered"),
+        ("flat, trained heads", "", "flat, trained"),
+        ("flat, discovered groups", "", "flat, discovered")]
+for y, (model, block, label) in enumerate(ON_X):
+    r = next(r for r in MD if r["model"] == model and r["block"] == block)
+    v, e = ratio(r)
+    col, mk = MOD_STYLE[model]
+    a.errorbar([v], [y], xerr=[e], ls="none", color=col, marker=mk, ms=4.2,
+               elinewidth=0.9, capsize=0, zorder=3, **RING)
+a.set_yticks(range(len(ON_X)))
+a.set_yticklabels([s[2] for s in ON_X], fontsize=6.8)
+a.set_ylim(len(ON_X) - 0.5, -0.5)
+a.tick_params(axis="y", length=0)
+a.axvline(1, **NULL, zorder=1)
+a.set_xlim(0.6, 1.45)
+a.set_xlabel("modularity / null")
+eyebrow(a, "scored on the input")
+for model in ("Ontologizer", "Matryoshka, trained heads",
+              "Matryoshka, discovered groups"):
+    col, mk = MOD_STYLE[model]
+    pts = [(int(r["block"]), *ratio(r), float(r["coverage"])) for r in MD
+           if r["model"] == model and ratio(r) is not None]
+    xs, vs, es, cov = zip(*pts)
+    b.plot(xs, vs, color=col, lw=1.0, zorder=2)
+    for x, v, e, c in pts:
+        b.errorbar([x], [v], yerr=[e], ls="none", color=col, marker=mk,
+                   ms=4.2, elinewidth=0.9, capsize=0, zorder=3,
+                   mfc=col if c >= 0.1 else "white", mec=col if c < 0.1
+                   else "white", mew=0.6 if c >= 0.1 else 0.9)
+b.axhline(1, **NULL, zorder=1)
+b.set_xticks(range(5))
+b.set_xlabel("layer or prefix block")
+b.set_ylabel("modularity / null")
+b.set_ylim(0.5, 3.3)
+eyebrow(b, "on each layer's own input")
+for ax in (a, b):
+    mono_axes(ax)
+a.tick_params(axis="y", labelfontfamily="serif", labelsize=6.8)
+handles = [Line2D([], [], ls="none", color=c, marker=m, ms=4.2, **RING)
+           for c, m in (MOD_STYLE["Ontologizer"],
+                        MOD_STYLE["Matryoshka, trained heads"],
+                        MOD_STYLE["Matryoshka, discovered groups"])]
+fig.legend(handles, ["Ontologizer heads", "SAE trained heads",
+                     "SAE discovered groups"], loc="lower center", ncols=3,
+           handlelength=1.0, fontsize=6.6, bbox_to_anchor=(0.6, 0.0))
+letters((a, b))
+save(fig, "fig-modularity")

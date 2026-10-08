@@ -101,7 +101,9 @@ per batch per partition, real and null alike.
       --modularity --knn 15
 
 Writes <out>/groups.csv (per-group size + metrics; a trailing modularity
-column with --modularity), assignment.npy, and prints the summary table.
+column with --modularity), assignment.npy, and summary.json (the printed
+summary table: per metric, and per layer or block, the real value, the null
+mean and spread, z, and a block's group count and coverage).
 """
 # disable preallocation so this can share the GPU (same as sonar.py)
 import os
@@ -449,20 +451,31 @@ def main():
                            for a in accs[1:]])  # (nulls, 3, G)
     nm, ns = null_stats.mean((0, 2)), null_stats.mean(2).std(0) + 1e-12
 
+    # the printed table, also written to summary.json; null_sd is the spread
+    # of the per-null means, the denominator of z
+    table = []
+
+    def entry(metric, real, null, null_sd, **extra):
+        z = (real - null) / (null_sd + 1e-12)
+        table.append(dict(metric=metric, real=float(real), null=float(null),
+                          null_sd=float(null_sd), z=float(z), **extra))
+        return z
+
     print(f"\n{'metric':<16} {'heads':>7} {'real':>8} "
           f"{'null':>8} {'z':>7}")
     for name, val, ideal, i in [("exhaustiveness", exh.mean(), 1.0, 0),
                                 ("exclusivity", exc.mean(), 1.0, 1),
                                 ("sum CV", cv.mean(), 0.0, 2)]:
-        print(f"{name:<16} {ideal:>7.2f} {val:>8.4f} {nm[i]:>8.4f} "
-              f"{(val - nm[i]) / ns[i]:>7.1f}")
+        z = entry(name, val, nm[i], ns[i], ideal=ideal)
+        print(f"{name:<16} {ideal:>7.2f} {val:>8.4f} {nm[i]:>8.4f} {z:>7.1f}")
     if cfg.modularity:
         # groups that never fired on a scoring batch have no Q
         mod = [s / np.where(c > 0, c, np.nan) for s, c in qacc]
         qn = np.array([np.nanmean(q) for q in mod[1:]])
         val = np.nanmean(mod[0])
+        z = entry("modularity", val, qn.mean(), qn.std())
         print(f"{'modularity':<16} {'-':>7} {val:>8.4f} {qn.mean():>8.4f} "
-              f"{(val - qn.mean()) / (qn.std() + 1e-12):>7.1f}")
+              f"{z:>7.1f}")
         # each block against its own within-block nulls; cov is its groups'
         # mean exhaustiveness, how much of the batch the block's graphs see
         for L in range(n_blocks if kind else 0):
@@ -472,9 +485,11 @@ def main():
                 continue
             qL = np.array([np.nanmean(q[b]) for q in mod[1:]])
             vL = np.nanmean(mod[0][b])
+            z = entry("modularity", vL, qL.mean(), qL.std(), kind=kind,
+                      block=L, groups=int(b.sum()),
+                      coverage=float(exh[b].mean()))
             print(f"{f'  {kind} {L}':<16} {'-':>7} {vL:>8.4f} "
-                  f"{qL.mean():>8.4f} "
-                  f"{(vL - qL.mean()) / (qL.std() + 1e-12):>7.1f}"
+                  f"{qL.mean():>8.4f} {z:>7.1f}"
                   f"   {b.sum()} groups, cov {exh[b].mean():.3f}")
 
     sizes = np.bincount(labels[grouped], minlength=G)
@@ -486,7 +501,13 @@ def main():
             writer.writerow([g, sizes[g], exh[g], exc[g], cv[g]]
                             + ([mod[0][g]] if cfg.modularity else []))
     np.save(out / "assignment.npy", labels)
-    print(f"\n-> {out / 'groups.csv'}")
+    (out / "summary.json").write_text(json.dumps(dict(
+        source=cfg.onto or cfg.sae, rows=n2, nulls=cfg.nulls,
+        trained_groups=bool(cfg.onto or cfg.trained_groups),
+        prefix_layers=cfg.prefix_layers, modularity=cfg.modularity,
+        knn=cfg.knn, tau=cfg.tau, gamma=cfg.gamma, fire_thr=cfg.fire_thr,
+        table=table), indent=1))
+    print(f"\n-> {out / 'groups.csv'}, summary.json")
 
 
 if __name__ == "__main__":

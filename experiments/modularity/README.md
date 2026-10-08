@@ -78,5 +78,8 @@ root, with tests in `tests/test_headstruct.py`.
     bash experiments/modularity/run.sh
 
 Each run writes `groups.csv` (a trailing `modularity` column),
-`assignment.npy` and `run.log` to its output directory, listed in
-`run.sh`.
+`assignment.npy`, `summary.json` (the printed table: real and null
+modularity, null spread and z per layer or block) and `run.log` to its
+output directory, listed in `run.sh`. The writeup's `fig:modularity` is
+drawn from the `summary.json` files by
+`writeup/figures/extract_results.py modularity`.
