@@ -40,26 +40,24 @@ causal (the model runs on them), composable (heads combine), and closed (an inte
 | Heads behave as roughly independent factors | Independence is what lets 32 small choices cover 32^32 combinations | Mutual information between two heads' labels: 0.27 bits at layer 0, 0.02 at layer 2, against about 5 bits of label entropy |
 | The choices carry the coarse structure; what remains is variation inside a cell | Each label is a prototype; members scatter around it | Adding a rank-4 correction per label on a frozen model cuts FVU from 0.186 to 0.064 |
 | The model tolerates running on the code | If it did not, interventions on the code would mean nothing | 97.5% loss recovered; swapping one label costs 0.01 to 0.06 nats of KL |
-| Token-level categories exist and can be named | Lexical and predictive classes are well known in language models | Layer-0 cells are predictive token states; an LLM judge picks a cell's top members out of distractors at about 0.87 balanced accuracy (typical members: see below) |
+| Token-level categories exist and can be named | Lexical and predictive classes are well known in language models | Layer-0 cells are predictive token states; an LLM judge picks a cell's top members out of distractors at about 0.91 balanced accuracy (Claude Opus 5.5; typical members: see below) |
 
 Where the assumptions stop:
-- **Cells are named from their extremes, not their typical members.** The judge's 0.87 is on a cell's highest-scoring
-  members. On random members of the same layer-0 cells it falls to 0.55 to 0.61, and on members near a cell's boundary to
-  0.50 to 0.52. The gap widens with depth (top 0.77 and random 0.56 at layer 1; 0.68 and 0.51 at layer 2), and layer-4
-  cells score 0.50 even on their top members.
-- **How the describer samples matters.** Describing each cell from a tagged mix of its top, typical and boundary members, each marked
-  with its tier, raises detection of typical members from 0.58 to 0.61–0.62 across nine heads; adding a few non-members helps a
-  little more (0.62). Untagged random members do no better than top members (0.58).
-- **Deep layers are causal but not yet nameable.** Their labels carry token information and steer specifically, yet the
-  judge scores chance (0.50) on layers 3 and 4.
+- **Cells are named from their extremes, not their typical members.** Judged by Claude Opus 5.5, a layer-0 cell's top members are
+  picked out at 0.91 balanced accuracy, random members at 0.65 and members near the boundary at 0.55. The gap widens with depth (top
+  0.88 and random 0.60 at layer 1; 0.76 and 0.53 at layer 2).
+- **How the describer samples matters, a little.** A tagged mix of top, typical and boundary members (8, 32 and 8, each marked with its
+  tier) is the best description input for both judges: 0.69 against 0.66 for top members alone with Claude, 0.62 against 0.58 with
+  Gemini. Explicit contrast (describing each label against its siblings, or adding non-members) adds nothing with Claude.
+- **Deep layers are causal but not yet nameable.** Their labels carry token information and steer specifically, yet layers 3 and 4
+  score chance even on their top members, with either judge, and longer contexts (64 tokens around the token) do not help.
 - **Only layer 0 reproduces across training seeds.** Deeper label sets differ from run to run.
-- **Combinations of cells carry a little more nameable meaning than single cells.** Inside one layer-0 cell, the members
-  another head also agrees on form a sub-concept the judge can pick out against the rest of that cell at 0.64 to 0.66
-  balanced accuracy, versus about 0.59 for single cells and 0.50 for random-partition nulls.
-  With the better description protocol the gap narrows: about 0.65 for intersections against 0.62 for single cells.
-- **Correction (2026-10-06).** An earlier version of this page reported 0.77 to 0.96 for those intersections. The judging agents could
-  read the answer keys and earlier answers, and some copied them. Every judge number here comes from a re-run in a sandbox
-  where the judge sees only its task file. Single-cell scores were unchanged by the re-run; the intersection scores fell.
+- **Combinations of cells add little once single cells are described well.** Inside one layer-0 cell, the members another head also
+  agrees on form a sub-concept Claude picks out against the rest of that cell at 0.70 to 0.73, against 0.69 to 0.71 for single
+  cells and 0.48 to 0.50 for random-partition nulls. With a weaker judge (Gemini) the gap looked larger (0.64 to 0.66 against 0.58).
+- **Judging (2026-10-06/07).** An earlier version of this page reported 0.77 to 0.96 for those intersections: the judging agents could
+  read the answer keys and earlier answers, and some copied them. Every judge number here comes from clean re-runs. Judging now uses
+  Claude Opus 5.5 through plain API calls with no tools, which beats the sandboxed Gemini agent on every set by 0.05 to 0.10.
 
 ## How it works, intuitively
 ![one Ontologizer layer, and the residual stack](overview_diagram.png)

@@ -2,8 +2,30 @@
 
 *Research note from the GPT-2 small (layer 8) Ontologizer experiments, 2026-10-05; work in progress. Companion to [OVERVIEW.md](OVERVIEW.md).*
 
-**Status (2026-10-07): modest, real effect at layer 0, measured with a clean judge; smaller once single cells are described well.** Jade and Claude agreed (2026-10-05) to
+**Status (2026-10-07): with a strong judge and good descriptions, composition adds little at layer 0 (+0.01–0.02); the max-activating illusion is robust; layers 3–4 remain undescribable.** Jade and Claude agreed (2026-10-05) to
 prioritize this track.
+
+## Stronger judge: Claude Opus 5.5 (2026-10-07) — read this first
+Plain API calls, no tools, the same instructions and the same detection items as the sandboxed Gemini judge; paired by label.
+
+| set | Gemini | Claude |
+|---|---|---|
+| single cells, 9 private layer-0 heads: 8 top / 24 random / tagged 8-32-8 | 0.581 / 0.582 / 0.622 | 0.663 / 0.681 / 0.694 |
+| private layer-0 intersections (6 pairs), tagged 8-32-8; nulls | 0.661; 0.50 | 0.704; 0.50 |
+| direct layer-0 intersections (6 pairs); nulls | 0.641; 0.498 | 0.728; 0.479 |
+| direct layer-0 single cells, 24 random members | 0.577 | 0.711 |
+| direct single cells, top members, layers 0/1/2/3/4 | .87/.77/.68/—/.50 | .91/.88/.76/.53/.51 |
+| direct single cells, random members, layers 0/1/2/3/4 | .58/.56/.51/—/.50 | .65/.60/.53/.52/.52 |
+| private, same head at layers 0×1 / 0×2; different heads 0×2 | .602 / .543; .539 | .675 / .572; .568 |
+
+- **Claude is the better judge on every set,** by 0.05 to 0.10, and ahead on every head of every single-cell arm.
+- **The tagged 8/32/8 mix stays the best description input,** by a smaller margin with Claude; explicit contrast (a "differential"
+  instruction, or tagged non-members) adds nothing with Claude. Effort: medium is the sweet spot (max adds ~0.01 at ~25x the output).
+- **Composition adds little once single cells are described well:** intersections beat single cells by ~0.01–0.02 at layer 0. Most of
+  the earlier gap came from describing single cells with a weak judge and poor samples.
+- **The max-activating illusion is robust** and grows with depth; **layers 3–4 stay at chance** even from top members, and 48+16-token
+  snippets don't help. Next: read deep heads as axes (their few principal directions), or describe labels by their effect on the
+  next-token distribution.
 
 ## Clean re-run (2026-10-06) — read this first
 On 2026-10-05 we found that the judging agents could read the answer keys, and, after the keys were moved, the earlier runs'
