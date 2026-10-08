@@ -376,11 +376,9 @@ reads and the question it answers.
 	mark is a required input, an open mark an optional input or one of
 	several alternatives (most scripts take either model type;
 	\texttt{splitting.py} takes two runs, such as seed replicas). Dashed
-	arrows are one script's output read by another. \texttt{selection.py},
-	\texttt{enrich.py}, \texttt{assignmap.py}, \texttt{entrydrift.py},
-	\texttt{headnmi.py} and \texttt{effinfo.py}
-	(in \texttt{experiments/effective-information/}) are diagnostics with
-	no protocol below; no result in this document comes from them.}
+	arrows are one script's output read by another. \texttt{effinfo.py}
+	(in \texttt{experiments/effective-information/}) is described with
+	\texttt{headnmi.py}, which reads it.}
 \label{fig:evalpipeline}
 \end{figure}
 
@@ -806,6 +804,75 @@ dominant eigenvalue is negative, and the constant coordinate's weight
 relative to the rest of $\mathbf{w}$. The closed-form spectra agree with a
 dense eigendecomposition to $10^{-14}$. No data enter.
 
+\paragraph{Assignment maps (\texttt{assignmap.py}).}
+A stratified draw of eval-tail rows, a fixed number per label value
+(language from the cache's sidecar; for GPT-2 the coarse class of the
+current token: word, capitalized word, continuation, punctuation, digit,
+newline or space), is drawn against each head's $k$ entries: rows grouped
+by label and ordered within a group by their winning entries, entries by
+mean usage. Each head is summarized by its ``use'' and ``row''
+(Figure~\ref{fig:anatomy}). With an SAE, the same rows in the same order
+are drawn against its latents, each cell a latent's activation as a share
+of the row's total, latents by usage; a trained group is drawn as a head,
+and a flat code as one unit whose use and row are computed the same way.
+
+\paragraph{Entry drift (\texttt{entrydrift.py}).}
+Across a run's retained checkpoints, each entry's usage $\bar{p}_{ij}$ on
+the eval tail, at that checkpoint's training temperature, and the cosine
+between its decoded atom $\mathbf{a}^{\mathrm{dec}}_{ij}$ (the one-hot
+code decoded, less the decode of the zero code) at that checkpoint and at
+the last one. An entry with $\bar{p}_{ij} < 1/4k$ is out of use. Such an
+entry receives no gradient, so its direction freezes and its cosine reads
+near 1 without meaning anything; drift is summarized over the entries in
+use at the last checkpoint.
+
+\paragraph{Label enrichment (\texttt{enrich.py}).}
+Every eval-tail row is assigned, per head, to its winning entry. For each
+(entry, label value) cell, the number of rows taking the entry and
+carrying the label follows a hypergeometric distribution given the two
+margins if entry and label are independent. The test is two-sided (the
+tail on the observed count's side of its expectation, doubled), a cell is
+tested only if its count or expectation reaches 5, and $p$-values are
+Benjamini--Hochberg corrected across every tested cell of every head. The
+effect size is the cell's $2\times2$ $\log_2$ odds ratio with 0.5 added to
+each count. Per head, the NMI between the winning entry and the label
+(mutual information over the mean of the two entropies), less its mean
+over five label-shuffled draws, measures how much of the partition the
+label explains.
+
+\paragraph{Head-partition NMI and effective information (\texttt{headnmi.py},
+\texttt{effinfo.py}).}
+Every pair of heads' winning-entry partitions of the eval tail is compared
+by NMI, adjusted for chance as
+$(I - I_0)/(\bar{H} - I_0)$, with $I$ the mutual information, $\bar{H}$
+the mean of the two entropies and $I_0$ the Miller--Madow approximation to
+the information two independent partitions with the same numbers of used
+entries share; a permutation null agrees with $I_0$ to within 10\%. 0 is
+chance and 1 the same partition. A head using fewer than 1.1 effective
+entries carries no partition and is left out. Effective
+information~\cite{hoel2013} from a source head to a later effect head is
+the mutual information between an intervention that forces the source to
+one of its entries, uniformly over the entries it uses on the eval tail,
+and the effect head's resulting choice, over 4{,}096 eval-tail contexts.
+On a hard code those entries are the source's natural states, so the
+intervention stays on distribution.
+
+\paragraph{Selection surfaces (\texttt{selection.py}).}
+Each head's assignments $P_i$ on a batch of 2{,}048 eval-tail rows define
+the neighbor graph of Figure~\ref{fig:anatomy}b on the layer's input
+$Y_\ell$: $P_iP_i^\top$ times the heat kernel of the inputs, self-edges
+removed, rows normalized, $N_i$. The head is scored by how well its
+co-classified neighbors predict each row,
+$\lVert Y_\ell - N_iY_\ell\rVert^2/\lVert Y_\ell - \bar{Y}_\ell\rVert^2$
+with $\bar{Y}_\ell$ the batch mean, the self-supervised
+denoising loss of noise2self~\cite{batson2019} that
+$\mathrm{L2}_{\mathrm{pwak}}$ trains (Eq.~\eqref{eq:stats}). 0 means the
+neighbors predict a row exactly, 1 that the graph does no better than the
+mean. Two baselines share the run and rows: every row in one cell (the
+plain heat-kernel smoother) and the rows permuted, a random partition with
+matched cell sizes (three draws per batch). Scores are averaged over
+heads and batches.
+
 \paragraph{Diagnostic scripts (\texttt{experiments/ste-arm/}).}
 The straight-through and geometry results rest on further single-purpose
 instruments, described where used: \texttt{inputgeom.py} (geometry of the
@@ -867,6 +934,35 @@ Figure~\ref{fig:anatomy-softmax} shows one such soft head of
 	As in Figure~\ref{fig:anatomy}, the model was not trained with the
 	statistics that use the graph.}
 \label{fig:anatomy-softmax}
+\end{figure}
+
+Trained in as hard selection, the categorical form shows row by row
+(Figure~\ref{fig:assignmap}, \texttt{assignmap.py}). On both substrates
+the straight-through stack's layer-0 heads put each row on one entry (row
+1.0) and spread the rows over 14--30 effective entries (use), and rows
+that share a label tend to share entries: most Cebuano rows sit on one
+entry of each of the three SONAR heads shown, and most GPT-2 newline and
+space tokens on one entry per head. An SAE on the same rows spreads each
+over 25--29 effective latents of its $k_{\mathrm{SAE}}{=}32$ active and the
+shown rows over 1{,}066--1{,}533; a label shows there as a set of
+co-firing latents (GPT-2's newlines), not as one.
+
+\begin{figure}[tp]
+\centering
+\includegraphics[width=\linewidth]{figures/fig-assignmap.pdf}
+\caption[Hard codes against SAE codes, row by row]{\textbf{Hard codes
+	against SAE codes, row by row.} Layer-0 assignments of the
+	straight-through stacks on eval-tail rows, 24 per label value:
+	(a) SONAR \texttt{ste\_h76\_init01} by language, (c) GPT-2
+	\texttt{ste\_h76} by token class, for the three heads whose partitions
+	carry the most NMI with the label above its shuffled null. Entries are
+	sorted by usage, rows grouped by label and ordered by their winning
+	entries; each head's use is under it, and its row is 1.0. (b, d) The
+	same rows in the same order against an SAE trained on the same cache
+	(\texttt{m5120\_k32}, \texttt{m12160\_k32}), each cell a latent's share
+	of the row's code, for the 96 latents most used on these rows; the
+	whole code's use and row are under it. One seed per model.}
+\label{fig:assignmap}
 \end{figure}
 
 \subsection{Semantic coherence in detail}
@@ -1039,6 +1135,33 @@ reference and on the hard-code arms (Section~\ref{sec:lang}): the softmax
 reference's best head reaches a null-corrected NMI of only $0.043$, a
 quarter of the hard code's. Language factors are carried by a \emph{few}
 heads' partitions, weakly, and most heads classify something else.
+
+Entry-level enrichment asks the same question cell by cell
+(Figure~\ref{fig:enrich}, \texttt{enrich.py}). In \texttt{resid\_nc},
+3{,}698 of 226{,}763 tested (entry, language) cells are significant at FDR
+0.05, and the label structure is a layer-0 property: the best head's NMI
+above its shuffled null is 0.050 at layer 0 and 0.006, 0.003, 0.002 and
+0.001 above it. GPT-2's hard code has the same depth profile for token
+class (0.149 at layer 0, at most 0.029 above) and for position (0.105,
+then at most 0.011), with 11{,}777 of 53{,}412 (entry, token class) cells
+significant.
+
+\begin{figure}[tp]
+\centering
+\includegraphics[width=\linewidth]{figures/fig-enrich.pdf}
+\caption[Label structure by layer]{\textbf{Label structure lives in
+	layer 0.} (a) NMI between each head's winning entry and a label on the
+	eval tail, less its mean over five label-shuffled draws, one point per
+	head (values at or below that mean drawn at $10^{-4}$) and a bar at the
+	layer median: \texttt{resid\_nc} against language, GPT-2
+	\texttt{ste\_h76} against token class and position. (b) The GPT-2
+	layer-0 head with the most token-class NMI (head 15), each entry
+	against each class: colour the Haldane-corrected $\log_2$ odds ratio,
+	area $-\log_{10}$ FDR (capped at 50), filled where FDR $<0.05$;
+	entries grouped by the class they are most enriched for. One seed per
+	model.}
+\label{fig:enrich}
+\end{figure}
 
 \subsection{Shrinkage decomposition}
 
@@ -1251,6 +1374,30 @@ against size-matched nulls; rise, peak near step 370k, partial
 relaxation. (b) Mean per-sample classification entropy returns toward
 the 5-bit maximum after the annealing transient.}
 \label{fig:devinterp}
+\end{figure}
+
+Entry by entry, \texttt{resid\_nc}'s dictionary settles after the anneal
+(Figure~\ref{fig:entrydrift}, \texttt{entrydrift.py}). In layers 0--3 a
+used entry's decoded atom has median cosine 0.40--0.51 with its final
+direction at step 10k, 0.73--0.82 at 60k, just after the anneal, and
+0.99--1.00 from 320k. Layer 4 starts at 0.23, stalls near 0.53 from 60k to
+160k and converges only after its freeze near 190k
+(Section~\ref{sec:freeze}), keeping 142 of its 1{,}024 entries. Usage
+dips at the anneal's end instead: 40\% of layer 0's entries fall out of
+use at 60k, and all but 7\% are back in use by the end. One seed.
+
+\begin{figure}[tp]
+\centering
+\includegraphics[width=\linewidth]{figures/fig-entrydrift.pdf}
+\caption[Entry drift over training]{\textbf{Entries settle after the
+	anneal.} \texttt{resid\_nc}'s 16 retained checkpoints on the eval tail.
+	(a, b) Usage $\bar{p}_{ij}$ of head 0's 32 entries in layers 0 and 4,
+	one column per checkpoint (not to scale in step), entries ordered by
+	final usage; the dotted line marks the anneal's end. (c) Per layer, the
+	median cosine between an entry's decoded atom and its final direction,
+	over the entries in use at the last checkpoint. (d) Per layer, the
+	share of entries in use ($\bar{p}_{ij}\geq 1/4k$). One seed.}
+\label{fig:entrydrift}
 \end{figure}
 
 \subsection{Scaling: a star sweep}
@@ -1662,6 +1809,36 @@ not comparable to the converged arm's): pinning
 $W_{\mathrm{dec}}\,\mathbb{E}\mathbf{r}$ is 1024 linear constraints on a $1024\times2048$ matrix,
 0.05\% of its freedom. The decoder is dense because a full-rank map
 carrying a $\sim$900-dimensional signal is dense.
+
+\paragraph{How the layers' partitions relate.} Each head's winning entry
+partitions the eval tail, and Figure~\ref{fig:headnmi} compares every
+pair of the 380 heads of \texttt{ste\_h76} (shipped init;
+\texttt{headnmi.py}). Heads partition independently except within layer
+0: the mean adjusted NMI within a layer is 0.0075 at layer 0 and
+0.0006--0.0028 above it, and at most 0.0004 between layers (GPT-2's
+stack: 0.054 at layer 0, at most 0.004 elsewhere), so a later layer does
+not re-split what an earlier one split. Effective information, how far
+forcing one head moves another's choice, tracks that overlap only from
+layer 0: over head pairs its Spearman correlation with adjusted NMI is
+0.76, 0.50, 0.38 and 0.23 from layer 0 to layers 1--4, and at most 0.08
+from any later layer, whose heads move every downstream head by a similar
+0.003--0.02 bits whatever their partitions share. One seed.
+
+\begin{figure}[tp]
+\centering
+\includegraphics[width=\linewidth]{figures/fig-headnmi.pdf}
+\caption[Head partitions against each other and against
+intervention]{\textbf{Partitions overlap, and track intervention, only
+	in layer 0.} \texttt{ste\_h76} (shipped init) on the eval tail, its 380
+	heads blocked by layer and ordered within a layer by hierarchical
+	clustering. (a) Adjusted NMI between every pair of heads'
+	winning-entry partitions (0 = chance), log scale, diagonal grey.
+	(b) Effective information from the row head to the column head, with
+	interventions uniform over the source's live entries; grey where the
+	effect head is not downstream. (c) One against the other per head
+	pair, by source layer. One seed.}
+\label{fig:headnmi}
+\end{figure}
 
 \subsection{Steering by target layer, and head-health levers}
 \label{sec:steerlayer}
@@ -2423,6 +2600,34 @@ appeal to its frozen heads. The two collapses end differently:
 layers' and emits nothing; \texttt{softmax\_shm}'s is collinear at
 near-equal magnitude, emits a near-constant vector, and removing it
 helps --- a small overfit, not a useful bias.
+
+\paragraph{Partitions barely beat a plain smoother.} The noise2self score
+that $\mathrm{L2}_{\mathrm{pwak}}$ would train can be read held out
+(Figure~\ref{fig:selection}, \texttt{selection.py}): how well a head's
+co-classified neighbors predict a row's input, against the same heat
+kernel with every row in one cell. No arm of the sweep trained with the
+statistic. A head's partition improves on that smoother by at most 0.020,
+at layer 0 (\texttt{top4\_shm}), by at most 0.005 at layers 1--3, and by
+0.031 at layer 4 only in \texttt{softmax}, where the layer is inert
+anyway; a random partition with matched cell sizes is never better than
+the smoother, and a one-entry code (\texttt{top1}) is worse than it above
+layer 0. One seed per arm; these runs trained on the evaluation tail.
+
+\begin{figure}[tp]
+\centering
+\includegraphics[width=\linewidth]{figures/fig-selection.pdf}
+\caption[Held-out noise2self score against the selection
+rule]{\textbf{Partitions barely beat a plain smoother.} The selection
+	sweep's held-out noise2self score per layer, against the number of
+	entries each head selects (1 is argmax, 32 is softmax), less the same
+	run's score with every row in one cell (below 0 the partition helps),
+	for the two mean-entropy bonus settings. Filled: the heads'
+	partitions, mean over heads; hollow, dashed: the same assignments with
+	the rows permuted, a random partition with matched cell sizes. Heat
+	kernel of bandwidth 0.2 on the layer's input, batches of 2{,}048 rows.
+	One seed per arm, in-sample tail.}
+\label{fig:selection}
+\end{figure}
 
 \subsection{Classifier geometry from the weights}
 \label{sec:bilinspec}
