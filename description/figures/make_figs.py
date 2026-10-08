@@ -349,21 +349,21 @@ fig.subplots_adjust(wspace=0.42, bottom=0.30, top=0.80, left=0.10, right=0.99)
 # (a) unsupervised steering on the shared frame (steer_overlay medians)
 arms = ["probe", "onto", "dm"]
 effs = [0.072, 0.302, 0.474]
-cols = [PINE50, LEAF, INK]
+cols = [PINE50, PINE, INK]
 a.bar(range(3), effs, color=cols, width=0.62)
 a.set_xticks(range(3))
 a.set_xticklabels(["probe", "onto", "dm\n(superv.)"], fontsize=6.8,
                   family="monospace")
 a.set_ylabel("steering effect (dm frame)")
 a.text(1, 0.315, "4× probe", ha="center", fontsize=6.6,
-       family="monospace", color=LEAF)
+       family="monospace", color=PINE)
 monoticks(a)
 eyebrow(a, "steers unsupervised")
 
 # (b) composition additivity by intervention layer (working notes)
 layers = [0, 1, 2, 3, 4]
 coss = [0.959, 0.947, 0.967, 0.996, 1.000]
-b.plot(layers, coss, color=LEAF, lw=1.2, marker="o", ms=3.2)
+b.plot(layers, coss, color=PINE, lw=1.2, marker="o", ms=3.2)
 b.axhline(1.0, color=INKMUT, lw=0.6, ls=(0, (2, 2)))
 b.set_xticks(layers)
 b.set_xlabel("intervention layer")
@@ -375,7 +375,7 @@ eyebrow(b, "interventions compose")
 # (c) code round-trip text fidelity (working notes, forced-English decodes)
 names = ["k32", "k160", "onto\nsoft", "k5120\n(dense)"]
 chrfs = [0.228, 0.282, 0.552, 0.841]
-ccols = [INKMUT, INKMUT, LEAF, PINE25]
+ccols = [INKMUT, INKMUT, PINE, PINE25]
 c.bar(range(4), chrfs, color=ccols, width=0.62)
 c.axhline(0.176, color=INKMUT, lw=0.6, ls=(0, (2, 2)))
 c.text(3.45, 0.160, "corpus\nfloor", fontsize=6.0, family="monospace",
