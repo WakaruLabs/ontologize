@@ -373,7 +373,7 @@ reads and the question it answers.
 	\texttt{splitting.py} takes two runs, such as seed replicas). Dashed
 	arrows are one script's output read by another. \texttt{selection.py},
 	\texttt{enrich.py}, \texttt{assignmap.py}, \texttt{entrydrift.py},
-	\texttt{bilinspec.py}, \texttt{headnmi.py} and \texttt{effinfo.py}
+	\texttt{headnmi.py} and \texttt{effinfo.py}
 	(in \texttt{experiments/effective-information/}) are diagnostics with
 	no protocol below; no result in this document comes from them.}
 \label{fig:evalpipeline}
@@ -756,6 +756,50 @@ earlier outage mode scored empty replies as $\mathrm{F1}=0$). Six models:
 the Ontologizer, rungs \texttt{k32}/\texttt{k32\_bl}/\texttt{g160top1}/%
 \texttt{g160softmax}, and the dense control \texttt{k5120}.
 
+\paragraph{Modularity (\texttt{headstruct.py --modularity}).}
+A head's assignments split the samples into soft cells, and soft
+modularity~\cite{newman2006,zhang2007fuzzy} scores how much more affinity
+those cells hold than a degree-preserving null graph would place there.
+Per batch of 4096 rows, with edge weights $\chi_{nn'}$ (the heat kernel
+$\exp((\cos-1)/0.2)$ between unit-normalized inputs, self-edges removed,
+kept for each sample's 15 nearest neighbors and symmetrized by union),
+degrees $\chi_n = \sum_{n'}\chi_{nn'}$ and total $\chi = \sum_n\chi_n$,
+head $i$ scores
+\begin{equation}
+	Q_i = \frac{1}{\chi}\sum_{n,n'}\Big(\chi_{nn'}
+	- \frac{\chi_n\chi_{n'}}{\chi}\Big)\,
+	\mathbf{p}_{ni}\cdot\mathbf{p}_{n'i},
+	\label{eq:modularity}
+\end{equation}
+with the graph and degrees restricted to the samples the head fires on, so
+a sparse group is not penalized for its coverage. An Ontologizer layer is
+scored on its own input: $\mathbf{x}$ at layer 0, the residual it
+classifies above that. A Matryoshka SAE's prefix block $\ell$ is scored on
+its prefix residual, $\mathbf{x}$ less the decode of the code on blocks
+before $\ell$ (so block 0 on $\mathbf{x}-\mathbf{b}_{\mathrm{dec}}$), and a
+flat model on $\mathbf{x}$. An SAE group's cells are its members'
+activations normalized within the group. A layer's mean $Q_i$ is set
+against 20 size-matched nulls that regroup the same entries within the
+layer or block, over cache rows 524{,}288--1{,}048{,}575 (training rows;
+SAE groups are discovered on the rows before them).
+
+\paragraph{Classifier geometry (\texttt{bilinspec.py}).}
+With the classifier as trained (order 2, no gate), each logit is one
+bilinear pair over the layer's shape,
+$(\mathbf{w}\cdot\mathbf{u})(\mathbf{v}\cdot\mathbf{u}) =
+\mathbf{u}^\top B\mathbf{u}$ with $B =
+(\mathbf{w}\mathbf{v}^\top+\mathbf{v}\mathbf{w}^\top)/2$, whose eigenvalues
+$\lambda_\pm = (\mathbf{w}\cdot\mathbf{v} \pm
+\lVert\mathbf{w}\rVert\lVert\mathbf{v}\rVert)/2$ make every spectral
+statistic of a feature a function of
+$\cos(\mathbf{w},\mathbf{v})$~\cite{pearce2025}. The script reads them
+from the weights at retained checkpoints, on the semantic block of
+$\mathbf{u}$ (the constant coordinate excluded), and reports per layer the
+median and quartiles of $\lvert\cos\rvert$, the share of features whose
+dominant eigenvalue is negative, and the constant coordinate's weight
+relative to the rest of $\mathbf{w}$. The closed-form spectra agree with a
+dense eigendecomposition to $10^{-14}$. No data enter.
+
 \paragraph{Diagnostic scripts (\texttt{experiments/ste-arm/}).}
 The straight-through and geometry results rest on further single-purpose
 instruments, described where used: \texttt{inputgeom.py} (geometry of the
@@ -848,6 +892,56 @@ entries' decode directions repel while their described contents weakly
 cohere. It is also the first measure to separate the Ontologizer from its
 single-layer soft rival, though only suggestively at this coverage (one
 global $\zeta$ per model over the campaign's sampled features).
+
+\subsection{Heads as communities of their input}
+\label{sec:modularity}
+
+A head partitions the samples it reads. Whether the partition is a
+community structure of that input, with more affinity inside its cells
+than a degree-preserving null graph puts there, is soft modularity
+(Eq.~\eqref{eq:modularity}), compared with size-matched regroupings of the
+same entries (Figure~\ref{fig:modularity}). The softmax Ontologizer is
+\texttt{bl\_ctl\_full}; the SAEs are the Matryoshka rungs
+\texttt{m5120\_g160top1\_p5} (trained heads) and \texttt{m5120\_k32\_p5}
+(discovered groups) and the flat \texttt{m5120\_g160top1} and
+\texttt{m5120\_k32}.
+
+On the input itself nothing is a community: the Ontologizer's layer 0 is
+1.25 times its null and every SAE 0.76--1.06. On each layer's own input
+the Ontologizer's layers 1--4 are 2.1--2.9 times as modular as
+regroupings of their entries. A Matryoshka SAE scored on matched
+prefix-residual graphs is not, whether its heads are trained (0.96--1.06)
+or discovered (0.88--1.03 in the blocks they cover). So the structure is
+not a property of residual graphs, nor of trained heads in a
+coarse-to-fine dictionary. What differs is that an Ontologizer layer
+classifies the residual it is scored on, while a Matryoshka block is
+encoded from the input and only trained to reconstruct that residual. Raw
+modularity rises with depth in real and null alike (layer 4: 0.218
+against 0.105), as assignments sharpen and the residual graphs cluster,
+which is why the ratio is the comparable number. Low values on the input
+are what a factorial code predicts: a head that encodes one of many
+independent factors cuts across the input's neighborhoods, since
+neighbors share most factors and not necessarily this one. One checkpoint
+per model.
+
+\begin{figure}[tp]
+\centering
+\includegraphics[width=\linewidth]{figures/fig-modularity.pdf}
+\caption[Head partitions as communities of their input]{\textbf{Ontologizer
+	heads are communities of the residual they classify; SAE heads and
+	groups are not.} Soft modularity over its size-matched null
+	(\texttt{headstruct.py --modularity}, Eq.~\eqref{eq:modularity}); bars
+	are $\pm2$ null standard deviations. (a) Every model scored on the input
+	itself: the softmax Ontologizer's layer 0, block 0 of the two Matryoshka
+	SAEs (scored on $\mathbf{x}-\mathbf{b}_{\mathrm{dec}}$, the SAE
+	encoder's input), and the two flat SAEs. (b) By depth, each layer or
+	prefix block on the graph of its own input. Hollow: a block whose groups
+	cover under 10\% of samples. The discovered groups' blocks 3 and 4 are
+	not drawn: block 3's null is within two of its standard deviations of 0
+	(3\% coverage), and block 4 holds one group, which its null reproduces
+	exactly. One checkpoint per model.}
+\label{fig:modularity}
+\end{figure}
 
 \subsection{Feature reliability}
 
@@ -1084,32 +1178,40 @@ for duration.}
 \label{fig:variants}
 \end{figure}
 
-\paragraph{An HSIC bottleneck in place of the auxiliary losses.} The
-candidate objective maximizes dependence with the reconstruction target
-while penalizing dependence between heads. It is distinct from the
-pairwise head-CKA penalty of Section~\ref{sec:hsic}, which was added to the
-straight-through arm's losses rather than replacing them. Both arms were
-retrained on the \texttt{resid\_nc\_hm} configuration to 372k steps.
-Replacing the four auxiliary terms with the HSIC objective destroys head
-health: a late, persistent freeze takes 77 of 160 heads by the final
-checkpoint, one layer entirely (layer 3, 32/32 from step 80k), while
-reconstruction lands slightly behind the control (tail-mean training MSE
-$3.7\times10^{-5}$ against $3.4\times10^{-5}$). Adding HSIC on top of the
-auxiliary terms is worse on both counts: MSE $4.4\times10^{-5}$, and 41 of
-160 heads still frozen at the end, layer 3 fully frozen by 80k with only
-partial thaw (Figure~\ref{fig:hsicbottleneck}). The failure is
-\texttt{resid\_nc}'s late freeze rather than the transient, which puts the
-bottleneck in direct opposition to the mean-entropy bonus: the bonus
-prevents exactly what HSIC induces. As formulated it is neither a
-replacement nor an addition.
+\paragraph{An HSIC bottleneck in place of the auxiliary losses.} Two arms
+on the \texttt{resid\_nc\_hm} configuration, trained to 372k steps,
+penalize dependence between a layer's heads by the pairwise head CKA of
+Section~\ref{sec:hsic} under its biased estimator: one replaces the four
+auxiliary terms with that penalty, the other adds it to them. Replacing
+them destroys head health: a late, persistent freeze takes 77 of 160
+heads by the final checkpoint, one layer entirely (layer 3, 32/32 from
+step 80k), while reconstruction lands slightly behind the control
+(tail-mean training MSE $3.7\times10^{-5}$ against $3.4\times10^{-5}$).
+Adding the penalty to the auxiliary terms is worse on both counts: MSE
+$4.4\times10^{-5}$, and 41 of 160 heads still frozen at the end, layer 3
+fully frozen by 80k with only partial thaw
+(Figure~\ref{fig:hsicbottleneck}). The failure is \texttt{resid\_nc}'s
+late freeze rather than the transient, and it is the estimator's. The
+biased floor between independent heads falls with the number of entries
+a head uses and is zero for a frozen head (Section~\ref{sec:hsic}), so
+the penalty can only be lowered by concentrating or freezing heads,
+which puts it in direct opposition to the mean-entropy bonus. Retrained
+on the current code, the replacement arm reproduces the freeze
+checkpoint for checkpoint (layer 3: 6, 29 and 32 of 32 frozen at 60k, 70k
+and 80k, against 7, 29 and 32) while its summed penalty falls by 80\%;
+under the unbiased estimator the same arm freezes at most 5 heads, all in
+layer 4, by 93k steps (one seed each). With the corrected estimator the
+penalty has almost nothing to act on, and whether it could replace the
+auxiliary terms over a full run is untested.
 
 \begin{figure}[htbp]\centering
 \includegraphics[width=\linewidth]{figures/fig-hsic.pdf}
 \caption{Total frozen heads over training for the three loss
 configurations, all on the \texttt{resid\_nc\_hm} configuration at 372k
 steps. The auxiliary-loss control's freeze is the early transient and
-resolves; both HSIC arms develop the late, persistent freeze instead, and
-the auxiliary terms only partially thaw it.}
+resolves; both HSIC arms, whose head-CKA penalty uses the biased
+estimator, develop the late, persistent freeze instead, and the
+auxiliary terms only partially thaw it.}
 \label{fig:hsicbottleneck}
 \end{figure}
 
@@ -1681,8 +1783,17 @@ biased   & 0.0315 & 0.1062 & 0.1018 & 0.0963 & 0.0976 & 0.0867 \\
 The biased estimator reads chance co-occurrence between independent
 categorical heads as dependence, with a floor that grows as the batch
 shrinks (0.109 at $b{=}256$, 0.029 at 1024, against an unbiased 0.0001 at
-every size). At the training batch the floor exceeded any real
-dependence, so the penalty had nothing to descend but the bias.
+every size). The floor also falls with the number of entries a head
+uses, and a frozen head, whose constant code depends on nothing, scores
+zero against every other: on synthetic independent heads at $b{=}256$
+and $k{=}32$ it reads 0.108 at uniform usage, 0.016 at about four
+effective entries, and 0.026 with half the heads frozen
+(\texttt{cka\_floor.py}). At the training batch the floor exceeded any
+real dependence, so the penalty had nothing to descend but the bias, and
+the bias descends only by concentrating or freezing heads.
+Reconstruction resisted that here; where the penalty replaced the
+softmax model's auxiliary losses, it froze a layer
+(Section~\ref{sec:freeze}).
 \texttt{hsic.pairwise\_head\_cka} now defaults to the unbiased
 estimator~\cite{song2012}, which reads 0.06 at 0.5 planted factor
 correlation and 0.41 at 0.8. Conditioning on language or script explains
@@ -2305,3 +2416,50 @@ appeal to its frozen heads. The two collapses end differently:
 layers' and emits nothing; \texttt{softmax\_shm}'s is collinear at
 near-equal magnitude, emits a near-constant vector, and removing it
 helps --- a small overfit, not a useful bias.
+
+\subsection{Classifier geometry from the weights}
+\label{sec:bilinspec}
+
+Each classifier logit is one bilinear pair,
+$(\mathbf{w}\cdot\mathbf{u})(\mathbf{v}\cdot\mathbf{u})$, so
+$\lvert\cos(\mathbf{w},\mathbf{v})\rvert$ says what kind of feature it is:
+near 1 the form is rank 1, proportional to $(\mathbf{w}\cdot\mathbf{u})^2$,
+even in $\mathbf{u}$ and so blind to the sign of the input along
+$\mathbf{w}$; near 0 it is a saddle that sees the sign of each projection
+(protocol in Appendix~\ref{app:methods}). Figure~\ref{fig:bilinspec} reads
+it from the weights of the softmax stack (\texttt{resid\_nc}) and the
+hard-code stack (\texttt{ste\_h76\_init01}).
+
+\textbf{The softmax stack goes rank 1; the hard-code stack mostly does
+not.} At the final checkpoint the softmax stack's median
+$\lvert\cos\rvert$ is 0.94 in layer 1 and 0.52--0.80 in layers 2--3, where
+the hard-code stack's layers 1--3 stay at 0.10--0.16, against 0.021 for a
+random pair. Layer 0 sits at 0.54--0.64 in both, and the softmax stack's
+layer 4 falls to 0.18. The alignment is learned late: every layer starts
+at the random floor; the softmax stack's leave it between 30k and 50k
+steps, as its temperature anneal ends, and the hard-code stack's only from
+80k (layer 0) and 220k (layers 3--4), with layers 1--2 above 0.05 only at
+the last checkpoint. The dominant eigenvalue is negative for 63--98\% of
+the softmax stack's features and 97--99\% of the hard-code stack's, so a
+rank-1 feature scores high where the input is orthogonal to $\mathbf{w}$,
+not along it. The constant coordinate can break the sign-blindness of a
+rank-1 feature for inputs weakly aligned with $\mathbf{w}$: in the softmax
+stack's layers 1--4 its weight is 0.18--0.24 of the rest of $\mathbf{w}$,
+in the hard-code stack's 0.017--0.025. One seed per run; weights only.
+
+\begin{figure}[tp]
+\centering
+\includegraphics[width=\linewidth]{figures/fig-bilinspec.pdf}
+\caption[Classifier geometry from the weights]{\textbf{The softmax
+	stack's classifier features go rank 1; the hard-code stack's mostly do
+	not.} Median $\lvert\cos(\mathbf{w},\mathbf{v})\rvert$ of each layer's
+	bilinear feature pairs (\texttt{bilinspec.py}), 1 for a rank-1 feature.
+	(a) The final checkpoint by layer, with interquartile ranges: the softmax
+	stack (\texttt{resid\_nc}, step 372.6k) and the hard-code stack
+	(\texttt{ste\_h76\_init01}, step 369.5k). (b, c) Over training, one line
+	per layer, numbered at its end; the softmax stack's temperature anneal
+	ends at 50k, and the hard-code stack's temperature is constant. Dashed:
+	the median for a random pair in the 1024-dimensional semantic block,
+	0.021. One seed per run.}
+\label{fig:bilinspec}
+\end{figure}

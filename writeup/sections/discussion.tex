@@ -288,7 +288,8 @@ by modularity on a nearest-neighbor graph of the residual each layer
 classifies, the softmax Ontologizer's layers 1--4 are two to three times
 as modular as size-matched regroupings of their entries; neither a
 Matryoshka SAE's discovered groups nor its trained heads are, on matched
-prefix-residual graphs (one checkpoint each). Still open:
+prefix-residual graphs (one checkpoint each;
+Appendix~\ref{sec:modularity}). Still open:
 partition-vs-label-library MI, led by topic and genre (from a labeled
 corpus or unsupervised topic clusters) since those are what the
 embedding is organized by, with length, formatting/noise and script as
@@ -342,17 +343,11 @@ the modularity control above, but is not yet on the ladder. Still to run:
 the one-layer variants at $m{=}11264$, the mid-range $\topk$ sweep
 ($k_{\mathrm{SAE}} \in \{512, 2048\}$), and random-support and
 nonnegative-LS refit controls.
-\item \textbf{Whether the HSIC bottleneck's freeze is real.} The frozen
-counts behind Appendix~\ref{sec:freeze}'s HSIC-bottleneck arms came from
-a probe that skipped the gain--shape split, and on a gain--shape model
-that probe manufactures a late, deep freeze of the same kind: retraining
-the HSIC arm with gain--shape on gives 29 frozen layer-4 heads under the
-old probe at step 80k, against 2 under the correct one. The original
-arms' runs are gone, but their layer-0 trajectory, which the probe
-difference cannot touch, suggests they trained with gain--shape off,
-where the old probe is exact. A retrain with gain--shape off settles it.
 \item \textbf{Closed.} HSIC head independence (heads are already
-independent), decoder sparsification and bias (no structure; $<1\%$),
+independent), the HSIC bottleneck's freeze (real, and the biased
+estimator's: only a frozen head escapes its floor;
+Appendix~\ref{sec:freeze}), decoder sparsification and bias (no
+structure; $<1\%$),
 code-forwarding alongside the residual, input whitening (subsumed by
 initialization), entropy-pressure rescaling across shapes (likewise), and
 per-layer decoders (on GPT-2 every layer adds what it added with the
