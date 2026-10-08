@@ -58,10 +58,10 @@ def parse_args():
     p.add_argument("--out-base", default=str(EXP_DIR / "runs"),
                    help="run dir parent; the run lands in <out-base>/<arm>")
     p.add_argument("--s-hsic-heads", type=float, default=1e-4,
-                   help="pairwise-head CKA scale (hsic/both arms). The "
-                        "per-layer CKA is O(0.01-0.1) for healthy heads, "
-                        "so 1e-4 puts the term at ~1e-6..1e-5 -- the same "
-                        "order as the stock aux contributions; sweep "
+                   help="pairwise-head CKA scale (hsic/both arms). "
+                        "Healthy heads read ~0.001-0.007 per layer under "
+                        "the unbiased estimator and O(0.01-0.1) under the "
+                        "biased one, almost all of it floor; sweep "
                         "{1e-5, 1e-4, 1e-3} before quoting a result")
     p.add_argument("--s-hsic-res", type=float, default=0.0,
                    help="HSIC(residual, target) scale (0 = off)")
@@ -70,7 +70,8 @@ def parse_args():
                         "heuristic per head per batch")
     p.add_argument("--hsic-estimator", default="unbiased",
                    choices=["biased", "unbiased"],
-                   help="estimator for the residual term")
+                   help="estimator for the head and residual terms; the "
+                        "recorded arms ran biased")
     p.add_argument("--epochs", type=int, default=24)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--resid-gain", type=int, choices=[0, 1], default=1,

@@ -27,6 +27,9 @@ into training as a drop-in loss replacement, without touching the
   inherited aux terms. `TrainingEnv` and resume work unchanged.
 - `train_hsic.py` -- the ablation harness (`--arm aux|hsic|both`),
   otherwise mirroring the sonar.py resid_nc_hm configuration.
+- `cka_floor.py` -- both estimators on heads independent by
+  construction, with usage concentration and frozen heads varied: the
+  biased estimator's floor and what lowers it (CPU, seconds).
 
 ## The penalties
 
@@ -43,8 +46,13 @@ into training as a drop-in loss replacement, without touching the
   i.e. leave no predictable structure unexplained.
 
 **Honest limitation, by construction:** a *frozen* head emits a
-constant code; its centered Gram is ~0, so `pairwise_head_cka` neither
-rewards nor punishes it. HSIC replaces the *decorrelation* terms, not
+constant code; its centered Gram is ~0, so under the unbiased estimator
+`pairwise_head_cka` neither rewards nor punishes it. Under the biased
+estimator it rewards it: independent live heads still read roughly
+(k_eff - 1)/(b - 1), k_eff a head's effective entry count, and a frozen
+head escapes that floor (`cka_floor.py`). That is what froze the
+recorded arms (`experiments/layer4-freeze/notes.md`, 2026-10-08).
+HSIC replaces the *decorrelation* terms, not
 the *load-balancing* one -- if the hsic-only arm re-freezes layer 4
 where the `both` arm does not, that is the expected signature that
 `s_Hm` is doing irreplaceable work. Do not zero `s_Hm` expecting HSIC
@@ -66,9 +74,10 @@ terms, not the plumbing. Compare across arms:
 - head health: `experiments/layer4-freeze/freeze_diag.py` on each run
   dir (frozen counts, usage entropy);
 - head quality: `headcoh.py` (semantic coherence), `headstruct.py`;
-- scale sweep: `--s-hsic-heads {1e-5, 1e-4, 1e-3}` -- healthy per-layer
-  CKA is O(0.01-0.1), so 1e-4 lands the term at the same order as the
-  stock aux contributions relative to the final whitened MSE (~3e-6).
+- scale sweep: `--s-hsic-heads {1e-5, 1e-4, 1e-3}` -- the unbiased
+  estimator reads ~0.001-0.007 per layer on healthy heads, so at 1e-4
+  the term is ~1e-6. The biased one reads O(0.01-0.1), almost all of it
+  floor.
 
 ## Run
 
@@ -80,6 +89,10 @@ uv run python experiments/hsic-bottleneck/hsic.py
 uv run python experiments/hsic-bottleneck/train_hsic.py --arm aux
 uv run python experiments/hsic-bottleneck/train_hsic.py --arm hsic --s-hsic-heads 1e-4
 uv run python experiments/hsic-bottleneck/train_hsic.py --arm both --s-hsic-heads 1e-4
+
+# the recorded hsic arm (writeup Figure fig-hsic)
+uv run python experiments/hsic-bottleneck/train_hsic.py --arm hsic --s-hsic-heads 1e-4 \
+    --hsic-estimator biased --resid-gain 0 --const0 0
 ```
 
 ## Inputs
@@ -91,11 +104,14 @@ uv run python experiments/hsic-bottleneck/train_hsic.py --arm both --s-hsic-head
 | `--out-base` | `experiments/hsic-bottleneck/runs` | runs land in `<out-base>/<arm>` |
 | `--resid-gain` | `1` | gain-shape forwarding; `resid_nc_hm` has it off (`0`) |
 | `--const0` | `1` | constant coordinate at layer 0; `resid_nc_hm` predates it (`0`) |
+| `--hsic-estimator` | `unbiased` | head and residual terms; the recorded arms ran `biased` |
 
 `--resid-gain` and `--const0` are passed explicitly because the model
 otherwise takes the dataclass defaults, and `resid_gain`'s changed
-(False -> True on 2026-09-10): which side of that the original arms
-trained on is not recorded (`experiments/layer4-freeze/notes.md`). The
+(False -> True on 2026-09-10). The recorded arms trained with both off
+and the biased estimator: a retrain so configured reproduces the `hsic`
+arm's step-10k diagnostics to three decimals
+(`experiments/layer4-freeze/notes.md`, 2026-10-08). The
 `aux` and `both` arms set `s_hcossim`, which is retired and now raises;
 only the `hsic` arm runs as specified.
 

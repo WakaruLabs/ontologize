@@ -49,7 +49,9 @@ end), which a real HSIC collapse would also produce -- a constant head has
 zero dependence on the others. Settling it needs either the arms'
 `log.jsonl`/spec from wherever they ran, or a retrain of one arm to ~80k
 steps diagnosed with the fixed script. Their reconstruction numbers
-(training MSE from `loss.csv`) do not depend on the probe.
+(training MSE from `loss.csv`) do not depend on the probe. (Resolved
+2026-10-08, below: gain-shape off, the freeze real, the estimator its
+cause.)
 
 ### 2026-10-07: retrain of the `hsic` arm with gain-shape on
 
@@ -89,3 +91,90 @@ which the old probe is exact and their freeze would be real. The
 no-gain retrain (`--resid-gain 0 --const0 0`,
 `data/out/sonar/hsic_check_nogain`) tests that directly: if it
 reproduces the original's trajectory, the reported freeze stands.
+
+### 2026-10-07: retrain with gain-shape off
+
+`--resid-gain 0 --const0 0`, otherwise as above
+(`data/out/sonar/hsic_check_nogain/hsic`). It crashed once on a GPU OOM at
+step 13,600 and resumed from that checkpoint (the batch stream continues;
+the training RNG restarts from the seed, so noise draws after 13.6k differ
+from an uninterrupted run); it then ran to 93,150 without failing, final
+loss 7.8e-5, no late divergence. With gain-shape off the old and fixed
+probes are identical, so one diagnosis serves both
+(`diag_fixed`): no frozen heads in layers 0-3 at any checkpoint, 2-5 in
+layer 4 from 80k.
+
+It does not reproduce the original either. Layer 0, by usage bits /
+mean top share:
+
+| step | original | gain-shape on | gain-shape off |
+|---|---|---|---|
+| 10k | 3.46 / 0.376 | 2.74 / 0.452 | 2.74 / 0.452 |
+| 40k | 3.09 / 0.487 | 4.17 / 0.177 | 4.02 / 0.189 |
+| 90k | 3.07 / 0.566 | 4.80 / 0.087 | 4.75 / 0.111 |
+
+The two retrains agree with each other and both leave the original
+within 10k steps, so something other than `resid_gain` differs from the
+original arms': the HSIC estimator (next section). With the unbiased
+estimator both retrains stay healthy to 93k steps (at most 5 frozen
+heads, all in layer 4).
+
+### 2026-10-08: the original arms used the biased estimator
+
+Both retrains above ran the unbiased head-CKA estimator, `train_hsic.py`'s
+current default. The original arms ran the biased one:
+`--s-hsic-heads`'s help sizes 1e-4 for "per-layer CKA O(0.01-0.1)", the
+biased estimator's range on trained heads (unbiased: ~0.001), and
+`pairwise_head_cka` changed its default when the straight-through arm
+found the bias (`experiments/ste-arm/notes.md`, "Head-independence
+pressure"). Retrained with `--hsic-estimator biased --resid-gain 0
+--const0 0`, otherwise as above (one epoch, 15,525 steps;
+`data/out/sonar/hsic_check_biased`), step 10k reproduces the original
+`hsic` arm. Usage bits / mean top share:
+
+| step 10k | layer 0 | 1 | 2 | 3 | 4 |
+|---|---|---|---|---|---|
+| original `hsic` | 3.459 / 0.376 | 4.364 / 0.198 | 4.592 / 0.156 | 4.804 / 0.100 | 4.812 / 0.095 |
+| original `both` | 3.459 / 0.376 | 4.362 / 0.199 | 4.591 / 0.157 | 4.801 / 0.100 | 4.810 / 0.096 |
+| retrain, biased | 3.459 / 0.376 | 4.365 / 0.197 | 4.590 / 0.158 | 4.806 / 0.100 | 4.811 / 0.097 |
+| retrain, unbiased | 2.744 / 0.452 | 2.963 / 0.339 | 3.152 / 0.309 | 3.165 / 0.308 | 3.366 / 0.282 |
+
+The biased retrain is as close to the original `hsic` arm as the original
+`both` arm is (`KL_m` agrees to four decimals as well). Gain-shape alone
+moves the 10k row by up to 0.13 bits (the unbiased pair), so this also
+pins the configuration: gain-shape off and no layer-0 constant, as the
+arms' author recalls. On it the old probe is exact (`old_probe_diag.py`
+and `freeze_diag.py` agree to 0.0 over every head and column of this
+checkpoint), so the original arms' frozen counts are correct
+measurements. **The freeze was real, and the biased estimator caused
+it**: with everything else held fixed, the unbiased estimator leaves the
+original's trajectory by the first checkpoint and freezes at most 5
+layer-4 heads through 93k.
+
+The mechanism. On heads independent by construction, the biased
+estimator still reads roughly (k_eff - 1)/(b - 1), k_eff = 1/sum p^2 a
+head's effective entry count, and scores a frozen head 0 against every
+other (`experiments/hsic-bottleneck/cka_floor.py`; b=256, h=32, k=32):
+
+| usage | frozen heads | biased | unbiased |
+|---|---|---|---|
+| uniform (k_eff 32) | 0 | 0.108 | -2e-4 |
+| Dirichlet(0.1) (k_eff 4) | 0 | 0.016 | -4e-5 |
+| uniform | 16 | 0.026 | 7e-5 |
+| uniform | 28 | 0.001 | -1e-5 |
+
+With the heads already near-independent, the only way the weights can
+lower the biased penalty is to concentrate or freeze heads. In this run
+it is worth 1.0-1.3e-4
+weighted through 15.5k steps (raw 1.04 rising to 1.27, summed over
+layers; the unbiased run's reads 0.000-0.014), a fifth of the MSE at
+that stage (6.4e-4) and above the MSE the model reaches later (~5e-5),
+which is when the original froze (layer 2 near-collapsed by 40k, layer
+3 from 80k). The auxiliary terms do not resist it: `both` froze in step.
+
+So the appendix's HSIC-bottleneck result is the straight-through arm's
+estimator-bias failure (writeup `sec:hsic`) in a configuration where it
+could freeze heads, not evidence about head-independence pressure.
+Not run: the biased retrain past 15.5k steps, which would reproduce the
+freeze directly rather than by the 10k match (a fresh six-epoch run,
+~2 h).
