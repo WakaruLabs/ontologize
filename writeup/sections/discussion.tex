@@ -277,8 +277,14 @@ cascade excluded: every Ontologizer's decode direction, linearized
 within its own layer, flips other heads at a random step's rate. In
 decoded text too, removing what a head wrote costs no more than a random
 step of the same length. The hard code's winner--runner-up margins are
-$\sim$$10^{-4}$, and binary heads, with margins a hundred times larger,
-flip the fewest other heads of any Ontologizer.
+$\sim$$10^{-4}$ (median $5.9\times10^{-4}$ over the stack's layers), and
+the margin looks like the lever: \texttt{ste\_k2\_h380}, five layers of
+380 binary heads with margins 34 times larger, is the hardest
+Ontologizer to disturb. A step of $0.25\lVert\mathbf{x}\rVert$ moves
+17--19\% of its other heads in every direction, random included, against
+66\% for the 32-way stack. That arm also trained at half the batch size
+for the same 24 epochs and at five times the mean-entropy weight, on one
+seed, so the comparison does not isolate the number of entries.
 \item \textbf{Task reconstruction.} Recover what each head classifies.
 Head-level autointerp, which describes a head from its entries' texts
 side by side and scores blinded assignment against sibling entries,

@@ -2776,7 +2776,7 @@ All layers:
 |---|---|---|---|
 | hard-code stack | 0.97 | 0.30 (0.30) | 5.9e-4 |
 | hard-code flat | 0.91 | 0.24 (0.26) | 1.5e-4 |
-| k=2 binary stack, `ste_k2_h380` (shipped init) | 1.12 | 0.11 (0.14) | 2.0e-2 |
+| k=2 binary stack, `ste_k2_h380` | 1.12 | 0.11 (0.14) | 2.0e-2 |
 | softmax stack, `_shm` | 0.65 | 0.41 (0.42) | 3.7e-3 |
 | softmax stack | 0.87 | 0.38 (0.41) | 5.2e-3 |
 | `g160top1` | 0.54 | **0.02** (0.19) | 1.8e-3 |
@@ -2802,10 +2802,17 @@ untested.
 
 **The hard-code Ontologizers' margins are tiny**, 1.5e-4 at layer 0 of the
 stack and in the flat arm, so nearly every head sits on a boundary. Binary
-heads have margins a hundred times larger and the lowest flip rate of any
-Ontologizer; at fixed strength 0.25 the k=2 stack moves 17-19% of other
-heads where the k=32 stack moves 66%. That arm is on the shipped
-initialization, so the comparison is confounded.
+heads' margins are 34 times the k=32 stack's over all layers (2.0e-2
+against 5.9e-4; 1000x at layer 0, falling to 46x, 32x, 17x and 4x in
+layers 1-4), and they have
+the lowest flip rate of any Ontologizer, though still their own random
+step's (0.11 against 0.14); at fixed strength 0.25 the k=2 stack moves
+17-19% of other heads in every direction where the k=32 stack moves 66%.
+That arm is on the fixed initialization (init scale 0.1, as its
+`log.jsonl` records; an earlier version of this note said shipped), but
+it trained at batch 128 for the same 24 epochs, so twice the steps, and
+at `s_Hm` 5e-4 against 1e-4, on one seed: the comparison does not
+isolate k.
 
 ```bash
 uv run python experiments/ste-arm/steergeom.py \
