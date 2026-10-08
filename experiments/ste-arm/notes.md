@@ -3259,6 +3259,82 @@ SAE-family `params` scores rose past 0.06. Everything else held to within
 its noise: text fidelity, the round trip, naturalness, the s_Hm
 confound, the text strips and both head-level lenses.
 
+## The visualization scripts on the shipped models
+
+2026-10-08: the first runs of `assignmap.py`, `entrydrift.py`,
+`enrich.py`, `headnmi.py` and `selection.py` on real models, each
+script's documented example (`assignmap.py` on GPT-2 with its `--sae`
+block added, `enrich.py` on `resid_nc` over every layer). All on the
+eval tail, one seed per run.
+
+- **Label structure lives in layer 0** (`enrich.py`). Null-subtracted
+  head x label NMI of the best head per layer 0-4: GPT-2 `ste_h76` by
+  token class 0.149, 0.029, 0.005, 0.002, 0.002 (by position 0.105,
+  then at most 0.011); `resid_nc` by language 0.050, 0.006, 0.003,
+  0.002, 0.001. At FDR 0.05, 11,777 of 53,412 (entry, token class)
+  cells are significant on GPT-2, and 3,698 of 226,763 (entry, language)
+  cells on `resid_nc`.
+- **Heads within a layer split the rows independently, except in the
+  straight-through stacks' layer 0** (`headnmi.py`, adjusted NMI, 0 =
+  chance). The layer-0 block mean is 0.054 on GPT-2 `ste_h76` and 0.0075
+  on SONAR `ste_h76`, against 0.002-0.004 in their other layers; between
+  layers it is at most 0.002. `resid_nc`'s blocks are all at most 0.004
+  except layer 4 (0.042), where 26 of 32 heads are dead and two
+  near-collapsed survivors (h22 and h26, about 1.1 effective entries
+  each) split off the same rows (0.60).
+- **Correlation tracks intervention only from layer 0.** On SONAR
+  `ste_h76`, Spearman rho between a head pair's adjusted NMI and its
+  live effective information (`experiments/effective-information`) is
+  0.76, 0.50, 0.38 and 0.23 from layer 0 to layers 1-4, and at most 0.08
+  from any later layer (0.34 over all 57,760 pairs).
+- **Entries settle after the anneal and then keep their meaning**
+  (`entrydrift.py`). In `resid_nc` a used entry's decoded direction has
+  median cosine 0.40-0.51 with its final one at 10k (layer 4: 0.23),
+  0.98-1.00 by 320k. Layer 4 ends with 142 of its 1,024 entries in use.
+  The `ste_h76` fine-tunes (`ft_layer0`, `ft_layer2`) leave every used
+  entry at cosine 1.00 with its parent's; the parent's layer 0 uses 806
+  of its 2,432 entries.
+- **Partitions barely beat the plain smoother** (`selection.py`,
+  held-out noise2self score, the `s_Hm` selection sweep). Best partition
+  minus its run's unpartitioned heat-kernel score: -0.020 at layer 0
+  (top4, s_Hm 3e-5), at most -0.005 at layers 1-3, -0.031 at layer 4
+  for the s_Hm 1e-6 softmax arm and at most -0.004 for the rest; top1 is
+  worse than the smoother above layer 0 (+0.008 to +0.011). Held-out
+  FVU over the sweep at s_Hm 1e-6 / 3e-5: top1 0.719 / -, top2 0.352 /
+  0.191, top4 - / 0.076, top8 0.037 / 0.029, top16 0.0052 / 0.0043,
+  softmax 0.0023 / 0.00068. These come from the runs' existing
+  `pareto.csv`, and the sweep predates the holdout, so they are
+  in-sample.
+- **The SAE block** (`assignmap.py --sae`). On GPT-2, m12160_k32 spreads
+  each row over about 25 of its 32 active latents and 1,924 effective
+  latents across the 797 shown rows, against 8-18 effective entries per
+  `ste_h76` head (medians by layer) at one entry per row; newline tokens
+  share a dense set of latents. On `resid_nc`, language-specific SAE
+  latents show as bars within each language's slice.
+
+Outputs: `<run>/assignmap/`, `<run>/entrydrift/` (the fine-tunes under
+`ste_h76`), `<run>/enrich/`, `<run>/headnmi/`, and
+`data/out/sonar/selection/`.
+
+```bash
+S=data/out/sonar/multilingual G=data/out/gpt2_l8 GC=data/activations/gpt2_l8.npy
+uv run python assignmap.py --ckpt $G/ste_h76 --cache $GC --by tokclass \
+    --heads 0 5 9 --sae $G/sae/m12160_k32/params.npz
+uv run python entrydrift.py --ckpt $S/resid_nc
+uv run python entrydrift.py --runs $S/ste_h76 $S/ste_h76_ft_layer0 \
+    $S/ste_h76_ft_layer2 --ref 0
+uv run python enrich.py --ckpt $G/ste_h76 --cache $GC --by tokclass
+uv run python enrich.py --ckpt $S/resid_nc --by lang
+uv run python headnmi.py --ckpt $S/resid_nc
+uv run python headnmi.py --ckpt $S/ste_h76 --ei $S/ste_h76/effinfo
+uv run python headnmi.py --ckpt $G/ste_h76 --cache $GC --order global
+uv run python selection.py --runs "$S/sweep_top[0-9]*" "$S/sweep_softmax*" \
+    --exclude relu --x n_sel --hue s_Hm
+uv run python selection.py --runs "$S/sweep_top[0-9]*" "$S/sweep_softmax*" \
+    --exclude relu --grid s_Hm n_sel \
+    --sae-csv data/out/sonar/pareto_unified/pareto.csv
+```
+
 ## Run
 
 See [`README.md`](README.md) for training and scoring commands.

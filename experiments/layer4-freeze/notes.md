@@ -174,7 +174,40 @@ which is when the original froze (layer 2 near-collapsed by 40k, layer
 
 So the appendix's HSIC-bottleneck result is the straight-through arm's
 estimator-bias failure (writeup `sec:hsic`) in a configuration where it
-could freeze heads, not evidence about head-independence pressure.
-Not run: the biased retrain past 15.5k steps, which would reproduce the
-freeze directly rather than by the 10k match (a fresh six-epoch run,
-~2 h).
+could freeze heads, not evidence about head-independence pressure. The
+six-epoch retrain below reproduces the freeze itself.
+
+### 2026-10-08: the biased retrain reproduces the freeze
+
+The same configuration for six epochs (93,150 steps, one uninterrupted
+run as a systemd unit; `data/out/sonar/hsic_check_biased_e6`),
+diagnosed at every checkpoint (`diag_fixed`; gain-shape off, so the old
+probe would read the same). Frozen heads per layer 0-4:
+
+| step | original `hsic` | original `both` | retrain, biased |
+|---|---|---|---|
+| 40k | 0 0 1 0 0 | 0 0 1 0 0 | 0 0 2 0 0 |
+| 60k | 0 0 0 7 0 | 0 0 0 7 0 | 0 0 0 6 0 |
+| 70k | 0 0 0 29 0 | 0 0 0 31 0 | 0 0 0 29 0 |
+| 80k | 0 0 1 32 0 | 0 0 0 32 0 | 0 0 0 32 0 |
+| 90k | 0 0 4 32 10 | 0 0 1 31 5 | 0 0 0 31 14 |
+
+Usage bits and top share agree with the original `hsic` arm to within
+0.04 bits and 0.01 through 40k. From 50k to 70k the largest per-layer
+gap (0.12-0.28 bits) is smaller than the gap between the two original
+arms (0.24-0.39); at 80-90k it widens to 0.71-0.95 bits, two to three
+times theirs, as individual heads freeze at different checkpoints.
+Layer 3 freezes in the same window and completely, as in the original.
+
+The penalty is what the freeze lowers. Raw (summed over layers) it peaks
+at 1.29 at 20k and falls to 0.76 at 40k, 0.43 at 80k and 0.27 at 93k,
+an 80% drop, while the unbiased retrain's stays at 0.02. Reconstruction
+pays during the freeze and mostly recovers: training MSE 2.7e-4 against
+the unbiased retrain's 1.8e-4 at 40k, 9.0e-5 against 7.3e-5 at 80k,
+7.4e-5 against 7.0e-5 at 93k (one seed each; the unbiased run resumed
+once at 13.6k). `KL_m` rises to 1.56 by 93k as frozen heads unbalance
+usage.
+
+Verdict: the recorded HSIC-bottleneck freeze is real, reproduces on
+current code, and is the biased estimator's. Under the unbiased
+estimator the same arm freezes at most 5 layer-4 heads by 93k.
