@@ -1,0 +1,16 @@
+{
+  "model": "onto",
+  "step": 372600,
+  "l": 5,
+  "h": 32,
+  "k": 32,
+  "temperature": 0.03,
+  "ckpt": "data/out/sonar/multilingual/resid_nc",
+  "rows": 262144,
+  "n_top": 12,
+  "n_desc": 6,
+  "n_test": 3,
+  "n_neg": 12,
+  "entries_per_head": 8,
+  "seed": 42
+}
