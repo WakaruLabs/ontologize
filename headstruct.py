@@ -64,7 +64,7 @@ partition it induces on the samples is a community structure of the input.
 Each group splits the samples it fires on into soft cells,
 P_ic = a_ic / sum_{c' in group} a_ic' over its members' activations, and
 that partition is scored by soft modularity (Newman 2006; the fuzzy form of
-Zhang et al. 2007) on each scoring batch's input affinity graph -- the
+Nepusz et al. 2008) on each scoring batch's input affinity graph -- the
 heat kernel of `ontologize.fns.pwak.affinity`, self-edges removed:
 
   Q = (1/2m) [ tr(P^T D P) - gamma * sum_c (k^T P_c)^2 / 2m ]

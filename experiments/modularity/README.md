@@ -7,8 +7,8 @@ question of both model families: is the partition a head induces a
 community structure of the input it classifies, i.e. do its cells hold
 more affinity than a degree-preserving null graph would put there?
 
-The measure is soft modularity (Newman 2006; the fuzzy form of Zhang et
-al. 2007). Each scored unit is a head (an Ontologizer head, a
+The measure is soft modularity (Newman 2006; the fuzzy form of Nepusz et
+al. 2008). Each scored unit is a head (an Ontologizer head, a
 `sae.py --groups` head) or a group discovered post hoc among SAE latents
 (`headstruct.py`'s default); its soft cells are its members' activations
 normalized within the unit:
