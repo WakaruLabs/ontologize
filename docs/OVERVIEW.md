@@ -47,15 +47,16 @@ Where the assumptions stop:
   members. On random members of the same layer-0 cells it falls to 0.55 to 0.61, and on members near a cell's boundary to
   0.50 to 0.52. The gap widens with depth (top 0.77 and random 0.56 at layer 1; 0.68 and 0.51 at layer 2), and layer-4
   cells score 0.50 even on their top members.
-- **How the describer samples matters.** Describing each cell from a tagged mix (6 top, 12 typical and 6 boundary members,
-  each marked with its tier) raises detection of typical members from 0.58 to 0.61 across nine heads, ahead of the 8-top
-  baseline on eight of them. Twenty-four untagged random members do no better than eight top members (0.58).
+- **How the describer samples matters.** Describing each cell from a tagged mix of its top, typical and boundary members, each marked
+  with its tier, raises detection of typical members from 0.58 to 0.61–0.62 across nine heads; adding a few non-members helps a
+  little more (0.62). Untagged random members do no better than top members (0.58).
 - **Deep layers are causal but not yet nameable.** Their labels carry token information and steer specifically, yet the
   judge scores chance (0.50) on layers 3 and 4.
 - **Only layer 0 reproduces across training seeds.** Deeper label sets differ from run to run.
 - **Combinations of cells carry a little more nameable meaning than single cells.** Inside one layer-0 cell, the members
   another head also agrees on form a sub-concept the judge can pick out against the rest of that cell at 0.64 to 0.66
   balanced accuracy, versus about 0.59 for single cells and 0.50 for random-partition nulls.
+  With the better description protocol the gap narrows: about 0.65 for intersections against 0.62 for single cells.
 - **Correction (2026-10-06).** An earlier version of this page reported 0.77 to 0.96 for those intersections. The judging agents could
   read the answer keys and earlier answers, and some copied them. Every judge number here comes from a re-run in a sandbox
   where the judge sees only its task file. Single-cell scores were unchanged by the re-run; the intersection scores fell.

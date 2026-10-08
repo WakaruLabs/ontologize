@@ -2,7 +2,7 @@
 
 *Research note from the GPT-2 small (layer 8) Ontologizer experiments, 2026-10-05; work in progress. Companion to [OVERVIEW.md](OVERVIEW.md).*
 
-**Status (2026-10-06): modest, real effect at layer 0, measured with a clean judge.** Jade and Claude agreed (2026-10-05) to
+**Status (2026-10-07): modest, real effect at layer 0, measured with a clean judge; smaller once single cells are described well.** Jade and Claude agreed (2026-10-05) to
 prioritize this track.
 
 ## Clean re-run (2026-10-06) — read this first
@@ -29,11 +29,15 @@ with reshuffled items. Mean balanced accuracy over heads, random members (0.50 =
   16×24 went from "1.000" to 0.57).
 - **Deep refinements aren't nameable even given their parent.** A head's layer-2 label refines its own layer-0 label far more than
   another head's does (3–4× the label information, judge-free), yet the judge names both equally poorly (0.54).
-- **Description protocol (Jade's idea, 2026-10-06).** Same detection items for every arm, nine D40 private layer-0 heads:
-  8 top members 0.581; 24 random 0.582; 48 random 0.598 (4 heads); **tagged mix of 6 top + 12 typical + 6 boundary 0.613**
-  (+0.031 paired, ≥ baseline on 8 of 9 heads). Tags or the margin-stratified selection, not sample size, carry the gain. A
-  second round (12/24/12, 8/32/8, the same mix untagged, the mix plus non-members, no-tools) and the tagged mix on the
-  intersections are running; this section will be updated with them.
+- **Description protocol (Jade's idea, 2026-10-06/07).** Single cells, nine D40 private layer-0 heads, the same detection items for
+  every arm: 8 top members 0.581; 24 random 0.582; tagged mix of 6 top + 12 typical + 6 boundary 0.613; tagged 12/24/12 0.617;
+  tagged 8/32/8 0.622; the 6/12/6 mix with tags removed 0.594; the mix plus 12 tagged non-members 0.623; the mix with a no-tools
+  instruction to the judge 0.611. Tagging carries most of the gain; bigger mixes and non-member contrast add about a point each;
+  whether the judging agent uses tools makes no difference.
+- **Composition under the better protocol.** On the six private intersections (new shared detection items) the tagged mix scores 0.649
+  against 0.642 for 24 random intersection members; its nulls score 0.498. The mix helps single cells far more than intersections, so
+  the composition advantage shrinks from about +0.06 to about +0.03 against the best single-cell arms. Composition still adds nameable
+  meaning, but part of the earlier gap came from describing single cells poorly.
 
 ## Earlier work on this page (leaky judge; numbers superseded by the section above)
 
