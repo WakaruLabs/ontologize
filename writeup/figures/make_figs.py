@@ -1000,3 +1000,342 @@ fig.legend(handles, ["Ontologizer heads", "SAE trained heads",
            handlelength=1.0, fontsize=6.6, bbox_to_anchor=(0.6, 0.0))
 letters((a, b))
 save(fig, "fig-modularity")
+
+
+# ---- per-sample and per-entry views (assignmap, entrydrift, enrich,
+# headnmi, selection), from their extracted outputs -------------------------
+
+def seq_cmap(color, name):
+    """White at 0 rising to `color`, as anatomy.py's blocks."""
+    return matplotlib.colors.LinearSegmentedColormap.from_list(
+        name, ["#FFFFFF", color])
+
+
+DIV = matplotlib.colors.LinearSegmentedColormap.from_list(
+    "inkpine", [INK, "#FFFFFF", PINE])
+
+
+def load_npz(name):
+    return np.load(os.path.join(RESULTS, name))
+
+
+def hairlines(ax, edges, axis, **kw):
+    """Separator lines between consecutive blocks ending at `edges`."""
+    line = ax.axhline if axis == "y" else ax.axvline
+    for e in edges[:-1]:
+        line(e - 0.5, **{"color": INKMUT, "lw": 0.4, **kw})
+
+
+# assignmap.py --sae: a hard-code stack's layer-0 assignments for the three
+# heads most informative about the label (a, c), beside an SAE's code on the
+# same rows in the same order (b, d). Rows are 24 per label slice, ordered
+# within a slice by their argmax entries; entries and latents by usage
+Z = load_npz("assignmap.npz")
+fig = plt.figure(figsize=(5.4, 5.0))
+n_rows = [len(Z[f"H{i}"]) for i in range(2)]
+outer = fig.add_gridspec(2, 1, height_ratios=[1, 0.03], hspace=0.2,
+                         left=0.10, right=0.98, top=0.95, bottom=0.07)
+gs = outer[0].subgridspec(2, 2, height_ratios=n_rows, hspace=0.42,
+                          wspace=0.08)
+gcb = outer[1].subgridspec(1, 2, wspace=0.2)
+axes = []
+for i in range(2):
+    H, S = Z[f"H{i}"].astype(float), Z[f"S{i}"].astype(float)
+    k = H.shape[1] // len(Z[f"heads{i}"])
+    use, row = Z[f"use{i}"], Z[f"row{i}"]
+    sae_use, sae_row, mass, l0, m, _ = Z[f"sae{i}"]
+    edges = np.cumsum(Z[f"slices{i}"])
+    a = fig.add_subplot(gs[i, 0])
+    im_h = a.imshow(H, aspect="auto", interpolation="nearest",
+                    cmap=seq_cmap(PINE, "pine"), vmin=0, vmax=1)
+    hairlines(a, np.arange(1, len(use) + 1) * k, "x", color=INK, lw=0.5)
+    a.set_xticks([(j + 0.5) * k - 0.5 for j in range(len(use))],
+                 [f"h{h}\nuse {u:.1f}" for h, u in zip(Z[f"heads{i}"], use)])
+    a.set_yticks(edges - np.asarray(Z[f"slices{i}"]) / 2 - 0.5,
+                 Z[f"names{i}"], fontsize=6.0)
+    a.tick_params(length=0)
+    eyebrow(a, f"{Z[f'panel{i}']}: {Z[f'run{i}']}, layer {int(Z[f'layer{i}'])}")
+    b = fig.add_subplot(gs[i, 1], sharey=a)
+    vmax_s = 2 / l0
+    im_s = b.imshow(S, aspect="auto", interpolation="nearest",
+                    cmap=seq_cmap(INK, "ink"), vmin=0, vmax=vmax_s)
+    b.set_xticks([S.shape[1] / 2 - 0.5],
+                 [f"first {S.shape[1]} of {int(m):,} latents ({mass:.0%} of "
+                  f"usage)\nuse {sae_use:,.0f}, row {sae_row:.1f}"])
+    b.tick_params(length=0, labelleft=False)
+    eyebrow(b, f"SAE {Z[f'sae_run{i}']}, same rows")
+    for ax in (a, b):
+        hairlines(ax, edges, "y")
+        for lbl in ax.get_xticklabels():
+            lbl.set_fontsize(6.2)
+        for s in ax.spines.values():
+            s.set_visible(True)
+            s.set_linewidth(0.5)
+    axes += [a, b]
+for j, (im, label, top) in enumerate(
+        [(im_h, "assignment probability", 1.0),
+         (im_s, "share of the row's SAE code", None)]):
+    cax = fig.add_subplot(gcb[0, j])
+    cb = fig.colorbar(im, cax=cax, orientation="horizontal",
+                      extend="max" if top is None else "neither")
+    cb.set_label(label, fontsize=6.6)
+    cb.ax.tick_params(labelsize=6.0)
+    cb.outline.set_linewidth(0.4)
+letters(axes)
+save(fig, "fig-assignmap")
+
+
+# entrydrift.py over resid_nc's checkpoints: two heads' entries step by step
+# (a, b: usage, entries ordered by usage at the last checkpoint), and per
+# layer the median cosine of each used entry's decoded direction with its
+# final one (c) and the share of entries in use (d)
+ZD = load_npz("entrydrift.npz")
+ED = load_rows("entrydrift.csv")
+steps = ZD["steps"]
+fig = plt.figure(figsize=(5.4, 4.1))
+outer = fig.add_gridspec(2, 1, hspace=0.55, left=0.09, right=0.92, top=0.92,
+                         bottom=0.2)
+gtop = outer[0].subgridspec(1, 3, width_ratios=[1, 1, 0.05], wspace=0.32)
+gbot = outer[1].subgridspec(1, 2, wspace=0.32)
+top_ = 4 / int(ZD["k"])
+ticks = [j for j, s in enumerate(steps) if s in (10000, 60000, 200000, 300000)
+         or j == len(steps) - 1]
+anneal_col = np.searchsorted(steps, int(ZD["mark_step"]), side="right") - 0.5
+axes = []
+for i in range(2):
+    a = fig.add_subplot(gtop[0, i])
+    im = a.imshow(ZD[f"usage{i}"], aspect="auto", interpolation="nearest",
+                  cmap=seq_cmap(PINE, "pine"), vmin=0, vmax=top_)
+    a.axvline(anneal_col, color=INKMUT, lw=0.7, ls=DOT)
+    a.set_xticks(ticks, [f"{steps[j] / 1e3:g}k" for j in ticks], rotation=0)
+    if i == 0:
+        a.set_ylabel("entry (by final usage)")
+    a.set_yticks([0, 31])
+    L, h = ZD[f"head{i}"]
+    eyebrow(a, f"layer {L}, head {h}: usage")
+    monoticks(a)
+    axes.append(a)
+cb = fig.colorbar(im, cax=fig.add_subplot(gtop[0, 2]), extend="max")
+cb.set_ticks([0, 0.05, 0.1])
+cb.ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:.2f}"))
+cb.set_label(r"usage $\bar p$", fontsize=7.0)
+cb.ax.tick_params(labelsize=6.0)
+for j, (col, ylab, lim) in enumerate([
+        ("median_drift_used", "median cos to final", (0, 1.02)),
+        ("frac_used", "share of entries in use", (0, 1.02))]):
+    ax = fig.add_subplot(gbot[0, j])
+    for L in range(5):
+        pts = [(int(r["step"]), float(r[col])) for r in ED
+               if int(r["layer"]) == L]
+        ax.plot(*zip(*pts), color=LAYER_COLS[L], lw=1.1, marker="o", ms=2.2)
+    ax.axvline(int(ZD["mark_step"]), color=INKMUT, lw=0.6, ls=DOT, zorder=1)
+    ax.set_xscale("log")
+    ax.xaxis.set_major_locator(FixedLocator([1e4, 3e4, 1e5, 3e5]))
+    ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v / 1e3:g}k"))
+    ax.xaxis.set_minor_formatter(NullFormatter())
+    ax.set_xlim(8e3, 4.6e5)
+    ax.set_ylim(*lim)
+    ax.set_xlabel("training step")
+    ax.set_ylabel(ylab)
+    eyebrow(ax, "by layer" if j == 0 else "usage >= 1/(4k), by layer")
+    mono_axes(ax)
+    axes.append(ax)
+axes[2].text(5.3e4, 0.05, "anneal\nends", fontsize=6.0, family="monospace",
+             color=INKMUT, va="bottom")
+fig.legend([Line2D([], [], color=LAYER_COLS[L], lw=1.1, marker="o", ms=2.2)
+            for L in range(5)], [f"layer {L}" for L in range(5)],
+           loc="lower center", ncols=5, handlelength=1.6, fontsize=6.6,
+           bbox_to_anchor=(0.53, 0.0))
+letters(axes)
+save(fig, "fig-entrydrift")
+
+
+# enrich.py: null-subtracted NMI between each head's argmax and a label, by
+# layer (a; one point per head, floored at 1e-4 where at or below chance), and
+# one GPT-2 layer-0 head's entries against token class (b): colour the
+# Haldane-corrected log2 odds ratio, area -log10 FDR, filled when FDR < 0.05
+EN = load_rows("enrich_nmi.csv")
+EC = load_rows("enrich_cells.csv")
+ENRICH_STYLE = [("SONAR", "lang", "SONAR resid_nc, language", LEAF, "o"),
+                ("GPT-2", "tokclass", "GPT-2 ste_h76, token class", INK, "s"),
+                ("GPT-2", "pos", "GPT-2 ste_h76, position", INKMUT, "^")]
+FLOOR = 1e-4
+fig, (a, b) = plt.subplots(1, 2, figsize=(5.4, 3.3),
+                           gridspec_kw=dict(width_ratios=[1.35, 1]))
+fig.subplots_adjust(wspace=0.55, bottom=0.25, top=0.9, left=0.11, right=0.86)
+rng = np.random.default_rng(0)
+for (sub, by, label, col, mk), dx in zip(ENRICH_STYLE, (-0.25, 0, 0.25)):
+    for L in range(5):
+        v = np.array([float(r["excess"]) for r in EN if r["substrate"] == sub
+                      and r["by"] == by and int(r["layer"]) == L])
+        x = L + dx + rng.uniform(-0.08, 0.08, len(v))
+        a.scatter(x, np.maximum(v, FLOOR), s=3.0, color=col, marker=mk,
+                  lw=0, alpha=0.55, zorder=2)
+        a.plot([L + dx - 0.1, L + dx + 0.1], [max(np.median(v), FLOOR)] * 2,
+               color=col, lw=1.4, zorder=3)
+a.set_yscale("log")
+a.set_ylim(FLOOR * 0.8, 0.3)
+a.set_xticks(range(5))
+a.set_xlabel("layer")
+a.set_ylabel("NMI(head, label) − null")
+eyebrow(a, "each head; bar = layer median")
+mono_axes(a)
+handles = [Line2D([], [], ls="none", color=c, marker=m, ms=3.6)
+           for *_, c, m in ENRICH_STYLE]
+fig.legend(handles, [s[2] for s in ENRICH_STYLE], loc="lower center",
+           ncols=3, handlelength=1.0, fontsize=6.4, bbox_to_anchor=(0.45, 0.0))
+labels = sorted({r["label"] for r in EC},
+                key=["punct", "word", "Word", "cont", "newline", "digit",
+                     "space"].index)
+# the data green at the enriched end stays apart from ink by lightness
+DOT_CMAP = matplotlib.colors.LinearSegmentedColormap.from_list(
+    "inkleaf", [INK, "#FFFFFF", LEAF])
+
+
+def top_label(e):
+    """Entry e's sort key: the label it is most enriched for, then usage."""
+    best = max((r for r in EC if int(r["entry"]) == e),
+               key=lambda r: float(r["log2OR"]))
+    return labels.index(best["label"]), -int(best["n_entry"])
+
+
+entries = sorted({int(r["entry"]) for r in EC}, key=top_label)
+for r in EC:
+    y, x = entries.index(int(r["entry"])), labels.index(r["label"])
+    q = min(float(r["neglog10_FDR"]), 50.0)
+    sig = q > -np.log10(0.05)
+    c = DOT_CMAP((np.clip(float(r["log2OR"]), -4, 4) + 4) / 8)
+    b.scatter([x], [y], s=4 + 40 * q / 50, color=c if sig else "white",
+              edgecolors=INK if sig else INKMUT,
+              linewidths=0.3 if sig else 0.5, zorder=3)
+b.set_xticks(range(len(labels)), labels, rotation=55, ha="right",
+             fontsize=6.4)
+b.set_yticks(range(len(entries)), [f"e{e}" for e in entries], fontsize=5.6)
+b.set_ylim(len(entries) - 0.5, -0.5)
+b.set_xlim(-0.6, len(labels) - 0.4)
+b.tick_params(length=0)
+b.grid(color=PINE25, lw=0.3)
+b.set_axisbelow(True)
+eyebrow(b, f"GPT-2 layer 0, head {EC[0]['head']}")
+sm = matplotlib.cm.ScalarMappable(cmap=DOT_CMAP,
+                                  norm=matplotlib.colors.Normalize(-4, 4))
+cb = fig.colorbar(sm, ax=b, fraction=0.08, pad=0.04, extend="both")
+cb.set_label(r"$\log_2$ odds ratio", fontsize=6.6)
+cb.ax.tick_params(labelsize=6.0)
+letters((a, b))
+save(fig, "fig-enrich")
+
+
+# headnmi.py --ei on the SONAR hard-code stack ste_h76: adjusted NMI between
+# every pair of heads' partitions (a; heads blocked by layer, hierarchically
+# ordered within a layer), the on-distribution effective information in the
+# same order (b; source rows, effect columns, defined only for later effect
+# layers), and one against the other per pair (c), coloured by source layer
+ZN = load_npz("headnmi.npz")
+adj, ei = ZN["adj"].astype(float), ZN["ei"].astype(float)
+lay = ZN["layer"]
+m = len(lay)
+np.fill_diagonal(adj, np.nan)
+fig = plt.figure(figsize=(5.4, 2.3))
+gs = fig.add_gridspec(1, 3, wspace=0.75, left=0.06, right=0.97, top=0.86,
+                      bottom=0.22)
+starts = np.flatnonzero(np.r_[True, lay[1:] != lay[:-1]])
+mids = [(s + e) / 2 for s, e in zip(starts, [*starts[1:], m])]
+mats = [(adj, "adjusted NMI", seq_cmap(PINE, "pine"),
+         matplotlib.colors.LogNorm(1e-3, 1), "adjusted NMI"),
+        (ei, "EI (bits)", seq_cmap(INK, "ink"),
+         matplotlib.colors.LogNorm(*np.nanpercentile(ei, [1, 99])),
+         "effective information")]
+axes = []
+for j, (M, label, cmap, norm, title) in enumerate(mats):
+    ax = fig.add_subplot(gs[0, j])
+    cm = cmap.copy()
+    cm.set_bad("#E6E6E6")
+    im = ax.imshow(np.where(np.isfinite(M), np.maximum(M, norm.vmin), np.nan),
+                   cmap=cm, norm=norm, interpolation="nearest")
+    for s in starts[1:]:
+        ax.axhline(s - 0.5, color=INK, lw=0.4)
+        ax.axvline(s - 0.5, color=INK, lw=0.4)
+    ax.set_xticks(mids, [f"L{L}" for L in range(len(mids))], fontsize=6.0)
+    ax.set_yticks(mids, [f"L{L}" for L in range(len(mids))], fontsize=6.0)
+    ax.tick_params(length=0)
+    eyebrow(ax, title)
+    cb = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cb.ax.yaxis.set_minor_formatter(NullFormatter())
+    if j == 1:
+        cb.set_ticks([3e-3, 1e-2, 2e-2])
+        cb.ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:g}"))
+    cb.ax.tick_params(labelsize=5.6)
+    axes.append(ax)
+c = fig.add_subplot(gs[0, 2])
+src = np.repeat(lay[:, None], m, 1)
+ok = np.isfinite(ei)
+for sel, col, label in [(ok & (src > 0), INKMUT, "from layers 1-3"),
+                        (ok & (src == 0), LEAF, "from layer 0")]:
+    c.scatter(np.maximum(adj[sel], 1e-4), ei[sel], s=1.0, lw=0, color=col,
+              alpha=0.45, label=label, rasterized=True)
+c.set_xscale("log")
+c.set_yscale("log")
+c.set_xlim(1e-4, 1)
+c.set_box_aspect(1)
+c.set_xlabel("adjusted NMI", labelpad=1)
+c.set_ylabel("EI (bits)", labelpad=1)
+eyebrow(c, "per head pair")
+mono_axes(c)
+c.legend(handles=[Line2D([], [], ls="none", marker="o", ms=3.0, color=col)
+                  for col in (LEAF, INKMUT)],
+         labels=["from layer 0", "from layers 1-3"], fontsize=5.8,
+         handletextpad=0.1, loc="lower right", borderaxespad=0.2)
+axes.append(c)
+letters(axes)
+save(fig, "fig-headnmi")
+
+
+# selection.py over the s_Hm selection sweep: the held-out noise2self score of
+# each layer's head partitions minus its run's unpartitioned heat-kernel
+# smoother (filled; below 0 the partition helps), against a random partition
+# with matched cell sizes, the same way (hollow, dashed)
+SN = load_rows("selection_n2s.csv")
+SN_STYLE = [("3e-05", r"$s_{\mathrm{KL}_m}{=}3{\times}10^{-5}$", LEAF),
+            ("1e-06", r"$s_{\mathrm{KL}_m}{=}10^{-6}$", INK)]
+
+
+def n2s(hue, layer, stat):
+    """{n_sel: value} of one stat for one s_Hm family and layer."""
+    return {int(r["n_sel"]): float(r["value"]) for r in SN
+            if r["s_Hm"] == hue and int(r["layer"]) == layer
+            and r["stat"] == stat}
+
+
+fig, axs = plt.subplots(1, 5, figsize=(5.4, 2.1), sharey=True)
+fig.subplots_adjust(wspace=0.12, bottom=0.36, top=0.86, left=0.12,
+                    right=0.99)
+for L, ax in enumerate(axs):
+    for hue, _, col in SN_STYLE:
+        base = n2s(hue, L, "unpartitioned")
+        for stat, kw in [("partition", dict(ls="-", mfc=col)),
+                         ("random", dict(ls=DASH, mfc="white"))]:
+            v = n2s(hue, L, stat)
+            xs = sorted(v)
+            ax.plot(xs, [v[x] - base[x] for x in xs], color=col, lw=0.9,
+                    marker="o", ms=2.6, mec=col, mew=0.6, **kw)
+    ax.axhline(0, **NULL, zorder=1)
+    ax.set_xscale("log", base=2)
+    ax.set_xticks([1, 4, 32], ["1", "4", "32"])
+    ax.xaxis.set_minor_locator(FixedLocator([2, 8, 16]))
+    ax.xaxis.set_minor_formatter(NullFormatter())
+    ax.set_xlim(0.75, 42)
+    eyebrow(ax, f"layer {L}")
+    mono_axes(ax)
+axs[0].set_ylabel("score − unpartitioned")
+axs[2].set_xlabel("entries selected per head")
+handles = ([Line2D([], [], color=c, marker="o", ms=2.6, lw=0.9)
+            for _, _, c in SN_STYLE]
+           + [Line2D([], [], color=INKMUT, marker="o", ms=2.6, mfc="white",
+                     lw=0.9, ls=DASH)])
+fig.legend(handles, [s[1] for s in SN_STYLE] + ["random partition, same "
+                                               "sizes"],
+           loc="lower center", ncols=3, handlelength=1.6, fontsize=6.4,
+           bbox_to_anchor=(0.55, 0.0))
+letters(axs)
+save(fig, "fig-selection")
