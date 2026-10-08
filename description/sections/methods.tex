@@ -130,14 +130,16 @@ entropy, in bits,
 	\label{eq:entropy}
 \end{equation}
 between-sample similarity, the mean absolute cosine of the per-head
-features over pairs of samples, evaluated through each head's dictionary
-Gram $G_i = \lvert D_{i}\rvert \lvert D_{i}\rvert^{\top}$,
+features over pairs of samples, with
+$\cos\angle(\mathbf{a}, \mathbf{b}) :=
+\langle\mathbf{a},\mathbf{b}\rangle / (\lVert\mathbf{a}\rVert\lVert\mathbf{b}\rVert)$
+the cosine of the angle between two vectors, evaluated through each
+head's dictionary Gram $G_i = \lvert D_{i}\rvert \lvert D_{i}\rvert^{\top}$,
 \begin{equation}
-	\mathrm{cossim}_b(\mathsf{P}) :=
-	\mathbb{E}_{n,n'}\left[\left\lvert
-	\frac{\langle \mathbf{f}_{n}, \mathbf{f}_{n'}\rangle}
-	     {\lVert \mathbf{f}_{n}\rVert \lVert \mathbf{f}_{n'}\rVert}
-	\right\rvert\right],
+	\mathrm{cossim}_b :=
+	\mathbb{E}_{n,n'}\big\lvert
+	\cos\angle(\mathbf{f}_{n}, \mathbf{f}_{n'})
+	\big\rvert,
 	\qquad
 	\langle \mathbf{f}_{n}, \mathbf{f}_{n'}\rangle
 	= \sum^{h}_{i=1}\mathbf{p}_{ni}^{\top}G_{i}\,\mathbf{p}_{n'i},
@@ -145,7 +147,7 @@ Gram $G_i = \lvert D_{i}\rvert \lvert D_{i}\rvert^{\top}$,
 \end{equation}
 and the divergence of the batch-mean assignment from uniform,
 \begin{equation}
-	\mathrm{KL}_m(\mathsf{P}) := \mathbb{E}_{i}\!\left[\log_2 k -
+	\mathrm{KL}_m := \mathbb{E}_{i}\!\left[\log_2 k -
 	\mathrm{entropy}_k\!\left(\mathbb{E}_n[P_n]\right)_i\right].
 	\label{eq:KL}
 \end{equation}
@@ -178,7 +180,7 @@ its atoms (Figure~\ref{fig:head-simplex}).
 	independently firing features, and because $p_{ij} \in [0,1]$ the
 	output lies within the convex hull of the head's atoms.
 	Because $\lvert \mathsf{D}\rvert\geq0$ and $P\geq0$, $F\geq0$, so
-	$\cos(\mathbf{f}_i, \mathbf{f}_{i'}) \in [0,1]$, and driving the support overlap $\omega$
+	$\cos\angle(\mathbf{f}_i, \mathbf{f}_{i'}) \in [0,1]$, and driving the support overlap $\omega$
 	to zero asks the heads to partition the coordinates of $\mathbb{R}^e$
 	between them (§\ref{sec:disjoint}).
 }

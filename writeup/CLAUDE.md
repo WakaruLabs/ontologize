@@ -174,7 +174,11 @@ written as function application ($\mathrm{dec}(R)$). This is the package's conve
 rows, which `from_legacy` transposes, so do not transcribe formulas from that layout. Use
 `\tilde{}` only for noised variables (not normalized ones: the normalized layer input is
 the shape $\mathbf{u}_\ell$) and `\hat{}` only for reconstructed variables, `\odot` for
-elementwise multiplication and `\oplus` for concatenation. `../description/CLAUDE.md` defers to this section. Where a lowercase entry
+elementwise multiplication and `\oplus` for concatenation. Cosine similarity is
+`\cos\angle(\mathbf{a}, \mathbf{b})`, the cosine of the angle between the vectors, never
+`\cos(\mathbf{a}, \mathbf{b})`: `\cos` takes one argument. `$\lvert\cos\angle\rvert$` alone
+is its absolute value for the pair in context; the Notation appendix's Conventions
+paragraph defines it. `../description/CLAUDE.md` defers to this section. Where a lowercase entry
 would read as a reserved count ($k$, $m$), write it bracketed: $[M^{\mathrm{part}}]_{ii'}$,
 $[\mathsf{K}]_{nij}$. Pearson's $r$, $R^2$ and $t$-statistics are written in words, since
 $r$, $R$ and $t$ are reserved.

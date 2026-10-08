@@ -135,21 +135,22 @@ similarity of the per-head features $\mathsf{F}$ over all ordered pairs
 of samples,
 
 \begin{equation}
-	\mathrm{cossim}_b(\mathsf{P}) :=
-	\mathbb{E}_{n,n'}\left[\left\lvert
-	\frac{\langle \mathbf{f}_{n}, \mathbf{f}_{n'}\rangle}
-	     {\lVert \mathbf{f}_{n}\rVert \lVert \mathbf{f}_{n'}\rVert}
-	\right\rvert\right],
+	\mathrm{cossim}_b :=
+	\mathbb{E}_{n,n'}\big\lvert
+	\cos\angle(\mathbf{f}_{n}, \mathbf{f}_{n'})
+	\big\rvert,
 	\qquad
 	\langle \mathbf{f}_{n}, \mathbf{f}_{n'}\rangle
-	= \sum^{h}_{i=1}\mathbf{p}_{ni}^{\top}G_{i}\,\mathbf{p}_{n'i}
+	= \sum^{h}_{i=1}\gamma_{ni}\gamma_{n'i}\,
+	\mathbf{p}_{ni}^{\top}G_{i}\,\mathbf{p}_{n'i}
 	\label{eq:cossim_b}
 \end{equation}
 
 where $\mathbf{f}_{ni} := \mathsf{F}_{ni\cdot} \in \mathbb{R}^{e}$ is
 head $i$'s feature vector for sample $n$,
 $\mathbf{f}_n = \map_{i=1}^{h}\mathbf{f}_{ni}$ is their concatenation,
-and
+$\gamma_{ni}$ is head $i$'s router scale on sample $n$ (1 without a
+router; Section~\ref{sec:router-fiber}), and
 $G_i = \lvert D_{i}\rvert \lvert D_{i}\rvert^{\top} \in \mathbb{R}^{k \times k}$
 is head $i$'s dictionary Gram, with $D_i := \mathsf{D}_{i\cdot\cdot}$ its
 $k \times e$ dictionary. The implementation evaluates
@@ -161,7 +162,7 @@ Finally, $\mathrm{KL}_m$ is the divergence of the batch-mean assignment
 vector from uniform, in bits, averaged over heads.
 
 \begin{equation}
-	\mathrm{KL}_m(\mathsf{P}) := \mathbb{E}_{i}\!\left[\log_2 k -
+	\mathrm{KL}_m := \mathbb{E}_{i}\!\left[\log_2 k -
 	\mathrm{entropy}_k\!\left(\bar{\mathbf{p}}_i\right)\right],
 	\qquad
 	\bar{\mathbf{p}}_i := \mathbb{E}_{n}\,[\mathbf{p}_{ni}]

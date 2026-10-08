@@ -60,10 +60,11 @@
 			on $\mathbf{p}'$}
 		$\tilde{\mathsf{F}} \leftarrow \mathrm{noise}_{\mathrm{featvar}}
 			(\mathsf{F})$ \tcp*{Eq.~\eqref{eq:noise_featvar}}
-		$\mathrm{cossim}_b \leftarrow \mathrm{cossim}_b(\mathsf{P})$
-			\tcp*{Eq.~\eqref{eq:cossim_b}, through the Grams}
+		$\mathrm{cossim}_b \leftarrow \mathbb{E}_{n,n'}
+			\lvert\cos\angle(\mathbf{f}_n, \mathbf{f}_{n'})\rvert$
+			\tcp*{Eq.~\eqref{eq:cossim_b}, from $\mathsf{P}$ through the Grams}
 		$\kappa_i \leftarrow \mathbb{E}_{j \ne j'}
-			\cos(\mathbf{a}_{ij}, \mathbf{a}_{ij'})$
+			\cos\angle(\mathbf{a}_{ij}, \mathbf{a}_{ij'})$
 			\tcp*{within-head atom cosine}
 		$\mathrm{KL}_m \leftarrow \mathbb{E}_i \left[\log_2 k -
 			\mathrm{entropy}_k(\bar{\mathbf{p}}_i)\right]$
@@ -71,7 +72,7 @@
 		$\boldsymbol{\pi}_i \leftarrow \sum_j \bar{p}_{ij}\,
 			\lvert\mathbf{a}_{ij}\rvert$;\quad
 			$\omega \leftarrow \mathbb{E}_{i \ne i'}
-			\cos(\boldsymbol{\pi}_i, \boldsymbol{\pi}_{i'})$
+			\cos\angle(\boldsymbol{\pi}_i, \boldsymbol{\pi}_{i'})$
 			\tcp*{support overlap}
 		$\mathrm{L1} \leftarrow \mathbb{E}_n \sum_i
 			\lVert \tilde{\mathbf{f}}_{ni} \rVert_1$\;

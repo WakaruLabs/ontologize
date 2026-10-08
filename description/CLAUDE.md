@@ -140,6 +140,8 @@ is (`$p_{ij}$` is an entry, `$\mathbf{p}_{ni}$` a vector slice). Vectors are col
 Use `$\tilde{}$` only for noised variables and `$\hat{}$` only for reconstructed variables;
 the normalized layer input is the shape `$\mathbf{u}_\ell$`, not a tilde.
 Use `$\odot$` for elementwise multiplication and `$\oplus$` for concatenation.
+Cosine similarity is `$\cos\angle(\mathbf{a}, \mathbf{b})$`, never `$\cos(\mathbf{a}, \mathbf{b})$`;
+it is defined inline at its first use, beside `$\mathrm{cossim}_b$`.
 
 Counts: `$b$` batch, `$l$` layers, `$h$` heads, `$k$` entries per head, `$d$` input
 dimension, `$e$` dictionary width. Indices: sample `$n$`, layer `$\ell$` (0-indexed),

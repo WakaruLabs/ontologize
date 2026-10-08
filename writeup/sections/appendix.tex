@@ -33,7 +33,12 @@ random variables in uppercase. A hat marks a reconstruction
 ($\tilde{\mathsf{F}}$, $\tilde{\mathbf{f}}_i$), a bar a mean
 ($\bar{\mathbf{p}}_i$, $\bar\kappa$), and a prime on an index a second
 index of the same kind ($i'$, $j'$). $\odot$ is the elementwise product
-and $\oplus$ concatenation.
+and $\oplus$ concatenation. The cosine similarity of two vectors is the
+cosine of the angle between them,
+$\cos\angle(\mathbf{a}, \mathbf{b}) :=
+\langle\mathbf{a},\mathbf{b}\rangle / (\lVert\mathbf{a}\rVert\lVert\mathbf{b}\rVert)$,
+so that $\cos$ keeps one argument; $\lvert\cos\angle\rvert$ alone is its
+absolute value for the pair in context.
 
 \paragraph{Layers and states.}
 A layer is indexed by its position, $\ell = 0,\dots,l-1$, and a state of
@@ -466,7 +471,7 @@ and top-singular-value energy fraction, z-scored as $\zeta$ against
 size-matched random subsets of the same pool (same layer for Ontologizer
 heads),
 \begin{equation}
-	\kappa(\mathcal{G}) := \mathbb{E}_{j \neq j' \in \mathcal{G}}\cos(\mathbf{v}_j, \mathbf{v}_{j'}),
+	\kappa(\mathcal{G}) := \mathbb{E}_{j \neq j' \in \mathcal{G}}\cos\angle(\mathbf{v}_j, \mathbf{v}_{j'}),
 	\qquad
 	\zeta_{\cos}(\mathcal{G}) := \frac{\kappa(\mathcal{G}) - \mathbb{E}_{\mathcal{G}'}[\kappa(\mathcal{G}')]}{\mathrm{sd}_{\mathcal{G}'}[\kappa(\mathcal{G}')]},
 	\label{eq:zcos}
@@ -531,7 +536,7 @@ contribution on row $n$,
 	\begin{gathered}
 	[M^{\mathrm{part}}]_{ii'} := \mathrm{NMI}(\mathbf{q}^{(1)}_{i}, \mathbf{q}^{(2)}_{i'}),
 	\\
-	[M^{\mathrm{contr}}]_{ii'} := \cos\!\big(\mathrm{vec}_{n}[\boldsymbol{\phi}^{(1)}_{ni}
+	[M^{\mathrm{contr}}]_{ii'} := \cos\angle\!\big(\mathrm{vec}_{n}[\boldsymbol{\phi}^{(1)}_{ni}
 	- \bar{\boldsymbol{\phi}}^{(1)}_{i}],\; \mathrm{vec}_{n}[\boldsymbol{\phi}^{(2)}_{ni'}
 	- \bar{\boldsymbol{\phi}}^{(2)}_{i'}]\big),
 	\end{gathered}
@@ -761,7 +766,8 @@ A head's assignments split the samples into soft cells, and soft
 modularity~\cite{newman2006,zhang2007fuzzy} scores how much more affinity
 those cells hold than a degree-preserving null graph would place there.
 Per batch of 4096 rows, with edge weights $\chi_{nn'}$ (the heat kernel
-$\exp((\cos-1)/0.2)$ between unit-normalized inputs, self-edges removed,
+$\exp((\cos\angle(\mathbf{y}_n, \mathbf{y}_{n'})-1)/0.2)$ between the
+samples' inputs $\mathbf{y}_n$, self-edges removed,
 kept for each sample's 15 nearest neighbors and symmetrized by union),
 degrees $\chi_n = \sum_{n'}\chi_{nn'}$ and total $\chi = \sum_n\chi_n$,
 head $i$ scores
@@ -792,10 +798,10 @@ $(\mathbf{w}\cdot\mathbf{u})(\mathbf{v}\cdot\mathbf{u}) =
 $\lambda_\pm = (\mathbf{w}\cdot\mathbf{v} \pm
 \lVert\mathbf{w}\rVert\lVert\mathbf{v}\rVert)/2$ make every spectral
 statistic of a feature a function of
-$\cos(\mathbf{w},\mathbf{v})$~\cite{pearce2025}. The script reads them
+$\cos\angle(\mathbf{w},\mathbf{v})$~\cite{pearce2025}. The script reads them
 from the weights at retained checkpoints, on the semantic block of
 $\mathbf{u}$ (the constant coordinate excluded), and reports per layer the
-median and quartiles of $\lvert\cos\rvert$, the share of features whose
+median and quartiles of $\lvert\cos\angle\rvert$, the share of features whose
 dominant eigenvalue is negative, and the constant coordinate's weight
 relative to the rest of $\mathbf{w}$. The closed-form spectra agree with a
 dense eigendecomposition to $10^{-14}$. No data enter.
@@ -1108,7 +1114,7 @@ target entry, where a soft code need only cross a fractional threshold.
 \paragraph{The text cycle is too weak to support conclusions.} Measured on
 an \emph{unsteered} round trip (the last 512 cache rows), the cycle
 keeps part of each row's content but moves it off the corpus:
-$\cos(\mathbf{x}, \mathrm{cycle}(\mathbf{x}))$ is $0.382$, against
+$\cos\angle(\mathbf{x}, \mathrm{cycle}(\mathbf{x}))$ is $0.382$, against
 $0.091$ to another row's cycle, while cycled embeddings sit at $0.160$ to
 the corpus mean, where rows sit at $0.561$. What it does not keep is the
 code. A head's argmax survives the round
@@ -2002,7 +2008,7 @@ models (\texttt{bigatoms.py}):
 \quad Spearman(atom norm, usage) in heads & $+0.81$ & $+0.27$ ($-0.04$ to $+0.58$) \\
 \quad usage of atoms $>3\times$ / of the rest & 0.0062 / 0.0037 ($1/k$ 0.0039) & 0.033 / 0.031 ($1/k$ 0.031) \\
 \multicolumn{3}{@{}l}{\emph{direction}} \\
-\quad $|\cos|$ between heads' largest atoms & 0.022 (random pairs 0.048) & 0.023 (random pairs 0.028) \\
+\quad $|\cos\angle|$ between heads' largest atoms & 0.022 (random pairs 0.048) & 0.023 (random pairs 0.028) \\
 \quad energy in the data's top 10 PCs & 4\% (all atoms 13\%) & 9\% (all atoms 3\%) \\
 \bottomrule
 \end{tabular}
@@ -2064,7 +2070,7 @@ than a few outsized ones --- yet reproduces no better than its
 neighbors. Peakedness predicts nothing there ($+0.09$).
 
 The large atoms are distinct directions: different heads' largest atoms
-are near orthogonal (median $|\cos|$ 0.022--0.023, below random atom
+are near orthogonal (median $|\cos\angle|$ 0.022--0.023, below random atom
 pairs). On SONAR they lean into the data's top ten principal directions
 (9\% of their energy against 3\% for a typical atom), consistent with
 cross-seed agreement being the data's dominant directions; on GPT-2 they
@@ -2423,7 +2429,7 @@ helps --- a small overfit, not a useful bias.
 
 Each classifier logit is one bilinear pair,
 $(\mathbf{w}\cdot\mathbf{u})(\mathbf{v}\cdot\mathbf{u})$, so
-$\lvert\cos(\mathbf{w},\mathbf{v})\rvert$ says what kind of feature it is:
+$\lvert\cos\angle(\mathbf{w},\mathbf{v})\rvert$ says what kind of feature it is:
 near 1 the form is rank 1, proportional to $(\mathbf{w}\cdot\mathbf{u})^2$,
 even in $\mathbf{u}$ and so blind to the sign of the input along
 $\mathbf{w}$; near 0 it is a saddle that sees the sign of each projection
@@ -2433,7 +2439,7 @@ hard-code stack (\texttt{ste\_h76\_init01}).
 
 \textbf{The softmax stack goes rank 1; the hard-code stack mostly does
 not.} At the final checkpoint the softmax stack's median
-$\lvert\cos\rvert$ is 0.94 in layer 1 and 0.52--0.80 in layers 2--3, where
+$\lvert\cos\angle\rvert$ is 0.94 in layer 1 and 0.52--0.80 in layers 2--3, where
 the hard-code stack's layers 1--3 stay at 0.10--0.16, against 0.021 for a
 random pair. Layer 0 sits at 0.54--0.64 in both, and the softmax stack's
 layer 4 falls to 0.18. The alignment is learned late: every layer starts
@@ -2453,7 +2459,7 @@ in the hard-code stack's 0.017--0.025. One seed per run; weights only.
 \includegraphics[width=\linewidth]{figures/fig-bilinspec.pdf}
 \caption[Classifier geometry from the weights]{\textbf{The softmax
 	stack's classifier features go rank 1; the hard-code stack's mostly do
-	not.} Median $\lvert\cos(\mathbf{w},\mathbf{v})\rvert$ of each layer's
+	not.} Median $\lvert\cos\angle(\mathbf{w},\mathbf{v})\rvert$ of each layer's
 	bilinear feature pairs (\texttt{bilinspec.py}), 1 for a rank-1 feature.
 	(a) The final checkpoint by layer, with interquartile ranges: the softmax
 	stack (\texttt{resid\_nc}, step 372.6k) and the hard-code stack
