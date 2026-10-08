@@ -131,7 +131,11 @@ uv run python assignmap.py -h  # per-layer heatmaps of held-out samples x
                                # (head, entry) assignment probabilities, rows
                                # sliced by lang / GPT-2 token class / pos / doc;
                                # makes head collapse and dead entries visible
-                               # per sample. --replot redraws from assign.npz
+                               # per sample. --sae adds a block of a sae.py
+                               # run's codes on the same rows, in each page's
+                               # row order (trained groups as heads, a flat
+                               # code cut to its most used latents).
+                               # --replot redraws from assign.npz
                                # (every script below has --replot too)
 uv run python enrich.py -h     # entry x label enrichment dotplot (hypergeometric
                                # with correct tails, Haldane 2x2 log2OR, BH FDR) +

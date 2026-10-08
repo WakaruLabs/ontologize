@@ -1,5 +1,6 @@
-# assignmap.py's label, sampling and ordering helpers, pinned on
-# hand-checkable cases, and one page drawn from synthetic assignments.
+# assignmap.py's label, sampling and ordering helpers and its SAE block,
+# pinned on hand-checkable cases, and pages drawn from synthetic
+# assignments and codes.
 import numpy as np
 import pytest
 
@@ -115,3 +116,103 @@ def test_draw_all_pages(tmp_path):
     assert sorted(p.name for p in tmp_path.glob("*.png")) == [
         "assign_l0_p0.png", "assign_l0_p1.png",
         "assign_l1_p0.png", "assign_l1_p1.png"]
+
+
+def test_row_eff_skips_silent_rows():
+    P = np.zeros((4, 1, 3))
+    P[:2, 0] = 1 / 3  # two uniform rows; the unit is silent on the others
+    assert assignmap.row_eff(P)[0] == pytest.approx(3.0)
+    assert assignmap.eff_entries(P)[0] == pytest.approx(3.0)
+    assert assignmap.eff_entries(np.zeros((3, 1, 4)))[0] == pytest.approx(1.0)
+
+
+def test_unit_shares_groups_flat_and_silent():
+    z = np.array([[2.0, 0.0, 1.0, 3.0],
+                  [0.0, 0.0, 0.0, 5.0]])
+    S = assignmap.unit_shares(z, 2)  # two groups of two
+    np.testing.assert_allclose(S[0], [[1.0, 0.0], [0.25, 0.75]])
+    np.testing.assert_allclose(S[1], [[0.0, 0.0], [0.0, 1.0]])  # g0 silent
+    flat = assignmap.unit_shares(z, 0)
+    assert flat.shape == (2, 1, 4)
+    np.testing.assert_allclose(flat[0, 0], [2 / 6, 0, 1 / 6, 3 / 6])
+
+
+def test_sae_block_flat_code_cut_to_most_used():
+    z = np.zeros((4, 6))
+    z[:, 3] = 1.0  # every row
+    z[:2, 1] = 1.0  # half the rows
+    z[3, 5] = 2.0
+    blk = assignmap.sae_block(z, 0, 2, "t", 0.5)
+    assert blk.names == ["code"] and blk.width == 6
+    assert blk.Q.shape == (4, 1, 2)
+    # latent 3 (mean share 7/12) then latent 1 (1/4); latent 5 is cut
+    np.testing.assert_allclose(blk.Q[:, 0, 0], [0.5, 0.5, 1.0, 1 / 3])
+    np.testing.assert_allclose(blk.Q[:, 0, 1], [0.5, 0.5, 0.0, 0.0])
+    assert blk.mass[0] == pytest.approx(7 / 12 + 1 / 4)
+    assert blk.fire[0] == 1.0
+
+
+def test_sae_block_groups_in_index_order():
+    z = np.zeros((3, 12))  # four groups of three
+    z[:, 2] = 1.0  # group 0: its last latent on every row
+    z[0, 4] = 1.0  # group 1 fires on row 0 only
+    blk = assignmap.sae_block(z, 4, 7, "t", 1.0)  # 7 columns fit 2 groups
+    assert blk.names == ["g0", "g1"] and blk.Q.shape == (3, 2, 3)
+    assert blk.Q[:, 0, 0].tolist() == [1.0, 1.0, 1.0]  # most used first
+    np.testing.assert_allclose(blk.fire, [1.0, 1 / 3])
+    np.testing.assert_allclose(blk.mass, [1.0, 1.0])
+    np.testing.assert_allclose(blk.reff, [1.0, 1.0])  # one-hot where firing
+
+
+def test_sae_title():
+    t = assignmap.sae_title
+    assert t("r", {"m": 5120, "topk": 32}) == "SAE r (m=5120, topk 32)"
+    assert t("r", {"m": 5120, "topk": 0, "groups": 160, "group_fn": "top1",
+                   "prefixes": 5}) == \
+        "SAE r (m=5120, 160 groups of 32, top1, 5 prefixes)"
+    assert t("r", {"m": 64, "topk": 0, "l1": 3e-5}) == "SAE r (m=64, L1 3e-05)"
+    assert t("r", {"m": 64, "topk": 0, "enc": "gated"}) == \
+        "SAE r (m=64, gated)"
+
+
+def test_sae_from_default_vmax():
+    from types import SimpleNamespace
+    cfg = SimpleNamespace(vmax=0.8, sae_cols=8, sae_vmax=None)
+    z = np.zeros((5, 16))
+    z[:, :4] = 1.0  # L0 = 4
+    flat = assignmap.sae_from(cfg, z, {"m": 16, "topk": 4}, "r")
+    assert flat.vmax == pytest.approx(0.5)  # 2 / L0
+    grouped = assignmap.sae_from(cfg, z, {"m": 16, "topk": 0, "groups": 4,
+                                          "group_fn": "top1"}, "r")
+    assert grouped.vmax == 0.8 and grouped.names == ["g0", "g1"]
+
+
+def test_draw_all_reorders_sae_rows_with_the_page(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    n = 12
+    P = np.zeros((n, 1, 1, 3))
+    P[np.arange(n), 0, 0, np.arange(n) % 3] = 1  # the page regroups rows
+    z = np.eye(n)  # latent i fires on row i alone, so it names the row
+    seen = {}
+
+    def fake_page(Pp, heads, slices, names, title, path, vmax, sae):
+        seen["P"], seen["sae"] = Pp, sae
+    monkeypatch.setattr(assignmap, "draw_page", fake_page)
+    cfg = SimpleNamespace(heads=None, max_heads=1, ckpt="run", by="lang",
+                          vmax=1.0)
+    blk = assignmap.sae_block(z, 0, n, "t", 1.0)
+    assignmap.draw_all(cfg, P, [n], ["a"], 0, tmp_path, blk)
+    shown = seen["sae"].Q[:, 0].argmax(-1)  # the cache row of each SAE row
+    assert (shown != np.arange(n)).any()  # the page did reorder
+    np.testing.assert_array_equal(seen["P"], P[shown, 0])
+
+
+@pytest.mark.parametrize("groups", [0, 4])
+def test_draw_page_with_sae_block(tmp_path, groups):
+    rng = np.random.default_rng(3)
+    P = rng.dirichlet(np.ones(5), size=(40, 3))
+    z = np.maximum(rng.normal(size=(40, 24)), 0)
+    blk = assignmap.sae_block(z, groups, 12, "SAE t", 0.5)
+    path = tmp_path / "page.png"
+    assignmap.draw_page(P, [0, 2], [25, 15], ["a", "b"], "t", path, 0.5, blk)
+    assert path.stat().st_size > 0

@@ -38,16 +38,33 @@ The default is lang when the sidecar exists, else tokclass.
 
 Heads are drawn --max-heads per page; --heads picks a subset.
 
+SAE block (--sae RUN/params.npz, a sae.py run): the same rows, in each
+page's row order, drawn as a second column block right of every page, so
+a row reads across both. Its units are the run's trained groups (sae.py
+--groups) in index order, as many as fit in --sae-cols columns, else the
+whole code as one unit cut to its --sae-cols most used latents. A cell is
+the latent's share of its unit's activation on that row: a top1 group is
+one-hot like a hard head, a flat topk code spreads over its active
+latents, and a row the unit is silent on is blank. The strip is as for
+heads (use over the whole unit, row over the rows it fires on), plus the
+unit's firing rate when below 1 and, when it is cut, the share of its
+usage the shown columns hold. Its colour scale is its own, [0,
+--sae-vmax]: by default --vmax for a grouped SAE and, for a flat code,
+twice a row's mean share (2/L0 on the shown rows), printed.
+
   uv run python assignmap.py --ckpt data/out/sonar/multilingual/resid_nc
   uv run python assignmap.py --ckpt data/out/gpt2_l8/ste_h76 \\
       --cache data/activations/gpt2_l8.npy --by tokclass --heads 0 5 9
+  uv run python assignmap.py --ckpt data/out/sonar/multilingual/resid_nc \\
+      --sae data/out/sonar/sae_conv/m5120_k32/params.npz
 
 The temperature defaults to the run's schedule at the restored step (its
 log.jsonl env_config). Writes <out>/assign_l<L>_p<j>.png per layer and
-page, and assign.npz (the probabilities, labels and row indices) so the
-figure can be redrawn without the model (--replot, which takes --out or
---ckpt to find it, and honours --heads/--max-heads/--vmax). NOTE: Ontologizer checkpoints
-restore on GPU JAX only.
+page, and assign.npz (the probabilities, labels and row indices, and the
+SAE's codes) so the figure can be redrawn without the models (--replot,
+which takes --out or --ckpt to find it, and honours --heads/--max-heads/
+--vmax/--sae-cols/--sae-vmax). NOTE: Ontologizer checkpoints restore on
+GPU JAX only.
 """
 # disable preallocation so this can share the GPU (same as sonar.py)
 import os
@@ -56,6 +73,7 @@ os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"] = "platform"
 
 import argparse
 import json
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Optional, Sequence
 
@@ -90,6 +108,15 @@ def parse_args():
     p.add_argument("--vmax", type=float, default=1.0,
                    help="top of the shared colour scale; lower it for "
                    "soft heads (values above saturate)")
+    p.add_argument("--sae", default=None,
+                   help="params.npz of a sae.py run: draw its codes on the "
+                   "same rows as a block beside every page")
+    p.add_argument("--sae-cols", type=int, default=256,
+                   help="SAE block width: as many trained groups as fit, "
+                   "or a flat code's most used latents")
+    p.add_argument("--sae-vmax", type=float, default=None,
+                   help="top of the SAE block's colour scale (default: "
+                   "--vmax for groups, 2/L0 for a flat code)")
     p.add_argument("--replot", action="store_true",
                    help="redraw from <out>/assign.npz without the model")
     p.add_argument("--b", type=int, default=4096)
@@ -191,9 +218,10 @@ def row_order(P: Float[np.ndarray, "n h k"],
 
 def eff_entries(P: Float[np.ndarray, "n h k"]) -> Float[np.ndarray, "h"]:
     """exp(H(p_bar)) per head: k when usage is uniform, 1 when every row
-    lands on one entry."""
+    lands on one entry (or, for an SAE unit, when it never fires)."""
     pb = P.mean(0)
-    pb = pb / pb.sum(-1, keepdims=True)
+    tot = pb.sum(-1, keepdims=True)
+    pb = pb / np.where(tot > 0, tot, 1.0)
     H = -(pb * np.log(np.where(pb > 0, pb, 1.0))).sum(-1)
     return np.exp(H)
 
@@ -201,9 +229,115 @@ def eff_entries(P: Float[np.ndarray, "n h k"]) -> Float[np.ndarray, "h"]:
 def row_eff(P: Float[np.ndarray, "n h k"]) -> Float[np.ndarray, "h"]:
     """exp(mean_i H(P_i)) per head: 1 when every row is one-hot, k when
     every row is uniform. Low eff_entries with low row_eff is collapse;
-    high row_eff is an undecided head whatever its usage."""
+    high row_eff is an undecided head whatever its usage. The mean is over
+    the rows a unit has mass on: every row for a head, the rows it fires
+    on for an SAE unit."""
     H = -(P * np.log(np.where(P > 0, P, 1.0))).sum(-1)
-    return np.exp(H.mean(0))
+    live = P.sum(-1) > 0
+    return np.exp((H * live).sum(0) / np.maximum(live.sum(0), 1))
+
+
+# ---------- SAE block ----------
+
+@dataclass
+class Block:
+    """SAE codes drawn as a column block beside a page, rows in the
+    page's order (`sae_block` builds it over all shown rows; `draw_all`
+    reorders the rows per page)."""
+    Q: Float[np.ndarray, "n g c"]  # per unit, shares in display order
+    names: list                    # unit tick labels
+    eff: Float[np.ndarray, "g"]    # use, over the whole unit
+    reff: Float[np.ndarray, "g"]   # row, over the rows it fires on
+    fire: Float[np.ndarray, "g"]   # share of rows the unit fires on
+    mass: Float[np.ndarray, "g"]   # share of its usage in the shown columns
+    width: int                     # latents per unit
+    title: str
+    vmax: float
+
+
+def unit_shares(z: Float[np.ndarray, "n m"],
+                groups: int) -> Float[np.ndarray, "n g w"]:
+    """Each latent's share of its unit's activation on each row: per
+    trained group when `groups`, else the whole code as one unit. A row
+    the unit is silent on stays zero."""
+    U = z.reshape(len(z), max(groups, 1), -1)
+    tot = U.sum(-1, keepdims=True)
+    return U / np.where(tot > 0, tot, 1.0)
+
+
+def sae_block(z: Float[np.ndarray, "n m"], groups: int, cols: int,
+              title: str, vmax: float) -> Block:
+    """The block's units, column order and statistics over all shown
+    rows. Units are the trained groups in index order, as many as fit in
+    `cols` columns (at least one), else the whole code; each unit's
+    latents are sorted by usage, most used first, and cut to `cols`."""
+    S = unit_shares(z, groups)
+    _, g, w = S.shape
+    S = S[:, :max(1, cols // w)] if groups else S
+    order = entry_order(S)[:, :min(w, cols)]
+    Q = np.take_along_axis(S, order[None], -1)
+    tot = S.mean(0).sum(-1)
+    mass = Q.mean(0).sum(-1) / np.where(tot > 0, tot, 1.0)
+    names = ([f"g{u}" for u in range(S.shape[1])] if groups else ["code"])
+    return Block(Q, names, eff_entries(S), row_eff(S),
+                 (S.sum(-1) > 0).mean(0), mass, w, title, vmax)
+
+
+def sae_codes(path, X: Float[np.ndarray, "n d"],
+              b: int) -> tuple[Float[np.ndarray, "n m"], dict]:
+    """A sae.py run's codes for the rows X, and its encode settings
+    (meta.json, or the run name for runs that predate it)."""
+    import jax
+    import jax.numpy as jnp
+    import sae
+
+    p = Path(path)
+    meta_path = p.parent / "meta.json"
+    if meta_path.exists():
+        meta = json.loads(meta_path.read_text())
+    else:  # pre-meta.json run: recover the encode rule from the name
+        from pareto import parse_sae_name
+        m, topk = parse_sae_name(p)
+        meta = {"m": m, "topk": topk, "groups": 0, "group_fn": "top1"}
+    params = {k: jnp.asarray(v) for k, v in np.load(p).items()}
+    enc = jax.jit(lambda x: sae.encode(params, x, meta["topk"],
+                                       meta["groups"], meta["group_fn"]))
+    z = np.concatenate([np.asarray(enc(jnp.asarray(X[i:i + b])))
+                        for i in range(0, len(X), b)])
+    return z, meta
+
+
+def sae_title(run: str, meta: dict) -> str:
+    """The block's heading: run name and encode rule."""
+    if meta.get("enc") == "gated":
+        rule = "gated"
+    elif meta.get("groups"):
+        rule = (f"{meta['groups']} groups of {meta['m'] // meta['groups']}, "
+                f"{meta['group_fn']}")
+    elif meta.get("topk"):
+        rule = f"topk {meta['topk']}"
+    else:
+        rule = f"L1 {meta.get('l1', 0):g}"
+    if meta.get("prefixes", 1) > 1:
+        rule += f", {meta['prefixes']} prefixes"
+    return f"SAE {run} (m={meta['m']}, {rule})"
+
+
+def sae_from(cfg, z: Float[np.ndarray, "n m"], meta: dict, run: str) -> Block:
+    """The SAE block under the CLI's --sae-cols/--sae-vmax, with a
+    one-line summary printed."""
+    groups = 0 if meta.get("enc") == "gated" else meta.get("groups", 0)
+    vmax = cfg.sae_vmax
+    if vmax is None:
+        l0 = float((z > 0).sum(-1).mean())
+        vmax = cfg.vmax if groups else min(1.0, 2.0 / max(l0, 1.0))
+    blk = sae_block(z, groups, cfg.sae_cols, sae_title(run, meta), vmax)
+    print(f"{blk.title}: {len(blk.names)} unit(s) of {blk.width} shown; "
+          f"median use {np.median(blk.eff):.1f}, row "
+          f"{np.median(blk.reff):.1f}, fire {np.median(blk.fire):.2f}; "
+          f"shown columns hold {np.median(blk.mass):.0%} of usage; "
+          f"vmax {vmax:.3g}")
+    return blk
 
 
 def temperature_at(hyper: dict, step: int) -> float:
@@ -231,13 +365,39 @@ def read_hyper(ckpt) -> Optional[dict]:
 
 # ---------- figure ----------
 
+def draw_block(ax_u, ax, Q: Float[np.ndarray, "n g c"], units: Sequence[str],
+               notes: Sequence[str], cmap: str, vmax: float):
+    """One column block: Q's units of c columns each, already in display
+    order, drawn as a map on ax under a strip of column means on ax_u
+    carrying one note per unit. Returns the map's image."""
+    n, g, c = Q.shape
+    M = Q.reshape(n, -1)
+    usage = M.mean(0)
+    ax_u.bar(np.arange(M.shape[1]), usage, width=1.0, color="0.35")
+    top = 1.35 * usage.max() if usage.max() > 0 else 1.0  # note headroom
+    ax_u.set_ylim(0, top)
+    ax_u.tick_params(labelbottom=False)
+    for i, note in enumerate(notes):
+        ax_u.text((i + 0.5) * c - 0.5, 0.98 * top, note,
+                  ha="center", va="top", fontsize=6)
+    im = ax.imshow(M, aspect="auto", interpolation="nearest",
+                   cmap=cmap, vmin=0.0, vmax=vmax)
+    for a in (ax, ax_u):
+        for i in range(1, g):
+            a.axvline(i * c - 0.5, color="0.2", lw=0.6)
+    ax.set_xticks([(i + 0.5) * c - 0.5 for i in range(g)], units, fontsize=7)
+    ax.set_xlim(-0.5, M.shape[1] - 0.5)
+    return im
+
+
 def draw_page(P: Float[np.ndarray, "n h k"], heads: Sequence[int],
               slices: Sequence[int], names: Sequence[str], title: str, path,
-              vmax: float = 1.0):
+              vmax: float = 1.0, sae: Optional[Block] = None):
     """One page: the rows of P (already in slice-then-argmax order) by
     the given heads' entries (each head usage-sorted). `slices` are the
     row counts of consecutive slices, `names` their labels. The colour
-    scale is [0, vmax], the same on every page of a run."""
+    scale is [0, vmax], the same on every page of a run. `sae` adds its
+    block on the same rows to the right, on its own scale."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -246,51 +406,68 @@ def draw_page(P: Float[np.ndarray, "n h k"], heads: Sequence[int],
     Q = P[:, heads]
     order = entry_order(Q)
     Q = np.take_along_axis(Q, order[None], -1)
-    M = Q.reshape(n, -1)
-    usage = M.mean(0)
     eff, reff = eff_entries(Q), row_eff(Q)
 
-    w = min(4 + M.shape[1] / 40, 40)
-    fig, (ax_u, ax) = plt.subplots(
-        2, 1, figsize=(w, 3 + n / 120), sharex=True,
-        gridspec_kw={"height_ratios": [1, 8], "hspace": 0.04})
-    x = np.arange(M.shape[1])
-    ax_u.bar(x, usage, width=1.0, color="0.35")
-    top = 1.35 * usage.max()  # headroom for the annotations
-    ax_u.set_ylim(0, top)
+    cols = [Q.shape[1] * k]
+    if sae is not None:
+        cols.append(sae.Q.shape[1] * sae.Q.shape[2])
+    w = min(4 + sum(cols) / 40, 40)
+    fig = plt.figure(figsize=(w, 3 + n / 120))
+    gs = fig.add_gridspec(2, len(cols) + 1, height_ratios=[1, 8],
+                          width_ratios=cols + [0.015 * sum(cols)],
+                          hspace=0.04, wspace=0.03)
+    ax_u = fig.add_subplot(gs[0, 0])
+    ax = fig.add_subplot(gs[1, 0], sharex=ax_u)
+    im = draw_block(ax_u, ax, Q, [f"h{hd}" for hd in heads],
+                    [f"use {e:.1f}\nrow {r:.1f}" for e, r in zip(eff, reff)],
+                    "Blues", vmax)
     ax_u.set_ylabel("p̄", rotation=0, labelpad=10)
-    ax_u.tick_params(labelbottom=False)
-    for i, hd in enumerate(heads):
-        ax_u.text((i + 0.5) * k - 0.5, 0.98 * top,
-                  f"use {eff[i]:.1f}\nrow {reff[i]:.1f}",
-                  ha="center", va="top", fontsize=6)
-
-    im = ax.imshow(M, aspect="auto", interpolation="nearest",
-                   cmap="Blues", vmin=0.0, vmax=vmax)
-    for a in (ax, ax_u):
-        for i in range(1, len(heads)):
-            a.axvline(i * k - 0.5, color="0.2", lw=0.6)
-    edges = np.cumsum(slices)
-    for e in edges[:-1]:
-        ax.axhline(e - 0.5, color="crimson", lw=0.6)
-    mids = edges - np.asarray(slices) / 2 - 0.5
-    ax.set_yticks(mids, names, fontsize=7)
-    ax.set_xticks([(i + 0.5) * k - 0.5 for i in range(len(heads))],
-                  [f"h{hd}" for hd in heads], fontsize=7)
-    ax.set_xlim(-0.5, M.shape[1] - 0.5)
     ax.set_xlabel("head (entries sorted by usage within each head)")
     ax_u.set_title(title + f"   [per head, of k={k}: use = exp H(p̄), "
                    "row = exp mean H(p_i)]", fontsize=9)
-    cb = fig.colorbar(im, ax=[ax_u, ax], fraction=0.015, pad=0.01,
-                      extend="max" if vmax < 1 else "neither")
-    cb.set_label("assignment probability")
+    edges = np.cumsum(slices)
+    mids = edges - np.asarray(slices) / 2 - 0.5
+    ax.set_yticks(mids, names, fontsize=7)
+    maps = [ax]
+
+    cgs = gs[:, -1].subgridspec(len(cols), 1, hspace=0.3)
+    cbs = [(im, "assignment probability", vmax, fig.add_subplot(cgs[0]))]
+    if sae is not None:
+        ax_su = fig.add_subplot(gs[0, 1])
+        ax_s = fig.add_subplot(gs[1, 1], sharex=ax_su, sharey=ax)
+        notes = []
+        for e, r, f, ms in zip(sae.eff, sae.reff, sae.fire, sae.mass):
+            notes.append(f"use {e:.1f}\nrow {r:.1f}"
+                         + (f"\nfire {f:.2f}" if f < 1 else "")
+                         + (f"\n{ms:.0%} shown" if ms < 0.995 else ""))
+        im_s = draw_block(ax_su, ax_s, sae.Q, sae.names, notes, "Oranges",
+                          sae.vmax)
+        ax_s.tick_params(labelleft=False)
+        ax_s.set_xlabel(
+            f"latents by usage, the first {sae.Q.shape[2]} of {sae.width}"
+            if sae.names == ["code"]
+            else "group (latents sorted by usage within each group)")
+        ax_su.set_title(sae.title + f"   [per unit, of {sae.width}]",
+                        fontsize=9)
+        maps.append(ax_s)
+        cbs.append((im_s, "share of the unit's activation", sae.vmax,
+                    fig.add_subplot(cgs[1])))
+    for a in maps:
+        for e in edges[:-1]:
+            a.axhline(e - 0.5, color="crimson", lw=0.6)
+    for img, label, top, cax in cbs:
+        cb = fig.colorbar(img, cax=cax,
+                          extend="max" if top < 1 else "neither")
+        cb.set_label(label, fontsize=8)
     fig.savefig(path, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
 
 def draw_all(cfg, P: Float[np.ndarray, "n l h k"], slices: Sequence[int],
-             shown: Sequence[str], step: int, out: Path):
-    """Every layer's pages, with a one-line summary per layer."""
+             shown: Sequence[str], step: int, out: Path,
+             sae: Optional[Block] = None):
+    """Every layer's pages, with a one-line summary per layer, and the
+    SAE block (rows reordered to each page) beside each when given."""
     _, l, h, k = P.shape
     heads = cfg.heads if cfg.heads is not None else list(range(h))
     pages = [heads[i:i + cfg.max_heads]
@@ -312,7 +489,8 @@ def draw_all(cfg, P: Float[np.ndarray, "n l h k"], slices: Sequence[int],
             path = out / f"assign_l{L}_p{j}.png"
             draw_page(PL[perm], page, slices, shown,
                       f"{Path(cfg.ckpt).name} step {step} layer {L}"
-                      f" (by {cfg.by})", path, cfg.vmax)
+                      f" (by {cfg.by})", path, cfg.vmax,
+                      None if sae is None else replace(sae, Q=sae.Q[perm]))
             print(f"-> {path}")
 
 
@@ -322,8 +500,11 @@ def main():
     if cfg.replot:
         z = np.load(out / "assign.npz")
         cfg.by, cfg.ckpt = str(z["by"]), str(z["run"])
+        sae = (sae_from(cfg, z["sae_z"], json.loads(str(z["sae_meta"])),
+                        str(z["sae_run"]))
+               if "sae_z" in z.files else None)
         draw_all(cfg, z["P"], z["slices"].tolist(), z["shown"].tolist(),
-                 int(z["step"]), out)
+                 int(z["step"]), out, sae)
         return
     cache = Path(cfg.cache)
     if cfg.by is None:
@@ -363,13 +544,20 @@ def main():
                         for i in range(0, len(X), cfg.b)])
     P = P.reshape(len(rows), l, h, k)
 
+    sae, extra = None, {}
+    if cfg.sae:
+        z, smeta = sae_codes(cfg.sae, X, cfg.b)
+        run = Path(cfg.sae).parent.name
+        sae = sae_from(cfg, z, smeta, run)
+        extra = dict(sae_z=z, sae_meta=json.dumps(smeta), sae_run=run)
+
     out.mkdir(parents=True, exist_ok=True)
-    np.savez(out / "assign.npz", P=P, rows=lo + rows,
-             labels=labels[rows], slices=np.asarray(slices),
-             shown=np.asarray(shown), by=cfg.by, run=Path(cfg.ckpt).name,
-             step=meta["step"],
-             temperature=T)
-    draw_all(cfg, P, slices, shown, meta["step"], out)
+    np.savez_compressed(out / "assign.npz", P=P, rows=lo + rows,
+                        labels=labels[rows], slices=np.asarray(slices),
+                        shown=np.asarray(shown), by=cfg.by,
+                        run=Path(cfg.ckpt).name, step=meta["step"],
+                        temperature=T, **extra)
+    draw_all(cfg, P, slices, shown, meta["step"], out, sae)
 
 
 if __name__ == "__main__":
