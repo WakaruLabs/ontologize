@@ -8,12 +8,19 @@ run; what lets that head recur when no other does, and whether training
 pressure can extend it, are the first questions.
 
 \subsection{Steering at scale}
-The embedding-space steering instrument with SAE decoder directions and
-supervised difference-of-means vectors alongside the Ontologizer's own
-directions; per-entry effect consistency across contexts; and a lever on
-collateral at the decision boundary, where the hard code's heads
-currently sit. The single-layer hard variant, the one Ontologizer that
-steers cleanly, is the reference to beat.
+Supervised steering vectors are now scored beside each model's own
+directions on that model's categories (working notes) and, for one
+softmax model, on language (Section~\ref{sec:prelim-steer}). Still open:
+the language comparison on the hard codes; bilinear eigenfeatures as
+steering directions; whether one entry's effect is consistent across
+contexts; and whether the flat model's near-perfect realization at half
+the stack's collateral is worth its $1.79\times$ reconstruction cost.
+Collateral needs a lever more than a better direction: the hard code's
+heads sit almost on their decision boundaries, and knowing the partition
+buys little, since supervised vectors disturb the other heads at most
+0.1 less often than a random step of their length. The single-layer hard variant
+\texttt{g160top1}, whose decode direction is the one that avoids the
+other heads (Section~\ref{sec:prelim-depth}), is the reference to beat.
 
 \subsection{Task reconstruction}
 Recover what each reproducible head classifies: partition-against-label
