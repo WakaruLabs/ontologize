@@ -9,7 +9,9 @@ measures that instrument on UNSTEERED rows: an intervention can show up
 in the cycled embedding only as far as the cycle preserves anything.
 
 For the last --rows cache rows (textfid's rows), model-free:
-  cos(x, cycle(x))         against cos between random pairs of rows
+  cos(x, cycle(x))         against cos(x, cycle(x')) for another row x',
+                           the part any cycled text shares with any row,
+                           and against cos between random pairs of rows
   cos(cycle(x), mean)      against cos(x, mean), the corpus-mean
                            direction over the first 2**17 rows
 and per model, the share of (row, head) whose argmax entry on cycle(x)
@@ -103,11 +105,13 @@ def main():
     summary = {
         "rows": len(X),
         "cos_x_cycle": float((Xu * Cu).sum(-1).mean()),
+        "cos_x_cycle_other": float((Xu * Cu[perm]).sum(-1).mean()),
         "cos_random_pairs": float((Xu * Xu[perm]).sum(-1).mean()),
         "cos_cycle_mean": float((Cu @ mean).mean()),
         "cos_x_mean": float((Xu @ mean).mean()),
         "models": {}}
-    print(f"cos(x, cycle(x)) {summary['cos_x_cycle']:.3f}   random pairs "
+    print(f"cos(x, cycle(x)) {summary['cos_x_cycle']:.3f}   another row's "
+          f"cycle {summary['cos_x_cycle_other']:.3f}   random pairs "
           f"{summary['cos_random_pairs']:.3f}   cos(cycle(x), mean) "
           f"{summary['cos_cycle_mean']:.3f}   cos(x, mean) "
           f"{summary['cos_x_mean']:.3f}")

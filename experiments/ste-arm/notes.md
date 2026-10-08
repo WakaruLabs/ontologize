@@ -170,14 +170,20 @@ git history.
 **Text fidelity adds nothing beyond FVU.** Over the eleven Ontologizer
 runs with both numbers, "loss recovered" is a monotone function of
 soft-forward FVU_w (rank correlation -1). The arm sits exactly where its
-reconstruction predicts, between `top2_shm` and `top2`.
+reconstruction predicts, between its `s_Hm` 1e-6 twin and `top2`. chrF
+is not monotone (`top2_shm` 0.301 against the twin's 0.302), since it
+moves with single greedy flips.
 
 | run | FVU_w | chrF | loss recovered |
 |---|---|---|---|
 | sweep_softmax_shm | 0.0007 | 0.706 | 0.997 |
+| sweep_top16 | 0.0052 | 0.557 | 0.987 |
 | sweep_top8_shm | 0.0287 | 0.437 | 0.954 |
+| sweep_top8 | 0.0370 | 0.416 | 0.941 |
 | sweep_top4_shm | 0.0761 | 0.375 | 0.892 |
+| topk4_rev | 0.164 | 0.314 | 0.766 |
 | sweep_top2_shm | 0.1911 | 0.301 | 0.742 |
+| ste_h76_hm1e6 | 0.2095 | 0.302 | 0.731 |
 | **ste_h76** | **0.2293** | **0.295** | **0.695** |
 | sweep_top2 | 0.3516 | 0.246 | 0.521 |
 | sweep_top1 | 0.7190 | 0.170 | 0.126 |
@@ -286,16 +292,25 @@ SONAR_NORM; see the encoder section below):
 
 | | ste_h76 | softmax (`sweep_softmax_shm`) | reference |
 |---|---|---|---|
-| cos(x, cycle(x)) | 0.382 (the cycle does not involve the model) | | 0.318 between random pairs |
+| cos(x, cycle(x)) | 0.382 (the cycle does not involve the model) | | 0.091 to another row's cycle |
 | head argmax survives | 12.9% | 10.8% | 3.1% chance |
 
-The cycled embedding retains barely more than the shared corpus
-direction (rows sit at 0.561 to the corpus mean, and 0.561^2 is the
-random-pair cosine), so a perfect intervention could be observed at most
-~13% of the time -- the same order as the hit rates that metric reports.
-For the hard code it is worse with depth: survival is 36.2% at layer 0
-and 4.8% by layer 4, against 3.1% chance. The softmax model's runs
-8.5--14.5% across layers.
+The cycle keeps part of each row's own content (0.382 against 0.091 for
+another row's cycle) but moves it off the corpus: cycled embeddings sit
+at 0.160 to the corpus mean, where rows sit at 0.561. Random pairs of
+rows meet at 0.318, nearly all of it that shared direction (0.561^2 =
+0.315). An earlier version of this note compared 0.382 with that 0.318
+and read the cycle as keeping barely more than the corpus direction;
+the cycle's 0.160 to the mean rules that reading out
+(`cos_x_cycle_other` was added to `roundtrip.py` to test it, and the
+rerun reproduced every other number exactly).
+
+What the cycle does not keep is the code, so a perfect intervention
+could be observed at most ~13% of the time -- the same order as the hit
+rates that metric reports. For the hard code it is worse with depth:
+survival is 36.2% at layer 0 and 4.8% by layer 4, against 3.1% chance.
+The softmax model's survival runs 8.5--14.5% across layers, with no
+decline in depth.
 Reconstruction into embedding space is fine; generation is where it
 goes.
 

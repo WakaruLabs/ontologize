@@ -971,7 +971,7 @@ model & chrF & exact & NLL (ceiling 1.560, floor 3.999) \\
 corpus-mean floor & 0.176 & 0 & 3.999 \\
 k32 tier (incl.\ p5, m11264) & 0.23 & 0.00 & 3.16--3.18 \\
 k32\_bl          & 0.204 & 0.00 & 3.365 \\
-k160 / g160top1  & 0.28 & 0.00 & 2.41--2.43 \\
+k160 / g160top1  & 0.27--0.28 & 0.00 & 2.41--2.43 \\
 onto soft        & 0.552 & 0.070 & 1.585 (gap 0.025) \\
 g160softmax      & 0.591 & 0.094 & 1.568 (gap 0.008) \\
 k5120            & 0.841 & 0.562 & 1.560 (gap 0.000) \\
@@ -1065,9 +1065,9 @@ $k_{\mathrm{SAE}}{=}32$ SAE, at 64 features per run:
 \toprule
 run & $\fvu$ & chrF & loss rec. & net @0.25 & @0.5 & @1.0 & hit @1.0 & rand.\ hit \\
 \midrule
-top8          & 0.0370 & --- & 0.941 & 0.203 & 0.404 & \textbf{0.652} & 0.734 & 0.359 \\
+top8          & 0.0370 & 0.416 & 0.941 & 0.203 & 0.404 & \textbf{0.652} & 0.734 & 0.359 \\
 top2          & 0.3516 & 0.246 & 0.521 & 0.072 & 0.277 & 0.509 & 0.578 & 0.109 \\
-top16         & 0.0052 & --- & --- & 0.027 & 0.110 & 0.363 & 0.381 & 0.156 \\
+top16         & 0.0052 & 0.557 & 0.987 & 0.027 & 0.110 & 0.363 & 0.381 & 0.156 \\
 top4\_shm     & 0.0761 & 0.375 & 0.892 & 0.112 & 0.140 & 0.248 & 0.242 & 0.062 \\
 softmax\_shm  & 0.0007 & 0.706 & 0.997 & 0.058 & 0.128 & 0.242 & 0.211 & 0.094 \\
 top2\_shm     & 0.1911 & 0.301 & 0.742 & 0.018 & 0.071 & 0.196 & 0.150 & 0.016 \\
@@ -1075,7 +1075,7 @@ top8\_shm     & 0.0287 & 0.437 & 0.954 & $-0.015$ & 0.074 & 0.176 & 0.330 & 0.09
 top1          & 0.7190 & 0.170 & 0.126 & 0.047 & 0.104 & 0.064 & 0.102 & 0.109 \\
 \texttt{ste\_h76} & 0.2293 & 0.295 & 0.695 & 0.033 & 0.045 & $-0.020$ & 0.055 & 0.125 \\
 \midrule
-SAE \texttt{k32} & 0.4994 & --- & --- & 0.048 & 0.187 & 0.402 & 0.260 & 0.016 \\
+SAE \texttt{k32} & 0.4994 & 0.228 & 0.345 & 0.048 & 0.187 & 0.402 & 0.260 & 0.016 \\
 \bottomrule
 \end{tabular}
 \caption{Text fidelity and text-cycle steering (\texttt{steerfid.py},
@@ -1106,11 +1106,12 @@ is exactly 0 or 1, so a ``hit'' demands the argmax land exactly on the
 target entry, where a soft code need only cross a fractional threshold.
 
 \paragraph{The text cycle is too weak to support conclusions.} Measured on
-an \emph{unsteered} round trip (the last 512 cache rows), the cycled
-embedding retains barely more than the shared corpus direction:
+an \emph{unsteered} round trip (the last 512 cache rows), the cycle
+keeps part of each row's content but moves it off the corpus:
 $\cos(\mathbf{x}, \mathrm{cycle}(\mathbf{x}))$ is $0.382$, against
-$0.318$ between random pairs (rows sit at 0.561 to the corpus mean, and
-$0.561^2$ is the random-pair cosine). A head's argmax survives the round
+$0.091$ to another row's cycle, while cycled embeddings sit at $0.160$ to
+the corpus mean, where rows sit at $0.561$. What it does not keep is the
+code. A head's argmax survives the round
 trip on 12.9\% of rows for \texttt{ste\_h76} and 10.8\% for the softmax
 model, against 3.1\% chance; for the hard code survival falls with depth,
 from 36.2\% at layer 0 to 4.8\% by layer 4. A
