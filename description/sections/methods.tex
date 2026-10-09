@@ -15,8 +15,9 @@ independent \emph{assignments}, each a distribution over one head's $k$
 Each layer writes the assignment-weighted sum of its atoms to the
 accumulator; after each layer the accumulator is decoded and the residual
 passed on, so layer $\ell$ receives $\mathbf{x} - \mathrm{dec}(\mathbf{r}_\ell)$,
-where $\mathbf{r}_\ell$ holds the $\ell$ layers before it. Deep supervision
-constrains every prefix of the stack to reconstruct the input.
+where $\mathbf{r}_\ell$ holds the $\ell$ layers before it. Deep
+supervision~\cite{lee2015deeply} constrains every prefix of the stack to
+reconstruct the input.
 
 Because entries within a head are mutually exclusive rather than
 independent, each head is a contrastive set: a $k$-way classifier whose
@@ -41,8 +42,10 @@ not (Section~\ref{sec:disjoint}).
 	reported here) would prevent gradient communication between layers.
 	$\mathrm{dec}$ is a linear decoder with shape $\mathbb{R}^{d \times e}$,
 	shared by all layers.
-	Deep supervision gives a coarse-to-fine representation where
-	the component encoded by previous layers is inaccessible to later layers.
+	Deep supervision makes the code a successive refinement, coarse-to-fine
+	in distortion as in residual quantizers~\cite{zeghidour2021} and
+	nested-prefix SAEs~\cite{bussmann2025}: the component encoded by
+	previous layers is inaccessible to later layers.
 	After $\ell$ layers, $\hat{\mathbf{x}}_\ell = \mathrm{dec}(\mathbf{r}_\ell)$, and
 	the component left unexplained is
 	$\mathbf{y}_\ell = \mathbf{x} - \hat{\mathbf{x}}_\ell$, so $\mathbf{y}_0 = \mathbf{x}$.
@@ -78,7 +81,7 @@ below for a generic input, and returns logits $K \in \mathbb{R}^{h \times k}$,
 \end{equation}
 Each logit is a quadratic form in $\mathbf{x}$, so a classifier admits
 closed-form eigendecomposition in the manner of bilinear
-MLPs\cite{pearce2025}.
+MLPs~\cite{pearce2025}.
 
 \begin{figure}[tp]
 \centering
@@ -112,10 +115,13 @@ MLPs\cite{pearce2025}.
 Soft assignments are $P = \mathrm{softmax}_{k}(K/t)$, where the
 temperature $t$ is annealed to sharpen them. A soft code's argmax is
 not, however, what the model decodes: Section~\ref{sec:prelim-pareto}
-finds the softmax model's discrete reading far from its embedding. The
+finds the softmax model's discrete reading far from its embedding, as a
+soft relaxation of quantization trained from scratch need not quantize
+when the decoder can learn to invert it~\cite{vandenoord2017}. The
 \emph{straight-through} selection rule makes the discrete code the model:
 the forward pass selects the one-hot argmax, and the backward pass uses
-$\mathrm{softmax}(K/t)$ as its surrogate gradient\cite{bengio2013}. A
+$\mathrm{softmax}(K/t)$ as its surrogate gradient, the straight-through
+estimator~\cite{bengio2013} in its categorical form~\cite{jang2017}. A
 hard code transmits exactly $l\,h\log_2 k$ bits and no continuous
 coefficients.
 
@@ -285,14 +291,18 @@ head's argmax logit to $-\infty$ with probability $p_{\mathrm{drop}}$.
 
 \subsubsection{Embedding model}
 \label{sec:sonar}
-We embed texts using SONAR\cite{sonar}, a multimodal and
-language-agnostic sentence embedding model. SONAR embeddings correspond
-to entire texts rather than tokens, are paired with a decoder, and encode
-language independently of content, which allows steering fidelity to be
-validated against a ground truth. Large Concept
-Models\cite{lcmteam2024largeconceptmodelslanguage} generate directly in
-SONAR space, which makes it a natural substrate for steering
-experiments. GPT-2 small's residual stream\cite{radford2019} is a second
+We embed texts using SONAR~\cite{sonar}, a multimodal and
+language-agnostic sentence embedding model: a translation-trained
+encoder, mean-pooled into one 1024-dimensional vector, and a decoder that
+generates text from that vector alone, in a target language chosen at
+decoding time. Translations embed close together, so a reconstructed or
+steered embedding can be decoded in one fixed language and re-encoded,
+which is how text fidelity and text-cycle steering are scored. Large
+Concept Models~\cite{lcmteam2024largeconceptmodelslanguage} generate one
+sentence embedding per step in SONAR space, so an edit to a SONAR
+embedding is an edit to an LCM's context or output; the same work finds
+SONAR decoding fragile to small perturbations. GPT-2 small's residual
+stream~\cite{radford2019} is a second
 substrate, where sparse dictionary learning is known to work and the
 reconstruction can be spliced back into the model.
 
@@ -305,7 +315,7 @@ per-dimension inverse variance normalized to mean one,
 	w_q\left(\hat{x}_{nq} - x_{nq}\right)^2,
 	\label{eq:mse}
 \end{equation}
-under deep supervision: it is computed at every prefix
+under deep supervision~\cite{lee2015deeply}: it is computed at every prefix
 $\hat{X}_\ell$, $\ell = 1, \dots, l$, and averaged, so each layer must explain
 what earlier layers left unexplained. The auxiliary statistics are weighted
 and summed over layers,
@@ -326,7 +336,7 @@ disjointness.
 
 \subsection{Evaluation}
 \label{sec:eval}
-Evaluation runs against $\topk$ SAEs\cite{gao2024} trained on the same
+Evaluation runs against $\topk$ SAEs~\cite{gao2024} trained on the same
 cached embeddings under the same whitened objective, scored by whitened
 fraction of variance unexplained ($\mathrm{FVU}_w$) on a held-out tail.
 A structural-ablation ladder of SAE variants adds one Ontologizer
@@ -335,12 +345,15 @@ over a shared decoder, are one-layer Ontologizers with linear
 classifiers (\texttt{g160top1} with hard selection, \texttt{g160softmax}
 with softmax) and are reported as simplified variants rather than
 baselines. The headline instruments are reconstruction against code
-capacity and its rate-distortion floor; the semantic coherence of a
+capacity and a Gaussian rate--distortion reference~\cite{cover2006}; the
+semantic coherence of a
 head's decoded atoms against size-matched nulls; steering scored in
 embedding space (whether a step realizes the target entry, and what
 share of other heads it disturbs, against a random step of the same
 length); additivity of paired interventions; cross-seed head matching
 by partition and by contribution; and blinded auto-interpretability.
-AxBench\cite{wu2025axbenchsteeringllmssimple} found that simple
-supervised baselines beat SAEs at steering, and the steering comparison
-is built to face that result.
+AxBench~\cite{wu2025axbenchsteeringllmssimple} found that prompting,
+finetuning and one simple supervised direction, the difference of means,
+beat SAE latents at steering, while a linear probe's direction did not;
+the steering comparison here, which includes both, is built to face that
+result.

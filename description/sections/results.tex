@@ -28,8 +28,10 @@ Ontologizer needs 320, and at matched budgets an unstructured code
 reconstructs about $50\times$ better. The soft model's own discrete
 reading is not a code at all: its argmax lands $77\times$ above the least
 distortion an 800-bit code could reach if the embeddings were Gaussian
-with their covariance. Real data is no harder to compress than a Gaussian,
-so that is a lower bound on its distance from the best 800-bit code, and
+with their covariance. Real data is no harder to compress than a Gaussian
+of the same covariance~\cite{cover2006}, so that is a lower bound on its
+distance from the least distortion any 800-bit code could reach on this
+data (a limit approached by coding long blocks of samples jointly), and
 the entries an intervention forces are not what carries the soft model's
 embedding. That is the motivation for the hard code.
 
@@ -55,7 +57,7 @@ onto soft ($\nu{=}32$)              & 5120 & 0 & 0.00538 \\
 Ontologizer \texttt{resid\_nc}. Ontologizer points truncate each head to
 its $\nu$ largest deviations from the mean assignment; SAE points use
 measured $\mathrm{L0}$. The Gaussian reference is reverse water-filling on the
-evaluation tail's whitened covariance\cite{cover2006}: the least
+evaluation tail's whitened covariance~\cite[Thm.~10.3.3]{cover2006}: the least
 distortion at that rate for a Gaussian source of that covariance, which
 real data can beat.}
 \label{tab:prelim-pareto}
@@ -110,8 +112,10 @@ coefficients the hard code reaches $\mathrm{FVU}_w$ $0.154$, $40\%$
 below a $\topk$ SAE at matched bits that also transmits 160
 coefficients, and $30\%$ below an L1 SAE spending $3.4\times$ the bits
 plus 519 coefficients (Table~\ref{tab:prelim-ste}). It sits $3.1\times$
-above the Gaussian reference for its rate, so at least that far from the
-best 1900-bit code.
+above the Gaussian reference for its rate, so at least that far above
+the data's distortion--rate function at 1900 bits, a long-block limit
+that a code describing each sample alone need not
+approach~\cite{cover2006}.
 
 \begin{table}[tp]\centering\small
 \begin{tabular}{@{}lrrr@{}}
@@ -138,8 +142,11 @@ exactly the same parameter count, and every head in both uses its entries
 almost uniformly. The stack's
 error is $1.79\times$ lower ($0.1535$ against $0.2750$), and the gain
 comes from pairing each stage's input with the sample's own earlier
-error: a flat layer is a product quantizer\cite{jegou2011}, where no head
-sees another's error, while the stack is a residual quantizer.
+error: a flat layer is an additive quantizer~\cite{babenko2014} whose
+heads choose in parallel, so no head sees another's error (harmless in a
+product quantizer~\cite{jegou2011}, whose heads own disjoint coordinates,
+but not when atoms overlap), while the stack is a residual
+quantizer~\cite{zeghidour2021}.
 
 The same cascade entangles the heads. A step in embedding space along a
 target entry's decode direction, a quarter of the input's norm long,

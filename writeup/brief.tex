@@ -53,25 +53,28 @@ We study two representations. The main one is GPT-2 small's internal
 state after its first eight blocks~\cite{radford2019}, on web text: there the
 rebuilt state can be put back into the running model, so we can measure
 how much of the model's behavior survives. The second is SONAR sentence
-embeddings~\cite{sonar}, a fixed-length vector per sentence that can be
-decoded back into text, which makes a steered embedding readable.
+embeddings~\cite{sonar}: a fixed-length vector per text, here the opening
+of a web document (SONAR is built for sentences), that can be decoded
+back into a short paraphrase, which makes a steered embedding readable.
 
 \section*{What it is for}
 
 To steer a model is to change its internal state so that it behaves
-differently in a chosen way. The most reliable current method is a
+differently in a chosen way. A standard method is a
 \emph{steering vector}: average the representations of examples with a
 property, subtract the average of examples without it, and add the
-difference to new inputs~\cite{turner2024,rimsky2024}. This works well,
-but each concept needs a labeled contrastive dataset, and someone must
-already suspect the concept exists.
+difference to new inputs~\cite{rimsky2024}; a single contrasting pair of
+prompts can be enough~\cite{turner2024}. This often works, though not for
+every property, and someone who already suspects the property exists
+must supply contrasting examples of it.
 
 Sparse autoencoders (SAEs) find features without labels: each input is
 described by a few active features out of thousands~\cite{bricken2023,
 gao2024}. But each feature is an isolated direction with no stated
-alternatives, features split as the dictionary grows, and adding a feature
-direction can push the representation anywhere; on standard steering
-benchmarks, simple supervised baselines beat them~\cite{wu2025axbenchsteeringllmssimple}.
+alternatives, features split as the dictionary grows~\cite{bussmann2025},
+and adding a feature direction can push the representation anywhere; on a
+recent steering benchmark, prompting, fine-tuning and the averaged
+difference each beat them~\cite{wu2025axbenchsteeringllmssimple}.
 
 The goal is steering vectors that need no labels but keep the useful shape
 of the supervised kind: each one a move between named alternatives, found
@@ -119,13 +122,18 @@ Think of describing a token by answering a fixed list of multiple-choice
 questions, where the questions and the answers are learned. In the first
 round, 32 classifiers each pick their best category in parallel, and the
 picked vectors are summed and scaled to the size of what they explain. The
-next round sees only what the first got wrong, and so describes finer
-distinctions under the coarse ones; five rounds in all. Training uses hard
+next round sees only what the first got wrong, and describes what
+remains; five rounds in all. Training uses hard
 choices in the forward pass and soft ones when computing gradients (a
-straight-through estimator). The design is a residual product
-quantizer~\cite{jegou2011,zeghidour2021} --- the compression literature's
-closest relative --- used not for compression but so that every choice can
-be read and swapped.
+straight-through estimator). The design is a residual quantizer in which
+each round adds up vectors picked from several
+sets~\cite{zeghidour2021,babenko2014} (product
+quantization~\cite{jegou2011} is the case where each set covers its own
+coordinates) --- the compression literature's closest relative --- used
+not for compression but so that every choice can be read and swapped. The
+same kind of quantizer has been used to turn SONAR embeddings into
+discrete codes for a language model that writes in
+them~\cite{lcmteam2024largeconceptmodelslanguage}.
 
 \section*{How it compares with existing methods}
 
@@ -153,8 +161,9 @@ categories are reachable but its own direction does not point at them.
 \end{itemize}
 The decisive test --- steering toward externally defined concepts, with
 supervised vectors fitted to those concepts' labels, SAE features and the
-method's swaps scored by the same judge at matched side effects, as in
-AxBench --- has not been run.
+method's swaps scored by the same judge for the concept, for staying on
+task and for fluency, each method at its best tuned strength, as in
+AxBench~\cite{wu2025axbenchsteeringllmssimple} --- has not been run.
 
 \textbf{Against SAEs on steering.} On sentence embeddings, at each model's
 own step size, a feature of a standard SAE (32 active per input) takes
@@ -213,7 +222,9 @@ concepts a user cares about, is not established.
 Two runs agree on almost none of them, on both representations. A
 classifier that differs on every run cannot be named.
 \item \textbf{Categories are named from their extremes.} Descriptions fit a
-category's most typical members, not its ordinary ones, and the deeper
+category's most typical members, not its ordinary ones, the failure
+automated description shows when it sees only the strongest
+examples~\cite{paulo2025}, and the deeper
 rounds cannot yet be named at all --- though they are causal and steer
 specifically.
 \item \textbf{Steering through the input is not targeted.} On sentence
@@ -225,9 +236,11 @@ Swaps made on the description itself do not have this problem.
 \section*{Next}
 
 The test the method needs is AxBench-style steering toward externally
-defined concepts: difference-of-means vectors from labeled pairs, SAE
-features and the method's swaps, scored for concept success by a judge at
-matched side effects and fluency, plus detection against a linear probe.
+defined concepts~\cite{wu2025axbenchsteeringllmssimple}:
+difference-of-means vectors from labeled examples, SAE features and the
+method's swaps, each at its best tuned strength, scored by a judge for
+the concept, for staying on task and for fluency, plus detection against
+a linear probe.
 That benchmark targets Gemma 2, which would mean moving off GPT-2. In
 parallel: making the classifiers reproducible, or identifying the ones
 that are, and testing whether combinations of categories --- rather than

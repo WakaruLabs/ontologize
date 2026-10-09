@@ -2,40 +2,69 @@
 \label{sec:formal}
 
 The steering frame has a natural formalization in the causal-abstraction
-vocabulary~\cite{rubenstein2017,beckers2019,geiger2021,geiger2025}, and
-stating it makes several instruments in the battery estimators of named
-quantities rather than ad hoc scores.
+vocabulary~\cite{rubenstein2017,beckers2019,geiger2021,geiger2025}. An
+abstraction relates two causal models through a map between their states
+and a map between their interventions, so stating the frame means naming
+both models, and it shows what each instrument in the battery does and
+does not estimate.
 
 \paragraph{Definitions.}
-Read the Ontologizer as a structural causal model: each head $(\ell,i)$ is a
-candidate high-level \emph{variable} with value space $\{1,\dots,k\}$
-(soft state: its simplex), the residual stack is the causal graph (with
-residual forwarding, layer $\ell{+}1$'s classifier reads the residual
-written by layers $\le \ell$, so every earlier head is a parent of every
-later one), and \texttt{withArgs} set-interventions are the
-$\mathrm{do}$-operator: $\mathrm{do}[(\ell,i){=}j']$ forces the head's
-assignment while leaving all non-descendants untouched by construction.
-The abstraction map $\mathrm{assign}$ sends an embedding $\mathbf{x}$ to its
-per-head assignments. Under this reading: \texttt{steerembed.py}'s
-realization rate is an estimator of whether an \emph{input-space}
-intervention implements $\mathrm{do}[(\ell,i){=}j']$, and its collateral of
-how far it also intervenes on other variables;
-\texttt{steerfid.py}'s cycle-consistency gain estimates
-\emph{interchange-intervention accuracy}~\cite{geiger2022} in the closed loop $\mathrm{assign} \circ
-\mathrm{encode} \circ \mathrm{decode}$, bounded above by the
-$\sim$13\% round-trip survival of Section~\ref{sec:steer}; and seed-to-seed
-matching is \emph{empirical identifiability}. What the softmax leaves
-unidentified in principle is the per-head entry order (permutation) and
-any logit gauge the temperature absorbs; what must therefore be
-reproducible for the variable reading to hold is the partition itself
-and the decode directions up to relabeling. Section~\ref{sec:seeds}
-measured exactly that on the hard code, on SONAR and GPT-2. Past layer 0
-the variables are identified at the level of the layer, not the head ---
-and on GPT-2 not even that beyond layer 1. Layer 0 is partially
-identified, with SONAR's identification concentrated in a single
-large-atom head.
+The high-level model is the Ontologizer's forward pass, read as a causal
+model over the input and the heads: each head $(\ell,i)$ is a candidate
+\emph{variable} with value space $\{1,\dots,k\}$, $\mathbf{x}$ is a
+parent of every head, and with residual forwarding every earlier head is
+a parent of every later one, since layer $\ell{+}1$'s classifier reads the
+residual written by layers $\le \ell$. These edges belong to the code:
+unlike those of transcoder circuits~\cite{dunefsky2024}, which pass
+through a model's own sublayers, they describe how the code refines one
+representation, not how the encoder computes it. \texttt{withArgs}
+set-interventions are this model's hard interventions:
+$\mathrm{do}[(\ell,i){=}j']$ forces the head's assignment while leaving all
+non-descendants untouched by construction, and marginalizing the
+continuous intermediates out of the forward pass is an exact
+transformation by construction~\cite[Thm.~10]{rubenstein2017}. A soft
+head's state is a point of its simplex, so reading it as one of $k$ values
+is a lossy value merge~\cite{geiger2025}, and a set on a soft head is a
+steering intervention rather than an interchange. The low-level model is
+the encoder whose embeddings the code reads, and the map between their
+states is $\mathrm{assign}$, which sends an embedding $\mathbf{x}$ to its
+per-head assignments. Whether the head model abstracts the encoder under
+$\mathrm{assign}$ is an approximate-abstraction
+question~\cite[Def.~41]{geiger2025}, and the abstraction cannot be a
+constructive one~\cite{beckers2019}, since every head reads the same
+embedding.
 
-\paragraph{Why the cascade costs identifiability.} The stack's
+\paragraph{What the instruments estimate.}
+Input-space steps are not interventions such an abstraction maps; they
+score control of the head model, not whether the encoder computes with
+the heads~\cite[Sec.~3.7]{geiger2025}. \texttt{steerembed.py}'s
+realization rate checks one coordinate of the condition that a stepped
+input's code equal the code under $\mathrm{do}[(\ell,i){=}j']$, so a rate
+below 1 already rules out an exact transformation that maps the step to
+that do. Its collateral counts the other heads that change against the
+\emph{unsteered} code, which in a stack includes the downstream
+reclassification the do itself would cause. \texttt{steerfid.py}'s
+cycle-consistency gain asks the same of a text-level implementation,
+through the closed loop $\mathrm{assign} \circ \mathrm{encode} \circ
+\mathrm{decode}$: it is a normalized activation gain net of a random
+control, not an interchange-intervention accuracy~\cite{geiger2022},
+since it patches nothing in from a source input, and the loop's
+$\sim$13\% unsteered round-trip survival (Section~\ref{sec:steer}) limits
+how often an exact intervention could be observed through it.
+Seed-to-seed matching asks whether two runs' $\mathrm{assign}$ maps agree
+up to relabeling. What the softmax leaves unidentified in principle is the
+per-head entry order (permutation) and any logit gauge the temperature
+absorbs; what must be reproducible for the heads to be properties of the
+data rather than of one run is therefore the partition itself and the
+decode directions up to relabeling. Section~\ref{sec:seeds} measured
+exactly that on the hard code, on SONAR and GPT-2. Past layer 0 what
+reproduces is the layer, not the head: a variable merge of the layer's
+heads~\cite[Def.~37]{geiger2025}, of which the per-head variables are a
+seed-dependent factorization --- and on GPT-2 not even that beyond
+layer 1. Layer 0 partly reproduces, on SONAR almost entirely through a
+single large-atom head.
+
+\paragraph{Why the cascade costs reproducibility.} The stack's
 reproducibility deficit at matched head size
 (Section~\ref{sec:l0size}) and its intervention collateral
 (Section~\ref{sec:entangle}) are one fact under this reading. A head's
@@ -53,12 +82,18 @@ so the cascade compounds an entanglement that the code already has.
 
 \paragraph{Metric hygiene.}
 Claims about decode-direction geometry should not depend on an arbitrary
-choice of inner product. The contrast-set result does not: under the
-training objective's inverse-variance metric the Ontologizer's
+choice of inner product, a point Park et al.\ make for language-model
+representations, which they read under an estimated causal inner
+product~\cite{park2025}. The contrast-set result does not depend on it:
+under the
+training objective's inverse-variance metric (a whitening of the data,
+not their causal inner product) the Ontologizer's
 within-head repulsion strengthens ($-24.4$ vs.\ $-17.6$ raw) and both
 rivals' signatures are unchanged. Two further rules emerged. Measure in
 output space, not in the dictionary space, whose null-space component is
-unconstrained (Section~\ref{sec:rowcos}). And separate a layer's gain
+unconstrained (Section~\ref{sec:rowcos}) and is exactly the kind of
+causally disconnected direction that makes subspace patching
+misleading~\cite{makelov2023}. And separate a layer's gain
 from a head's atoms before attributing anything to head size: across
 layers, size is the gain, and the gain is the layer
 (Section~\ref{sec:l0size}).
@@ -128,7 +163,9 @@ index bits and no coefficients beats converged SAEs at matched index
 bits that also send 160 coefficients ($0.154$ vs.\ $0.258$--$0.274$), and
 an L1 SAE spending 519 coefficients and 3.4$\times$ the bits ($0.220$).
 It sits $3.1\times$ above the Gaussian reference for its rate, so at least
-that far from the best achievable. It needed a
+that far from the data's distortion--rate function, a limit over long
+blocks of samples that a code describing each sample alone need not be
+able to reach~\cite{cover2006}. It needed a
 temperature matched to the logit scale, relative logit noise, a rescaled
 entropy bonus, and an initialization fix worth a third of its error.
 \item \textbf{The discrete code holds up downstream.} On GPT-2 small, an
@@ -201,7 +238,10 @@ probing ranks the Ontologizer worst while partition-level analysis finds
 verified causal language heads; detection F1 is $\sim$80\% explained by
 code density, and the Ontologizer sits on the SAE density trend.
 Parameter-space decodes are instances, not descriptions, and must be
-taken as deviations from the head mean to be legible at all.
+taken as deviations from the head mean to be legible at all, as the
+geometry of categorical concepts predicts: a category's value vectors
+share their parent's component and separate only as differences from
+it~\cite{park2025}.
 \item \textbf{Non-negativity is expensive in geometry and in error.} It
 forces a collinear, low-effective-rank dictionary (a third of the signed
 rank) and costs 26\% of held-out $\fvu$ at the wide dictionary, 90\% at a
@@ -233,7 +273,9 @@ own index), while each architecture across seeds reaches 0.064 against
 a 0.059 null. Seed replicas see the same data in the same order, so the
 seed acts only through the initialization and the training noise; it,
 rather than the data or anything after the classifier, largely fixes
-what a head carves. Candidates: replicas of \texttt{resid\_nc\_hm} to its
+what a head carves, as in toy networks, where seeds trained on identical
+data implement one algorithm through different
+features~\cite{chughtai2023}. Candidates: replicas of \texttt{resid\_nc\_hm} to its
 full 4.4M steps and of \texttt{g160softmax}; whether large-atom heads'
 reproducibility can be extended by training pressure; whether the
 $k{=}2$ arm's one-bit heads reproduce better than 32-way ones; what lets
@@ -269,7 +311,8 @@ scored on the model's own categories (Section~\ref{sec:steer}) and, for
 \texttt{resid\_nc\_hm}, on an external concept, language
 (Appendix~\ref{sec:steeroverlay}). Still open: the language overlay on
 the hard code and the flat arm; bilinear eigenfeatures; per-entry effect
-consistency across contexts; and the flat arm's near-perfect
+consistency across contexts, which for SAE features is partly predictable
+before intervening~\cite{duan2026}; and the flat arm's near-perfect
 realization, halved collateral and better reproducibility weighed
 against its $1.79\times$ reconstruction cost. Collateral needs a lever
 more than a better direction. It is direction-blind even with the
@@ -292,8 +335,9 @@ finds no above-chance signal at 20 heads per condition, on heads not
 screened for identifiability (Appendix~\ref{sec:headautointerp}). Scored
 by modularity on a nearest-neighbor graph of the residual each layer
 classifies, the softmax Ontologizer's layers 1--4 are two to three times
-as modular as size-matched regroupings of their entries; neither a
-Matryoshka SAE's discovered groups nor its trained heads are, on matched
+as modular as size-matched regroupings of their entries; neither the
+discovered groups nor the trained heads of a Matryoshka
+SAE~\cite{bussmann2025} are, on matched
 prefix-residual graphs (one checkpoint each;
 Appendix~\ref{sec:modularity}). Still open:
 partition-vs-label-library MI, led by topic and genre (from a labeled
@@ -331,7 +375,9 @@ constraint, but it cannot be faked. Concatenated heads remain the only
 route to disjoint support.
 \item \textbf{Logit-scale control for straight-through training.}
 Normalize logits per head, or control $t$ against a spread$/t$ setpoint,
-in place of the hand-matched temperature.
+in place of the hand-matched temperature, or add a term that pushes the
+logits to commit, the counterpart of the commitment loss by which
+VQ-VAE ties an encoder's scale to its code~\cite{vandenoord2017}.
 \item \textbf{Fresh-encoded eval set.} New runs hold the tail out; the
 softmax Ontologizers do not, and every comparison against them inherits
 that asymmetry.
@@ -342,15 +388,18 @@ exactly matched rate.
 \item \textbf{Winner dropout for the one-layer variants.} \texttt{g160top1}'s
 28\% dead latents are within-head winner-take-all starvation.
 \item \textbf{Trained truncatability.} A deviation-sparsity penalty at
-training time would show whether the soft Pareto curve can shift left.
+training time would show whether the soft Pareto curve can shift left,
+as training against several sparsities at once makes a $\topk$ SAE's
+code progressive~\cite{gao2024}.
 \item \textbf{Rung composition and frontier fill.} \texttt{groups+prefixes}
 (2b+3) is now trained, as \texttt{m5120\_g160top1\_p5} ($\fvu$ 0.294), for
 the modularity control above, but is not yet on the ladder. Still to run:
 the one-layer variants at $m{=}11264$, the mid-range $\topk$ sweep
 ($k_{\mathrm{SAE}} \in \{512, 2048\}$), and random-support and
-nonnegative-LS refit controls.
+nonnegative-LS refit controls, the second being the positivity-constrained
+refit of Gao et al.~\cite{gao2024}.
 \item \textbf{Closed.} HSIC head independence (heads are already
-independent), the HSIC bottleneck's freeze (real, and the biased
+independent), the HSIC penalty's freeze (real, and the biased
 estimator's: only a frozen head escapes its floor;
 Appendix~\ref{sec:freeze}), decoder sparsification and bias (no
 structure; $<1\%$),

@@ -178,9 +178,11 @@ It is dense without being isotropic --- effective dimension 108 of 1024
 (participation ratio 268 on the whitened eval tail), yet 943 principal
 components for 99\% of variance --- and samples average a pairwise cosine
 of $0.31$. Sections~\ref{sec:gpt2} and~\ref{sec:seeds} additionally use
-GPT-2~\cite{radford2019} layer-8 residual-stream activations ($d{=}768$,
-harvested by \texttt{encode\_acts.py}) as a substrate where sparse
-dictionary learning is known to work. Section~\ref{sec:gpt2hard} uses a
+residual-stream activations of GPT-2 small~\cite{radford2019}, the
+residual leaving block 8 of 12 (\texttt{blocks.8.resid\_post};
+$d{=}768$, harvested by \texttt{encode\_acts.py}), as a substrate where
+sparse dictionary learning is known to work~\cite{gao2024}.
+Section~\ref{sec:gpt2hard} uses a
 separate GPT-2 setup from the \texttt{headline} branch --- the residual
 stream entering block 8 on FineWeb, unwhitened, scored also by GPT-2 loss
 recovered --- whose numbers compare only within that section.
@@ -238,13 +240,19 @@ surrogate. Its shape, calibration and initialization are described with
 its results in Section~\ref{sec:ste}.
 
 \paragraph{SAEs.}
-SAEs follow Gao et al.~\cite{gao2024}: pre-activation
+SAEs follow the architecture of Gao et al.~\cite{gao2024}: pre-activation
 $\mathrm{relu}(W_{\mathrm{enc}}(\mathbf{x}-\mathbf{b}_{\mathrm{dec}})+\mathbf{b}_{\mathrm{enc}})$,
 reconstruction $\hat{\mathbf{x}} = W_{\mathrm{dec}}\mathbf{z} + \mathbf{b}_{\mathrm{dec}}$,
-with $\topk$ selection of $k_{\mathrm{SAE}}$ latents, unit-norm decoder
-directions (the columns of $W_{\mathrm{dec}}$), tied initialization and
-\texttt{aux\_k} dead-latent revival, trained to
-convergence; ReLU+L1 SAEs replace $\topk$ with an L1 penalty and neuron
+with $\topk$ selection of $k_{\mathrm{SAE}}$ latents, decoder directions
+(the columns of $W_{\mathrm{dec}}$) renormalized to unit norm after every
+step, the encoder initialized to the decoder's transpose, and
+\texttt{aux\_k} dead-latent revival (512 dead latents at weight $1/32$, a
+latent counting as dead after 1000 steps without firing), trained to
+convergence. Unlike their recipe, $\mathbf{b}_{\mathrm{dec}}$ starts at the
+data mean rather than the geometric median, the objective is whitened,
+Adam runs with its default $\epsilon$ and without weight averaging or
+decoder-gradient projection, and training makes many passes over a fixed
+cache. ReLU+L1 SAEs replace $\topk$ with an L1 penalty and neuron
 resampling.
 
 \paragraph{The structural-ablation ladder.}
@@ -273,19 +281,23 @@ is a one-layer hard-code Ontologizer and \texttt{g160softmax} a one-layer
 softmax Ontologizer, each without the bilinear classifier, the residual
 stack or the non-negative dictionary. We present them as simplified
 Ontologizer variants, not as baselines. \texttt{k32\_bl}'s bilinear encoder
-likewise has no standard SAE counterpart, while rung~3 is a Matryoshka-style
-SAE.
+likewise has no standard SAE counterpart, while rung~3 is a Matryoshka
+SAE~\cite{bussmann2025} with five equal blocks of 1024 latents where the
+original's blocks roughly double in size.
 
 SAE baselines at width $m{=}11{,}264$ (parameter-matched to the Ontologizer):
 \texttt{k32}, \texttt{k160} (coefficient-matched to one deviation per
 head), and \texttt{k5120} (coefficient-matched to the full soft code; the
 $\topk$ constraint never binds --- measured $\mathrm{L0} \approx 1520$ --- so it is
-effectively a dense ReLU autoencoder). A seed replica \texttt{k32\_s43}
+effectively a dense ReLU autoencoder, the regime in which $\topk$ latents go
+dense and PCA-like~\cite{gao2024}). A seed replica \texttt{k32\_s43}
 supports stability analysis. The bilinear encoder's latents admit
-closed-form ``eigenfeature'' analysis: each latent's symmetric form
-$\mathrm{sym}(\mathbf{w}_1 \mathbf{w}_2^\top)$ is rank~2, with top-$|\lambda|$
-eigenvector $\mathbf{w}_1/\lVert\mathbf{w}_1\rVert \pm
-\mathbf{w}_2/\lVert\mathbf{w}_2\rVert$ (Pearce et al.~\cite{pearce2025}). Under the
+closed-form ``eigenfeature'' analysis: each latent's interaction matrix
+$\mathrm{sym}(\mathbf{w}_1 \mathbf{w}_2^\top)$ (Pearce
+et al.~\cite{pearce2025}) has rank at most 2, and its top-$|\lambda|$
+eigenvector is $\mathbf{w}_1/\lVert\mathbf{w}_1\rVert \pm
+\mathbf{w}_2/\lVert\mathbf{w}_2\rVert$, with the sign of
+$\mathbf{w}_1\cdot\mathbf{w}_2$. Under the
 steering frame the simplified variants are the load-bearing comparison:
 \texttt{g160softmax} isolates the ``series of softmax classifiers'' idea
 from the residual stack, bilinear classifiers and shared dictionary, and
@@ -411,7 +423,7 @@ all but the $h'$ lowest-entropy heads per layer. SAE points use measured
 eval $\mathrm{L0}$. A hard code's index bits are $l\cdot h\log_2 k$; we compare
 each against a \emph{Gaussian reference}: the least distortion a code of
 that rate can achieve on a Gaussian source with the eval tail's whitened
-covariance, given by reverse water-filling~\cite{cover2006}. With
+covariance, given by reverse water-filling~\cite[Thm.~10.3.3]{cover2006}. With
 $\lambda_1, \dots, \lambda_d$ that covariance's eigenvalues, a rate of
 $n_{\mathrm{bits}}$ bits per sample gives
 \begin{equation}
@@ -422,15 +434,18 @@ $n_{\mathrm{bits}}$ bits per sample gives
 \end{equation}
 with the water level $\theta$ solved from the rate. It is a reference, not
 a floor, for two reasons. Among sources of a given covariance the Gaussian
-has the largest rate--distortion function under squared error, so for
-the real embeddings the least achievable distortion at rate
-$n_{\mathrm{bits}}$ is \emph{at most}
+has the largest rate--distortion function under squared
+error~\cite[Problem~10.8]{cover2006}, so for the real embeddings the
+distortion--rate function at $n_{\mathrm{bits}}$ is \emph{at most}
 $\mathrm{FVU}_{w,\mathrm{G}}(n_{\mathrm{bits}})$ and may be well below
-it~\cite{cover2006}. And the rate--distortion function is approached by
-coding long blocks of samples jointly with variable-length codes, where
-our codes spend a fixed $n_{\mathrm{bits}}$ bits on each sample alone. The reference is
-therefore safe to use in one direction only: a code \emph{above} it is at
-least that far from optimal, and nothing we report can establish that a
+it. And that function is a limit over block length: it is approached by
+fixed-rate codes that index long blocks of samples
+jointly~\cite[Sec.~10.5]{cover2006}, whereas our codes describe each
+sample alone, and its converse holds at every block
+length~\cite[Sec.~10.4]{cover2006}. The reference is therefore safe in one
+direction only: a code \emph{above} it is at least that far above the
+data's distortion--rate function, though not necessarily that far from
+the best per-sample code, and nothing we report can establish that a
 given rate is too small.
 
 \paragraph{Categorical form (\texttt{headstruct.py}).}
@@ -516,9 +531,16 @@ $\Pr(j \mid j') \geq \tau$ and $\Pr(j' \mid j) < \tau$, with
 $\Pr(j \mid j')$ the fraction of the rows where $j'$ fires on which $j$
 fires too; a \emph{match} satisfies both. Splits
 ($\geq 2$ children) are scored by union coverage of the parent's firing
-set and pairwise child overlap. Decoder geometry adds absorption
-candidates (decoder-cosine twins that do not co-fire) and each model's
-nearest-neighbor decoder-cosine distribution vs.\ a random baseline. For
+set and pairwise child overlap. Containment is the activation-coverage
+criterion, which admits dense latents as false parents~\cite{cao2026}.
+Decoder geometry adds \emph{geometric twins}, latents of model~(2) at
+decoder cosine $\geq 0.6$ to a parent of model~(1) that fire where it
+rarely does ($\Pr(j \mid j') < 0.2$), and each model's nearest-neighbor
+decoder-cosine distribution vs.\ a random baseline. The code calls twins
+``absorption candidates'', but they are not absorption in the sense of
+Chanin et al.~\cite{chanin2025}, a within-model failure scored against a
+ground-truth probe, in which the absorbing latent's decoder carries only a
+small component of the general direction. For
 two same-architecture runs differing only in seed, the match fractions
 are the reproducible-feature fractions. For hard-code Ontologizers,
 \texttt{partition.py} matches heads across runs by the NMI of their
@@ -570,9 +592,14 @@ compares agreement at matched head size.
 The ``loss recovered'' analogue: decode $\mathbf{x}$ and $\mathrm{recon}(\mathbf{x})$
 through M2M100 (forced \texttt{eng\_Latn}, both rescaled to SONAR's median
 mean-pooled norm over the corpus, 0.307, so the metric sees direction
-error; every decode in this document uses that scale, near which
+error; SONAR's own vectors are far from unit norm, and its decoder is
+sensitive to their scale~\cite{qiu2026unifiedvisionlanguagemodelingconcept};
+every decode in this document uses that scale, near which
 decode-then-re-encode fidelity peaks) and report
-chrF~\cite{popovic-2015-chrf} and exact-match between the decodes, plus the
+chrF2~\cite{popovic-2015-chrf,popovic2016} (character 1--6-grams,
+whitespace removed, recall weighted twice precision; sentence level,
+averaged over rows on a 0--1 scale, equal to sacreBLEU's sentence
+chrF2~\cite{post2018} divided by 100) and exact-match between the decodes, plus the
 decoder's teacher-forced per-token NLL of the \emph{original's} decode
 under the original (ceiling), the reconstruction, and the corpus-mean
 embedding (floor --- which decodes to the generic text). Loss recovered
@@ -589,15 +616,20 @@ text with low collateral.
 
 \paragraph{Language probing (\texttt{langprobe.py}, \texttt{headlang.py},
 \texttt{headscript.py}).}
-SAEBench-style $k_{\mathrm{probe}}$-sparse probing with the free
-86-language labels: top latents per language by two-sample t-statistic on
+$k_{\mathrm{probe}}$-sparse probing after SAEBench~\cite{karvonen2025},
+with the free 86-language labels in place of its balanced tasks: top
+latents per language by two-sample t-statistic on
 training rows; held-out one-vs-rest F1 at $k_{\mathrm{probe}}{=}1$ (single
 latent, fitted threshold), $k_{\mathrm{probe}}{=}4,16$ (logistic probes),
 and a dense probe on the raw embedding as
 ceiling. Macro-F1 over languages. \emph{Frame caveat: this measures
 whether a factor lives in individual latent magnitudes. A classifier head
 carries its factor in its assignment (partition), which single-latent
-probes cannot see.} \texttt{headlang.py} is the matching instrument: per
+probes cannot see. Distribution-based monosemanticity
+scores~\cite{fereidouni2025evaluatingsparseautoencodersmonosemantic}, which
+credit a unit for responding to many concepts if its responses separate
+them, are the per-unit measure that transfers to heads.}
+\texttt{headlang.py} is the matching instrument: per
 head, the NMI between its partition and the label, null-corrected by a
 label shuffle, plus a held-out probe on the best $h'$ heads' one-hot
 codes against a dense ridge ceiling. NMI here normalizes by the
@@ -623,7 +655,8 @@ rows in cell $\mathcal{C}_c$, and report it raw and against the baseline
 a random partition into $\lvert\mathcal{C}\rvert$ cells scores.
 
 \paragraph{Shrinkage (\texttt{refit.py}).}
-Gao-style refinement: freeze each sample's support $\mathcal{S}_n$ and solve the
+The refinement of Gao et al.~\cite{gao2024} without its non-negativity
+constraint: freeze each sample's support $\mathcal{S}_n$ and solve the
 whitened least-squares coefficients on it,
 \begin{equation}
 	\mathbf{z}^{\star}_n := \operatorname*{arg\,min}_{\mathbf{z} :\, z_j = 0 \;\forall j \notin \mathcal{S}_n}
@@ -673,7 +706,9 @@ Algorithm~\ref{alg:steerembed} gives the procedure.
 \paragraph{Eigenvector orientation.}
 \label{sec:eigorient}
 The adjoint direction of a bilinear classifier is an eigenvector of its
-interaction matrix, which \texttt{eigh} returns only up to sign.
+interaction matrix, which \texttt{eigh} returns only up to sign, since a
+bilinear eigenvector contributes through the square of its
+projection~\cite{pearce2025}.
 Orienting it by the sign of its eigenvalue, with a leading-coordinate
 tie-break (\texttt{nlinear.orient}), realizes 0.427 of targets on the
 softmax model at strength 0.25, against 0.224 with the sign \texttt{eigh}
@@ -761,8 +796,11 @@ the Ontologizer, rungs \texttt{k32}/\texttt{k32\_bl}/\texttt{g160top1}/%
 
 \paragraph{Modularity (\texttt{headstruct.py --modularity}).}
 A head's assignments split the samples into soft cells, and soft
-modularity~\cite{newman2006,nepusz2008} scores how much more affinity
-those cells hold than a degree-preserving null graph would place there.
+modularity --- Newman's $Q$~\cite{newman2006} with the co-membership
+indicator replaced by the dot product of membership vectors, the fuzzified
+modularity of~\cite[Eq.~14]{nepusz2008} --- scores how much more affinity
+those cells hold than random placement with the same degrees would put
+there.
 Per batch of 4096 rows, with edge weights $\chi_{nn'}$ (the heat kernel
 $\exp((\cos\angle(\mathbf{y}_n, \mathbf{y}_{n'})-1)/0.2)$ between the
 samples' inputs $\mathbf{y}_n$, self-edges removed,
@@ -776,7 +814,9 @@ head $i$ scores
 	\label{eq:modularity}
 \end{equation}
 with the graph and degrees restricted to the samples the head fires on, so
-a sparse group is not penalized for its coverage. An Ontologizer layer is
+a sparse group is not penalized for its coverage. That scores cells as
+communities of the induced subgraph, where Newman's subdivision keeps the
+parent graph's degrees~\cite{newman2006}. An Ontologizer layer is
 scored on its own input: $\mathbf{x}$ at layer 0, the residual it
 classifies above that. A Matryoshka SAE's prefix block $\ell$ is scored on
 its prefix residual, $\mathbf{x}$ less the decode of the code on blocks
@@ -792,11 +832,13 @@ With the classifier as trained (order 2, no gate), each logit is one
 bilinear pair over the layer's shape,
 $(\mathbf{w}\cdot\mathbf{u})(\mathbf{v}\cdot\mathbf{u}) =
 \mathbf{u}^\top B\mathbf{u}$ with $B =
-(\mathbf{w}\mathbf{v}^\top+\mathbf{v}\mathbf{w}^\top)/2$, whose eigenvalues
-$\lambda_\pm = (\mathbf{w}\cdot\mathbf{v} \pm
-\lVert\mathbf{w}\rVert\lVert\mathbf{v}\rVert)/2$ make every spectral
-statistic of a feature a function of
-$\cos\angle(\mathbf{w},\mathbf{v})$~\cite{pearce2025}. The script reads them
+(\mathbf{w}\mathbf{v}^\top+\mathbf{v}\mathbf{w}^\top)/2$ the symmetric
+interaction matrix of a bilinear unit~\cite{pearce2025}. $B$ has rank at
+most 2, with eigenvalues $\lambda_\pm = (\mathbf{w}\cdot\mathbf{v} \pm
+\lVert\mathbf{w}\rVert\lVert\mathbf{v}\rVert)/2$ on eigenvectors
+$\mathbf{w}/\lVert\mathbf{w}\rVert \pm \mathbf{v}/\lVert\mathbf{v}\rVert$,
+so every scale-free statistic of a feature's spectrum is a function of
+$\cos\angle(\mathbf{w},\mathbf{v})$. The script reads them
 from the weights at retained checkpoints, on the semantic block of
 $\mathbf{u}$ (the constant coordinate excluded), and reports per layer the
 median and quartiles of $\lvert\cos\angle\rvert$, the share of features whose
@@ -1054,7 +1096,7 @@ $\tau{=}0.3/0.5/0.7/0.9$. Roughly three quarters of individual features
 are not reproducible across initializations at moderate containment.
 Cross-width splitting (\texttt{k32} $\to$ \texttt{m11264\_k32}): 190 of
 5114 live parents split at $\tau{=}0.7$ (median 3 children; union
-coverage 0.37; child overlap 0.42), with 441 absorption candidates and a
+coverage 0.37; child overlap 0.42), with 441 geometric twins and a
 heavy nearest-neighbor decoder-cosine tail (p50 0.234 vs.\ random
 0.119): splitting is real but is not the dominant organization; topical
 co-firing is. For a steering generator the unit that must reproduce is
@@ -1245,7 +1287,11 @@ trip on 12.9\% of rows for \texttt{ste\_h76} and 10.8\% for the softmax
 model, against 3.1\% chance; for the hard code survival falls with depth,
 from 36.2\% at layer 0 to 4.8\% by layer 4. A
 perfect intervention could therefore be observed at most $\sim$13\% of
-the time --- the same order as the hit rates the instrument reports.
+the time --- the same order as the hit rates the instrument reports. The
+protocol makes the cycle harder than it need be: rows are 512-token
+document openings, past the length at which SONAR's auto-encoding
+degrades, decoded into English whatever their language, through a decoder
+that small perturbations of the embedding can derail~\cite{lcmteam2024largeconceptmodelslanguage}.
 Reconstruction into embedding space is fine; generation is where the
 signal goes.
 
@@ -1308,10 +1354,16 @@ for duration.}
 \label{fig:variants}
 \end{figure}
 
-\paragraph{An HSIC bottleneck in place of the auxiliary losses.} Two arms
-on the \texttt{resid\_nc\_hm} configuration, trained to 372k steps,
-penalize dependence between a layer's heads by the pairwise head CKA of
-Section~\ref{sec:hsic} under its biased estimator: one replaces the four
+\paragraph{An HSIC penalty in place of the auxiliary losses.} The arms
+are named after the HSIC bottleneck~\cite{ma2020hsic}, which trains each
+layer without backpropagation to depend little on its input and much on
+the class labels, both measured by normalized HSIC. An autoencoder's
+labels are its input, which collapses the two terms into one, so neither
+is used here: reconstruction stays with the whitened MSE, and the only
+kernel term penalizes dependence among a layer's heads. Two arms on the
+\texttt{resid\_nc\_hm} configuration, trained to 372k steps, penalize it
+by the pairwise head CKA of Section~\ref{sec:hsic} under the biased
+estimator~\cite{gretton2005}: one replaces the four
 auxiliary terms with that penalty, the other adds it to them. Replacing
 them destroys head health: a late, persistent freeze takes 77 of 160
 heads by the final checkpoint, one layer entirely (layer 3, 32/32 from
@@ -1510,7 +1562,12 @@ over steering directions on frozen \texttt{resid\_nc\_hm}, rewarded by one
 classification's quantile-normalized score at a matched intervention
 budget, converges cleanly in the differentiable in-embedding tier,
 saturating within roughly 40 steps at flat collateral
-(Figure~\ref{fig:rl}). Neither the decode-cycle tier nor a convergence
+(Figure~\ref{fig:rl}). The policy adds a direction to the embedding at a
+fixed magnitude, the residual form that latent-space steering of
+diffusion policies outperforms by acting on the generator's input
+instead~\cite{wagenmaker2025}, and a direction optimized against a
+classifier can realize its target through directions the data never vary
+along~\cite{makelov2023}. Neither the decode-cycle tier nor a convergence
 race against paired steering has been run.
 
 \begin{figure}[htbp]\centering
@@ -1564,7 +1621,9 @@ A naive port (live configuration, \texttt{select="ste"}) trains but the
 classifier learns nothing. The root cause is one property: \textbf{the
 argmax forward is scale-invariant, so nothing pushes the logits up}; they
 sit at their initialization scale (within-head standard deviation
-$0.0015$) for the whole run. Three settings follow from it.
+$0.0015$) for the whole run. VQ-VAE meets the same gap, an encoder scale
+the code does not constrain, with a commitment loss~\cite{vandenoord2017}.
+Three settings follow from it.
 \emph{Logit noise must be relative}: $\sigma_K{=}0.02$ is thirteen times
 the logit spread, so the argmax is chosen by noise, while $\sigma_K{=}0$
 removes the only exploration and the codebook collapses;
@@ -1627,7 +1686,9 @@ code & Gaussian reference & achieved & ratio \\
 \paragraph{Bits are not the whole capacity.} At identical bits, 380
 binary heads reach $0.1844$ against 76 thirty-two-way heads at $0.1535$:
 bits go as $h\log_2 k$ but the codebook goes as $h\cdot k$ (3800 atoms
-against 12{,}160). The binary arm gets within 17\% on $2.9\times$ fewer
+against 12{,}160). A neural codec's residual quantizers point the same
+way: at a fixed 80 bits per frame, eight stages of 1024 codes beat eighty
+of two~\cite{zeghidour2021}. The binary arm gets within 17\% on $2.9\times$ fewer
 parameters, with features that are one bit each --- the form that is
 actually nameable.
 
@@ -1790,7 +1851,8 @@ into a unit direction (all the classifier sees) and a norm that multiplies
 the layer's output, so one real number per layer per sample reaches the
 decoder outside the bottleneck. Pinning each gain to its held-out mean
 (\texttt{gainablate.py}) costs the stack $+2.1\%$ in total (layer 0's
-gain is identically 1, since SONAR is unit-norm), against a 68\% gap: the
+gain is identically 1, since the cache is L2-normalized; SONAR's own
+embeddings are not~\cite{sonar}), against a 68\% gap: the
 channel is real and is not the explanation. It does matter as a confound
 for the whitened flat arm, whose whitener creates a varying layer-0 gain
 worth $+4.5\%$ --- about 40\% of whitening's apparent benefit.
@@ -1949,9 +2011,12 @@ takes, disturbing 1.4\% of other heads against 18\% for random.
 \subsection{Head independence: a measurement artifact}
 \label{sec:hsic}
 
-A head-independence penalty (\texttt{--s-hsic-heads}, pairwise head
-CKA~\cite{kornblith2019}) appeared to find substantial dependence. It was
-measuring bias:
+A head-independence penalty (\texttt{--s-hsic-heads}: the mean over a
+layer's head pairs of RBF-kernel CKA~\cite{kornblith2019} between the
+heads' batch assignments, at the median-heuristic bandwidth) appeared to
+find substantial dependence. It was measuring bias: CKA as defined there
+normalizes the biased HSIC estimator~\cite[Eq.~3]{kornblith2019}, which
+is positive for independent heads:
 
 \begin{center}\small
 \begin{tabular}{@{}lrrrrrr@{}}
@@ -1978,9 +2043,11 @@ the bias descends only by concentrating or freezing heads.
 Reconstruction resisted that here; where the penalty replaced the
 softmax model's auxiliary losses, it froze a layer
 (Section~\ref{sec:freeze}).
-\texttt{hsic.pairwise\_head\_cka} now defaults to the unbiased
-estimator~\cite{song2012}, which reads 0.06 at 0.5 planted factor
-correlation and 0.41 at 0.8. Conditioning on language or script explains
+\texttt{hsic.pairwise\_head\_cka} now normalizes Song et al.'s unbiased
+estimator~\cite[Eq.~5]{song2012} instead (``debiased'' CKA, as in the
+minibatch CKA of~\cite{nguyen2021}); its expectation is exactly zero for
+independent heads at any batch size, and it reads 0.06 at 0.5 planted
+factor correlation and 0.41 at 0.8. Conditioning on language or script explains
 none of the residue. \textbf{This architecture produces near-independent
 heads with no pressure to do so}; trained out under the corrected
 estimator the penalty changes nothing and costs localization
@@ -2422,12 +2489,16 @@ entirely on the norm asked for: 2.43\% of squared L2, 23.20\% of L2,
 56.55\% of L1.
 
 \paragraph{A random decoder's cone.} Wendel's theorem~\cite{wendel1962}
-gives a geometric reading of the width at which non-negativity stops
-binding: the decoder's $e$ random columns lie in a common halfspace with
-probability $2^{1-e}\sum_{q<d}\binom{e-1}{q}$, exactly $1/2$ at $e{=}2d$,
-so on GPT-2 $e{=}1536$ sits on the threshold at which a random decoder's
-cone $\{W_{\mathrm{dec}}\mathbf{r} : \mathbf{r}\geq0\}$ covers the output
-space at all.
+says how likely non-negativity is to bind at initialization. If the
+decoder's $e$ columns are drawn from any sign-symmetric distribution in
+general position (an i.i.d.\ Gaussian initialization qualifies), they lie
+in a common open half-space through the origin --- so the cone
+$\{W_{\mathrm{dec}}\mathbf{r} : \mathbf{r}\geq0\}$ misses directions of
+$\mathbb{R}^d$ --- with probability $2^{1-e}\sum_{q<d}\binom{e-1}{q}$: 1
+for a square decoder, exactly $1/2$ at $e{=}2d$, switching over a window
+of width $O(\sqrt{d})$ (for $d{=}768$, 0.98 at $e{=}1456$ and 0.02 at
+$e{=}1616$). GPT-2's $e{=}1536$ and the SONAR softmax models' $e{=}2048$
+both sit at the midpoint. This describes the random initialization only.
 
 \subsection{Heads share coordinates: no partition}
 \label{sec:support}
@@ -2654,7 +2725,8 @@ steps, as its temperature anneal ends, and the hard-code stack's only from
 the last checkpoint. The dominant eigenvalue is negative for 63--98\% of
 the softmax stack's features and 97--99\% of the hard-code stack's, so a
 rank-1 feature scores high where the input is orthogonal to $\mathbf{w}$,
-not along it. The constant coordinate can break the sign-blindness of a
+not along it: the quadratic invariances that bilinear layers learn in
+place of constants~\cite{pearce2025}. The constant coordinate can break the sign-blindness of a
 rank-1 feature for inputs weakly aligned with $\mathbf{w}$: in the softmax
 stack's layers 1--4 its weight is 0.18--0.24 of the rest of $\mathbf{w}$,
 in the hard-code stack's 0.017--0.025. One seed per run; weights only.

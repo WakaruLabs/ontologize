@@ -18,17 +18,20 @@ Each layer writes a weighted average of these atoms to an accumulator.
 After each layer the accumulator is decoded, and the residual is passed
 on: layer $\ell$ receives $\mathbf{x} - \mathrm{dec}(\mathbf{r}_\ell)$,
 where $\mathbf{r}_\ell$ holds the $\ell$ layers before it.
-Deep supervision constrains every prefix of the stack to reconstruct the
-input, which makes the code coarse-to-fine: what earlier layers encode is
-gone from the residual later layers see.
+Deep supervision~\cite{lee2015deeply} constrains every prefix of the
+stack to reconstruct the input, and because each layer reads the residual,
+what earlier layers encode is gone from what later layers see: the code is
+a successive refinement, coarse-to-fine in distortion. Unlike a Tree
+SAE~\cite{cao2026}, no later entry is tied to an earlier one, so whether
+the code is also coarse-to-fine in concept is an empirical question.
 
 Because entries within a head are mutually exclusive rather than independent,
 each dictionary head serves as a contrastive set.
 An auxiliary loss term minimizing the heads' support overlap $\omega$
 (Eq.~\eqref{eq:support}) pushes each head onto its own coordinates of the
 dictionary space (Figure~\ref{fig:head-simplex}).
-Because the dictionary returns a linear combination of representative vectors,
-subspaces are convex.
+Because each head returns a convex combination of its atoms, a head's
+outputs fill the simplex the atoms span (Section~\ref{sec:dict}).
 
 
 
@@ -196,8 +199,10 @@ dictionary row for entry $j$ ($\mathsf{D}_{ij\cdot}$ itself when the
 dictionary is signed). Because atoms are absolute values
 and $p_{ij} \in [0,1]$, features are strictly additive. Since each head's
 assignment sums to one, $\mathbf{f}_i$ lies in the simplex whose vertices
-are the head's atoms (Figure~\ref{fig:head-simplex}): a head's entries are
-mutually exclusive alternatives, not independently firing features.
+are the head's atoms (Figure~\ref{fig:head-simplex}), the shape Park et
+al.~\cite{park2025} derive for the representation of a categorical
+concept: a head's entries are mutually exclusive alternatives, not
+independently firing features.
 Algorithm~\ref{alg:dictblock} gives the full training pass, with the
 regularizing perturbations and statistics around this lookup.
 
@@ -421,7 +426,9 @@ A constant coordinate $[1]$ is appended, giving a dimension of $d+1$.
 This prevents the sign information of $\mathbf{y}_\ell$ from being lost
 by the bilinear transformation.
 Effectively, it adds a bias to an otherwise unbiased linear form
-while preserving eigendecomposition.
+while preserving eigendecomposition. This is the input augmentation by
+which Pearce et al.~\cite{pearce2025} give bilinear layers biases; it
+splits each output into an interaction, a linear and a constant term.
 
 \subsubsection{Noise}
 \label{sec:noise}
@@ -545,17 +552,21 @@ cannot co-adapt and ablating one to its origin stays in distribution.
 \subsubsection{Embedding model}
 \label{sec:sonar}
 We embed texts using SONAR~\cite{sonar}, a multimodal and
-language-agnostic sentence embedding model. SONAR embeddings have
-several desirable properties:
-\begin{itemize}
-	\item They correspond to entire texts rather than tokens.
-	\item They are bidirectional.
-	\item Language is encoded independently of text.
-\end{itemize}
-This allows us to validate steering fidelity against a ground truth.
+language-agnostic sentence embedding model: a translation-trained encoder
+whose states are mean-pooled into one 1024-dimensional vector, and a
+decoder that generates text from that vector alone, in a target language
+chosen at decoding time. Each embedding here covers the opening of a web
+document (up to its first 512 tokens), longer than the sentences SONAR is
+trained on. Translations embed close together, so a reconstructed or
+steered embedding can be decoded in one fixed language and re-encoded,
+which is how text fidelity and text-cycle steering are scored
+(Appendices~\ref{sec:textfid} and~\ref{sec:steertext}).
 Large Concept Models~\cite{lcmteam2024largeconceptmodelslanguage}
-generate directly in SONAR space, which makes it a natural substrate
-for steering experiments.
+generate directly in SONAR space, one sentence embedding per step, which
+makes it a natural substrate for steering experiments: an edit to a SONAR
+embedding is an edit to such a model's context or output. The same work
+finds SONAR decoding fragile, with small perturbations of an embedding
+able to lose much of its meaning once decoded.
 
 \subsubsection{Loss function}
 \label{sec:loss}
@@ -607,12 +618,17 @@ softmax selection and absolute-valued dictionaries never produce.
 
 \input{algorithms/ontologizer}
 
-Reconstruction is trained with deep supervision:
+Reconstruction is trained with deep supervision~\cite{lee2015deeply}:
 $\mathrm{MSE}(X, \mathrm{dec}(R_\ell))$ is computed separately for
 every prefix $\ell = 1, \dots, l$ and averaged, so each prefix carries
 weight $1/l$ and each
 layer must explain what previous layers left
-unexplained. A stop-gradient variant (\texttt{deepsup\_sg}, off in every
+unexplained. Supervising every prefix through one shared decoder is the
+deterministic counterpart of SoundStream's quantizer dropout, which trains
+a residual quantizer at a random depth per example~\cite{zeghidour2021},
+and the nested-prefix loss of Matryoshka SAEs~\cite{bussmann2025} applied
+to a residual stack rather than to prefixes of one dictionary.
+A stop-gradient variant (\texttt{deepsup\_sg}, off in every
 reported model) stops each prefix's gradient at the accumulator it was
 handed, so that a layer trains only against its own residual. The MSE is whitened: $\mathbf{w}$ in
 Eq.~\eqref{eq:mse} is the per-dimension inverse variance, normalized
@@ -641,16 +657,21 @@ features respectively.
 \subsection{Evaluation}
 Evaluation runs against $\topk$ SAEs trained on identical cached SONAR
 embeddings under an identical whitened reconstruction objective. The
-battery is deliberately SAEBench-style~\cite{karvonen2025}: a
-reconstruction-versus-capacity Pareto; categorical-form and
-semantic-coherence tests of head structure; cross-model feature
-splitting and seed stability; downstream text fidelity through the
-paired M2M100 decoder; sparse language probing; shrinkage
-decomposition; steering fidelity; and blinded autointerp
-scoring. A structural-ablation ladder of SAE variants, each adding one
+battery follows SAEBench~\cite{karvonen2025} in judging a dictionary
+with many instruments rather than by reconstruction at fixed sparsity,
+and adapts three of its eight metrics: a loss-recovered analogue, as
+downstream text fidelity through the paired M2M100 decoder; blinded
+autointerp detection scoring; and sparse probing, of language. The rest
+is specific to this comparison: a reconstruction-versus-capacity Pareto;
+categorical-form and semantic-coherence tests of head structure;
+cross-model feature splitting and seed stability; shrinkage
+decomposition; and steering fidelity. A
+structural-ablation ladder of SAE variants, each adding one
 Ontologizer-style commitment at a time, attributes effects to specific
 structure. AxBench~\cite{wu2025axbenchsteeringllmssimple} found that
-simple supervised baselines beat SAEs at steering; the steering
-comparison here is built to face that result.
+prompting, finetuning and one simple supervised direction, the
+difference of means, beat SAE latents at steering, while a linear
+probe's direction did not; the steering comparison here, which includes
+both, is built to face that result.
 
 

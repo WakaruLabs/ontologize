@@ -43,5 +43,8 @@ concatenated heads, disjoint by construction, are the comparison that
 already has it.
 
 \subsection{Transcoder adaptation}
-The architecture currently reconstructs an embedding. Adapting it to map
-between layers, as transcoders do, is the obvious next target.
+The architecture currently reconstructs its own input. Adapting it to
+predict a sublayer's output from its input, as transcoders do for
+MLPs~\cite{dunefsky2024}, is the obvious next target. The residual stack
+then needs a forwarding mode that does not read the target, since the
+target is unavailable at inference.

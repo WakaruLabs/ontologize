@@ -10,7 +10,8 @@ steering vectors}: each head is a $k$-way classifier over its input,
 trained only by reconstruction pressure, and the hope is that a series of
 such classifiers finds the most natural contrastive clusters in the
 embedding space. Interpretability value is then expected from
-\emph{MoEfication}: decomposing the space into small classification tasks
+\emph{MoEfication}, in an extended sense of the term~\cite{zhang2022}:
+decomposing the space into small classification tasks
 --- one per head --- each nameable in isolation, with within-head entry
 swaps as the steering primitive (forcing head $i$ from its argmax entry to
 entry $j'$ moves the decode along exactly the dimension head $i$
@@ -42,33 +43,60 @@ No single line of prior work covers this combination; each commitment has
 a nearest neighbor.
 
 \paragraph{Discrete and routed dictionaries.}
-A \texttt{DictBlock} head --- a softmax over $k$ entries, summed across
-heads --- is soft product quantization~\cite{jegou2011}, and the residual
-layer stack is soft residual VQ, the codec lineage of
-SoundStream~\cite{zeghidour2021}; that literature treats codes as
-compression and does not read codebooks as features. The straight-through
+A \texttt{DictBlock} layer --- $h$ heads, each a softmax over $k$ entries,
+their atoms summed --- is a soft additive quantizer~\cite{babenko2014}, the
+generalization of product quantization~\cite{jegou2011} in which every
+codebook spans the whole space rather than its own block of coordinates
+(\texttt{ConcatDictBlock} is a product quantizer in the dictionary space).
+The residual layer stack is a softmax relaxation of residual (multi-stage)
+VQ, the quantizer of neural codecs such as SoundStream~\cite{zeghidour2021},
+which picks each stage's code by nearest neighbor and judges codes only by
+rate and perceived quality, never by what a codeword means; residual VQ has
+also been applied to SONAR space itself, with 64 codebooks of 8192
+entries~\cite{lcmteam2024largeconceptmodelslanguage}. The straight-through
 arm (Section~\ref{sec:ste}) makes the analogy literal: with an argmax
-forward and a softmax surrogate gradient~\cite{bengio2013} it is a
-residual product quantizer with non-negative atoms. Codebook
-Features~\cite{tamkin2023} is the closest interpretability ancestor (VQ
-bottlenecks finetuned into a network, hidden state a sum of a few
-discrete codes), but its codes are read per-code, not as classifiers, and
-there is no intervention grammar over within-codebook swaps. Switch
-SAEs~\cite{mudide2025} route activations among expert SAEs purely as a
-compute optimization; notably their experts collapse into redundant
-ensembles that duplicate features --- exactly the failure mode
-\texttt{headstruct.py}/\texttt{headcoh.py} instrument, and the opposite of
-what trained heads show here (within-head directions repel).
-MoEfication~\cite{zhang2022} supplies the frame's name but decomposes
-already-trained MLPs post hoc; here the partition is the training
-objective's own discovery.
+forward and the softmax's gradient in the backward pass --- the
+straight-through estimator~\cite{bengio2013} in its categorical
+form~\cite{jang2017} --- it is a residual additive quantizer with
+non-negative atoms, whose codewords are picked by learned classifiers
+rather than by nearest-codeword search. Codebook Features~\cite{tamkin2023}
+is the closest interpretability ancestor: it finetunes VQ bottlenecks into
+a network, one codebook per attention head ahead of the shared output
+projection (in effect \texttt{ConcatDictBlock} with its shared decoder),
+and steers by substituting codes, including swapping one state's code for
+another's in a synthetic finite-state task. But its codes are chosen by
+cosine similarity to the codes themselves rather than by a classifier,
+read one at a time as present-or-absent features, and scored on their
+target alone, with no defined set of operations and no measure of what
+else an intervention changes. Switch SAEs~\cite{mudide2025} route each
+activation to one of several expert $\topk$ SAEs to cut training compute;
+routing gathers similar inputs, and experts duplicate some features
+(5--10\% of decoder directions have a near-copy in another expert), which
+Xu et al.\ describe as experts collapsing into redundant ensembles and
+counter by activating several experts per
+input~\cite{xu2025redundancydiversespecializedmultiexpert}. A head layer is
+the dual arrangement --- every head fires, choosing one entry --- and the
+hard stack's heads partition near-independently
+(Figure~\ref{fig:headnmi}), while within a softmax head decode directions
+repel: a head is a contrast set rather than the coherent cluster that MoE
+work counts as a specialized expert. MoEfication~\cite{zhang2022} supplies
+the frame's name but decomposes already-trained ReLU feed-forward layers
+post hoc into experts of co-activating neurons, several active per input;
+a head's entries instead exclude one another, and the partition is the
+training objective's own discovery.
 
 \paragraph{Structured SAEs.}
 The field's main structure axis is nesting by scale: Matryoshka
 SAEs~\cite{bussmann2025} train nested dictionaries to curb feature
-absorption~\cite{chanin2025}, and Tree SAE~\cite{cao2026} learns explicit
-hierarchies. Rung 3 (\texttt{k32\_p5}) imports exactly the matryoshka
-commitment into the ladder; the Ontologizer's axis is instead
+absorption~\cite{chanin2025}, and Tree SAEs~\cite{cao2026} learn explicit
+parent--child pairs by gating each child latent on an assigned parent.
+Grouping is a second axis: subspace-aware SAEs~\cite{dalili2026} tie
+latents into rank-$r$ blocks and sparsify across blocks, so that a group is
+a subspace with free signed coordinates, and OrtSAEs~\cite{korznikov2025}
+penalize each decoder direction's cosine with its nearest neighbor. Rung 3
+(\texttt{k32\_p5}) imports the Matryoshka nested-prefix loss into the
+ladder, with five equal blocks rather than the doubling block sizes
+of~\cite{bussmann2025}; the Ontologizer's axis is instead
 \emph{partition into exhaustive, mutually exclusive heads}. Both lines ask
 whether an architectural commitment buys interpretability that code
 density alone does not explain --- the autointerp results below answer
@@ -76,31 +104,62 @@ density alone does not explain --- the autointerp results below answer
 where the partition begins to pay.
 
 \paragraph{Embedding-space substrate.}
-SAEs over dense text embeddings became a subfield in 2025--2026:
-discretizing retrieval embeddings~\cite{park2025decodingdenseembeddingssparse}, data-analysis
-toolkits~\cite{jiang2026interpretableembeddingssparseautoencoders},
-human-concept alignment~\cite{shin2026aligningsentenceembeddingshuman}. All
-are single-layer $\topk$ SAEs, and none address SONAR, where the stakes
-are higher --- Large Concept Models generate directly in SONAR
-space~\cite{lcmteam2024largeconceptmodelslanguage} --- and where the paired M2M100 decoder supplies a
-semantic oracle: where embedding-inversion work must train an
-inverter~\cite{morris2023textembeddingsrevealalmost}, \texttt{textfid.py} and \texttt{steerfid.py}
-decode reconstructions and interventions through the pretrained decoder
-itself.
+SAEs over dense text embeddings have become an active line of work:
+interpreting and discretizing dense-retrieval
+embeddings~\cite{park2025decodingdenseembeddingssparse} and aligning
+sentence-embedding features with human concepts to steer
+retrieval~\cite{shin2026aligningsentenceembeddingshuman}, while a
+data-analysis toolkit builds interpretable document embeddings from a
+token-level LLM SAE instead~\cite{jiang2026interpretableembeddingssparseautoencoders}.
+All three rely on single-layer SAEs, $\topk$ or its BatchTopK variant, the
+embedding SAEs on English retrieval encoders. None addresses SONAR, where
+the stakes are higher --- Large Concept Models generate directly in SONAR
+space~\cite{lcmteam2024largeconceptmodelslanguage} --- and where the paired
+M2M100 decoder reads reconstructions and interventions back as text
+without a trained inverter. Embedding-inversion work needs one, and
+recovers exact text only by iteratively re-embedding and correcting its
+own decodes~\cite{morris2023textembeddingsrevealalmost};
+\texttt{textfid.py} and \texttt{steerfid.py} decode in a single greedy
+pass through a decoder that paraphrases and is fragile to small
+perturbations~\cite{sonar,lcmteam2024largeconceptmodelslanguage}, so their
+text-space numbers are lower bounds (Appendix~\ref{sec:steertext}).
 
 \paragraph{Evaluation stance.}
-SAEBench~\cite{karvonen2025} is the template for the multi-instrument
-battery (\texttt{langprobe.py} is deliberately SAEBench-style), and the
-blinded detection scoring follows the scaled autointerp
-line~\cite{paulo2025}. AxBench~\cite{wu2025axbenchsteeringllmssimple} found that prompting and
-finetuning beat every representation-based steering method, with SAEs
-uncompetitive even at concept detection --- independent support for
-judging dictionaries by steering utility rather than per-latent
-monosemanticity, and the niche \texttt{steerfid.py}'s
-effect-vs-collateral-at-matched-magnitude design targets. Song et
-al.~\cite{song2025positionmechanisticinterpretabilityprioritize} argue seed-to-seed feature consistency should be a
-first-class SAE metric; \texttt{splitting.py}'s match fractions and
-\texttt{partition.py}'s head matching measure precisely that. Without
+SAEBench~\cite{karvonen2025} motivates judging a dictionary with many
+instruments rather than by reconstruction at fixed sparsity; of its eight
+metrics the battery adapts three to SONAR (a loss-recovered analogue
+through the paired decoder, \texttt{textfid.py}; LLM-judged detection,
+\texttt{autointerp.py}; $k_{\mathrm{probe}}$-sparse probing on 86
+language labels, \texttt{langprobe.py}) and omits absorption, RAVEL,
+unlearning, SCR and TPP. Description scoring uses the detection task of
+the scaled autointerp pipeline~\cite{paulo2025}; unlike that pipeline we
+score positives ranked just below the describing examples and report F1
+rather than balanced accuracy, so our numbers are not on its scale.
+AxBench~\cite{wu2025axbenchsteeringllmssimple} found that, averaged over
+four Gemma-2 sites, prompting and then finetuning steer better than every
+representation-based method. Among single directions only the difference
+of means beats SAE latents, while a linear probe that ties the best
+detectors steers worse than they do, and SAE latents chosen by their
+autointerp labels also trail at concept detection. Detection and steering
+dissociate, which supports judging a dictionary by what its directions do
+--- the niche of \texttt{steerfid.py}'s
+effect-against-collateral design at matched magnitude, where AxBench
+instead tunes each method's strength on held-out prompts. Song et
+al.~\cite{song2025positionmechanisticinterpretabilityprioritize} argue
+that run-to-run feature consistency should be an essential SAE evaluation
+criterion, measured as the mean absolute cosine between decoder directions
+matched one-to-one across seeds; \texttt{partition.py}'s Hungarian-matched
+head NMI is its partition-level analogue for classifier heads, and
+\texttt{splitting.py}'s match fractions a thresholded, activation-based
+one. Wang et al.~\cite{wang2024} measure the same property as each latent's
+maximum activation correlation with any latent of another run, against
+model-seed and SAE-seed skylines. Korznikov et al.~\cite{korznikov2026}
+retrain SAEs with the decoder frozen at a random initialization, or held
+near it, or with the encoder frozen at random, and find them within a few
+points of trained SAEs on autointerp, single-latent sparse probing and
+RAVEL; the nulls here permute a trained model's own entries, latents or
+rows, and do not measure what training adds over random components.
+Without
 close analog, to our knowledge: reading per-head routing as contrastive
 classification with a causal intervention interface; quota-free
 coherence tests against size-matched nulls, including over judge-written

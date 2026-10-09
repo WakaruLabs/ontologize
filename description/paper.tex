@@ -49,9 +49,9 @@ computational process used by a model: features should be causal,
 composable, and closed-form. Most existing techniques, such as sparse
 autoencoders, can perform arbitrarily badly on all three. Arguably the
 simplest interpretability technique is a linear probe, and the simplest
-control technique is a steering vector. They are remarkably robust
-compared to unsupervised techniques such as SAEs, but require labeled
-contrastive datasets. We propose a MoEfication
+control technique is a steering vector. On current benchmarks both beat
+features from unsupervised techniques such as SAEs, but they require
+labeled contrastive datasets. In the spirit of MoEfication, we propose a
 technique that decomposes a representation space into a set of
 contrastive classifiers. Each class corresponds to a representative
 vector; inputs are encoded as classifications and reconstructed from the

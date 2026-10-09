@@ -10,17 +10,19 @@ to be
 \end{enumerate}
 However most existing techniques, such as sparse autoencoders (SAEs),
 produce features that can perform arbitrarily badly on these desiderata.
-Feature splitting breaks compositionality. They can't usually be
+Feature splitting breaks compositionality~\cite{bricken2023,chanin2025}. They can't usually be
 statically analyzed (though bilinear SAE variants can be). Sparsity
 trades off against reconstruction fidelity, limiting the extent to which
 features can be used for steering.
 
 Arguably the simplest interpretability technique is a linear probe, and
-the simplest control technique is a steering vector. They are remarkably
-robust compared to unsupervised techniques such as SAEs, but require
-labeled contrastive datasets. We propose a MoEfication technique based
-on decomposing a representation space into a set of contrastive
-classifiers. Each class corresponds to a representative vector. Inputs
+the simplest control technique is a steering vector. On current
+benchmarks both beat features from unsupervised techniques such as SAEs,
+probes at detecting concepts and the difference of means at steering
+them~\cite{wu2025axbenchsteeringllmssimple}, but they require labeled
+contrastive datasets. In the spirit of MoEfication~\cite{zhang2022}, we
+propose a technique based on decomposing a representation space into a
+set of contrastive classifiers. Each class corresponds to a representative vector. Inputs
 are encoded as a series of classifications, and reconstructed from the
 representative vectors those classifications select. This has several
 advantages over SAEs:
@@ -71,14 +73,18 @@ This proposal assumes:
 	form: the dictionary forms a basis for the representation rather than
 	a target or a discrete codebook. Representations are not themselves
 	quantized; quantization comes from sharpening the classifications
-	over that basis.
+	over that basis. Trained from scratch, a soft relaxation of
+	quantization need not quantize, since the decoder can learn to
+	invert it~\cite{vandenoord2017}; the hard code
+	(Section~\ref{sec:prelim-ste}) is the response.
 	\item \textbf{Interpreting a well trained model is the same problem
 	as interpreting the data and training tasks.}
 \end{itemize}
 
 \subsection{Pivotal assumptions}
 Two of these are pivotal: some version of the linear representation
-hypothesis is true, and latent space is in some way ``natural''.
+hypothesis~\cite{park2023linear,park2025} is true, and latent space is in
+some way ``natural''.
 
 \subsection{Concerns}
 
@@ -95,8 +101,13 @@ heads agree barely above chance (Section~\ref{sec:prelim-seed}). This is
 currently the binding constraint on the proposal.
 
 \paragraph{Steering could push it too far off manifold}
-This is an open problem in mechinterp. Diffusion steering is one
-candidate to address it\cite{wagenmaker2025}.
+This is an open problem for activation steering. In robot control, a
+frozen diffusion policy is steered through its input noise rather than
+its outputs: a reinforcement-learned noise policy, confined to the region
+the denoiser was trained on, keeps every action within the policy's
+learned distribution~\cite{wagenmaker2025}. The analog here is steering
+through the code, choosing entries and decoding, rather than adding
+vectors to the embedding.
 If we can't solve the problem it still gives good data to test steering
 methods: can we RL a model for high or low scores on a classification and
 have it converge faster than paired steering or PCA vectors?
@@ -109,7 +120,7 @@ length, and the residual cascade doubles that
 
 \paragraph{Representations could be too soft/dense/high entropy}
 This is highly correlated across all feature-based interp (SAEs,
-transcoders, J-space). Dividing representations across orthogonal
+transcoders~\cite{dunefsky2024}, J-space). Dividing representations across orthogonal
 categorical subspaces makes it possible to interpret the conceptual
 basis vectors even if the representations are dense mixtures. A soft
 code's argmax is not its code, though (Section~\ref{sec:prelim-pareto}),
@@ -153,10 +164,13 @@ interpreted basis does not depend on the input distribution, though the
 classifications over it do.
 
 \paragraph{Inference too expensive}
-Each layer adds $h \cdot k$ classifications per sample
-(Section~\ref{sec:arch}), with $k$ small;
-the code is computed without materializing a wide feature space. The
-cost is the extra decoder passes for deep supervision during training.
+Each layer computes all $h \cdot k$ of its classifier logits per sample
+(Section~\ref{sec:arch}), densely: a bilinear classifier costs about
+twice a dense encoder of the same width, so the code saves no
+forward-pass compute over an SAE of width $l\,h\,k$. Skipping heads per
+input, as Switch SAEs route each input to one expert~\cite{mudide2025},
+would be needed for that. Training adds the extra decoder passes of deep
+supervision~\cite{lee2015deeply}.
 
 \paragraph{Autointerp doesn't work on parameters/eigenfeatures}
 Parameter-space decodes of entries fail as descriptions outright

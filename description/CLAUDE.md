@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Scope
 
 This directory is the LaTeX source for the Ontologizer **project-proposal paper**
-("A proposal for mixture-of-experts-based interpretability"). It is a subtree of the
+("A proposal for interpreting dense networks"). It is a subtree of the
 `ontologize` research repo — see `../../CLAUDE.md` for the JAX/Flax implementation that
 this paper describes. Numbers, hyperparameters, and architecture claims in the prose
 should be checked against that code, not invented.
@@ -116,8 +116,11 @@ The diagrams are shared with `../writeup/tikz/`, which has two more (`dictenc_fu
 
 ## Bibliography
 
-`refs.bib` (biblatex, `backend=biber`). The formerly empty `\cite{}` (SAE forward
-passes computing the whole feature space) now cites `gao2024`; no known gaps remain.
+`refs.bib` (biblatex, `backend=biber`), a subset of `../writeup/refs.bib`: an entry
+both cite is kept identical in the two files. The compute sentence in `background.tex`
+(SAE forward passes computing the whole feature space) cites `gao2024` and
+`mudide2025`. A citation is tied to its word with `~\cite{...}`, never glued
+(`word\cite`), as in the working notes.
 
 Put URLs in a `url=` field, not in `note=` — a bare URL in `note` bypasses biblatex's
 URL line-breaking and produces underfull-hbox warnings in the bibliography.

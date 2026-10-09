@@ -13,9 +13,14 @@ goal misgeneralization as the default outcome.
 
 
 \subsubsection{Limits of natural abstractions}
-To some extent, deep learning models seem to learn universal features irrespective of architecture\cite{chughtai2023}.
+Networks trained on the same task can share an algorithm across
+architectures while differing, even between random seeds, in which
+features implement it: evidence for weak but not strong
+universality~\cite{chughtai2023}. In language models, SAE features of a
+Transformer and a Mamba trained on the same data match nearly as well as
+those of two Transformer seeds~\cite{wang2024}.
 This implies the existence of at least a weak version of
-natural abstractions\cite{lang2023},
+natural abstractions~\cite{lang2023},
 which would be a very convenient shortcut for auditing a model.
 
 Natural abstractions could be considered the set of concepts we could use to communicate with aliens. 
@@ -23,7 +28,7 @@ They should consistently emerge through unsupervised learning (in the limit give
 If any neural network is considered a fuzzy generalization of a finite state machine, 
 natural abstractions are the latent states.
 
-Unfortunately, the abstractions a model learns seem highly sensitive to choice of training data, and are thus not necessarily universal in the limit.
+Unfortunately, the abstractions a model learns seem highly sensitive to choice of training data, and even to the random seed with the data fixed~\cite{chughtai2023}, and are thus not necessarily universal in the limit.
 \footnote{The same applies to those that seem most natural to humans.}
 Assuming that model capabilities will continue to primarily be driven by access to more data and more modalities, we cannot expect the abstractions learned by a weak model to remain robust in a more powerful model.
 
@@ -68,9 +73,9 @@ and human ontology. These are hard but not intractable problems.
 Recently, developmental interpretability
 (devinterp) techniques have enabled identification of ``developmental
 stages'' corresponding to learning specific
-tasks\cite{hoogland2024developmental}. This is strong evidence that
+tasks~\cite{hoogland2024developmental}. This is strong evidence that
 learning consists primarily of the network
-grokking\cite{nanda2023progress} discrete concepts. While these results
+grokking~\cite{nanda2023progress} discrete concepts. While these results
 are promising for MAD, locating these emergent capabilities in the
 model's activations remains an open problem.
 
