@@ -30,12 +30,22 @@ def load_langs(src, langs, *args, stopping_strategy="first_exhausted",
                         repeat until every language has been seen
                         through once, so nothing is discarded but the
                         small languages appear many times over.
+      all_exhausted_without_replacement
+                        keeps rotating over the languages that have
+                        documents left, skipping each one that runs out:
+                        nothing is discarded or repeated, and the mixture
+                        stops being uniform once the smallest language
+                        is spent. Up to that point every strategy yields
+                        the same stream, at least when streaming, so a
+                        cache built under the default is an exact prefix
+                        of this one (experiments/fresh-eval relies on it).
 
-    Neither is free. Under the default a request larger than n_langs
-    times the smallest split silently yields a shorter stream than
-    asked for; under `all_exhausted` it yields duplicates instead.
-    Which one is wanted depends on whether repeated text or a truncated
-    corpus is the worse failure for the run at hand."""
+    None is free. Under the default a request larger than n_langs times
+    the smallest split silently yields a shorter stream than asked for;
+    under `all_exhausted` it yields duplicates instead, and without
+    replacement the late rows lose the small languages. Which one is
+    wanted depends on whether repeated text, a truncated corpus or a
+    skewed mixture is the worse failure for the run at hand."""
     dss = [load_lang(src, x, *args, **kwargs) for x in langs.keys()]
     return interleave_datasets(dss, stopping_strategy=stopping_strategy)
 

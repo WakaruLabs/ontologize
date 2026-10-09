@@ -5,10 +5,21 @@ that sae.py holds out is held out only for the SAEs (pareto.py's caveat).
 This harness closes that asymmetry: it replays encode_corpus.py's exact
 deterministic stream (same interleave order, tokenizer, encoder dtype,
 pooling, and the training cache's source-language tags, read from its
-meta.json), SKIPS the first --skip samples (default 4,000,000 = everything
-mc4_4M contains, trained on by every model), and encodes the next --n
+meta.json), SKIPS the first --skip samples (default: the training cache's
+row count, everything every model trained on), and encodes the next --n
 samples into a fresh <name>.npy + <name>.langs.npy pair that no model has
 ever seen. Downstream scripts accept it anywhere they take --cache.
+
+encode_corpus.py's interleave stops when its smallest language runs out,
+which is where mc4_4M ends (3,974,400 rows), so there is nothing after it
+to encode. This stream is interleaved with
+`stopping_strategy="all_exhausted_without_replacement"` instead: the same
+round robin, so mc4_4M is its exact prefix, but continuing over the
+languages that have documents left and skipping each one that runs out.
+(`"all_exhausted"` would restart an exhausted language from its first
+document, which is training data.) The fresh slice therefore lacks the
+languages that ran out inside the training corpus, and loses more as
+others run out; the .langs.npy sidecar records what it holds.
 
 While skipping, each stream item's language is checked against the
 training cache's .langs.npy sidecar (the same drift guard autointerp.py's
@@ -49,13 +60,17 @@ from ontologize.data.loaders import HFDataSource, TokenizeTransform
 from ontologize.data.multilingual import mc4_data
 from ontologize.data.pretrained import pretrained_transformer, encode
 
+# the training stream with nothing cut at its end and nothing repeated
+# (see the module docstring)
+STOPPING = "all_exhausted_without_replacement"
+
 
 def parse_args():
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--skip", type=int, default=4_000_000,
-                   help="stream samples to skip: the size of the training "
-                        "cache (mc4_4M -> 4,000,000)")
+    p.add_argument("--skip", type=int, default=None,
+                   help="stream samples to skip (default: the training "
+                        "cache's row count, 3,974,400 for mc4_4M)")
     p.add_argument("--n", type=int, default=131072,
                    help="fresh samples to encode")
     p.add_argument("--b", type=int, default=256,
@@ -101,6 +116,24 @@ def main():
     tags = {"MC4_TO_SONAR": MC4_TO_SONAR, "MC4_4M_TAGS": MC4_4M_TAGS}[tags_name]
     print(f"source tags: {tags_name}")
 
+    # training-cache sidecar: the default --skip, and the stream-drift
+    # guard during the skip
+    L_train = None
+    if args.train_cache:
+        langs_path = Path(args.train_cache).with_name(
+            Path(args.train_cache).name.replace(".npy", ".langs.npy"))
+        if langs_path.exists():
+            L_train = np.load(langs_path, mmap_mode="r")
+        else:
+            print(f"WARNING: {langs_path} missing; stream alignment "
+                  "of the skipped prefix is unverified")
+    if args.skip is None:
+        if L_train is None:
+            raise SystemExit("--skip is required without the training "
+                             "cache's .langs.npy sidecar")
+        args.skip = len(L_train)
+    print(f"skipping the first {args.skip} stream rows")
+
     done = 0
     if prog.exists() and part.exists():
         meta = json.loads((outdir / f"{args.name}.meta.json").read_text())
@@ -132,19 +165,9 @@ def main():
             "source": "allenai/c4 train, interleaved over MC4_TO_SONAR; "
                       f"stream rows {args.skip}..{args.skip + args.n} "
                       "(everything before --skip is training data)",
+            "stopping_strategy": STOPPING,
             "src_tags": tags_name,
         }, indent=2))
-
-    # training-cache sidecar for the stream-drift guard during the skip
-    L_train = None
-    if args.train_cache:
-        langs_path = Path(args.train_cache).with_name(
-            Path(args.train_cache).name.replace(".npy", ".langs.npy"))
-        if langs_path.exists():
-            L_train = np.load(langs_path, mmap_mode="r")
-        else:
-            print(f"WARNING: {langs_path} missing; stream alignment "
-                  "of the skipped prefix is unverified")
 
     dev = encode_corpus.dev
     model, tokenizer = pretrained_transformer(
@@ -152,10 +175,15 @@ def main():
     model.eval()
     tok = TokenizeTransform(tokenizer, maxlen=encode_corpus.maxlen, tags=tags)
 
-    ds = mc4_data("allenai/c4", split="train", streaming=True)
+    ds = mc4_data("allenai/c4", split="train", streaming=True,
+                  stopping_strategy=STOPPING)
     it = iter(HFDataSource(ds, text_key="text"))
     for row in tqdm(range(args.skip + done), desc="Skipping", unit="sample"):
-        item = next(it)
+        try:
+            item = next(it)
+        except StopIteration:
+            raise RuntimeError(f"the stream ended at row {row}, inside "
+                               f"--skip {args.skip}") from None
         if L_train is not None and row < len(L_train) \
                 and item["lang"] != L_train[row]:
             raise RuntimeError(
@@ -193,7 +221,7 @@ def main():
 
     checkpoint(n)
     if n < args.n:
-        # interleave exhausted (smallest language ran out past --skip):
+        # interleave exhausted (every language ran out past --skip):
         # shrink to what we actually got
         print(f"Stream exhausted at {n}/{args.n}; truncating cache")
         encode_corpus.truncate_npy(part, n)

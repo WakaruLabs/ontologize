@@ -54,6 +54,35 @@ def test_all_exhausted_keeps_every_row(fake_hub):
     assert sum(x.startswith("bb") for x in t) > SIZES["bb"]
 
 
+@pytest.fixture
+def fake_stream(monkeypatch):
+    """Streaming stand-in: what `load_dataset(..., streaming=True)` gives,
+    which interleaves through a different code path than in-memory sets."""
+    def fake(src, lang, *args, **kwargs):
+        return datasets.Dataset.from_dict(
+            {"text": [f"{lang}{i}" for i in range(SIZES[lang])],
+             "url": [""] * SIZES[lang]}).to_iterable_dataset()
+    monkeypatch.setattr(multilingual, "load_dataset", fake)
+    return fake
+
+
+def test_without_replacement_extends_the_stream(fake_stream):
+    """experiments/fresh-eval relies on this: past the point where the
+    default stream stops, rotation continues over the languages with rows
+    left, never restarting a spent one, and everything before that point
+    is the default stream unchanged."""
+    default = texts(multilingual.load_langs("src", SIZES))
+    full = texts(multilingual.load_langs(
+        "src", SIZES, stopping_strategy="all_exhausted_without_replacement"))
+    assert full[:len(default)] == default
+    assert len(full) == len(set(full)) == sum(SIZES.values())
+    # plain all_exhausted restarts the spent language: rows already in
+    # the default stream come round again
+    again = texts(multilingual.load_langs(
+        "src", SIZES, stopping_strategy="all_exhausted"))
+    assert set(again[len(default):]) & set(default)
+
+
 def test_metadata_applies_its_strategy(monkeypatch):
     """Metadata.mc4 is the field's consumer; it must reach the
     interleaver over the whole mC4 language set."""

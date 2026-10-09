@@ -5,10 +5,15 @@ for the SAEs — the Ontologizer runs trained on the full cache, so the
 published Pareto favors the Ontologizer end. Two stages:
 
 1. `encode_fresh.py` replays encode_corpus.py's deterministic mC4 stream,
-   skips the whole training corpus (first 4,000,000 samples), and encodes
-   the NEXT `--n` samples with the identical machinery (same tokenizer
-   routing, encoder dtype, pooling) into a fresh `.npy` + `.langs.npy`
-   cache no model has seen.
+   skips the whole training corpus (the training cache's row count,
+   3,974,400 for mc4_4M), and encodes the NEXT `--n` samples with the
+   identical machinery (same tokenizer, the training cache's
+   source-language tags, encoder dtype, pooling) into a fresh `.npy` +
+   `.langs.npy` cache no model has seen. mc4_4M ends where its smallest
+   language ran out, so this stream interleaves with
+   `stopping_strategy="all_exhausted_without_replacement"`: the same order
+   (mc4_4M is its exact prefix), continuing over the languages that still
+   have documents.
 2. `pareto_fresh.py` re-runs the reconstruction Pareto (importing
    `pareto.sae_points` / `pareto.onto_points` unmodified) scoring every
    point on the fresh rows, with the E[p] origin still measured on
@@ -38,8 +43,8 @@ uv run python experiments/fresh-eval/pareto_fresh.py \
   `data/out/sonar/multilingual/resid_nc`.
 - SAE runs auto-discovered from `data/out/sonar/sae/*/params.npz`
   (override with `--sae`).
-- `--skip` must equal the training-cache size (default 4,000,000). If a
-  differently sized cache was trained on, pass its row count.
+- `--skip` defaults to the training cache's row count, read from its
+  `.langs.npy`; pass it only for a cache without that sidecar.
 
 ## Outputs (in `experiments/fresh-eval/out/`)
 
@@ -56,7 +61,7 @@ on the onto points is the size of the train/eval-tail asymmetry.
 
 ## Cost
 
-- **Stage 1 skip:** streaming past 4M mC4 samples is network/CPU-bound —
+- **Stage 1 skip:** streaming past ~4M mC4 samples is network/CPU-bound —
   no encoding, but expect **2–6 h** depending on bandwidth (same cost
   encode_corpus.py pays on resume). Interruptions are cheap to resume for
   the encode phase, but the skip replays from zero each run.
@@ -72,12 +77,16 @@ on the onto points is the size of the train/eval-tail asymmetry.
   own resume logic already depends on it, and the drift guard (language
   sidecar comparison over all skipped rows) aborts if the HF dataset
   revision no longer reproduces the cached order.
-- The interleave can exhaust past 4M if a small language runs out; the
-  cache is then truncated to what was actually produced (mirroring
-  encode_corpus.py) and stage 2 simply scores fewer rows.
-- The fresh slice's language mix matches the interleave, not the training
-  head exactly (languages that ran out drop away); the whitened-FVU
-  metric is per-dimension, not per-language, so this shifts difficulty
-  identically for both architectures.
+- A language that runs out is skipped from then on, not repeated: plain
+  `all_exhausted` would restart it from its first document, which is
+  training data. The fresh slice therefore lacks the languages that ran
+  out inside the training corpus and loses more as others run out, so its
+  mix is not the training head's (the `.langs.npy` sidecar records it).
+  The whitened-FVU metric is per-dimension, not per-language, so this
+  shifts difficulty identically for both architectures. The cache is
+  truncated only if every language runs out before `--n` rows.
+- The fresh rows carry the training cache's source-language tags, so for
+  mc4_4M they share its English-tag issue (`experiments/lang-tags`) and
+  stay on the distribution the models trained on.
 - `pareto.onto_points`/`sae_points` are imported, not reimplemented — any
   future change to pareto.py's scoring flows through automatically.
