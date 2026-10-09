@@ -4,7 +4,8 @@ The Ontologizer runs trained on the FULL mc4_4M cache, so the cache tail
 that sae.py holds out is held out only for the SAEs (pareto.py's caveat).
 This harness closes that asymmetry: it replays encode_corpus.py's exact
 deterministic stream (same interleave order, tokenizer, encoder dtype,
-pooling), SKIPS the first --skip samples (default 4,000,000 = everything
+pooling, and the training cache's source-language tags, read from its
+meta.json), SKIPS the first --skip samples (default 4,000,000 = everything
 mc4_4M contains, trained on by every model), and encodes the next --n
 samples into a fresh <name>.npy + <name>.langs.npy pair that no model has
 ever seen. Downstream scripts accept it anywhere they take --cache.
@@ -43,6 +44,7 @@ import numpy as np
 # computed bit-identically to the training cache (its import also
 # preloads CuDNN and picks the torch device)
 import encode_corpus
+from ontologize.data.langs import MC4_4M_TAGS, MC4_TO_SONAR
 from ontologize.data.loaders import HFDataSource, TokenizeTransform
 from ontologize.data.multilingual import mc4_data
 from ontologize.data.pretrained import pretrained_transformer, encode
@@ -86,8 +88,25 @@ def main():
         print(f"error: {final} already exists. exiting.")
         return
 
+    # encode under the training cache's own source tags, so the fresh rows
+    # come from the distribution the models trained on; a meta.json with
+    # no src_tags entry marks a cache built with langs.MC4_4M_TAGS
+    tags_name = "MC4_TO_SONAR"
+    if args.train_cache:
+        train_meta = Path(args.train_cache).with_name(
+            Path(args.train_cache).name.replace(".npy", ".meta.json"))
+        if train_meta.exists():
+            tags_name = json.loads(train_meta.read_text()).get(
+                "src_tags", "MC4_4M_TAGS")
+    tags = {"MC4_TO_SONAR": MC4_TO_SONAR, "MC4_4M_TAGS": MC4_4M_TAGS}[tags_name]
+    print(f"source tags: {tags_name}")
+
     done = 0
     if prog.exists() and part.exists():
+        meta = json.loads((outdir / f"{args.name}.meta.json").read_text())
+        assert meta.get("src_tags") == tags_name, \
+            f"resume tag mismatch: {part} was encoded under " \
+            f"{meta.get('src_tags')}, the training cache uses {tags_name}"
         j = json.loads(prog.read_text())
         assert j.get("skip") == args.skip, \
             f"resume skip mismatch: progress has {j.get('skip')}, " \
@@ -113,6 +132,7 @@ def main():
             "source": "allenai/c4 train, interleaved over MC4_TO_SONAR; "
                       f"stream rows {args.skip}..{args.skip + args.n} "
                       "(everything before --skip is training data)",
+            "src_tags": tags_name,
         }, indent=2))
 
     # training-cache sidecar for the stream-drift guard during the skip
@@ -130,7 +150,7 @@ def main():
     model, tokenizer = pretrained_transformer(
         encode_corpus.encoder_id, encode_corpus.dtype_str, dev=dev)
     model.eval()
-    tok = TokenizeTransform(tokenizer, maxlen=encode_corpus.maxlen)
+    tok = TokenizeTransform(tokenizer, maxlen=encode_corpus.maxlen, tags=tags)
 
     ds = mc4_data("allenai/c4", split="train", streaming=True)
     it = iter(HFDataSource(ds, text_key="text"))

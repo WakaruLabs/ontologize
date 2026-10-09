@@ -1,9 +1,9 @@
-"""What the 5-entry LANG_MAP cost the SONAR cache.
+"""What the English source tag cost the SONAR cache.
 
-`encode_corpus.py` tokenized every row through `TokenizeTransform`, whose
-`LANG_MAP` knows en/fr/es/de/zh and falls back to `eng_Latn`, so 80 of
-the 86 mC4 configs were encoded under the English source tag rather than
-their own (`langs.MC4_TO_SONAR`). The tag is a token at the head of the
+The mc4_4M cache was encoded under `langs.MC4_4M_TAGS`, which tags
+en/fr/es/de/zh with their own codes and everything else `eng_Latn`, so 80
+of the 86 mC4 configs were encoded under the English source tag rather
+than their own (`langs.MC4_TO_SONAR`). The tag is a token at the head of the
 sequence: every position attends to it and the mean pool includes it.
 This script measures how far that moved the embeddings, and whether the
 moves matter for what the project reports.
@@ -55,8 +55,7 @@ sys.path.insert(0, str(ROOT / "experiments" / "ste-arm"))
 import numpy as np
 from jaxtyping import Float, Int
 
-from ontologize.data.langs import MC4_TO_SONAR
-from ontologize.data.loaders import LANG_MAP
+from ontologize.data.langs import MC4_4M_TAGS, MC4_TO_SONAR
 
 ENCODER = "cointegrated/SONAR_200_text_encoder"
 MAXLEN = 512
@@ -93,8 +92,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def cached_tag(lang: str) -> str:
-    """The source tag `encode_corpus.py` actually used for an mC4 config."""
-    return LANG_MAP.get(lang, "eng_Latn")
+    """The source tag the mc4_4M cache was encoded with for an mC4 config."""
+    return MC4_4M_TAGS[lang]
 
 
 def script_of(lang: str) -> str:

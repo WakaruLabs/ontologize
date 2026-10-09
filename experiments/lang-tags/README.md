@@ -2,14 +2,15 @@
 
 SONAR's text encoder reads a source-language tag as the first token of
 every sequence (`tokenizer.src_lang`; NLLB's convention, `[tag] text
-</s>`). `encode_corpus.py` built `mc4_4M.npy` through
-`ontologize.data.loaders.TokenizeTransform`, whose `LANG_MAP` covers
-en/fr/es/de/zh and falls back to `eng_Latn`. So 80 of the 86 mC4 configs
-in `langs.MC4_TO_SONAR` (everything except en, en-multi, fr, es, de, zh)
-were encoded under the English tag instead of their own. Every position
-attends to the tag and the mean pool includes it, so the cache holds a
-different embedding of each of those rows than SONAR would give with
-its intended tag.
+</s>`). `mc4_4M.npy` was built with the tags in `langs.MC4_4M_TAGS`,
+which cover en/fr/es/de/zh and give everything else `eng_Latn`. So 80 of
+the 86 mC4 configs in `langs.MC4_TO_SONAR` (everything except en,
+en-multi, fr, es, de, zh) were encoded under the English tag instead of
+their own. Every position attends to the tag and the mean pool includes
+it, so the cache holds a different embedding of each of those rows than
+SONAR would give with its intended tag. `TokenizeTransform` now tags by
+`MC4_TO_SONAR`, and new caches record that as `src_tags` in their
+`meta.json`; a cache without the field was built the old way.
 
 `retag.py` measures the size of that difference and whether it matters
 for what the project reports. The cache stores no text, so the first

@@ -98,6 +98,15 @@ def main():
 
     done = 0
     if prog.exists() and part.exists():
+        meta = json.loads((outdir / f"{args.name}.meta.json").read_text())
+        if meta.get("src_tags") != "MC4_TO_SONAR":
+            # caches without the field were tagged by langs.MC4_4M_TAGS
+            print(f"error: {part} was encoded under different source "
+                  "tags (its meta.json has no src_tags: MC4_TO_SONAR), and "
+                  "resuming would mix two tag maps in one cache. Delete "
+                  "the .part, .progress.json and .meta.json files to "
+                  "start over.")
+            return
         done = json.loads(prog.read_text())["count"]
         E = np.lib.format.open_memmap(part, mode="r+")
         L = np.lib.format.open_memmap(langs_part, mode="r+")
@@ -114,6 +123,7 @@ def main():
             "encoder": encoder_id, "encoder_dtype": dtype_str,
             "maxlen": maxlen, "pooling": "masked mean + l2 norm",
             "source": "allenai/c4 train, interleaved over MC4_TO_SONAR",
+            "src_tags": "MC4_TO_SONAR",
             }, indent=2))
 
     model, tokenizer = pretrained_transformer(encoder_id, dtype_str, dev=dev)

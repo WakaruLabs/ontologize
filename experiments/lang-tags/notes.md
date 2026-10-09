@@ -152,7 +152,11 @@ boundaries for rounding to flip them.
    replay) and retrain the headline models.
 
 Before any re-encode, `TokenizeTransform` has to look tags up in
-`MC4_TO_SONAR` instead of its 5-entry `LANG_MAP`.
+`MC4_TO_SONAR` instead of its 5-entry `LANG_MAP`. (Done the same day: it
+now does, raising on an unknown language; the old map is
+`langs.MC4_4M_TAGS`, `encode_corpus.py` records `src_tags` in new caches'
+meta.json and will not resume a cache encoded under other tags, and
+`encode_fresh.py` follows its training cache's tags.)
 
 ## 2026-10-09: the L2 normalization (`norm.py`)
 

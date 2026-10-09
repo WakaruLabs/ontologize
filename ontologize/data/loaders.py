@@ -7,34 +7,37 @@ import itertools
 import json
 
 from pathlib import Path
-from typing import Any, Callable, List, Dict, Iterator
+from typing import Any, Callable, List, Dict, Iterator, Mapping
 from jaxtyping import Array, Float, Int
 
-# lookup table to map HF codes to SONAR BCP-47 codes
-LANG_MAP = {
-   "en": "eng_Latn",
-   "fr": "fra_Latn",
-   "es": "spa_Latn",
-   "de": "deu_Latn",
-   "zh": "zho_Hans",
-   # add others you want to train on...
-}
+from ontologize.data.langs import MC4_TO_SONAR
+
 
 class TokenizeTransform(gp.MapTransform):
-    """Tokenization to be mapped over a batch of texts."""
-    def __init__(self, tokenizer: Callable, maxlen: int=512):
+    """Tokenization to be mapped over a batch of texts.
+
+    SONAR's tokenizer prefixes each sequence with a source-language tag,
+    which every position attends to and the mean pool includes, so the tag
+    changes the embedding. Each item is tagged through `tags` by its `lang`
+    (an mC4 config name). A language missing from `tags` raises: a default
+    tag would encode that text as if it were in another language.
+    `langs.MC4_4M_TAGS` reproduces the tags the mc4_4M cache was built
+    with."""
+    def __init__(self, tokenizer: Callable, maxlen: int=512,
+                 tags: Mapping[str, str]=MC4_TO_SONAR):
         self.tokenizer = tokenizer
         self.maxlen = maxlen
+        self.tags = tags
 
     def map(self, item: Dict[str, str]) -> Dict[str, Int[np.ndarray, "maxlen"]]:
-        # Dynamically set the language for this specific sentence
-        txt = item["text"]
-        hf_lang = item["lang"]
-        sonar_lang = LANG_MAP.get(hf_lang, "eng_Latn") # Default to English if unknown
-        self.tokenizer.src_lang = sonar_lang
+        lang = item["lang"]
+        if lang not in self.tags:
+            raise KeyError(f"no SONAR source tag for language {lang!r}; "
+                           "add it to ontologize.data.langs.MC4_TO_SONAR")
+        self.tokenizer.src_lang = self.tags[lang]
 
         tokens = self.tokenizer(
-                txt, max_length=self.maxlen, 
+                item["text"], max_length=self.maxlen,
                 padding="max_length", truncation=True
                 )
         return {

@@ -1,5 +1,7 @@
-# Mapping between HuggingFace mC4 / C4 dataset split names (ISO 639)
-# and SONAR (NLLB) BCP-47 language codes.
+# Mapping between HuggingFace mC4 / C4 dataset split names (ISO 639) and
+# the NLLB/FLORES-200 codes SONAR takes as source-language tags. The
+# romanized configs (`*-Latn`) map to their language's native-script code,
+# the nearest tag SONAR has.
 MC4_TO_SONAR = {
     "en": "eng_Latn",
     "af": "afr_Latn",
@@ -87,4 +89,14 @@ MC4_TO_SONAR = {
     "yo": "yor_Latn",
     "zh": "zho_Hans",
     "zu": "zul_Latn"
+}
+
+# The source tags the mc4_4M cache was encoded with: en, fr, es, de and zh
+# under their own tag, every other config under eng_Latn (en-multi's tag is
+# eng_Latn either way). Caches whose meta.json has no `src_tags` entry were
+# built this way. Kept to reproduce or extend such a cache;
+# experiments/lang-tags measures what it changed.
+MC4_4M_TAGS = {
+    lang: tag if lang in ("en", "fr", "es", "de", "zh") else "eng_Latn"
+    for lang, tag in MC4_TO_SONAR.items()
 }
