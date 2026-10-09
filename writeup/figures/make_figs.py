@@ -614,9 +614,10 @@ a.annotate("softmax argmax", xy=(float(argmax["bits"]), float(argmax["fvu"])),
 a.plot([float(ste["bits"])], [float(ste["fvu"])], ls="none", color=LEAF,
        marker="D", ms=5.5, **RING, zorder=5,
        label=r"straight-through, 5$\times$76")
-# the hard code transmits no coefficients, so in (b) it is a level, not a point
+# the hard code sends no coefficients beyond its per-layer gains, so in (b)
+# it is a level, not a point
 b.axhline(float(ste["fvu"]), color=LEAF, lw=0.8, ls=DASH, zorder=2)
-b.annotate(r"5$\times$76, no coefficients",
+b.annotate(r"5$\times$76, four gains",
            xy=(3.0, float(ste["fvu"])), xytext=(0, -3),
            textcoords="offset points", fontsize=6.6, color=INK, ha="left",
            va="top")
@@ -625,7 +626,7 @@ for ax in (a, b):
     ax.set_yscale("log")
     ax.xaxis.set_minor_formatter(NullFormatter())
     mono_axes(ax)
-a.set_xlim(30, 4e4)
+a.set_xlim(30, 1e4)
 b.set_xlim(2.5, 1.6e4)
 a.set_ylim(5e-5, 60)
 a.set_xlabel("index bits per sample")

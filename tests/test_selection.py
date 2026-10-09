@@ -86,7 +86,8 @@ def test_select_entries(select, k, n):
 def test_capacity_follows_pareto():
     assert selection.capacity(5, 76, 32, "ste") == (0, 1900)
     assert selection.capacity(5, 32, 32, "top1") == (0, 800)
-    assert selection.capacity(5, 32, 32, "top4") == (640, 3200)
+    # which 4 of its 32 entries each of the 160 heads kept: log2 C(32, 4)
+    assert selection.capacity(5, 32, 32, "top4") == (640, 2421)
     assert selection.capacity(5, 32, 32, "softmax") == (5120, 0)
 
 
@@ -119,7 +120,7 @@ def test_pareto_fvu(tmp_path):
     p.write_text("label,coeffs,index_bits,fvu_w\n"
                  "onto m=0 (meanp origin),0,0,1.0\n"
                  "onto hard (argmax),0,800,0.7\n"
-                 "sae m5120_k32,32,394,0.6\n"
+                 "sae m5120_k32,32,276,0.6\n"
                  "onto m=32 (soft),5120,0,0.2\n")
     assert selection.pareto_fvu(p) == 0.2
     assert selection.pareto_fvu(p, "hard") == 0.7
@@ -173,7 +174,7 @@ def test_grid_csv_roundtrip_and_draw(tmp_path):
     recs = [{"name": "a", "s_Hm": 1e-6, "n_sel": 1, "value": 0.7,
              "coeffs": 0, "bits": 800, "source": "computed"},
             {"name": "b", "s_Hm": 3e-5, "n_sel": 4, "value": 0.07,
-             "coeffs": 640, "bits": 3200, "source": "x.csv"}]
+             "coeffs": 640, "bits": 2421, "source": "x.csv"}]
     selection.write_grid_csv(tmp_path / "grid.csv", recs, "s_Hm", "n_sel")
     back, rk, ck = selection.read_grid_csv(tmp_path / "grid.csv")
     assert (rk, ck) == ("s_Hm", "n_sel") and back[1]["value"] == 0.07

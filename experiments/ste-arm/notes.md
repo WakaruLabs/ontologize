@@ -95,9 +95,9 @@ Final, after the full 24 epochs (369,500 steps).
 | ste h76, soft forward | 1900 | 0 | 0.2293 |
 | live softmax h32, hard argmax | 800 | 0 | 8,690,470 |
 | top2 h32, hard argmax | 800 | 0 | 0.471 |
-| SAE m11264_k160 | 2154 | 160 | 0.258 |
-| SAE ReLU+L1, L0 = 519 | 6390 | 519 | 0.220 |
-| 1-layer hard variant g160top1 | 1972 | 160 | 0.274 |
+| SAE m11264_k160 | 1206 | 160 | 0.258 |
+| SAE ReLU+L1, L0 = 519 | 2418 | 519 | 0.219 |
+| 1-layer hard variant g160top1 | 800 | 160 | 0.274 |
 | rate floor at 1900 bits | 1900 | 0 | 0.05 |
 
 (Rows from the converged frontier in `data/out/sonar/pareto_unified`: the
@@ -116,14 +116,16 @@ interventions and `decode_tags.py` operate on is the thing that
 reconstructs. The live softmax model's two rows differ by nine orders
 of magnitude.
 
-**At matched bits, a purely discrete code beats a sparse linear one.**
-At 1900 bits and no continuous coefficients the arm scores 0.2293,
-against 0.258-0.274 for SAEs that spend about the same index bits plus
-160 continuous coefficients. That is the comparison raising the head
-count was for: the earlier 800-bit hard codes could not get near it. An
-L1 SAE spending 3.4x the bits plus 519 coefficients edges past it
-(0.220); the fixed initialization below takes the arm to 0.1535, under
-every one of these.
+**A purely discrete code beats sparse linear ones that also send
+coefficients.** At 1900 bits, with four per-layer gains as its only
+continuous numbers, the arm scores 0.2293, against 0.258-0.274 for codes that name 160 active
+latents in 800-1206 index bits and send their 160 continuous
+coefficients besides (index bits as counted in "Index bits, counted as
+sets" below). That is the comparison raising the head count was for:
+the earlier 800-bit hard codes could not get near it. An L1 SAE spending
+1.27x the index bits plus 519 coefficients edges past it (0.219); the
+fixed initialization below takes the arm to 0.1535, under every one of
+these.
 
 Note the `dev m` truncation rows are *worse* than the hard row here
 (0.343 at m=1, 0.321 at m=4), the reverse of their behaviour on a
@@ -160,6 +162,71 @@ is flat from 237k) but takes collinearity 0.738 to 0.686.
 Caveat: `pareto.py`'s disclosed train/eval asymmetry now runs the other
 way. This arm holds the eval tail out, so its score is out-of-sample,
 while the older Ontologizer rows it sits beside are not.
+
+### Index bits, counted as sets (2026-10-09)
+
+`pareto.py` charged a support of L0 latents `L0*log2(m)` bits and a
+nu-deviation code `l*h*nu*log2(k)`. The coefficients go out in a fixed
+order, so the index only has to name the set: `log2 C(m, L0)` and
+`l*h*log2 C(k, nu)` (`pareto.log2_choose`, `pareto.sae_index_bits`; the
+head-level code is `l*log2 C(h, m)`). Grouped top-1 names which heads
+fire and each one's winner, `log2 C(G, L0) + L0*log2(m/G)`. The hard
+codes' `l*h*log2(k)` was already exact, as are the Gaussian reference,
+realized bits and EI. `pareto_unified` and `pareto_resid_nc` were rerun
+with the commands that made them: FVUs and coefficient counts are
+identical to the last digit, and the index bits are now
+
+| point | was | now |
+|---|---|---|
+| SAE k32, m = 5120 / 11264 | 394 / 431 | 276 / 313 |
+| SAE k160, m = 11264 | 2154 | 1206 |
+| SAE k5120, m = 11264 (L0 1520) | 20455 | 6423 |
+| SAE L1 3e-4 / 1e-4 / 3e-5 / 1e-5 / 3e-6 | 55 / 745 / 6390 / 17723 / 20166 | 45 / 467 / 2418 / 4380 / 4623 |
+| g160top1 (L0 160) | 1972 | 800 |
+| resid_nc dev nu = 2 / 4 / 8 / 16 | 1600 / 3200 / 6400 / 12800 | 1433 / 2421 / 3732 / 4666 |
+| ste_h76_init01 dev nu = 2 / 3 / 4 / 6 / 8 / 16 | 3800 / 5700 / 7600 / 11400 / 15200 / 30400 | 3403 / 4665 / 5751 / 7520 / 8864 / 11082 |
+| GPT-2 SAEs k32 / k128, m = 5120 | ~394 / ~1580 | ~276 / ~859 |
+
+What it changes:
+
+- **"Matched bits" was not matched, but matched total rate holds.** The
+  k160 SAE names its support in 1206 bits, not ~2000, and g160top1 in
+  800, so their totals reach the arm's 1900 only at 4.3 and 6.9 bits per
+  coefficient. No coding of an SAE's coefficients beats the
+  least-squares fit on its own support, and `refit.py` (rerun
+  2026-10-09 into `data/out/sonar/refit_conv`, same 32,768 tail rows and
+  whitened metric as `pareto.py`) puts that fit at:
+
+  | SAE | FVU_w as trained | LS fit on its support | shrinkage share |
+  |---|---|---|---|
+  | m11264_k160 | 0.2585 | **0.2364** | 8.5% |
+  | m5120_g160top1 | 0.2741 | **0.2732** | 0.3% |
+  | m5120_k32 | 0.4994 | 0.4883 | 2.2% |
+
+  With its four gains pinned (below, "The code is not the whole
+  channel") the arm is a pure 1900-bit code at 0.1582. At matched total
+  rate it is therefore at least 33% below the k160 SAE and 42% below
+  g160top1, whatever precision their coefficients get; more precision
+  only lengthens their codes. What stays open is an SAE that spends the
+  same total on more latents with coarser coefficients.
+- **The L1 SAE is still dominated outright.** At 3e-5 it spends 1.27x
+  the index bits (not 3.4x) plus 519 coefficients and is 30% worse
+  (0.219 against 0.154).
+- **SAEs reach the Gaussian reference in index bits alone.** The k32 SAE
+  sits on it (0.499 against 0.499 at 276 bits) and the k5120 SAE just
+  under it (1.06e-4 against 1.08e-4 at 6423). That is what the
+  coefficients carry beyond the index, which the reference does not
+  count; the figure caption says so.
+- **Matching the arm's index bits** takes k_SAE ~ 283 at m = 11264, or
+  ~368 at m = 5120.
+
+The SAE count is taken at the eval's mean L0, which for an L1 run stands
+in for a per-sample average (L0 sd 3.4-100 across the five). Encoding
+the 32,768 eval rows and averaging `log2 C(m, L0_n)` per sample, plus
+the entropy of L0 itself (up to 8.3 bits), lands within 1% of the
+plug-in for every run but the sparsest, L1 3e-4 at mean L0 4.4: 51 bits
+against 45. A tie can light two latents in one g160top1 head (at least
+one eval row has 161 active), so its count caps L0 at the head count.
 
 ## Downstream: textfid and steerfid
 
@@ -593,14 +660,15 @@ comparison is between two models each doing what they can rather than
 two that were both starting 1.84e8 away from where they should.
 
 **Read every other magnitude below as measured on the shipped
-initialization.** Steering, the language probe, the gain ablation and
-the blend ablation have not been remeasured, and the arms they ran on
-were all badly initialized.
+initialization.** Steering, the language probe and the blend ablation
+have not been remeasured, and the arms they ran on were all badly
+initialized. The gain ablation has (2026-10-09, under "The code is not
+the whole channel").
 
-On the rate-distortion table, 1900 index bits and no continuous
-coefficients at 0.1535 beats every converged SAE near it: 0.258-0.274 at
-matched bits plus 160 coefficients, and 0.220 for the L1 SAE at 6390
-index bits plus 519 coefficients. Against each code's own reverse
+On the rate-distortion table, 1900 index bits and four per-layer gains
+at 0.1535 beats every converged SAE near it: 0.258-0.274 at 800-1206
+index bits plus 160 coefficients, and 0.219 for the L1 SAE at 2418 index
+bits plus 519 coefficients. Against each code's own reverse
 water-filling floor, though, depth is the less efficient use of bits:
 
 | code | floor | achieved | ratio |
@@ -836,6 +904,12 @@ each gain to its held-out mean:
 | | all | | **+2.1%** |
 | `ste_l1_h380_zca` | 0 | 14.5% | **+4.5%** |
 | `ste_l1_h380_hm5` | 0 | 0.0% | -0.0% |
+| `ste_h76_init01` | 0 | 0.0% | -0.0% |
+| | 1 | 14.3% | +0.8% |
+| | 2 | 14.8% | +0.8% |
+| | 3 | 15.1% | +0.8% |
+| | 4 | 15.2% | +0.6% |
+| | all | | **+3.0%** |
 
 So the honest capacity statement is 1900 bits plus four real scalars
 for the stack against 1900 bits plus none for an unconditioned flat
@@ -843,6 +917,14 @@ arm. **The channel is real and it is not the explanation.** The stack's
 entire gain is worth 2.1% of its error against a 68% gap, about a
 thirtieth of what depth buys. Where it matters is as a confound in the
 whitened arm above, which is the only place it changes a conclusion.
+
+On the fixed initialization (`ste_h76_init01`, measured 2026-10-09 with
+`gainablate.py data/out/sonar/multilingual/ste_h76_init01 0.00015`) the
+gains carry slightly more: pinning all four costs +3.0%, 0.1535 to
+0.1582 on the 16,384 tail rows, against the 79% by which the matched
+flat arm (`ste_l1_h380_i01_hm1e4`, 0.2750) trails it. Pinned, the stack
+is a pure 1900-bit code, which is the form compared against SAEs at
+matched total rate ("Index bits, counted as sets").
 
 ### What the cascade contributes: pairing, and conditioning is its shadow
 

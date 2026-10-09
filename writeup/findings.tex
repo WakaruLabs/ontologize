@@ -53,9 +53,10 @@ same whitened objective, and the hard code on GPT-2 small residuals.
 Soft heads are contrast sets --- within-head decode directions repel ---
 but their argmax is not the model's code, and the plain-SAE frontier
 dominates them in reconstruction. The straight-through arm makes the
-discrete code the model: at 1900 index bits and no continuous
-coefficients it reaches $\fvu$ $0.154$, against $0.258$ for a $\topk$ SAE
-at matched bits that also transmits 160 coefficients. At fixed capacity
+discrete code the model: at 1900 index bits it reaches $\fvu$ $0.154$,
+and $0.158$ with its four per-layer gains, its only continuous numbers,
+pinned to their means, while a $\topk$ SAE held to the same 1900 bits
+cannot get below $0.236$ however its coefficients are coded. At fixed capacity
 the residual cascade is worth $1.79\times$ over a flat layer, but doubles
 the collateral of a single-head intervention (66\% of other heads
 against 33\%), and two

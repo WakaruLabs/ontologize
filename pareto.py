@@ -4,18 +4,21 @@ Puts both models on one reconstruction-vs-code-capacity curve, scored on
 identical held-out rows (the cache tail that sae.py excludes from training)
 under the same whitened FVU. Capacity is counted as continuous coefficients
 transmitted per sample, with the index side-channel reported separately:
+the bits that name which coefficients those are. The values follow in a
+fixed order, so choosing r of n costs log2 C(n, r) (`log2_choose`), the
+length of a code uniform over the subsets of that size, not r * log2(n).
 
   Ontologizer codes (--code, both share the origin below):
     dev (default): per head, keep the m entries of the classification p
       with the largest |p - origin|, pin the rest to the origin
       distribution, renormalize. Coefficients = l*h*m, index bits =
-      l*h*m*log2(k).
+      l*h*log2 C(k, m).
     head: per layer, keep the full soft distribution of the m
       lowest-entropy (most confident) heads and mean-ablate the rest --
       pin them to the origin. Selection is per sample and causal: each
       layer ranks its own heads given the already-ablated prefix, so the
       forward stays a single pass. Coefficients = l*m*k, index bits =
-      l*m*log2(h). dev m=1 and head m=1 both cost 160 coefficients, so
+      l*log2 C(h, m). dev m=1 and head m=1 both cost 160 coefficients, so
       the two curves are directly comparable.
     both: emit both curves in one table/plot.
   The origin is the corpus-mean classification E[p] (a fixed constant of
@@ -26,9 +29,12 @@ transmitted per sample, with the index side-channel reported separately:
   coefficients, l*h*log2(k) bits) -- the discrete-ontology reading.
 
   SAE: coefficients = measured eval L0 (= topk for top-k runs), index bits
-  = L0*log2(m latents). Runs are auto-discovered from data/out/sonar/sae/
-  (or pass --sae paths to params.npz); m and topk are parsed from the
-  m{m}_k{topk} / m{m}_l1{l1} run-directory names sae.py writes.
+  = `sae_index_bits`: log2 C(m, L0) for L0 of m latents, which groups fire
+  and each one's winner under grouped top-1, none for a dense code. Runs
+  are auto-discovered from data/out/sonar/sae/ (or pass --sae paths to
+  params.npz); m, topk and the grouping come from each run's meta.json,
+  or for older runs are parsed from the m{m}_k{topk} / m{m}_l1{l1}
+  run-directory names sae.py writes.
 
 Caveats for the writeup: the top-m points are post-hoc truncations of a
 model never trained to truncate, while each SAE was trained at exactly its
@@ -150,6 +156,32 @@ def parse_sae_name(path):
     return int(match.group(1)), int(match.group(2) or 0)
 
 
+def log2_choose(n: int, r: int) -> float:
+    """log2 C(n, r): the bits that name r of n items as a set."""
+    return (math.lgamma(n + 1) - math.lgamma(r + 1)
+            - math.lgamma(n - r + 1)) / math.log(2)
+
+
+def sae_index_bits(m: int, l0: float, groups: int = 0,
+                   group_fn: str = "top1") -> int:
+    """Bits naming a sample's active latents at the eval's mean L0.
+
+    A free support is L0 of the m latents, log2 C(m, L0). Grouped top-1
+    names which groups fire and each one's winner among m // groups,
+    log2 C(groups, L0) + L0 * log2(m // groups); a tie can light two
+    latents in one group, so L0 is capped at `groups`. A dense code
+    (grouped softmax, or L0 = m) sends every coefficient and names none.
+    An L1 run's L0 varies by sample, so its mean is a plug-in for the
+    per-sample average, which also has to name the size."""
+    s = round(l0)
+    if groups and group_fn == "softmax":
+        return 0
+    if groups:
+        s = min(s, groups)
+        return round(log2_choose(groups, s) + s * math.log2(m // groups))
+    return round(log2_choose(m, min(s, m)))
+
+
 def whitened_spectrum(X: Float[np.ndarray, "n d"], w: Float[np.ndarray, "d"]
                       ) -> Float[np.ndarray, "d"]:
     """Eigenvalues of the covariance of x * sqrt(w), descending. Their sum
@@ -268,13 +300,13 @@ def onto_points(cfg, X_eval, w, base_w):
             if not 0 < m < k:
                 continue
             points.append((f"onto dev m={m}", l * h * m,
-                           round(l * h * m * math.log2(k)), fvu(m)))
+                           round(l * h * log2_choose(k, m)), fvu(m)))
     if cfg.code in ("head", "both"):
         for m in cfg.ms:
             if not 0 < m < h:
                 continue
             points.append((f"onto heads={m}/{h}", l * m * k,
-                           round(l * m * math.log2(h)), fvu(m, code="head")))
+                           round(l * log2_choose(h, m)), fvu(m, code="head")))
     points.append((f"onto m={k} (soft)", l * h * k, 0, fvu(k)))
     return points
 
@@ -296,8 +328,7 @@ def sae_points(cfg, X_eval, w_sqrt, base_w):
         params = {k_: jnp.asarray(v) for k_, v in np.load(path).items()}
         fvu, l0, *_ = sae.evaluate(sae.make_eval(topk, groups, group_fn),
                                    params, X_eval, w_sqrt, base_w, cfg.b)
-        # index bits only apply to codes sparse enough to need addressing
-        bits = 0 if round(l0) >= m else round(l0 * math.log2(m))
+        bits = sae_index_bits(m, l0, groups, group_fn)
         points.append((f"sae {Path(path).parent.name}", round(l0), bits, fvu))
         print(f"sae: {path} (m={m} topk={topk} groups={groups})")
     return points

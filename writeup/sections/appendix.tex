@@ -420,7 +420,20 @@ uniform code the generic one (Section~\ref{sec:labels}). Endpoints:
 $\nu{=}0$ (input-independent origin), $\nu{=}k$ (exact soft model), and
 end-to-end argmax (``hard''). An alternative head-level code mean-ablates
 all but the $h'$ lowest-entropy heads per layer. SAE points use measured
-eval $\mathrm{L0}$. A hard code's index bits are $l\cdot h\log_2 k$; we compare
+eval $\mathrm{L0}$. Index bits are the length of the code that names
+which coefficients are sent. The coefficients follow in a fixed order, so
+naming $r$ of $n$ costs $\log_2\binom{n}{r}$ bits rather than
+$r\log_2 n$: $l\cdot h\log_2\binom{k}{\nu}$ for the deviation code,
+$l\log_2\binom{h}{h'}$ for the head-level code, and
+$\log_2\binom{m}{\mathrm{L0}}$ at the mean $\mathrm{L0}$ for an SAE (for
+the single-layer hard variant, which heads fire and each one's winner).
+Index bits are not a rate for a code that also sends coefficients. We
+compare such a code with a hard one at matched total rate, index bits
+plus coefficients at whatever precision brings the two totals level, and
+bound its error there by the least-squares fit on its own support
+(Eq.~\eqref{eq:refit}), which no coding of its coefficients can beat. A
+hard code's index bits are $l\cdot h\log_2 k$, its whole rate apart from
+any per-layer gains (Appendix~\ref{sec:depthdetail}); we compare
 each against a \emph{Gaussian reference}: the least distortion a code of
 that rate can achieve on a Gaussian source with the eval tail's whitened
 covariance, given by reverse water-filling~\cite[Thm.~10.3.3]{cover2006}. With
@@ -1850,10 +1863,13 @@ code failed to explain.)
 into a unit direction (all the classifier sees) and a norm that multiplies
 the layer's output, so one real number per layer per sample reaches the
 decoder outside the bottleneck. Pinning each gain to its held-out mean
-(\texttt{gainablate.py}) costs the stack $+2.1\%$ in total (layer 0's
-gain is identically 1, since the cache is L2-normalized; SONAR's own
-embeddings are not~\cite{sonar}), against a 68\% gap: the
-channel is real and is not the explanation. It does matter as a confound
+(\texttt{gainablate.py}) costs the stack $+3.0\%$ in total, $+0.6$ to
+$+0.8\%$ per layer (layer 0's gain is identically 1, since the cache is
+L2-normalized; SONAR's own embeddings are not~\cite{sonar}), against the
+79\% by which the matched flat arm trails it: the channel is real and is
+not the explanation. With the gains pinned the stack is a pure 1900-bit
+code ($\fvu$ $0.158$), the form compared against SAEs at matched total
+rate in Section~\ref{sec:ste}. It does matter as a confound
 for the whitened flat arm, whose whitener creates a varying layer-0 gain
 worth $+4.5\%$ --- about 40\% of whitening's apparent benefit.
 

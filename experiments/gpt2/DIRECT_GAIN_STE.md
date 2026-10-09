@@ -20,7 +20,7 @@ whose output is one **dictionary entry living directly in activation space**.
 - **Hard selection with a straight-through estimator** (`select="ste"`): the forward pass uses
   the argmax entry, the backward pass the softmax gradient, with the temperature annealed
   1 → 0.03 over 30k steps. The code is discrete by construction: `l·h·log2(k)` bits per
-  token (5 × 32 × 5 = 800 here), no continuous coefficients.
+  token (5 × 32 × 5 = 800 here), plus the five layers' gains, its only continuous numbers.
 - Bilinear classifiers (`n=2`), joint deep supervision, winner dropout 0 → 0.1, logit noise
   0.02 → 0.006, featvar output noise 0.1, the small regularizers of `sonar.py`.
 
@@ -35,17 +35,18 @@ uv run python experiments/gpt2/train_onto.py --name V_direct_gain_ste --epochs 1
 
 | model | code per token | FVU | GPT-2 loss recovered | ΔCE (nats) |
 |---|---|---|---|---|
-| **direct + gain + STE** | 800 bits, no coefficients | **0.217** | **96.95%** | 0.136 |
-| STE + gain (latent + decoder) | 800 bits | 0.290 | 94.3% | 0.257 |
+| **direct + gain + STE** | 800 bits + 5 gains | **0.217** | **96.95%** | 0.136 |
+| STE + gain (latent + decoder) | 800 bits + 5 gains | 0.290 | 94.3% | 0.257 |
 | STE alone | 800 bits | 0.327 | 93.3% | 0.299 |
-| STE + gain, private heads | 800 bits | 0.288 | 94.2% | 0.261 |
-| top-k SAE, k=32, m=5120 (10 epochs) | 32 coefficients + ~394 index bits | 0.189 | 96.2% | 0.171 |
-| top-k SAE, k=128, m=5120 (10 epochs) | 128 coefficients + ~1580 index bits | 0.116 | 98.6% | 0.063 |
+| STE + gain, private heads | 800 bits + 5 gains | 0.288 | 94.2% | 0.261 |
+| top-k SAE, k=32, m=5120 (10 epochs) | 32 coefficients + ~276 index bits | 0.189 | 96.2% | 0.171 |
+| top-k SAE, k=128, m=5120 (10 epochs) | 128 coefficients + ~859 index bits | 0.116 | 98.6% | 0.063 |
 | soft Ontologizer (reference) | 4960 continuous mixture weights | 0.016 | 99.85% | 0.007 |
 
-So a purely discrete 800-bit code recovers more of GPT-2's loss than a k=32 SAE that was
+So an 800-bit code recovers more of GPT-2's loss than a k=32 SAE that was
 trained on 10× the data (about 5× the compute, since an Ontologizer step is ~2 SAE steps),
-while transmitting no coefficients. The SAE still has the lower FVU.
+while transmitting only its five per-layer gains as continuous numbers. The SAE still has
+the lower FVU.
 
 Per-layer FVU: 0.48 → 0.37 → 0.30 → 0.26 → 0.22. Every layer contributes. Label usage is
 close to uniform in every layer (imbalance 0.24, 0.04, 0.01, 0.01, 0.02 bits of 5); the

@@ -158,10 +158,12 @@ are the only route to them, by construction.
 architecture's readout.} The softmax model's argmax is not its code (at
 least 77$\times$ from the best 800-bit code for \texttt{resid\_nc}, nine
 orders of magnitude on \texttt{softmax\_shm}). A straight-through arm
-with $2.4\times$ the heads makes the discrete code the model, and at 1900
-index bits and no coefficients beats converged SAEs at matched index
-bits that also send 160 coefficients ($0.154$ vs.\ $0.258$--$0.274$), and
-an L1 SAE spending 519 coefficients and 3.4$\times$ the bits ($0.220$).
+with $2.4\times$ the heads makes the discrete code the model: with its
+four per-layer gains pinned it is a pure 1900-bit code at $0.158$, while
+converged codes that send 160 coefficients on 800--1{,}206 index bits
+cannot get below $0.236$--$0.273$ at the same total rate however those
+coefficients are coded, and an L1 SAE spending $1.27\times$ the index
+bits plus 519 coefficients reaches $0.219$.
 It sits $3.1\times$ above the Gaussian reference for its rate, so at least
 that far from the data's distortion--rate function, a limit over long
 blocks of samples that a code describing each sample alone need not be
@@ -390,10 +392,12 @@ VQ-VAE ties an encoder's scale to its code~\cite{vandenoord2017}.
 \item \textbf{Fresh-encoded eval set.} New runs hold the tail out; the
 softmax Ontologizers do not, and every comparison against them inherits
 that asymmetry.
-\item \textbf{A $\topk$ sweep at matched bits.} The converged frontier
-has $\topk$ points only at $k_{\mathrm{SAE}}{=}32$ and $160$; a $k_{\mathrm{SAE}}$ sweep through the
-1{,}900-bit region would pin the discrete-vs-linear comparison at
-exactly matched rate.
+\item \textbf{A $\topk$ sweep at matched rate.} The least-squares floor
+settles the comparison at 1{,}900 bits for the SAEs trained, not for one
+that spends the same total on more active latents with coarser
+coefficients. Quantizing coefficients after training and sweeping
+$k_{\mathrm{SAE}}$ through that region would settle it, and would give
+every code an operational rate rather than a bound.
 \item \textbf{Winner dropout for the one-layer variants.} \texttt{g160top1}'s
 28\% dead latents are within-head winner-take-all starvation.
 \item \textbf{Trained truncatability.} A deviation-sparsity penalty at

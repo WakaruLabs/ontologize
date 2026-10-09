@@ -55,7 +55,7 @@ match the cache's width (pass the activation cache's own weights for
 gpt2_l8). Cells are annotated with FVU and nominal capacity under
 pareto.py's convention:
   argmax / ste / top1  0 coefficients, l*h*log2(k) index bits (its "hard")
-  top<n>, n < k        l*h*n coefficients, l*h*n*log2(k) bits (its "dev m=n")
+  top<n>, n < k        l*h*n coefficients, l*h*log2 C(k, n) bits (its "dev m=n")
   softmax              l*h*k coefficients, 0 bits (its "soft")
 Runs sharing a cell are averaged (n shown); cells no run covers stay
 blank, never zero. The argmin cell is outlined. --sae-csv marks the SAE
@@ -176,12 +176,13 @@ def capacity(l: int, h: int, k: int, select: str) -> tuple:
     """(coefficients, index bits) per sample under pareto.py's convention:
     one-hot codes are its "hard" point, top<n> its "dev m=n", softmax its
     "soft" point."""
+    from pareto import log2_choose
     n = select_entries(select, k)
     if n >= k:
         return l * h * k, 0
     if n == 1:
         return 0, round(l * h * math.log2(k))
-    return l * h * n, round(l * h * n * math.log2(k))
+    return l * h * n, round(l * h * log2_choose(k, n))
 
 
 def expand_runs(patterns: Sequence[str], exclude: Sequence[str] = ()):

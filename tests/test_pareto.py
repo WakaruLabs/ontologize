@@ -1,7 +1,10 @@
 # pareto.py's pure helpers: the deviation-code truncation that generates
 # the Ontologizer's side of the capacity-Pareto curve, the SAE run-name
-# parsing that pairs each point with its capacity, and the Gaussian
-# reference (reverse water-filling) the hard codes are compared against.
+# parsing and index-bit count that pair each point with its capacity, and
+# the Gaussian reference (reverse water-filling) the hard codes are
+# compared against.
+import math
+
 import jax.numpy as jnp
 import numpy as np
 import pytest
@@ -81,6 +84,36 @@ def test_parse_sae_name():
     assert pareto.parse_sae_name("x/m5120_l10.003/params.npz") == (5120, 0)
     with pytest.raises(ValueError):
         pareto.parse_sae_name("x/checkpoint_7/params.npz")
+
+
+@pytest.mark.parametrize("n,r", [(10, 3), (32, 4), (5120, 32), (11264, 160),
+                                 (7, 0), (7, 7)])
+def test_log2_choose_is_the_binomial(n, r):
+    assert pareto.log2_choose(n, r) == pytest.approx(
+        math.log2(math.comb(n, r)), abs=1e-6)
+
+
+def test_log2_choose_one_is_an_index():
+    # one of n is a plain index; more than one is cheaper than r indices,
+    # because the order they come in carries no information
+    assert pareto.log2_choose(32, 1) == pytest.approx(5.0)
+    assert pareto.log2_choose(32, 4) < 4 * math.log2(32)
+
+
+def test_sae_index_bits():
+    # a top-k support is a k-subset of the latents
+    assert pareto.sae_index_bits(5120, 32.0) == round(
+        math.log2(math.comb(5120, 32)))
+    # a dense code names nothing
+    assert pareto.sae_index_bits(5120, 5120.0) == 0
+    assert pareto.sae_index_bits(5120, 5120.0, 160, "softmax") == 0
+    # grouped top-1 with every group firing: one winner of 32 per group
+    assert pareto.sae_index_bits(5120, 160.0, 160, "top1") == 800
+    # ties can light two latents in a group; it still names one winner
+    assert pareto.sae_index_bits(5120, 160.6, 160, "top1") == 800
+    # silent groups have to be named too
+    assert pareto.sae_index_bits(5120, 150.0, 160, "top1") == round(
+        math.log2(math.comb(160, 150)) + 150 * 5)
 
 
 def test_gaussian_reference_one_component():

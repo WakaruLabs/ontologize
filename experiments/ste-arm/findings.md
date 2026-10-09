@@ -31,15 +31,24 @@ count to 380 rather than requiring it.
 
 | code | coeffs | index bits | FVU_w |
 |---|---|---|---|
-| **straight-through, 5 x 76** | **0** | **1900** | **0.154** |
-| SAE `m11264_k160` | 160 | 2154 | 0.258 |
-| SAE ReLU+L1 3e-5 | 519 | 6390 | 0.220 |
-| SAE ReLU+L1 1e-5 | 1438 | 17723 | 0.048 |
-| 1-layer hard variant `g160top1` | 160 | 1972 | 0.274 |
+| **straight-through, 5 x 76** | **4 gains** | **1900** | **0.154** |
+| ... gains pinned to their means | 0 | 1900 | 0.158 |
+| SAE `m11264_k160` | 160 | 1206 | 0.258 (0.236) |
+| SAE ReLU+L1 3e-5 | 519 | 2418 | 0.219 |
+| SAE ReLU+L1 1e-5 | 1438 | 4380 | 0.048 |
+| 1-layer hard variant `g160top1` | 160 | 800 | 0.274 (0.273) |
 
-**A purely discrete code beats sparse linear ones at matched bits**: 40%
-below the top-k SAE that also transmits 160 coefficients, and 30% below an
-L1 SAE spending 3.4x the bits. `g160top1` and `g160softmax` are not SAE
+Index bits name the support as a set, log2 C(m, L0) (`pareto.py`). In
+parentheses, the least-squares fit on the code's own support
+(`refit.py`), the least error any coding of its coefficients can reach.
+
+**A purely discrete code beats a sparse linear one at matched total
+rate.** The arm's only continuous numbers are the gains of layers 1-4;
+pinned, it is a pure 1900-bit code at 0.158. The top-k SAE totals 1900
+bits at 4.3 bits per coefficient, where its error is at least 0.236, so
+the pure code is at least 33% below it; `g160top1` matches at 6.9 bits
+per coefficient and is at least 0.273 (42%). The L1 SAE spends more
+index bits alone than the arm's whole code and reaches 0.219. `g160top1` and `g160softmax` are not SAE
 baselines: they are `sae.py` with per-head competition, i.e. one-layer
 Ontologizers with linear classifiers (hard and softmax selection), and are
 reported as simplified variants. The stack is 44% below the hard one. That needs the initialization fix: the `abs()`'d
@@ -68,7 +77,7 @@ at 1.83x near 200k); neither arm has converged, and the flat arm improves
 faster over the last quarter (2.75% against 0.86%), so the gap is slowly
 narrowing. It is not usage (a ZCA-whitened flat arm uses every entry
 uniformly and is still 1.7x worse), not input conditioning, and not the per-layer gain
-channel (pinning it costs 2.1%). Blending each layer's subtracted
+channel (pinning it costs 3.0%). Blending each layer's subtracted
 reconstruction toward another row's costs 35% of FVU at a quarter blend:
 the cascade's value is the pairing of each stage's input with the sample's
 own earlier error. A flat layer is a product quantizer; the stack is a

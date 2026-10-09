@@ -13,9 +13,14 @@ Table~\ref{tab:cfg-sae}), the single-layer variants and the
 straight-through stack (\texttt{ste\_h76\_init01},
 Section~\ref{sec:ste}). A code
 appears only where its size is nonzero, so the soft codes are in (b)
-alone, the softmax argmax is in (a) alone, and the straight-through stack
-is a level in (b). The dashed curve is the Gaussian reference
-(Eq.~\eqref{eq:ratefloor}). The softmax model saw the tail in training
+alone, the softmax argmax is in (a) alone, and the straight-through stack,
+whose only continuous numbers are four per-layer gains, is a level in
+(b). The dashed curve is the Gaussian reference
+(Eq.~\eqref{eq:ratefloor}). Index bits are the whole rate of a hard code,
+apart from those gains, but only the support of a code that also sends
+coefficients, which is how the $k_{\mathrm{SAE}}{=}32$ and
+$k_{\mathrm{SAE}}{=}5120$ SAEs reach the reference in (a). The softmax
+model saw the tail in training
 and the others hold it out. One seed per point, except the
 $k_{\mathrm{SAE}}{=}32$ SAE's seed-43 replica.}
 \label{fig:pareto}
@@ -431,15 +436,25 @@ in Appendix~\ref{sec:steerlayer}.
 \paragraph{A purely discrete code beats a sparse linear one.} On one
 frontier of converged SAEs and the single-layer hard variant, all trained
 for about 144k steps (Figure~\ref{fig:pareto}a), the stack's 1900 index
-bits reach $\fvu$ 0.154
-with no continuous coefficients. At matched index bits (about 2{,}000)
-that is 40\% below the $\topk$ SAE that additionally transmits 160
-continuous coefficients (0.258), and 30\% below an L1 SAE spending
-$3.4\times$ the bits plus 519 coefficients (0.219). It is also 44\% below
-the single-layer hard variant (0.274), which shares its hard per-head
+bits reach $\fvu$ 0.154. Its only continuous numbers are the gains of
+layers 1--4 (layer 0's is identically 1), and with those pinned to their
+means it is a pure 1900-bit code at 0.158
+(Appendix~\ref{sec:depthdetail}). A code that also sends coefficients
+reaches that total only at some precision for them, and no coding of its
+coefficients takes an SAE below the least-squares fit on its own support
+(Eq.~\eqref{eq:refit}). The $\topk$ SAE with 160 active latents names
+them in 1{,}206 bits, so its total is 1900 bits at 4.3 bits per
+coefficient, where its error is at least its fit's, 0.236 (0.258 as
+trained): at matched total rate the pure code is at least 33\% below
+it, and more precise coefficients only lengthen the SAE's code. The
+single-layer hard variant, 800 index bits plus 160 coefficients, matches
+the rate at 6.9 bits per coefficient, where it is at least 0.273, so the
+pure code is at least 42\% below it; it shares the stack's hard per-head
 selection but has one layer of linear classifiers and keeps a ReLU
-magnitude on each winner. For a hard model the capacity axis is
-$l\cdot h\log_2 k$ itself: truncating toward the origin only adds mass the
+magnitude on each winner. An L1 SAE spends more index bits alone than the
+stack's whole code, 2{,}418 plus 519 coefficients, and still reaches only
+0.219. For a hard model the capacity axis is $l\cdot h\log_2 k$ itself:
+truncating toward the origin only adds mass the
 model was never trained to decode (0.259 at $\nu{=}1$). The stack is less
 efficient per bit than a single layer, $3.08\times$ the Gaussian reference
 at its rate against $1.53\times$ for one layer's 380-bit prefix, and bits
@@ -465,7 +480,7 @@ but the stack leads at every checkpoint
 What depth buys is not usage, input conditioning or the per-layer gain. A
 flat arm with a whitened input uses every entry uniformly and still
 reconstructs $1.7\times$ worse, and pinning the gains costs the stack only
-2.1\% (Appendix~\ref{sec:depthdetail}). Blending each layer's subtracted
+3.0\% (Appendix~\ref{sec:depthdetail}). Blending each layer's subtracted
 reconstruction toward another row's, without retraining, shows instead
 that what matters is pairing each residual with its own sample: the error
 rises well before the pairing is fully severed. A flat layer is an
@@ -700,8 +715,8 @@ the observed residual norm, clipped at $\lVert\mathbf{x}\rVert$, which
 makes the model positively homogeneous ($f(\xi\mathbf{x}) = \xi
 f(\mathbf{x})$ for $\xi > 0$). The straight-through temperature is
 annealed early in training (Table~\ref{tab:cfg-gpt2-headline}). With
-$5\times32$ heads of 32 entries the code is 800 bits per token, with no
-continuous coefficients.
+$5\times32$ heads of 32 entries the code is 800 bits per token, and its
+only continuous numbers are the five layers' gains.
 
 \begin{table}[htbp]\centering\small
 \begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.29\linewidth}%
@@ -710,12 +725,12 @@ continuous coefficients.
 \toprule
 model & atoms & code per token & $\fvu$ & \stackhead[r]{loss\\recovered} \\
 \midrule
-\textbf{direct + gain + STE} & signed, in $\mathbb{R}^{768}$ & 800 bits & 0.195 & \textbf{97.6\%} \\
-private heads + gain + STE & 48-dimensional blocks, shared decoder & 800 bits & 0.186 & 97.5\% \\
-private heads, $k{=}64$ & 48-dimensional blocks, shared decoder & 960 bits & \textbf{0.164} & \textbf{97.9\%} \\
+\textbf{direct + gain + STE} & signed, in $\mathbb{R}^{768}$ & 800 bits + 5 gains & 0.195 & \textbf{97.6\%} \\
+private heads + gain + STE & 48-dimensional blocks, shared decoder & 800 bits + 5 gains & 0.186 & 97.5\% \\
+private heads, $k{=}64$ & 48-dimensional blocks, shared decoder & 960 bits + 5 gains & \textbf{0.164} & \textbf{97.9\%} \\
 \midrule
-$\topk$ SAE, $k_{\mathrm{SAE}}{=}32$, $m{=}5120$ & --- & 32 coeffs + $\sim$394 bits & 0.189 & 96.2\% \\
-$\topk$ SAE, $k_{\mathrm{SAE}}{=}128$, $m{=}5120$ & --- & 128 coeffs + $\sim$1580 bits & 0.116 & 98.6\% \\
+$\topk$ SAE, $k_{\mathrm{SAE}}{=}32$, $m{=}5120$ & --- & 32 coeffs + $\sim$276 bits & 0.189 & 96.2\% \\
+$\topk$ SAE, $k_{\mathrm{SAE}}{=}128$, $m{=}5120$ & --- & 128 coeffs + $\sim$859 bits & 0.116 & 98.6\% \\
 soft Ontologizer (1 epoch) & --- & 4960 mixture weights & 0.016 & 99.85\% \\
 \bottomrule
 \end{tabular}

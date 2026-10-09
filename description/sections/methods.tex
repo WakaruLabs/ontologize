@@ -122,8 +122,8 @@ when the decoder can learn to invert it~\cite{vandenoord2017}. The
 the forward pass selects the one-hot argmax, and the backward pass uses
 $\mathrm{softmax}(K/t)$ as its surrogate gradient, the straight-through
 estimator~\cite{bengio2013} in its categorical form~\cite{jang2017}. A
-hard code transmits exactly $l\,h\log_2 k$ bits and no continuous
-coefficients.
+hard code transmits exactly $l\,h\log_2 k$ bits, and its only continuous
+numbers are the layers' gains $g_\ell$.
 
 From the assignments $P_n$ of each sample $n$ we collect per-sample
 entropy, in bits,
