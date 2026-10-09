@@ -42,13 +42,18 @@ Index bits name the support as a set, log2 C(m, L0) (`pareto.py`). In
 parentheses, the least-squares fit on the code's own support
 (`refit.py`), the least error any coding of its coefficients can reach.
 
-**A purely discrete code beats a sparse linear one at matched total
-rate.** The arm's only continuous numbers are the gains of layers 1-4;
-pinned, it is a pure 1900-bit code at 0.158. The top-k SAE totals 1900
-bits at 4.3 bits per coefficient, where its error is at least 0.236, so
-the pure code is at least 33% below it; `g160top1` matches at 6.9 bits
-per coefficient and is at least 0.273 (42%). The L1 SAE spends more
-index bits alone than the arm's whole code and reaches 0.219. `g160top1` and `g160softmax` are not SAE
+**A discrete code beats top-k SAEs at matched total rate, but not every
+sparse code.** The arm's only continuous numbers are the gains of layers
+1-4; pinned, it is a pure 1900-bit code at 0.158. The top-k SAE totals
+1900 bits at 4.3 bits per coefficient, where its error is at least
+0.236, so the pure code is at least 33% below it; `g160top1` matches at
+6.9 bits per coefficient and is at least 0.273 (42%). With everything
+each code sends quantized and entropy-coded (`quantrate.py`), though, an
+L1 SAE at 3e-6, quantized coarsely, reaches 0.128 at 1900 bits, 18%
+below the arm, because its latents fire unevenly and are cheap to name
+while the arm's entries are used almost uniformly. Only with every
+support at its fixed-length cost does the arm lead every SAE (0.158
+against 0.179). `g160top1` and `g160softmax` are not SAE
 baselines: they are `sae.py` with per-head competition, i.e. one-layer
 Ontologizers with linear classifiers (hard and softmax selection), and are
 reported as simplified variants. The stack is 44% below the hard one. That needs the initialization fix: the `abs()`'d

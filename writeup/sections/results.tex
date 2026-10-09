@@ -19,7 +19,8 @@ whose only continuous numbers are four per-layer gains, is a level in
 (Eq.~\eqref{eq:ratefloor}). Index bits are the whole rate of a hard code,
 apart from those gains, but only the support of a code that also sends
 coefficients, which is how the $k_{\mathrm{SAE}}{=}32$ and
-$k_{\mathrm{SAE}}{=}5120$ SAEs reach the reference in (a). The softmax
+$k_{\mathrm{SAE}}{=}5120$ SAEs reach the reference in (a);
+Figure~\ref{fig:quantrate} puts every code on one rate axis. The softmax
 model saw the tail in training
 and the others hold it out. One seed per point, except the
 $k_{\mathrm{SAE}}{=}32$ SAE's seed-43 replica.}
@@ -433,7 +434,8 @@ the entropy pressure and whitening the input each closed in part
 initialization, except the steering-by-layer and head-health measurements
 in Appendix~\ref{sec:steerlayer}.
 
-\paragraph{A purely discrete code beats a sparse linear one.} On one
+\paragraph{A discrete code beats $\topk$ SAEs, but not every sparse
+code.} On one
 frontier of converged SAEs and the single-layer hard variant, all trained
 for about 144k steps (Figure~\ref{fig:pareto}a), the stack's 1900 index
 bits reach $\fvu$ 0.154. Its only continuous numbers are the gains of
@@ -451,9 +453,15 @@ single-layer hard variant, 800 index bits plus 160 coefficients, matches
 the rate at 6.9 bits per coefficient, where it is at least 0.273, so the
 pure code is at least 42\% below it; it shares the stack's hard per-head
 selection but has one layer of linear classifiers and keeps a ReLU
-magnitude on each winner. An L1 SAE spends more index bits alone than the
-stack's whole code, 2{,}418 plus 519 coefficients, and still reaches only
-0.219. For a hard model the capacity axis is $l\cdot h\log_2 k$ itself:
+magnitude on each winner. An SAE whose sparsity is not fixed is another
+matter. With everything each code sends quantized and entropy-coded
+(Appendix~\ref{sec:quantrate}), an L1 SAE with a weak penalty
+($s_{\mathrm{L1}}{=}3\times10^{-6}$), quantized coarsely, reaches 0.128 at
+1900 bits, 18\% below the stack: its latents fire unevenly, so naming the
+active ones costs a fifth less than a fixed-length code would, while the
+stack uses its entries almost uniformly and has nothing to save. With
+every support charged its fixed-length cost the stack leads every SAE
+(0.158 against 0.179). For a hard model the capacity axis is $l\cdot h\log_2 k$ itself:
 truncating toward the origin only adds mass the
 model was never trained to decode (0.259 at $\nu{=}1$). The stack is less
 efficient per bit than a single layer, $3.08\times$ the Gaussian reference

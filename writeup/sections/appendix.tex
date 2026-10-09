@@ -141,6 +141,7 @@ $\fvu$ & whitened fraction of variance unexplained & Eq.~\eqref{eq:fvu} \\
 $\nu$, $\mathcal{S}_\nu$; $\mathbf{o}$ & deviations kept per head, and their entries; the origin, the mean assignment & Eq.~\eqref{eq:topdev} \\
 $\mathrm{FVU}_{w,\mathrm{G}}$, $n_{\mathrm{bits}}$; $\lambda_j$, $\theta$ & the Gaussian reference at a bit budget; covariance eigenvalues, the water level & Eq.~\eqref{eq:ratefloor} \\
 $H_{\mathrm{real}}$ & realized bits: the summed per-head entropy of usage & Eq.~\eqref{eq:realized} \\
+$\Delta$, $\Delta_j$; $H_{\mathrm{op}}$ & the quantizer step, shared and coefficient $j$'s; the operational rate in bits per sample & Eq.~\eqref{eq:quantrate} \\
 $\mathcal{G}$; $\mathrm{exh}$, $\mathrm{exc}$ & a head or latent group; its exhaustiveness and exclusivity & Eq.~\eqref{eq:exhaust} \\
 $\kappa(\mathcal{G})$, $\zeta_{\cos}$; $\mathbf{v}_j$ & a group's mean decode-direction cosine, and its standardized score; a decode direction & Eq.~\eqref{eq:zcos} \\
 $(\cdot)^{(1)}$, $(\cdot)^{(2)}$ & the two models in a pairwise comparison & Eq.~\eqref{eq:headmatch} \\
@@ -460,6 +461,37 @@ direction only: a code \emph{above} it is at least that far above the
 data's distortion--rate function, though not necessarily that far from
 the best per-sample code, and nothing we report can establish that a
 given rate is too small.
+
+\paragraph{Operational rate (\texttt{quantrate.py}).} To put codes with
+and without coefficients on one rate axis, everything a code sends is
+quantized and entropy-coded. A coefficient $z_{nj}$ with origin $o_j$ and
+decode direction $\mathbf{v}_j$ is sent as an integer symbol and decoded
+as
+\begin{equation}
+	\hat z_{nj} = o_j + \Delta_j \Big\lfloor \frac{z_{nj} - o_j}{\Delta_j} \Big\rceil,
+	\qquad
+	\Delta_j = \frac{\Delta}{\lVert \mathbf{w}^{1/2} \odot \mathbf{v}_j \rVert},
+	\qquad
+	H_{\mathrm{op}} = \sum_j H\Big(\Big\lfloor \frac{z_{\cdot j} - o_j}{\Delta_j} \Big\rceil\Big),
+	\label{eq:quantrate}
+\end{equation}
+with $\lfloor\cdot\rceil$ rounding to the nearest integer, so a coefficient
+within half a step of its origin is not sent and every coefficient costs
+about the same whitened error, $\Delta^2/12$ at fine steps. The origin is
+0 for a sparse code and the training-row mean for a dense one (the
+$\mathbf{o}$ of Eq.~\eqref{eq:topdev} for a soft Ontologizer).
+$H_{\mathrm{op}}$, in bits per sample, codes each slot's symbol with its
+own distribution: plug-in entropy on the evaluation tail with the
+Miller--Madow correction, which tables fit on held-out training rows
+reproduce within half a bit. A grouped top-1 SAE codes one symbol per
+head, its winner and level or silence. Ontologizers are quantized inside
+their forward pass, so each layer's residual is that of the quantized
+code; a hard code's entries cost their realized entropy
+(Eq.~\eqref{eq:realized}) and its gains are quantized like coefficients.
+Nothing is refit after quantization, and sweeping $\Delta$ traces each
+code's curve. A second rate charges the support its fixed-length cost
+instead, $\log_2\binom{m}{\mathrm{L0}}$ per sample (the nominal
+$l\cdot h\log_2 k$ for a hard code), with the values still entropy-coded.
 
 \paragraph{Categorical form (\texttt{headstruct.py}).}
 An Ontologizer head is exhaustive (always fires) and exclusive (one
@@ -1756,6 +1788,68 @@ entries); at the fixed initialization every head in the stack and the
 flat arm reaches near-uniform usage within 5k steps. An upper bound on the
 information carried, not a measure of it (Eq.~\eqref{eq:realized}).}
 \label{fig:realized-bits}
+\end{figure}
+
+\subsection{Operational rate: every code quantized}
+\label{sec:quantrate}
+
+Index bits and coefficient counts cannot rank a code that sends
+coefficients against one that does not. With everything each code sends
+quantized and entropy-coded (Eq.~\eqref{eq:quantrate}), every code becomes
+a curve on one rate axis (Figure~\ref{fig:quantrate}). At the stack's
+1900 bits:
+
+\begin{center}\small
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+code & \stackhead[r]{$\fvu$\\unquantized} & \stackhead[r]{at 1900 bits\\entropy-coded} & \stackhead[r]{at 1900 bits\\fixed-length supports} \\
+\midrule
+straight-through, $5\times76$ & 0.1536 & \textbf{0.155} & \textbf{0.158} \\
+L1 SAE, $s_{\mathrm{L1}}{=}3\times10^{-6}$ & 0.0052 & \textbf{0.128} & 0.179 \\
+softmax Ontologizer, soft code & 0.0054 & 0.145 & 0.229 \\
+L1 SAE, $s_{\mathrm{L1}}{=}10^{-5}$ & 0.048 & 0.173 & 0.179 \\
+$\topk$ SAE, $k_{\mathrm{SAE}}{=}5120$ & 0.0001 & 0.231 & --- \\
+L1 SAE, $s_{\mathrm{L1}}{=}3\times10^{-5}$ & 0.219 & 0.242 & 0.243 \\
+$\topk$ SAE, $k_{\mathrm{SAE}}{=}160$ & 0.258 & 0.259 & 0.259 \\
+\texttt{g160top1} & 0.274 & 0.274 & 0.274 \\
+\texttt{g160softmax} & 0.0044 & 0.332 & 0.326 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Entropy-coded, a coarsely quantized L1 SAE beats the stack at the stack's
+own rate: 0.128 against 0.155, and the stack's pure-code 0.158 at 1655
+bits. It sends about 440 of its roughly 1600 coefficients, at about 4.3
+bits each with their support. L1 latents fire unevenly, so the support
+codes about 20\% below its fixed-length cost, while the stack uses its
+entries almost uniformly (1895 of 1900 bits; Table~\ref{tab:init}) and
+has nothing to save. With supports at their fixed-length cost the stack
+leads every SAE (0.158 against 0.179). The $\topk$ SAE flattens at its
+unquantized error from about 1900 bits on, consistent with its
+least-squares floor of 0.236, and is already at 0.275 at 1121 bits, so
+its coefficients carry little beyond which latents fire; the single-layer
+hard variant behaves the same way. The softmax model's own code,
+quantized around its mean assignment, reaches 0.145, on rows it trained
+on. The stack's gains cost 4.8 bits at a step of two standard deviations
+(taking it from 0.158 to 0.155) and 28 bits to recover the unquantized
+0.1536. No code was trained for this codec: uniform usage is the most
+expensive kind to entropy-code, and no SAE was trained with quantized
+coefficients, so the curves rank these models, not their architectures.
+
+\begin{figure}[tp]\centering
+\includegraphics[width=\linewidth]{figures/fig-quantrate.pdf}
+\caption{Operational rate on the evaluation tail: everything each code
+sends quantized (Eq.~\eqref{eq:quantrate}) at a swept step, (a) each
+slot's symbols entropy-coded and (b) each support charged its fixed-length
+cost, the values still entropy-coded. L1 SAEs are labeled by
+$s_{\mathrm{L1}}$; the unlabeled $\topk$ curve is
+$k_{\mathrm{SAE}}{=}32$, and the single-layer variants are
+\texttt{g160top1} (level) and \texttt{g160softmax} (falling). The
+straight-through stack's curve spans 1895--1923 bits. The dotted line is
+1900 bits and the dashed curve the Gaussian reference
+(Eq.~\eqref{eq:ratefloor}). The softmax model saw the tail in training.
+One seed per curve.}
+\label{fig:quantrate}
 \end{figure}
 
 \subsection{Depth: eliminations and mechanism}

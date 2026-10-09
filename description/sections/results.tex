@@ -106,7 +106,7 @@ anti-coherent: their atoms are pushed apart.}
 \label{tab:prelim-headcoh}
 \end{table}
 
-\subsection{A discrete code beats a sparse linear one}
+\subsection{A discrete code beats $\topk$ SAEs, not every sparse code}
 \label{sec:prelim-ste}
 Under straight-through selection the forward pass is the argmax, and the
 discrete code is the model. At 1900 index bits the hard code reaches
@@ -118,31 +118,39 @@ coefficients beats the least-squares fit on its own support. A $\topk$
 SAE that names its 160 active latents in 1206 bits totals 1900 bits at
 4.3 bits per coefficient, where its error is at least $0.236$, so at
 matched total rate the pure code is at least $33\%$ below it
-(Table~\ref{tab:prelim-ste}). The stack sits $3.1\times$
+(Table~\ref{tab:prelim-ste}). An SAE whose sparsity is not fixed does
+better: with every code's coefficients quantized and each slot's symbols
+entropy-coded, an L1 SAE with a weak penalty reaches $0.128$ at 1900
+bits, because its latents fire unevenly and are cheap to name, while the
+hard code uses its entries almost uniformly. Charging every support its
+fixed-length cost, the hard code leads ($0.158$ against $0.179$). The stack sits $3.1\times$
 above the Gaussian reference for its rate, so at least that far above
 the data's distortion--rate function at 1900 bits, a long-block limit
 that a code describing each sample alone need not
 approach~\cite{cover2006}.
 
 \begin{table}[tp]\centering\small
-\begin{tabular}{@{}lrrr@{}}
+\begin{tabular}{@{}lrrrr@{}}
 \toprule
-code & coeffs & index bits & $\mathrm{FVU}_w$ \\
+code & coeffs & index bits & $\mathrm{FVU}_w$ & at 1900 bits \\
 \midrule
-\textbf{straight-through Ontologizer, $5\times76$} & \textbf{4 gains} & \textbf{1900} & \textbf{0.154} \\
-\quad gains pinned to their means & 0 & 1900 & 0.158 \\
-SAE, $\topk$, $k_{\mathrm{SAE}}{=}160$ & 160 & 1206 & 0.258 (0.236) \\
-SAE, ReLU+L1 $3\times10^{-5}$ & 519 & 2418 & 0.219 \\
-SAE, ReLU+L1 $10^{-5}$ & 1438 & 4380 & 0.048 \\
-1-layer hard variant \texttt{g160top1} & 160 & 800 & 0.274 (0.273) \\
+\textbf{straight-through Ontologizer, $5\times76$} & \textbf{4 gains} & \textbf{1900} & \textbf{0.154} & \textbf{0.155} \\
+\quad gains pinned to their means & 0 & 1900 & 0.158 & --- \\
+SAE, $\topk$, $k_{\mathrm{SAE}}{=}160$ & 160 & 1206 & 0.258 (0.236) & 0.259 \\
+SAE, ReLU+L1 $3\times10^{-5}$ & 519 & 2418 & 0.219 & 0.242 \\
+SAE, ReLU+L1 $10^{-5}$ & 1438 & 4380 & 0.048 & 0.173 \\
+SAE, ReLU+L1 $3\times10^{-6}$ & 1637 & 4623 & 0.005 & \textbf{0.128} \\
+1-layer hard variant \texttt{g160top1} & 160 & 800 & 0.274 (0.273) & 0.274 \\
 \bottomrule
 \end{tabular}
 \caption{The hard code against converged SAEs on the held-out tail. In
 parentheses, the least-squares fit on each code's own support, the least
-error any coding of its coefficients can reach. \texttt{g160top1} shares
-the hard per-head selection but has one layer of linear classifiers and
-keeps a magnitude on each winner; its index bits name each head's
-winner.}
+error any coding of its coefficients can reach. The last column is each
+code's error at a total of 1900 bits per sample with everything it sends
+quantized and each slot's symbols entropy-coded. \texttt{g160top1}
+shares the hard per-head selection but has one layer of linear
+classifiers and keeps a magnitude on each winner; its index bits name
+each head's winner.}
 \label{tab:prelim-ste}
 \end{table}
 
@@ -292,6 +300,6 @@ time. Underneath all three sits
 identifiability, which the proposal took for granted: a head that is not
 the same head on the next run cannot be named, and past the first layer
 no head is. On reconstruction the verdict has turned: the soft code pays
-heavily for its structure, but the hard code beats a sparse linear code
-held to the same total bits on SONAR, and beats one in downstream loss
-on GPT-2.
+heavily for its structure, but the hard code beats $\topk$ SAEs held to
+the same total bits on SONAR, though not an entropy-coded L1 SAE, and
+beats one in downstream loss on GPT-2.

@@ -197,17 +197,22 @@ At nearly the same unexplained variance the method recovers more of the
 model's loss than the matching SAE, so its errors fall where the model
 cares less. On sentence embeddings, 1900 bits of choices and the
 per-round sizes leave 15\% of the variance unexplained, and 16\% with the
-sizes fixed. An
-SAE whose description is held to the same 1900 bits, about 1200 saying
-which 160 features are active and the rest for their 160 numbers, leaves
-at least 24\% however those numbers are rounded.
+sizes fixed. A standard SAE whose description is held to the same 1900
+bits, about 1200 saying which 160 features are active and the rest for
+their 160 numbers, leaves at least 24\% however those numbers are
+rounded. But an SAE trained with a weaker sparsity penalty, its numbers
+rounded coarsely and each feature's activity coded by how often it fires,
+leaves 13\% at 1900 bits: its features fire unevenly, which makes the
+list of active ones cheap to send, while the method's categories are used
+evenly and leave nothing to save.
 
 \section*{What we can claim}
 
 On both representations the method describes the network's state with a
 small set of discrete choices about as accurately as a sparse autoencoder
-that also sends continuous numbers, or more so, and on GPT-2 the model
-runs on that description with little loss. Swapping one choice moves the
+that also sends continuous numbers (more accurately than the standard
+kind at the same number of bits, though not than every kind), and on
+GPT-2 the model runs on that description with little loss. Swapping one choice moves the
 model's output
 specifically toward the new category. Some categories can be named: on
 GPT-2 a first-round category's most typical members, and --- more

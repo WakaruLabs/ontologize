@@ -55,8 +55,11 @@ but their argmax is not the model's code, and the plain-SAE frontier
 dominates them in reconstruction. The straight-through arm makes the
 discrete code the model: at 1900 index bits it reaches $\fvu$ $0.154$,
 and $0.158$ with its four per-layer gains, its only continuous numbers,
-pinned to their means, while a $\topk$ SAE held to the same 1900 bits
-cannot get below $0.236$ however its coefficients are coded. At fixed capacity
+pinned to their means. A $\topk$ SAE held to the same 1900 bits cannot
+get below $0.236$ however its coefficients are coded, but an L1 SAE with
+its coefficients quantized and entropy-coded reaches $0.128$: its latents
+fire unevenly, which makes them cheap to name, and the hard code's
+entries do not. At fixed capacity
 the residual cascade is worth $1.79\times$ over a flat layer, but doubles
 the collateral of a single-head intervention (66\% of other heads
 against 33\%), and two

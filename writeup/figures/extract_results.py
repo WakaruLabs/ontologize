@@ -11,6 +11,9 @@ data/out and keeps only what a figure plots:
   ratefloor   the Gaussian reference (Eq. ratefloor) over a grid of rates,
               from the whitened covariance spectrum of the eval tail
               pareto.py scores on
+  quantrate   quantrate.py's operational-rate curves: every quantized step
+              of every code, entropy-coded and with fixed-length supports,
+              tagged with pareto's families
   steer       steerembed.py's realization and collateral by direction and
               strength, from the draw that also scored the supervised
               directions (steerembed_sup; tab:steersup reads the same draw)
@@ -54,6 +57,7 @@ PARETO = {
     "softmax": OUT / "sonar" / "pareto_resid_nc" / "pareto.csv",
     "unified": OUT / "sonar" / "pareto_unified" / "pareto.csv",
 }
+QUANTRATE = OUT / "sonar" / "quantrate" / "quantrate.csv"
 # pareto.py's eval split and objective weights, as its defaults set them
 CACHE = ROOT / "data" / "sonar_embeddings" / "mc4_4M.npy"
 WEIGHTS = OUT / "sonar" / "mse_weights.npy"
@@ -187,6 +191,21 @@ def extract_pareto() -> None:
                          f"{float(r['fvu_w']):.6g}"])
     write("pareto_sonar.csv",
           ["family", "kind", "nu", "label", "coeffs", "bits", "fvu"], rows)
+
+
+def extract_quantrate() -> None:
+    rows = []
+    for r in read(QUANTRATE):
+        if r["setting"] == "float":
+            continue  # the unquantized reference has no rate
+        source = "softmax" if r["label"] == "onto resid_nc" else "unified"
+        family, _ = pareto_family(r["label"], source)
+        rows.append([family, r["label"].split()[-1], r["setting"],
+                     f"{float(r['bits']):.6g}",
+                     f"{float(r['bits_subset']):.6g}",
+                     f"{float(r['fvu_w']):.6g}"])
+    write("quantrate_sonar.csv",
+          ["family", "run", "setting", "bits", "bits_subset", "fvu"], rows)
 
 
 def extract_ratefloor() -> None:
@@ -409,6 +428,7 @@ def extract_selection() -> None:
 
 FAMILIES = {
     "pareto": extract_pareto,
+    "quantrate": extract_quantrate,
     "ratefloor": extract_ratefloor,
     "steer": extract_steer,
     "headcoh": extract_headcoh,

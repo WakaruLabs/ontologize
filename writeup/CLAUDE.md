@@ -251,6 +251,8 @@ is added, renamed or retired, change both.
 | $\boldsymbol{\psi}_\ell$ | layer $\ell$'s statistics row (Eq.~stats); $\mathbf{s}$ the loss-weight vector |
 | $\boldsymbol{\phi}_{ni}$ | head $i$'s output contribution on sample $n$ (`headcontrib.py`) |
 | $H_{\mathrm{real}}$ | realized bits, $\sum_{\ell,i} H(A_{\ell i})$ (not $\hat H$: a hat means a reconstruction) |
+| $\Delta$, $\Delta_j$ | quantizer step (`quantrate.py --steps`), shared and per coefficient |
+| $H_{\mathrm{op}}$ | operational rate: the summed per-slot entropy of a code's quantized symbols |
 | $\mathbf{u}_\ell$, $\mathbf{u}$ | layer $\ell$'s shape: its input's unit direction with the constant coordinate (code: `U` from `gainshape_in`); $\mathbf{u}$ within one layer. Replaces the former $\tilde{\mathbf{y}}_\ell$ |
 | $n_{\mathrm{bits}}$ | bit budget in the Gaussian reference $\mathrm{FVU}_{w,\mathrm{G}}$ |
 | $n_{\mathrm{const}}$ | number of trailing constant input coordinates |

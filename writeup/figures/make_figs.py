@@ -639,6 +639,78 @@ fig.legend(*a.get_legend_handles_labels(), loc="lower center", ncols=4,
 letters((a, b))
 save(fig, "fig-pareto")
 
+# operational rate: everything a code sends quantized and entropy-coded,
+# the step swept (quantrate.py), by entropy-coded total bits (a) and with
+# each support charged its fixed-length cost (b)
+Q = load_rows("quantrate_sonar.csv")
+QTOPK = {"m11264_k32": "32", "m11264_k160": "160", "m11264_k5120": "5120"}
+QL1 = {"m5120_l13e-06": r"3$\times$10$^{-6}$", "m5120_l11e-05": r"10$^{-5}$",
+       "m5120_l13e-05": r"3$\times$10$^{-5}$"}
+QVAR = ["m5120_g160top1", "m5120_g160softmax"]
+
+
+def qcurves(family, key, runs=None):
+    """{run: [(bits, fvu), ...]} of a family's quantized steps, by bits."""
+    out = {}
+    for r in Q:
+        if r["family"] == family and (runs is None or r["run"] in runs):
+            out.setdefault(r["run"], []).append(
+                (float(r[key]), float(r["fvu"])))
+    return {run: sorted(p for p in pts if p[0] > 0)
+            for run, pts in out.items()}
+
+
+def qtag(ax, pts, text, at):
+    """Label a curve at its point nearest `at` bits."""
+    x, y = min(pts, key=lambda p: abs(np.log(p[0] / at)))
+    ax.annotate(text, xy=(x, y), xytext=(3, 2), textcoords="offset points",
+                fontsize=5.8, color=INK)
+
+
+fig, (a, b) = plt.subplots(1, 2, figsize=(5.4, 3.0), sharey=True)
+fig.subplots_adjust(wspace=0.08, bottom=0.34, top=0.90, left=0.10, right=0.99)
+for ax, key in ((a, "bits"), (b, "bits_subset")):
+    ax.plot([float(r["bits"]) for r in G], [float(r["fvu"]) for r in G],
+            color=INKMUT, lw=0.9, ls=DASH, label="Gaussian reference", zorder=2)
+    for i, (run, pts) in enumerate(qcurves("sae_topk", key, QTOPK).items()):
+        ax.plot(*zip(*pts), color=INK, lw=0.9, marker="s", ms=2.4, **RING,
+                label=r"$\mathtt{TopK}$ SAE" if i == 0 else None, zorder=3)
+        if ax is a and run != "m11264_k32":
+            qtag(ax, pts, r"$k_{\mathrm{SAE}}{=}$" + QTOPK[run],
+                 5000 if run == "m11264_k160" else 2400)
+    for i, (run, pts) in enumerate(qcurves("sae_l1", key, QL1).items()):
+        ax.plot(*zip(*pts), color=INK, lw=0.8, ls=DOT, marker="o", ms=2.4,
+                mfc="white", label="L1 SAE" if i == 0 else None, zorder=3)
+        if ax is a:
+            qtag(ax, pts, QL1[run], 3600 if run == "m5120_l13e-05" else 2800)
+    for i, pts in enumerate(qcurves("variant", key, QVAR).values()):
+        ax.plot(*zip(*pts), color=INKMUT, lw=0.8, marker="v", ms=2.8, **RING,
+                label="single-layer variants" if i == 0 else None, zorder=3)
+    for pts in qcurves("softmax", key).values():
+        ax.plot(*zip(*pts), color=LEAF, lw=1.1, marker="o", ms=2.6,
+                mfc="white", label="softmax, soft code", zorder=4)
+    for pts in qcurves("ste", key).values():
+        ax.plot(*zip(*pts), color=LEAF, lw=1.4, marker="D", ms=3.4, **RING,
+                label=r"straight-through, 5$\times$76", zorder=5)
+    ax.axvline(1900, color=INKMUT, lw=0.5, ls=DOT, zorder=1)
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    mono_axes(ax)
+    ax.xaxis.set_major_locator(FixedLocator([500, 1000, 2000, 5000]))
+    ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:.0f}"))
+    ax.xaxis.set_minor_formatter(NullFormatter())
+    ax.set_xlim(300, 8000)
+a.set_ylim(0.04, 1.2)
+a.set_xlabel("total bits per sample")
+b.set_xlabel("bits, supports at fixed length")
+a.set_ylabel(r"FVU$_w$, evaluation tail")
+eyebrow(a, "entropy-coded")
+eyebrow(b, "fixed-length supports")
+fig.legend(*a.get_legend_handles_labels(), loc="lower center", ncols=3,
+           handlelength=1.8, fontsize=6.6, bbox_to_anchor=(0.5, 0.0))
+letters((a, b))
+save(fig, "fig-quantrate")
+
 # steering trade-off: realization against collateral as the step grows from
 # 0.25 to 4 times the input norm, one draw of targets per model
 S = load_rows("steer_sweep.csv")

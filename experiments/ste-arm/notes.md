@@ -295,10 +295,11 @@ gains are cheap to send: 4.8 bits at 2 sd steps take it from 0.1582 to
 0.1547, and 28 bits recover the float 0.1535.
 
 The writeup's matched-rate statements (abstract, results, discussion,
-brief, proposal) say the hard code beats sparse linear codes held to the
-same bits; on this measurement that holds against top-k and grouped
+brief, proposal) said the hard code beats sparse linear codes held to
+the same bits; on this measurement that holds against top-k and grouped
 SAEs, and against all of them only under fixed-length index codes. They
-have not been changed yet.
+now say so, and the appendix carries the curves (`sec:quantrate`,
+`fig-quantrate`).
 
 ## Downstream: textfid and steerfid
 
