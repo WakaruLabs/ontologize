@@ -15,9 +15,12 @@ coefficient's step is the shared --steps value divided by the whitened
 norm of the direction it multiplies, so one step costs every coefficient
 about the same whitened squared error (step^2 / 12 at fine steps). The
 origin is 0 for sparse codes (ReLU, top-k, L1 and grouped top-1 SAEs),
-whose zeros are then free, and the mean over --fit-rows training rows for
-dense ones (grouped-softmax SAEs and an Ontologizer's soft code), the E[p]
-origin of pareto.py's deviation codes.
+whose zeros are then free, and for dense ones (grouped-softmax SAEs and an
+Ontologizer's soft code) the mean over the first --fit-rows rows of
+--fit-cache, the E[p] origin of pareto.py's deviation codes. Those rows,
+which also give the gains' statistics, come from the scored cache short
+of its tail by default; scoring a fresh cache, point --fit-cache at the
+training one.
 
 Rate: each slot's symbol (0 = at the origin) is coded with its own
 empirical distribution over the evaluation rows, so a code's bits per
@@ -48,6 +51,9 @@ rates leave out the cost of sending the coders' tables.
 
   uv run python quantrate.py                  # sae_conv SAEs + both Ontologizers
   uv run python quantrate.py --sae P.npz ... --onto CKPT@TEMPERATURE ...
+  uv run python quantrate.py --cache data/sonar_embeddings/mc4_fresh.npy \\
+      --fit-cache data/sonar_embeddings/mc4_4M.npy \\
+      --out data/out/sonar/quantrate_fresh          # rows no model trained on
   uv run python quantrate.py --replot --out <dir>
 
 Writes <out>/quantrate.csv (label, kind, setting, nonzero, bits,
@@ -98,13 +104,20 @@ def parse_args(argv=None):
     p.add_argument("--gain-steps", type=float, nargs="+",
                    default=[2.0 ** -e for e in range(-1, 6)],
                    help="gain steps in units of each layer's gain sd")
-    p.add_argument("--cache", default="data/sonar_embeddings/mc4_4M.npy")
+    p.add_argument("--cache", default="data/sonar_embeddings/mc4_4M.npy",
+                   help="cache whose tail rows are scored")
+    p.add_argument("--fit-cache", default=None,
+                   help="cache whose head rows origins and gain statistics "
+                        "are measured on (default: --cache, short of its "
+                        "scored tail); the training cache when --cache is "
+                        "a fresh one")
     p.add_argument("--mse-weights", default="data/out/sonar/mse_weights.npy")
     p.add_argument("--eval-rows", type=int, default=32768,
-                   help="cache tail rows; must match the sae.py eval split")
+                   help="rows scored, from the tail of --cache (on the "
+                        "training cache, the sae.py eval split)")
     p.add_argument("--fit-rows", type=int, default=65536,
-                   help="training rows (the cache head) that origins and "
-                        "gain statistics are measured on")
+                   help="head rows of --fit-cache that origins and gain "
+                        "statistics are measured on")
     p.add_argument("--b", type=int, default=1024)
     p.add_argument("--target-bits", type=float, default=1900.0)
     p.add_argument("--target-fvu", type=float, default=None,
@@ -266,20 +279,38 @@ def eval_rows(cfg):
     mm = np.load(cfg.cache, mmap_mode="r")
     X = np.asarray(mm[-cfg.eval_rows:], dtype=np.float32)
     w = np.load(cfg.mse_weights) if cfg.mse_weights else np.ones(mm.shape[1])
-    return mm, X, w.astype(np.float64), float((X.var(0) * w).mean())
+    return X, w.astype(np.float64), float((X.var(0) * w).mean())
 
 
-def fit_batches(mm, cfg):
-    n = min(cfg.fit_rows, mm.shape[0] - cfg.eval_rows)
-    for i in range(0, n - cfg.b + 1, cfg.b):
-        yield np.asarray(mm[i:i + cfg.b], dtype=np.float32)
+def fit_count(n_fit: int, fit_rows: int, eval_rows: int, same: bool) -> int:
+    """How many head rows of the fit cache origins and gain statistics are
+    measured on: --fit-rows, short of the scored tail when the fit cache is
+    the scored one."""
+    return max(0, min(fit_rows, n_fit - (eval_rows if same else 0)))
+
+
+def fit_source(cfg, d: int):
+    """A callable yielding the fit rows in batches."""
+    path = cfg.fit_cache or cfg.cache
+    fit = np.load(path, mmap_mode="r")
+    if fit.shape[1] != d:
+        raise SystemExit(f"--fit-cache {path} is {fit.shape[1]} wide, the "
+                         f"scored cache {d}")
+    same = Path(path).resolve() == Path(cfg.cache).resolve()
+    n = fit_count(fit.shape[0], cfg.fit_rows, cfg.eval_rows, same)
+    print(f"fit rows: the first {n} of {path}", flush=True)
+
+    def batches():
+        for i in range(0, n - cfg.b + 1, cfg.b):
+            yield np.asarray(fit[i:i + cfg.b], dtype=np.float32)
+    return batches
 
 
 def fvu_of(err: Float[np.ndarray, "d"], n: int, w, base_w) -> float:
     return float(((err / n) * w).mean() / base_w)
 
 
-def sae_rows(path, cfg, mm, X, w, base_w) -> list:
+def sae_rows(path, cfg, fit_batches, X, w, base_w) -> list:
     import jax
     import jax.numpy as jnp
     import sae
@@ -301,7 +332,7 @@ def sae_rows(path, cfg, mm, X, w, base_w) -> list:
     origin = np.zeros(m, np.float32)
     if kind == "sae_dense":
         acc, nb = np.zeros(m), 0
-        for Xb in fit_batches(mm, cfg):
+        for Xb in fit_batches():
             acc += np.asarray(encode(params, jnp.asarray(Xb))).mean(0)
             nb += 1
         origin = (acc / nb).astype(np.float32)
@@ -428,7 +459,7 @@ def onto_stats(module, X, T):
     return jnp.stack(Pm), jnp.stack(Gs, -1)
 
 
-def onto_rows(spec, cfg, mm, X, w, base_w) -> list:
+def onto_rows(spec, cfg, fit_batches, X, w, base_w) -> list:
     import jax
     import jax.numpy as jnp
 
@@ -445,7 +476,7 @@ def onto_rows(spec, cfg, mm, X, w, base_w) -> list:
     stats = jax.jit(lambda p, x: model.apply({"params": p}, x, T,
                                              method=onto_stats))
     acc, G1, G2, nb = np.zeros((l, h, k)), np.zeros(l), np.zeros(l), 0
-    for Xb in fit_batches(mm, cfg):
+    for Xb in fit_batches():
         Pm, G = stats(raw, jnp.asarray(Xb))
         G = np.asarray(G, np.float64)
         acc += np.asarray(Pm)
@@ -636,16 +667,17 @@ def main():
         print(f"-> {out / 'quantrate.png'}")
         return
 
-    mm, X, w, base_w = eval_rows(cfg)
+    X, w, base_w = eval_rows(cfg)
+    fit_batches = fit_source(cfg, X.shape[1])
     paths = cfg.sae
     if paths is None:
         paths = sorted(Path("data/out/sonar/sae_conv").glob("*/params.npz"))
     rows = []
     for spec in cfg.onto:
-        rows += onto_rows(spec, cfg, mm, X, w, base_w)
+        rows += onto_rows(spec, cfg, fit_batches, X, w, base_w)
     for path in paths:
         print(f"sae: {path}", flush=True)
-        rows += sae_rows(path, cfg, mm, X, w, base_w)
+        rows += sae_rows(path, cfg, fit_batches, X, w, base_w)
     write_csv(out / "quantrate.csv", rows)
 
     target_fvu = cfg.target_fvu

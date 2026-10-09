@@ -96,6 +96,15 @@ def test_group_symbols():
         qr.group_symbols(win, -lev)
 
 
+def test_fit_count():
+    # the scored cache's own head stops short of the scored tail ...
+    assert qr.fit_count(90_000, 65536, 32768, same=True) == 90_000 - 32768
+    assert qr.fit_count(4_000_000, 65536, 32768, same=True) == 65536
+    # ... a separate fit cache can be used from its first row to its last
+    assert qr.fit_count(50_000, 65536, 32768, same=False) == 50_000
+    assert qr.fit_count(10_000, 65536, 32768, same=True) == 0
+
+
 def test_whitened_norms():
     W = np.array([[1.0, 0.0], [0.0, 2.0], [0.0, 0.0]])
     out = qr.whitened_norms(W, np.array([4.0, 1.0]))

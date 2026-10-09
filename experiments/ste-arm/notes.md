@@ -301,6 +301,23 @@ SAEs, and against all of them only under fixed-length index codes. They
 now say so, and the appendix carries the curves (`sec:quantrate`,
 `fig-quantrate`).
 
+**On rows no model trained on** (2026-10-09), the same sweep scoring
+the last 32,768 rows of `experiments/fresh-eval`'s fresh cache, with
+origins and gain statistics still from mc4_4M's head:
+
+    uv run python quantrate.py --cache data/sonar_embeddings/mc4_fresh.npy \
+        --fit-cache data/sonar_embeddings/mc4_4M.npy \
+        --out data/out/sonar/quantrate_fresh
+
+Every readout moves by at most 0.0004. At 1900 entropy-coded bits the
+hard code is 0.1548 on both, the L1 SAE at 3e-6 0.1277 against 0.1276,
+and `resid_nc` 0.1451 against 0.1447; the subset readouts and the bits
+to reach the pinned hard code's FVU (0.1583 here) move as little (L1
+3e-6 1656 bits against 1655, `resid_nc` 1786 against 1783).
+`resid_nc`, the one model that trained on mc4_4M's tail, scores 0.00539
+unquantized on fresh rows against 0.00538 there, so having seen those
+rows is worth 0.2% of its error and none of the comparison.
+
 ## Downstream: textfid and steerfid
 
 Remeasured 2026-10-07 with the eval-mode encoder and SONAR_NORM (see "The
