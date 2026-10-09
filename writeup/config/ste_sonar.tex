@@ -32,12 +32,12 @@ arm & shape & $k$ & bits & $s_{\mathrm{KL}_m}$ & \stackhead{init\\scale} & other
 \texttt{ste\_h76\_hm1e6} & $5\times76$ & 32 & 1900 & $10^{-6}$ & --- & & 369.5k \\
 \texttt{ste\_h76\_kcos} & $5\times76$ & 32 & 1900 & $10^{-4}$ & --- & row-cosine setpoint 0.5 & 377.3k \\
 \texttt{ste\_h76\_hsic3} & $5\times76$ & 32 & 1900 & $10^{-4}$ & --- & head CKA $10^{-3}$ (biased) & 380.2k \\
-\texttt{ste\_k2\_h380} & $5\times380$ & 2 & 1900 & $5\times10^{-4}$ & 0.1 & batch $256 \to 128$$^\dagger$ & 739.0k \\
+\texttt{ste\_k2\_h380} & $5\times380$ & 2 & 1900 & $5\times10^{-4}$ & 0.1 & batch 128 & 739.0k \\
 \texttt{ste\_l1\_h380} & $1\times380$ & 32 & 1900 & $10^{-4}$ & --- & & 369.5k \\
 \texttt{ste\_l1\_h380\_hm5} & $1\times380$ & 32 & 1900 & $5\times10^{-4}$ & --- & & 369.5k \\
 \texttt{ste\_l1\_h380\_zca} & $1\times380$ & 32 & 1900 & $5\times10^{-4}$ & --- & frozen ZCA encoder & 353.3k \\
 \texttt{ste\_l1\_h380\_enc} & $1\times380$ & 32 & 1900 & $5\times10^{-4}$ & --- & trained linear encoder & 369.5k \\
-\texttt{ste\_l1\_h380\_kcos} & $1\times380$ & 32 & 1900 & $10^{-4}$ & --- & row-cosine setpoint 0.5 & 929.4k \\
+\texttt{ste\_l1\_h380\_kcos} & $1\times380$ & 32 & 1900 & $10^{-4}$ & --- & row-cosine setpoint 0.5; batch $256 \to 128$$^\dagger$ & 929.4k \\
 \texttt{ste\_l1\_h380\_i01} & $1\times380$ & 32 & 1900 & $5\times10^{-4}$ & 0.1 & & 369.5k \\
 \texttt{ste\_l1\_h380\_i01\_s43} & $1\times380$ & 32 & 1900 & $5\times10^{-4}$ & 0.1 & seed 43 & 369.5k \\
 \texttt{ste\_l1\_h380\_i01\_hm1e4} & $1\times380$ & 32 & 1900 & $10^{-4}$ & 0.1 & & 369.5k \\

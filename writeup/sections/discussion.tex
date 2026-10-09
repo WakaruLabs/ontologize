@@ -325,9 +325,14 @@ the margin looks like the lever: \texttt{ste\_k2\_h380}, five layers of
 380 binary heads with margins 34 times larger, is the hardest
 Ontologizer to disturb. A step of $0.25\lVert\mathbf{x}\rVert$ moves
 17--19\% of its other heads in every direction, random included, against
-66\% for the 32-way stack. That arm also trained at half the batch size
-for the same 24 epochs and at five times the mean-entropy weight, on one
-seed, so the comparison does not isolate the number of entries.
+66\% for the 32-way stack. Its mean-entropy weight matches the 32-way
+stack's per head ($\mathrm{KL}_m$ averages over heads, and
+$5\times10^{-4}$ over 380 heads is $10^{-4}$ over 76). But it trained on
+one seed and at half the batch size for the same 24 epochs, which is
+twice as many steps, each on a noisier gradient at the same learning
+rate, so the comparison does not isolate the number of entries. Its
+margins at step 370k, where its training error had already stopped
+falling, would show whether the extra steps matter.
 \item \textbf{Task reconstruction.} Recover what each head classifies.
 Head-level autointerp, which describes a head from its entries' texts
 side by side and scores blinded assignment against sibling entries,

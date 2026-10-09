@@ -1035,9 +1035,12 @@ read that column across architectures.
 **The row-collinearity setpoint does not transport.** `ste_l1_h380_kcos`
 reads FVU_w 0.5924 against 0.5822 uncontrolled, slightly worse, where
 on the stack the same target was slightly better. Two confounds run the
-other way and do not rescue it: the flat arm fell back to b=128, and it
-ran 929,400 steps for 119M samples against 94.6M, so it saw 26% more
-data and was still no better. Its steering is already saturated (0.992
+other way and do not rescue it: the flat arm fell back to b=128 at a
+resume near step 190k (its log records 256 then 128, and its
+step-to-step MSE noise rises by about sqrt(2) there), then ran about
+739k steps more at 128, 24 epochs' worth. That is 929,400 steps for
+about 143M samples against 94.6M, so it saw half again as much data and
+was still no better. Its steering is already saturated (0.992
 against 0.966), so there is no headroom for the lever that buys
 steerability on the stack.
 
@@ -2809,10 +2812,20 @@ the lowest flip rate of any Ontologizer, though still their own random
 step's (0.11 against 0.14); at fixed strength 0.25 the k=2 stack moves
 17-19% of other heads in every direction where the k=32 stack moves 66%.
 That arm is on the fixed initialization (init scale 0.1, as its
-`log.jsonl` records; an earlier version of this note said shipped), but
-it trained at batch 128 for the same 24 epochs, so twice the steps, and
-at `s_Hm` 5e-4 against 1e-4, on one seed: the comparison does not
-isolate k.
+`log.jsonl` records; an earlier version of this note said shipped). Nor
+is its `s_Hm` of 5e-4 a confound, though an earlier version of this note
+listed it: `KL_m` averages over heads (`hmean_kl`), so 5e-4 over 380
+heads is the same per-head pressure as 1e-4 over 76, the matching the
+flat arms use. What does differ is the batch and the seed. It trained at
+batch 128 for the same 24 epochs, so 739k steps against 369.5k, each on a
+noisier gradient at the same learning rate, on one seed: the comparison
+does not isolate k. The batch was 128 from step 0. The log records a
+first launch at 256, but `loss.csv` is one series whose step-to-step MSE
+noise holds at 0.021-0.028 per 200 steps from the first step on, with no
+change point. Training MSE had stopped falling by step 370k (2.982e-4,
+against 2.985e-4 over the last 10k steps), so the extra steps bought no
+reconstruction. Whether they widened the margins is unmeasured; the
+retained step-370000 checkpoint would say.
 
 ```bash
 uv run python experiments/ste-arm/steergeom.py \

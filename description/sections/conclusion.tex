@@ -22,9 +22,10 @@ buys little, since supervised vectors disturb the other heads at most
 like that lever: in a five-layer stack of two-entry heads, whose margins
 are 34 times the 32-entry stack's, a step a quarter of the input's norm
 long disturbs 17--19\% of the other heads in every direction, against
-66\%. That arm also trained at half the batch size and a larger
-mean-entropy weight, on one seed, so it does not yet isolate the number
-of entries. The single-layer hard variant
+66\%. That arm matched the other's mean-entropy pressure per head but
+trained on one seed, at half the batch size for the same epochs (twice
+as many steps, each noisier), so it does not yet isolate the number of
+entries. The single-layer hard variant
 \texttt{g160top1}, whose decode direction is the one that avoids the
 other heads (Section~\ref{sec:prelim-depth}), is the reference to beat.
 
