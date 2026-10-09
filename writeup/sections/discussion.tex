@@ -402,13 +402,23 @@ entropy-coded rate --- an entropy penalty on the hard code's usage,
 quantization-aware SAEs swept through the 1{,}900-bit region --- would
 compare the architectures rather than these models.
 \item \textbf{Winner dropout for the one-layer variants.} \texttt{g160top1}'s
-28\% dead latents are within-head winner-take-all starvation.
+28\% dead latents are within-head winner-take-all starvation. They
+survived Gao et al.'s auxiliary loss on dead latents~\cite{gao2024}
+(\texttt{aux\_k} 512, on throughout training), which gives a dead latent
+gradient without making it win its head. Two older remedies are the
+alternatives to test beside winner dropout: k-sparse autoencoders starve
+the same way at low $k_{\mathrm{SAE}}$ and avoid it with a budget that
+falls from 100 to its target over the first half of
+training~\cite{makhzani2014}, here a top-$k_{\mathrm{sel}}$ per head
+annealed to top-1; and neural codecs re-seed a codeword whose running
+usage falls too low at an input from the current batch~\cite{zeghidour2021},
+as \texttt{sae.py}'s neuron resampling already can.
 \item \textbf{Trained truncatability.} A deviation-sparsity penalty at
 training time would show whether the soft Pareto curve can shift left,
 as training against several sparsities at once makes a $\topk$ SAE's
 code progressive~\cite{gao2024}.
 \item \textbf{Rung composition and frontier fill.} \texttt{groups+prefixes}
-(2b+3) is now trained, as \texttt{m5120\_g160top1\_p5} ($\fvu$ 0.294), for
+(2a+3) is now trained, as \texttt{m5120\_g160top1\_p5} ($\fvu$ 0.294), for
 the modularity control above, but is not yet on the ladder. Still to run:
 the one-layer variants at $m{=}11264$, the mid-range $\topk$ sweep
 ($k_{\mathrm{SAE}} \in \{512, 2048\}$), and random-support and

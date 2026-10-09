@@ -267,7 +267,7 @@ Ontologizer-style constraint (all $m{=}5120$, same data and objective):
 rung & run & added structure & analogue \\
 \midrule
 1  & \texttt{k32} & none ($\topk$, $k_{\mathrm{SAE}}{=}32$) & baseline \\
-2a & \texttt{g160top1} & 160 heads, hard winner per head & heads (hard) \\
+2a & \texttt{g160top1} & 160 heads, hard winner per head & hard heads, router \\
 2b & \texttt{g160softmax} & 160 heads, softmax per head & heads (soft) \\
 3  & \texttt{k32\_p5} & 5 nested prefix losses (matryoshka) & deepsup layers \\
 --- & \texttt{k32\_bl} & bilinear encoder, $[\mathbf{x}{-}\mathbf{b}_{\mathrm{dec}};1]$ factors & bilinear classifier \\
@@ -275,16 +275,41 @@ rung & run & added structure & analogue \\
 \end{tabular}
 \end{center}
 
-Rungs 2a and 2b go far enough that they are no longer SAEs in any
-established sense. Per-head competition over a shared decoder is a single
-layer of linear classifiers selecting dictionary entries: \texttt{g160top1}
-is a one-layer hard-code Ontologizer and \texttt{g160softmax} a one-layer
-softmax Ontologizer, each without the bilinear classifier, the residual
-stack or the non-negative dictionary. We present them as simplified
-Ontologizer variants, not as baselines. \texttt{k32\_bl}'s bilinear encoder
-likewise has no standard SAE counterpart, while rung~3 is a Matryoshka
-SAE~\cite{bussmann2025} with five equal blocks of 1024 latents where the
-original's blocks roughly double in size.
+Rungs 2a and 2b divide the $m{=}5120$ latents into 160 heads of 32, and
+we present them as simplified Ontologizer variants, not as baselines.
+Per-head competition over a shared decoder is a single layer of linear
+classifiers selecting dictionary entries, without the bilinear
+classifier, the residual stack or the non-negative dictionary.
+\texttt{g160softmax} is the one-layer softmax Ontologizer: a head's
+coefficients sum to one, so it has no magnitude of its own.
+\texttt{g160top1} is the one-layer hard-code Ontologizer with a router
+fused into its classifier: each head selects its entry by argmax, and the
+winning logit's ReLU value scales that entry's unit-norm atom. That value
+is the router's per-head scale (Section~\ref{sec:router-fiber}), computed
+by the classifier itself rather than by a separate map, so the code's 160
+coefficients are router scales beside its 800 index bits. The fused
+router is also what trains the hard selection without a straight-through
+estimator: the winning logit receives reconstruction gradient through its
+role as a scale, and the losing logits receive none. The same function is
+an SAE with a rectified local winner-take-all
+activation~\cite{srivastava2013} over the heads. In quantization terms
+both rungs have the form of one additive quantizer, 160 codebooks of 32
+atoms that each span the whole output~\cite{babenko2014}:
+\texttt{g160softmax} mixes each codebook's atoms, and \texttt{g160top1}
+takes one atom per codebook with the router scale as its gain, so that
+every head is a gain--shape vector quantizer~\cite{aharon2006}. Switch
+SAEs~\cite{mudide2025} are the transposed design: they route each input
+to one expert with several latents active inside it, where
+\texttt{g160top1} keeps every head active with one latent inside each.
+\texttt{k32\_bl} computes each latent as the product of two linear
+projections of the centered input, as the atomic bilinear autoencoder
+does~\cite{dooms2026}, with a constant coordinate appended so that its
+latents are not sign-blind. Where that autoencoder has no activation and
+a tied decoder that reconstructs $\mathbf{x}\mathbf{x}^\top$,
+\texttt{k32\_bl} feeds a $\topk$ activation and an ordinary linear
+decoder of $\mathbf{x}$: it is a $\topk$ SAE with a bilinear encoder.
+Rung~3 is a Matryoshka SAE~\cite{bussmann2025} with five equal blocks of
+1024 latents where the original's blocks roughly double in size.
 
 SAE baselines at width $m{=}11{,}264$ (parameter-matched to the Ontologizer):
 \texttt{k32}, \texttt{k160} (coefficient-matched to one deviation per
@@ -302,7 +327,7 @@ $\mathbf{w}_1\cdot\mathbf{w}_2$. Under the
 steering frame the simplified variants are the load-bearing comparison:
 \texttt{g160softmax} isolates the ``series of softmax classifiers'' idea
 from the residual stack, bilinear classifiers and shared dictionary, and
-\texttt{g160top1} does the same for hard selection.
+\texttt{g160top1} does the same for hard selection with a fused router.
 
 \subsection{Model configurations}
 \label{app:configs}
@@ -985,8 +1010,13 @@ reproduce).
 At 1M rows with split-half scoring and 20 size-matched nulls:
 \texttt{g160top1}'s trained partition is \emph{perfectly} head-like
 (exhaustiveness $1.0000$ vs.\ null $0.64$; exclusivity $1.0000$ vs.\
-$1.51$; sum-CV $0.25$ vs.\ $1.03$). Discovery on every unstructured run
-(\texttt{m11264\_k32}, \texttt{m5120\_k32}, \texttt{k32\_p5},
+$1.51$; sum-CV $0.25$ vs.\ $1.03$). Its heads have the form of the
+feature groups Huang and Hahn hypothesize, whose members exclude one
+another~\cite{huang2025decomposing}. Their toy groups are also absent part
+of the time, which \texttt{g160top1} can represent (a head whose winning
+logit is not positive gets a router scale of zero) and a head without a
+router cannot, but at exhaustiveness $1.0000$ it practically never does. Discovery on every
+unstructured run (\texttt{m11264\_k32}, \texttt{m5120\_k32}, \texttt{k32\_p5},
 \texttt{m11264\_k160}) finds the \emph{opposite} signature ---
 exhaustiveness below null ($\zeta$ from $-30$ to $-50$), exclusivity above
 ($\zeta$ $+13$ to $+31$): spontaneous SAE group structure consists of

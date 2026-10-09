@@ -5,14 +5,17 @@ to a standard SAE, and nothing else.
 The `m` latents are partitioned into `groups` contiguous groups of
 `m // groups`. Under `group_fn="top1"` each group's winning latent keeps
 its ReLU magnitude and the rest are zero, so L0 is at most `groups`; a
-group whose winner is negative stays silent, which an Ontologizer head
+group whose winner is negative stays silent, which a head without a router
 cannot. Under `"softmax"` each group emits a distribution over its members:
 dense, summing to one per group, and coefficient-bounded, so the decoder
 rows are not held at unit norm and must carry magnitude themselves. That
 form is one `DictEnc`-like layer without the bilinear classifier, the
-residual stack or the non-negative dictionary; with a hard winner it is a
-one-layer hard-code Ontologizer. Neither is an SAE in any established
-sense, and results report them as simplified Ontologizer variants.
+residual stack or the non-negative dictionary. With a hard winner it is a
+one-layer hard-code Ontologizer whose router is fused into its classifier:
+the argmax picks the entry and the winning logit's ReLU value scales it.
+The same function is an SAE with a rectified local winner-take-all
+activation (Srivastava et al. 2013). Results report both as simplified
+Ontologizer variants.
 
 `enc` is "linear" or "bilinear" (the gated encoder sets its own sparsity
 and does not compose with groups); `prefixes` composes as in `SAE`.

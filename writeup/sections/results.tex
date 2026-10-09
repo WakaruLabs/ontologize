@@ -89,12 +89,15 @@ softmax runs saw the evaluation tail in training, so whether the stack
 beats it out of sample is open. Reconstruction alone does not justify the
 stack; steering has to.
 
-Hard per-head selection costs only about 6\% over an unstructured code of
-equal sparsity (0.274 for the single-layer hard variant against 0.258 for
-the $k_{\mathrm{SAE}}{=}160$ SAE). The softmax model's catastrophic argmax
-is therefore a training artifact, not a property of discrete head codes:
+Hard per-head selection with a router fused into the classifier
+(Appendix~\ref{sec:models}) costs only about 6\% over an unstructured code
+of equal sparsity (0.274 for the single-layer hard variant against 0.258
+for the $k_{\mathrm{SAE}}{=}160$ SAE). The softmax model's catastrophic
+argmax is a training artifact, not a property of discrete head codes:
 one-hot selection inflates its output norm $3.7\times$, because winning
-atoms carry about $4\times$ the soft mixture's norm. A bilinear encoder
+atoms carry about $4\times$ the soft mixture's norm, while a stack trained
+under the argmax, with no per-head scales at all, reaches $\fvu$ 0.154
+(Section~\ref{sec:ste}). A bilinear encoder
 costs about 20\% in $\fvu$ and leaves a third of the dictionary dead.
 
 Categorical structure appears where it is trained in as hard selection.

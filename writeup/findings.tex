@@ -361,7 +361,8 @@ that adds one Ontologizer constraint at a time. Two of its rungs,
 \texttt{g160top1} and \texttt{g160softmax} (160 heads of hard or softmax
 competition over a shared decoder), are each a one-layer Ontologizer
 without the bilinear classifier, residual stack or non-negative
-dictionary, and are treated as simplified variants rather than baselines
+dictionary, \texttt{g160top1} with a router fused into its classifier,
+and are treated as simplified variants rather than baselines
 (Appendix~\ref{sec:models}; configurations in Appendix~\ref{app:configs}).
 
 \paragraph{Evaluations.}
