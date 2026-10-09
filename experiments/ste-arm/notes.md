@@ -207,8 +207,9 @@ What it changes:
   channel") the arm is a pure 1900-bit code at 0.1582. At matched total
   rate it is therefore at least 33% below the k160 SAE and 42% below
   g160top1, whatever precision their coefficients get; more precision
-  only lengthens their codes. What stays open is an SAE that spends the
-  same total on more latents with coarser coefficients.
+  only lengthens their codes. What this leaves open is an SAE that spends
+  the same total on more latents with coarser coefficients, and the next
+  subsection finds one.
 - **The L1 SAE is still dominated outright.** At 3e-5 it spends 1.27x
   the index bits (not 3.4x) plus 519 coefficients and is 30% worse
   (0.219 against 0.154).
@@ -227,6 +228,77 @@ the entropy of L0 itself (up to 8.3 bits), lands within 1% of the
 plug-in for every run but the sparsest, L1 3e-4 at mean L0 4.4: 51 bits
 against 45. A tie can light two latents in one g160top1 head (at least
 one eval row has 161 active), so its count caps L0 at the head count.
+
+### Operational rate: every continuous number quantized (`quantrate.py`, 2026-10-09)
+
+Index bits and coefficient counts cannot rank a code that sends
+coefficients against one that does not, so `quantrate.py` puts every
+code on one axis: each continuous number a code sends is quantized
+(uniform, deadzone half a step, each coefficient's step the shared step
+over the whitened norm of its direction; origin 0 for sparse codes, the
+training-row mean for dense ones), each slot's symbol is entropy-coded
+with its own distribution, and the step is swept, 0.125 to 6.1e-5 in
+sqrt(2) steps. Ontologizers run closed-loop. The hard code sends its
+entries (realized per-head entropy) and its four gains (steps from 2
+down to 1/32 of each gain's sd); `resid_nc` sends its assignments quantized around
+E[p]. Nothing is refit after quantization. Output in
+`data/out/sonar/quantrate` (CSV, readouts JSON, figure), run as
+
+    uv run python quantrate.py        # all 15 sae_conv SAEs + both Ontologizers
+
+The plug-in rates were checked against held-out cross-entropy (tables
+fit on 32,768 cache-head rows, KT smoothing, escape plus Elias-gamma for
+unseen symbols) at every point that decides the comparison: they agree
+within 0.5 bits (L1 3e-6 1393.0/1393.5 and 2040.9/2041.5; hard code
+1895.3/1895.6 pinned and 1900.1/1900.4 at 2 sd; `resid_nc`
+1845.1/1845.6).
+
+| code | float FVU_w | FVU at 1900 bits, entropy-coded / subset | bits to reach 0.158, entropy-coded / subset |
+|---|---|---|---|
+| hard code, `ste_h76_init01` | 0.1536 | **0.155** / 0.158 | 1895 / 1900 |
+| L1 SAE 3e-6 | 0.0052 | **0.128** / 0.179 | **1655** / 2056 |
+| `resid_nc`, soft code (in-sample) | 0.0054 | 0.145 / 0.229 | 1783 / 2552 |
+| L1 SAE 1e-5 | 0.0475 | 0.173 / 0.179 | 2050 / 2100 |
+| top-k SAE k5120 | 0.0001 | 0.231 / - | 2240 / 8603 |
+| L1 SAE 3e-5 | 0.2195 | 0.242 / 0.243 | never |
+| top-k SAE k160 | 0.2585 | 0.259 / 0.259 | never |
+| `g160top1` | 0.2741 | 0.274 / 0.274 | never |
+| `g160softmax` | 0.0044 | 0.332 / 0.326 | 3712 / 3657 |
+
+("subset": the support named as a set at log2 C(slots, nonzeros), the
+convention of `pareto.py`'s index bits, with values still entropy-coded;
+for the hard code, the nominal 1900. 0.158 is the hard code with its
+gains pinned, a pure 1900-bit code.)
+
+**At matched entropy-coded rate, a coarsely quantized L1 SAE beats the
+hard code.** The 3e-6 SAE reaches 0.128 at 1900 bits against 0.155 (18%
+lower), and the pinned hard code's 0.158 at 1655 bits (13% fewer). It
+gets there by sending about 440 of its ~1600 coefficients at a few
+levels each, about 4.3 bits per coefficient with its support. The
+support is cheap because L1 latent usage is skewed: entropy coding
+saves about 20% over the subset count (1393 against 1731 bits at step
+2^-5). The hard code uses its entries almost uniformly (1895 of 1900
+nominal bits) and has nothing to save. `resid_nc`'s soft code, quantized
+around E[p], also beats it (0.145), but trained on the eval tail.
+
+**Under the fixed-length convention the hard code still wins**: 0.158
+against 0.179 for the L1 SAE and 0.229 for `resid_nc` at 1900 bits. The
+earlier claim survives only in that form, and against top-k and grouped
+SAEs at any coding: k160 flattens at its float FVU from about 1900 bits
+on (0.275 already at 1121, so its values carry little beyond on/off),
+consistent with the 0.236 least-squares floor, and g160top1 likewise.
+
+Two smaller readings. k5120's support costs almost nothing
+entropy-coded, since the same ~1520 latents fire on nearly every row:
+2034 bits against 8364 by subset at step 2^-5. And the hard code's
+gains are cheap to send: 4.8 bits at 2 sd steps take it from 0.1582 to
+0.1547, and 28 bits recover the float 0.1535.
+
+The writeup's matched-rate statements (abstract, results, discussion,
+brief, proposal) say the hard code beats sparse linear codes held to the
+same bits; on this measurement that holds against top-k and grouped
+SAEs, and against all of them only under fixed-length index codes. They
+have not been changed yet.
 
 ## Downstream: textfid and steerfid
 
