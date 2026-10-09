@@ -23,11 +23,10 @@ like that lever. In a five-layer stack of two-entry heads, a step a
 quarter of the input's norm long would flip, to first order, 13\% of the
 other heads in its layer, against 30\% for the 32-entry stack, and
 measured it disturbs 17--19\% of them in every direction, against 66\%.
-That arm's first-order share was already the same at the 32-entry
-stack's step count, and it matched that stack's mean-entropy pressure
-per head. But
-it trained on one seed and at half the batch size, so it does not yet
-isolate the number of entries. The single-layer hard variant
+That arm was already as hard to disturb, by both measures, at the
+32-entry stack's step count, and it matched that stack's mean-entropy
+pressure per head. But it trained on one seed and at half the batch
+size, so it does not yet isolate the number of entries. The single-layer hard variant
 \texttt{g160top1}, whose decode direction is the one that avoids the
 other heads (Section~\ref{sec:prelim-depth}), is the reference to beat.
 

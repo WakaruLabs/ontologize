@@ -2842,9 +2842,25 @@ does not explain the binary arm. At the k=32 stack's step count its other
 heads already flip at under half that stack's rate (0.12 and 0.14 against
 0.30 and 0.30). The logit-margin ratio at matched steps is 18x over all
 layers (490x, 23x, 17x, 10x and 4.5x by layer), against 34x at the end.
+
+**Measured collateral is the same at step 370k too.** `steerembed.py` on
+that checkpoint gives collateral within 0.002 of the final checkpoint's
+at every strength and direction. At 0.25 it is 18.4% decode and 17.2%
+random, against 18.5% and 17.1%, where the k=32 stack moves 65-66%.
+Realization moves a little more: at 0.25, grad realizes 0.94 against
+0.91 and adjoint 0.59 against 0.67. At native magnitude the decode step
+realizes 0.316 against 0.324, with collateral 0.114 against 0.115. So the
+step count explains neither the first-order gap nor the measured one.
 What remains is the batch, with a noisier gradient per step, and the
-single seed. The measured collateral (`steerembed.py`, 17-19%) is still
-the final checkpoint's only.
+single seed.
+
+The 370k run also scores the supervised directions, which postdate the
+739k run. On the binary arm they are as direction-blind as everything
+else: at 0.25, difference of means moves 16.8% of other heads and the
+probe 17.2%, against random's 17.2%. At its own native length (median
+0.040 |x|), difference of means realizes the target on 77% of rows
+against 9.7% for a random step of that length, with the same 9.5%
+collateral.
 
 ```bash
 uv run python experiments/ste-arm/steergeom.py \
@@ -2853,6 +2869,9 @@ uv run python experiments/ste-arm/steergeom.py \
     --model data/out/sonar/sae_conv/m5120_g160top1/params.npz
 XLA_PYTHON_CLIENT_PREALLOCATE=false uv run python \
     experiments/ste-arm/steergeom.py \
+    --model data/out/sonar/multilingual/ste_k2_h380 --step 370000
+XLA_PYTHON_CLIENT_PREALLOCATE=false uv run python \
+    experiments/ste-arm/steerembed.py \
     --model data/out/sonar/multilingual/ste_k2_h380 --step 370000
 ```
 

@@ -329,10 +329,10 @@ first order, and measured through the stack it moves 17--19\% of them in
 every direction, random included, against 66\% for the 32-way stack. Its
 logit margins are 34 times the 32-way stack's, but that ratio is not the
 evidence: they doubled between steps 370k and 739k while the first-order
-share held, so the logits' scale grew with them. The step count does not
-explain the first-order gap, since the share was the same at step 370k,
-the 32-way stack's whole run. Nor does the mean-entropy weight, which
-matches the 32-way stack's per head ($\mathrm{KL}_m$ averages over
+share held, so the logits' scale grew with them. The step count explains
+neither gap: at step 370k, the 32-way stack's whole run, the first-order
+share and the measured collateral were both the same. Nor does the
+mean-entropy weight, which matches the 32-way stack's per head ($\mathrm{KL}_m$ averages over
 heads, and $5\times10^{-4}$ over 380 heads is $10^{-4}$ over 76). But the
 arm trained on one seed and at half the batch size, so on a noisier
 gradient at every step, and the comparison does not isolate the number
