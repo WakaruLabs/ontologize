@@ -64,6 +64,25 @@ re-encodes reproduce the cache to float rounding (the `verify` check in
   against chance, and best-head language NMI; for SAEs, the Jaccard
   overlap of active latents.
 
+## The L2 normalization (`norm.py`)
+
+`encode_corpus.py` also divides each embedding by its norm, which SONAR
+does not do, and the decoding scripts rescale unit vectors to one corpus
+constant (`textfid.SONAR_NORM`). `norm.py` measures what that discards,
+from the pre-normalization norms `encode` keeps: the norm's spread and
+what it tracks, the whitened FVU of the direction at a constant norm
+against SONAR's own embeddings, how well a ridge on the direction predicts
+the norm, and SONAR's decoder on the same rows at the true, constant and
+predicted norms (plus the cache's own vector), scored by chrF2 between
+decodes and by how much of the true embedding a re-encoded decode keeps
+beyond a same-language shuffled row.
+
+```bash
+uv run python experiments/lang-tags/norm.py   # after encode; ~5 min, GPU
+```
+
+Writes `norm.json` and `norm_decodes.jsonl` beside the other outputs.
+
 ## Caveats
 
 - The intended tag is `MC4_TO_SONAR`'s. For the five romanized configs

@@ -153,3 +153,51 @@ boundaries for rounding to flip them.
 
 Before any re-encode, `TokenizeTransform` has to look tags up in
 `MC4_TO_SONAR` instead of its 5-entry `LANG_MAP`.
+
+## 2026-10-09: the L2 normalization (`norm.py`)
+
+The cache also divides every embedding by its norm, which SONAR does not
+do; decoding scripts rescale the unit vector to `textfid.SONAR_NORM`
+(0.307). Measured on the same 34,400 rows, from the pre-normalization
+norms `retag.py encode` kept (intended tags).
+
+**What the norm is.** Median 0.303, SD 0.051 (CV 0.17); per-language
+medians 0.19–0.35, language explaining 31% of its variance; correlation
++0.32 with log token count. (`textfid.py`'s comment gives per-language
+medians 0.30–0.34; that sample was smaller and English-tagged.)
+
+**What dropping it costs.** The direction at one constant norm
+reconstructs SONAR's own embeddings at whitened FVU 0.036 (0.039 at
+`SONAR_NORM`), a quarter of the hard code's 0.154. But the direction
+predicts the norm with held-out R^2 0.965 (ridge on the unit vector), and
+at the predicted norm the FVU is 0.0013: the unit vectors carry almost
+everything the norm did. Language eta^2 is 0.074 on the unit vectors and
+0.073 on the raw ones.
+
+**Decoding.** 1,032 rows (12 per language), decoded as the eval scripts
+decode (forced English, greedy, 48 tokens), from SONAR's own embedding
+and from three substitutes. "Excess" is the cosine of the re-encoded
+decode to its row's true direction minus the same to another row of its
+language (the shared mean direction gives every pair about 0.09);
+"change" is the paired difference from the true-norm decode:
+
+| decoder input | chrF2 to the true-norm decode | identical text | excess | change |
+|---|---|---|---|---|
+| SONAR's embedding (true norm) | 1 | 1 | 0.260 | --- |
+| direction at `SONAR_NORM` | 0.566 | 0.138 | 0.258 | −0.0014 ± 0.0019 |
+| direction at the predicted norm | 0.785 | 0.428 | 0.260 | +0.0004 ± 0.0011 |
+| the cache's vector (English tag) at `SONAR_NORM` | 0.345 | 0.016 | 0.252 | −0.0074 ± 0.0030 |
+
+The constant rescale changes the surface text (86% of decodes differ
+from the true-norm decode; greedy decoding is sensitive to scale) but not
+how much of the embedding the decode keeps. The source tag costs a small
+amount (about 3% of the 0.26 row-specific signal, 2.5 SE).
+
+**Verdict.** The normalization is benign for the embedding-space work:
+it discards one number per row that the direction almost determines.
+What it affects is wording: the cache holds SONAR's directions, not its
+embeddings, and absolute decoded text differs from what SONAR would
+decode. Decoding at the norm predicted from the direction (or storing the
+norm as a sidecar in any re-encode) removes most of the textual
+difference; anything that feeds steered vectors to a model reading
+SONAR's own scale, such as an LCM, needs one of the two.
