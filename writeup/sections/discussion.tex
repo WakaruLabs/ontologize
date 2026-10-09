@@ -199,8 +199,8 @@ at equal head size the stack's heads reproduce across seeds several
 times worse than flat heads at every layer, layer 0 included. The
 single-layer softmax variant \texttt{g160softmax} matches \texttt{resid\_nc} on
 reconstruction, but a config-matched softmax Ontologizer reaches
-$6\times$ lower error (in-sample), so the reconstruction verdict against
-the stack was checkpoint-specific.
+$6\times$ lower error, on rows no model trained on as on the tail, so the
+reconstruction verdict against the stack was checkpoint-specific.
 \item \textbf{Steering works in embedding space and the text cycle hides
 it.} The decode direction realizes a target entry on 82\% of rows for the
 softmax model at strength 0.25, against a 3\% chance rate, while the
@@ -391,9 +391,6 @@ Normalize logits per head, or control $t$ against a spread$/t$ setpoint,
 in place of the hand-matched temperature, or add a term that pushes the
 logits to commit, the counterpart of the commitment loss by which
 VQ-VAE ties an encoder's scale to its code~\cite{vandenoord2017}.
-\item \textbf{Fresh-encoded eval set.} New runs hold the tail out; the
-softmax Ontologizers do not, and every comparison against them inherits
-that asymmetry.
 \item \textbf{Codes trained for their rate.} The operational rates price
 codes that were never trained for a codec: the hard code's entries are
 used almost uniformly, the most expensive usage to entropy-code, and no

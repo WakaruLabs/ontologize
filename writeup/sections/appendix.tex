@@ -201,10 +201,16 @@ predictor,
 with $\mathbf{w}$ the per-dimension inverse variance normalized to mean
 one, on the final 32{,}768 cache rows. This tail is excluded from
 SAE training and from the training of every straight-through arm.
-\emph{Caveat: the softmax Ontologizers (\texttt{resid\_nc} and the
-selection sweep) predate the holdout and trained on the full cache
-including the tail, so their scores are in-sample; a fresh-encoded
-evaluation set is future work.} Where activations are needed, Ontologizer
+The softmax Ontologizers (\texttt{resid\_nc} and the selection sweep)
+predate the holdout and trained on the full cache including the tail. To
+measure what that is worth, the 131{,}072 stream rows that follow the
+training corpus were encoded the same way (\texttt{encode\_fresh.py}),
+rows no model has seen. On them every \texttt{pareto.py} point of
+\texttt{resid\_nc}, the selection sweep's softmax run, the
+straight-through stack and the SAEs moves by at most 0.3\% (one SAE at
+$\fvu$ $10^{-4}$ by 0.9\%), and every operational rate of
+Appendix~\ref{sec:quantrate} by at most 0.0004 in $\fvu$, so the softmax
+models' scores on the tail are not inflated by having seen it. Where activations are needed, Ontologizer
 features are the flattened per-head classification probabilities
 $P \in \Delta^{k}{}^{\,l\cdot h}$ at the run's final temperature (entry
 $j$ of head $i$ in layer $\ell$ is feature $(\ell h + i)k + j$; fire
@@ -1859,8 +1865,8 @@ unquantized error from about 1900 bits on, consistent with its
 least-squares floor of 0.236, and is already at 0.275 at 1121 bits, so
 its coefficients carry little beyond which latents fire; the single-layer
 hard variant behaves the same way. The softmax model's own code,
-quantized around its mean assignment, reaches 0.145, on rows it trained
-on. The stack's gains cost 4.8 bits at a step of two standard deviations
+quantized around its mean assignment, reaches 0.145, and the same on rows
+no model trained on. The stack's gains cost 4.8 bits at a step of two standard deviations
 (taking it from 0.158 to 0.155) and 28 bits to recover the unquantized
 0.1536. No code was trained for this codec: uniform usage is the most
 expensive kind to entropy-code, and no SAE was trained with quantized
@@ -1877,8 +1883,9 @@ $k_{\mathrm{SAE}}{=}32$, and the single-layer variants are
 \texttt{g160top1} (level) and \texttt{g160softmax} (falling). The
 straight-through stack's curve spans 1895--1923 bits. The dotted line is
 1900 bits and the dashed curve the Gaussian reference
-(Eq.~\eqref{eq:ratefloor}). The softmax model saw the tail in training.
-One seed per curve.}
+(Eq.~\eqref{eq:ratefloor}). The softmax model saw the tail in training;
+scored on rows no model saw, no curve's readout at 1900 bits moves by
+more than 0.0004 (Appendix~\ref{app:data}). One seed per curve.}
 \label{fig:quantrate}
 \end{figure}
 
@@ -2769,7 +2776,8 @@ at 0.25 does \texttt{top2} drop below it (0.53 against 0.56), and it
 reaches that level at step 80k against 21--36k for the others, so its
 lower $\bar\kappa$ there
 is again duration. One seed per arm; these runs trained on the evaluation
-tail, so their $\fvu$ is in-sample.
+tail, so their $\fvu$ is in-sample, though the softmax arm's moves by
+0.13\% on rows no model saw (Appendix~\ref{app:data}).
 
 \begin{figure}[tp]\centering
 \includegraphics[width=\linewidth]{figures/fig-sweep-curves.pdf}

@@ -14,8 +14,8 @@ straight-through Ontologizer \texttt{ste\_h76\_init01} has $5\times76$
 heads at $k{=}32$, a hard code of 1900 bits. The SAEs are $\topk$ SAEs
 on the same cache and objective. Scores are $\mathrm{FVU}_w$ on the
 final 32{,}768 cache rows, which the SAEs and the straight-through arms
-never train on; the softmax Ontologizers predate that holdout, so their
-scores are in-sample.
+never train on. The softmax Ontologizers predate that holdout, but their
+scores move by at most 0.3\% on freshly encoded rows that no model saw.
 
 \subsection{The price of a soft code}
 \label{sec:prelim-pareto}

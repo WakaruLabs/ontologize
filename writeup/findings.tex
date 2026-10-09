@@ -348,8 +348,10 @@ separate GPT-2 setup compares only within that section
 Every model minimizes the whitened MSE of Eq.~\eqref{eq:mse}, and we
 report whitened FVU (Eq.~\eqref{eq:fvu}) on the final 32{,}768 cache
 rows, which SAEs and straight-through arms never train on. The softmax
-Ontologizers predate that holdout, so their scores are in-sample. Every
-score uses the run's own final temperature.
+Ontologizers predate that holdout, but their scores move by at most
+0.3\% on freshly encoded rows that no model saw
+(Appendix~\ref{app:data}). Every score uses the run's own final
+temperature.
 
 \paragraph{Models.}
 The reference softmax Ontologizer \texttt{resid\_nc} has $l{=}5$ residual

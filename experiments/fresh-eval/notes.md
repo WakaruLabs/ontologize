@@ -40,6 +40,15 @@ moves least of all: its soft code is 0.0054 on both, its deviation codes
 -0.3% to 0.0%, its argmax 17.34 against 17.36. The SAEs move +0.1% to
 +0.2% and the straight-through stack not at all (0.1536 against 0.1535).
 
+The selection-sweep run `sweep_softmax_shm` (same 5 x 32 x 32 shape,
+T = 0.03, out at `experiments/fresh-eval/out/sweep_softmax_shm`, onto
+points only) behaves the same against its own run on the tail
+(`data/out/sonar/pareto/pareto_sweep_softmax_shm`): every point within
+0.13%, its soft code 0.000675 against 0.000676. Out of sample it stays
+6.5x below the single-layer soft variant `g160softmax` (0.00436 on fresh
+rows), so the results section's "whether the stack beats it out of
+sample is open" is answered: it does.
+
 So the asymmetry this experiment was built to measure is not there:
 `pareto.py`'s caveat that the softmax Ontologizer is scored on rows it
 trained on changes none of its numbers by more than 0.3%, and the

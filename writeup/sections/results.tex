@@ -21,8 +21,10 @@ apart from those gains, but only the support of a code that also sends
 coefficients, which is how the $k_{\mathrm{SAE}}{=}32$ and
 $k_{\mathrm{SAE}}{=}5120$ SAEs reach the reference in (a);
 Figure~\ref{fig:quantrate} puts every code on one rate axis. The softmax
-model saw the tail in training
-and the others hold it out. One seed per point, except the
+model saw the tail in training and the others hold it out; on rows no
+model saw, every point moves by at most 0.3\%, and the dense control's
+$1.1\times10^{-4}$ by 0.9\% (Appendix~\ref{app:data}).
+One seed per point, except the
 $k_{\mathrm{SAE}}{=}32$ SAE's seed-43 replica.}
 \label{fig:pareto}
 \end{figure}
@@ -84,10 +86,11 @@ single-layer soft variant costs about $30\times$ the dense control
 Ontologizer adds to it (bilinear classifiers, five residual layers, a
 shared 2048-dimensional dictionary space) adds nothing to reconstruction,
 at $2.2\times$ the parameters. A selection-sweep run of the same shape
-does reach 0.0007, six times below the single-layer variant, but both
-softmax runs saw the evaluation tail in training, so whether the stack
-beats it out of sample is open. Reconstruction alone does not justify the
-stack; steering has to.
+does reach 0.0007, six times below the single-layer variant, and keeps
+that on rows no model trained on (0.00067 against 0.0044;
+Appendix~\ref{app:data}). A stack can therefore beat the single layer out
+of sample, but the reference checkpoint does not, so for the model the
+rest of this section studies the case has to rest on steering.
 
 Hard per-head selection with a router fused into the classifier
 (Appendix~\ref{sec:models}) costs only about 6\% over an unstructured code
