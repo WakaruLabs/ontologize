@@ -41,3 +41,7 @@
 
 # embedding caches, run checkpoints, and eval artifacts (19G+)
 /data/
+
+# answer keys to blind rating sheets (naturalness.py): kept out of the
+# repo so the sheets can be rated without the key in view
+experiments/task-naturalness/out/*/key.csv
