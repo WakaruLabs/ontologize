@@ -2779,7 +2779,8 @@ All layers:
 |---|---|---|---|
 | hard-code stack | 0.97 | 0.30 (0.30) | 5.9e-4 |
 | hard-code flat | 0.91 | 0.24 (0.26) | 1.5e-4 |
-| k=2 binary stack, `ste_k2_h380` | 1.12 | 0.11 (0.14) | 2.0e-2 |
+| k=2 binary stack, `ste_k2_h380` | 1.12 | 0.11 (0.13) | 2.0e-2 |
+| the same at step 370k, the k=32 stack's step count | 1.08 | 0.12 (0.14) | 1.0e-2 |
 | softmax stack, `_shm` | 0.65 | 0.41 (0.42) | 3.7e-3 |
 | softmax stack | 0.87 | 0.38 (0.41) | 5.2e-3 |
 | `g160top1` | 0.54 | **0.02** (0.19) | 1.8e-3 |
@@ -2809,7 +2810,7 @@ heads' margins are 34 times the k=32 stack's over all layers (2.0e-2
 against 5.9e-4; 1000x at layer 0, falling to 46x, 32x, 17x and 4x in
 layers 1-4), and they have
 the lowest flip rate of any Ontologizer, though still their own random
-step's (0.11 against 0.14); at fixed strength 0.25 the k=2 stack moves
+step's (0.11 against 0.13); at fixed strength 0.25 the k=2 stack moves
 17-19% of other heads in every direction where the k=32 stack moves 66%.
 That arm is on the fixed initialization (init scale 0.1, as its
 `log.jsonl` records; an earlier version of this note said shipped). Nor
@@ -2824,14 +2825,35 @@ first launch at 256, but `loss.csv` is one series whose step-to-step MSE
 noise holds at 0.021-0.028 per 200 steps from the first step on, with no
 change point. Training MSE had stopped falling by step 370k (2.982e-4,
 against 2.985e-4 over the last 10k steps), so the extra steps bought no
-reconstruction. Whether they widened the margins is unmeasured; the
-retained step-370000 checkpoint would say.
+reconstruction.
+
+**The extra steps doubled the margins and changed nothing geometric.**
+At step 370k, the k=32 stack's step count, the median margin is 1.0e-2
+over all layers (7.4e-2, 1.4e-2, 1.0e-2, 6.1e-3 and 1.9e-3 by layer).
+That is half to three fifths of the final value in layers 0-3, and layer
+4's is 1.9e-3 against 1.5e-3. The flip shares are the final checkpoint's
+to within 0.02 in every layer: 0.116 decode and 0.135 random over all
+layers, against 0.112 and 0.135. A margin can double while the share of
+heads a fixed step flips stays put only if the step's first-order effect
+on the margins doubled too. So the classifier's logit scale grew, and a
+margin in logit units does not compare across checkpoints, or across
+arms, on its own; the flip share does. On the flip share the step count
+does not explain the binary arm. At the k=32 stack's step count its other
+heads already flip at under half that stack's rate (0.12 and 0.14 against
+0.30 and 0.30). The logit-margin ratio at matched steps is 18x over all
+layers (490x, 23x, 17x, 10x and 4.5x by layer), against 34x at the end.
+What remains is the batch, with a noisier gradient per step, and the
+single seed. The measured collateral (`steerembed.py`, 17-19%) is still
+the final checkpoint's only.
 
 ```bash
 uv run python experiments/ste-arm/steergeom.py \
     --model data/out/sonar/multilingual/ste_h76_init01
 uv run python experiments/ste-arm/steergeom.py \
     --model data/out/sonar/sae_conv/m5120_g160top1/params.npz
+XLA_PYTHON_CLIENT_PREALLOCATE=false uv run python \
+    experiments/ste-arm/steergeom.py \
+    --model data/out/sonar/multilingual/ste_k2_h380 --step 370000
 ```
 
 ## The router on GPT-2 (`ste_h20_cat128-sc`, `-sc43`)
