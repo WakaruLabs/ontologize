@@ -71,10 +71,10 @@ few, since non-Gaussian data can be compressed below it.
 rung & $\fvu$ & $\mathrm{L0}$ & note \\
 \midrule
 k32 baseline    & 0.499 & 32   & 0 dead \\
-g160top1        & 0.274 & 160  & 1434/5120 dead (28\%) \\
+g160top1        & 0.274 & 160  & 1469/5120 dead (29\%) \\
 g160softmax     & \textbf{0.0044} & 5120 & beats \texttt{resid\_nc} (0.0054) \\
 k32\_p5         & 0.509 & 32   & nested prefixes, $\sim$2\% cost \\
-k32\_bl         & 0.602 & 32   & 1848/5120 dead (36\%) \\
+k32\_bl         & 0.602 & 32   & 1920/5120 dead (38\%) \\
 \bottomrule
 \end{tabular}
 \caption{Converged structural rungs, $m{=}5120$, 144.3k steps each.}
@@ -101,7 +101,10 @@ one-hot selection inflates its output norm $3.7\times$, because winning
 atoms carry about $4\times$ the soft mixture's norm, while a stack trained
 under the argmax, with no per-head scales at all, reaches $\fvu$ 0.154
 (Section~\ref{sec:ste}). A bilinear encoder
-costs about 20\% in $\fvu$ and leaves a third of the dictionary dead.
+costs about 20\% in $\fvu$ and leaves over a third of the dictionary
+dead, though its factors start random where every linear rung starts
+tied to its decoder (Appendix~\ref{app:configs}), so the cost is not yet
+the bilinear form's alone.
 
 Categorical structure appears where it is trained in as hard selection.
 The hard variant's partition is head-like, while soft per-head codes
@@ -350,9 +353,11 @@ matching.
 Parameter-space decodes are not descriptions. Decoding the parameters
 scores 0.14 at best (the plain and bilinear SAEs) and 0.04 for the
 reference model, where activation descriptions of the same features
-score 0.45--0.65, and decoding bilinear eigenfeatures fails the same way
-(0.034). Part of the failure is
-how the decode is taken: an atom's cosine to its head's mean atom is
+score 0.45--0.65. Bilinear eigenfeature decodes score 0.034, but they
+decode the top-$|\lambda|$ eigenvector, which for most of the bilinear
+SAE's latents is a direction the latent rejects (Appendix~\ref{sec:models}),
+so that score does not test eigenfeatures. Part of the parameter decodes'
+failure is how the decode is taken: an atom's cosine to its head's mean atom is
 0.849, so a raw decode returns one template sentence with the details
 shuffled. Subtracting the origin decode makes the decodes legible but not
 detectable (on one head, 0.079 against a 0.021 null, where contrastive
@@ -471,7 +476,7 @@ every support charged its fixed-length cost the stack leads every SAE
 truncating toward the origin only adds mass the
 model was never trained to decode (0.259 at $\nu{=}1$). The stack is less
 efficient per bit than a single layer, $3.08\times$ the Gaussian reference
-at its rate against $1.53\times$ for one layer's 380-bit prefix, and bits
+at its rate against $1.28\times$ for one layer's 380-bit prefix, and bits
 are not the whole capacity: 380 binary heads, at the same bits, reach
 0.1844 (Appendix~\ref{sec:capacity}).
 
@@ -552,7 +557,7 @@ row-collinearity setpoint bought steerability), and a head-independence
 penalty that turned out to measure estimator bias are in
 Appendices~\ref{sec:steerlayer} and~\ref{sec:hsic}.
 
-\subsection{Seed reproducibility: the function is determined, the heads are not}
+\subsection{Seed reproducibility: the error is determined, the heads are not}
 \label{sec:seeds}
 
 Two runs differing only in seed, both at the fixed initialization, reach
@@ -578,11 +583,13 @@ its own earlier checkpoint. Contributions agree no better. Per-layer
 subspaces agree exactly as much as each model agrees with the data's own
 principal directions, and per-head Grams match at chance even against the
 same run's earlier checkpoint (Appendix~\ref{sec:seedsdetail}). What
-reproduces is aggregate or layer-level, and what identifies an individual
-head, with one exception, does not --- the distinction between weak and
-strong universality, in which networks trained on the same task share an
-algorithm while differing, even between seeds, in the features that
-implement it~\cite{chughtai2023}. Claims about individual heads,
+reproduces is aggregate (the error) or the data's own (its principal
+directions), and what identifies an individual head, with one exception,
+does not. That is the pattern of weak rather than strong universality, in
+which networks trained on the same task share an algorithm while
+differing, even between seeds, in the features that
+implement it~\cite{chughtai2023}, though equal error alone does not show
+that two seeds compute the same reconstruction. Claims about individual heads,
 including the Burmese entry and the per-head steering tables, therefore
 describe one seed. Non-negativity and the layer-dependent gain put
 structure into the floor of every such measure, and several of them,
@@ -692,7 +699,11 @@ initialization fix. It is also the head that reproduces on contributions
 (Appendix~\ref{sec:entries}), the exception to Section~\ref{sec:seeds}'s
 finding that heads do not reproduce, though at NMI 0.41 against a 0.87
 same-run control it is the same variable carved differently, not the same
-partition. It mixes languages freely (NMI 0.155). Decoded as deviations
+partition. It also carries more language than almost any other head: in
+seed 43 it is the most language-informative of all 380 heads (NMI 0.165,
+Table~\ref{tab:headlang}) and in seed 42 the third (0.161), though
+against an attainable 0.875 each of its entries still mixes many
+languages. Decoded as deviations
 from the head's mean atom, its entries read as topic and genre: crime
 news, geopolitics and parliament, encyclopedic place description,
 manufacturing, marketing, legislative text and entertainment. Contrastive

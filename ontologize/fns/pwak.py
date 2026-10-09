@@ -38,12 +38,16 @@ semantic neighbours. Two properties temperature lacks:
 
   1. The logit scale is untouched, so the softmax never saturates and the
      classifier stays in its responsive regime at full hardness.
-  2. Zeroing the diagonal makes the target *self-supervised* rather than
-     self-fulfilling: a sample is predicted from its neighbours and not from
-     itself -- noise2self's J-invariance. Strictly so only at s=1: G has a
-     zero diagonal but G^2 does not, so even-length walks readmit the
-     self-edge (damped) at the s=2-4 actually used. The target is mostly,
-     not purely, information the sample did not already have.
+  2. Zeroing the diagonal keeps a sample's own classification out of its
+     target: it is predicted from its neighbours, not from itself. This is
+     weaker than noise2self's J-invariance, because the sample's own input
+     still sets its weights, through its classification (the gate) and
+     through the affinity. For a hard per-head code it is no target at all:
+     a sample's neighbours are its cell-mates, which carry its own one-hot,
+     so the target equals P and the KL is identically 0. And G has a zero
+     diagonal but G^2 does not, so even-length walks readmit the self-edge
+     (damped) at the s=2-4 actually used; DEWAKSS re-zeroes the diagonal
+     at every step instead.
 
 P^(s) also stays in the convex hull of the neighbourhood's classifications,
 so it cannot manufacture confidence the data does not support.
@@ -98,8 +102,10 @@ def wak(G: Float[Array, "... n n"]) -> Float[Array, "... n n"]:
 
 def affinity(E: Float[Array, "b d"], tau: float) -> Float[Array, "b b"]:
     """Heat-kernel affinity over unit-normalized rows, self-edge removed.
-    exp((<e_i,e_j> - 1)/tau); the diagonal is dropped so every estimate comes
-    from the complement of the point being estimated (noise2self)."""
+    exp((<e_i,e_j> - 1)/tau); the diagonal is dropped so no estimate uses
+    the value of the point being estimated, as in noise2self. The point
+    still sets its own row of weights, so this is leave-one-out, not
+    J-invariant."""
     U = E / (jnp.linalg.norm(E, axis=-1, keepdims=True)
              + jnp.finfo(E.dtype).eps)
     D = jnp.exp((U @ U.T - 1.0) / tau)
@@ -131,8 +137,9 @@ def diffuse(P: Float[Array, "b h k"], E: Float[Array, "b d"],
 
 def pwak_l2(P: Float[Array, "... h k"], E: Float[Array, "... d"],
             s: int, tau: float = 0.2) -> Float[Array, ""]:
-    """Noise2self reconstruction error of a layer's input from its
-    partition-gated neighbourhood, as a fraction of the batch's own
+    """Leave-one-out reconstruction error of a layer's input from its
+    partition-gated neighbourhood (noise2self-style; see `affinity`), as a
+    fraction of the batch's own
     spread: `l2(E, G^s E) / l2(E, mean(E))`. Reads as a fraction of
     variance: 0 when neighbours predict a sample exactly, 1 when the
     graph does no better than the batch mean. Exactly 0 at s=0 (diffusion
@@ -145,7 +152,11 @@ def pwak_l2(P: Float[Array, "... h k"], E: Float[Array, "... d"],
     predict each other -- and that pressure grows with `s`, because a
     leaky partition's walk escapes its block while a tight one does not.
     This is the mechanism the module docstring's hardening hypothesis
-    assumed and the KL form does not implement.
+    assumed and the KL form does not implement. Because the gate is
+    computed from the same input, any input-dependent partition, trained
+    or random, co-assigns samples that predict each other somewhat, even
+    on structureless data; a null for this score has to be an
+    input-dependent partition too.
 
     Scoring against the input rather than against the model's own output
     is what keeps it honest. `l2(F, diffuse(F))` is minimized exactly by

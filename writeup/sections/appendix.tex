@@ -308,12 +308,15 @@ SAEs~\cite{mudide2025} are the transposed design: they route each input
 to one expert with several latents active inside it, where
 \texttt{g160top1} keeps every head active with one latent inside each.
 \texttt{k32\_bl} computes each latent as the product of two linear
-projections of the centered input, as the atomic bilinear autoencoder
-does~\cite{dooms2026}, with a constant coordinate appended so that its
-latents are not sign-blind. Where that autoencoder has no activation and
-a tied decoder that reconstructs $\mathbf{x}\mathbf{x}^\top$,
-\texttt{k32\_bl} feeds a $\topk$ activation and an ordinary linear
-decoder of $\mathbf{x}$: it is a $\topk$ SAE with a bilinear encoder.
+projections of the input, which is how the bilinear autoencoder of
+Dooms et al.\ implements its atomic latents, though it defines them as a
+single squared projection~\cite{dooms2026}. \texttt{k32\_bl} centers the
+input and appends a constant coordinate so that its latents are not
+sign-blind, where that autoencoder reads the raw input with no bias.
+Where it has no activation, a Hoyer sparsity penalty and a tied decoder
+that reconstructs $\mathbf{x}\mathbf{x}^\top$, \texttt{k32\_bl} feeds a
+$\topk$ activation and an ordinary linear decoder of $\mathbf{x}$: it is
+a $\topk$ SAE with a bilinear encoder.
 Rung~3 is a Matryoshka SAE~\cite{bussmann2025} with five equal blocks of
 1024 latents where the original's blocks roughly double in size.
 
@@ -329,7 +332,13 @@ $\mathrm{sym}(\mathbf{w}_1 \mathbf{w}_2^\top)$ (Pearce
 et al.~\cite{pearce2025}) has rank at most 2, and its top-$|\lambda|$
 eigenvector is $\mathbf{w}_1/\lVert\mathbf{w}_1\rVert \pm
 \mathbf{w}_2/\lVert\mathbf{w}_2\rVert$, with the sign of
-$\mathbf{w}_1\cdot\mathbf{w}_2$. Under the
+$\mathbf{w}_1\cdot\mathbf{w}_2$. When the two factors anticorrelate, as
+they do for 90\% of \texttt{k32\_bl}'s latents, that eigenvector's
+eigenvalue is negative: the form falls along it, so it is a direction the
+latent rejects, and the positive-eigenvalue eigenvector
+$\mathbf{w}_1/\lVert\mathbf{w}_1\rVert + \mathbf{w}_2/\lVert\mathbf{w}_2\rVert$
+is the one that excites it. The \texttt{eig} autointerp mode
+(\texttt{sae.eigenfeatures}) takes the top-$|\lambda|$ eigenvector. Under the
 steering frame the simplified variants are the load-bearing comparison:
 \texttt{g160softmax} isolates the ``series of softmax classifiers'' idea
 from the residual stack, bilinear classifiers and shared dictionary, and
@@ -446,9 +455,11 @@ uniform: the model output is jointly \emph{linear} in the flattened
 classifications (zero residual seed, linear decoder), so
 $\mathrm{decode}(\mathbb{E}[\mathbf{p}]) = \mathbb{E}[\hat{\mathbf{x}}]$,
 which decodes to the corpus-mean generic text, while the uniform code lands
-off-manifold (cosine $0.067$ to $\mathbb{E}[\mathbf{x}]$) ---
-despite $\mathrm{KL}_m$ being included in the loss precisely to make the
-uniform code the generic one (Section~\ref{sec:labels}). Endpoints:
+off-manifold (cosine $0.067$ to $\mathbb{E}[\mathbf{x}]$).
+\texttt{resid\_nc} trains without $\mathrm{KL}_m$, the term meant to tie
+the uniform code to the generic one (Section~\ref{sec:labels}); this probe
+is what motivated the term, and whether it achieves that in the models
+that train with it is not measured. Endpoints:
 $\nu{=}0$ (input-independent origin), $\nu{=}k$ (exact soft model), and
 end-to-end argmax (``hard''). An alternative head-level code mean-ablates
 all but the $h'$ lowest-entropy heads per layer. SAE points use measured
@@ -982,14 +993,19 @@ $Y_\ell$: $P_iP_i^\top$ times the heat kernel of the inputs, self-edges
 removed, rows normalized, $N_i$. The head is scored by how well its
 co-classified neighbors predict each row,
 $\lVert Y_\ell - N_iY_\ell\rVert^2/\lVert Y_\ell - \bar{Y}_\ell\rVert^2$
-with $\bar{Y}_\ell$ the batch mean, the self-supervised
-denoising loss of noise2self~\cite{batson2019} that
-$\mathrm{L2}_{\mathrm{pwak}}$ trains (Eq.~\eqref{eq:stats}). 0 means the
+with $\bar{Y}_\ell$ the batch mean, the leave-one-out score that
+$\mathrm{L2}_{\mathrm{pwak}}$ trains (Eq.~\eqref{eq:stats}), on the
+weighted affinity kernel of DEWAKSS~\cite{tjarnberg2021}. It follows
+noise2self~\cite{batson2019} without that loss's guarantee: removing
+self-edges keeps a row's value out of its own prediction, but the row's
+input still sets its weights, through its assignment and through the
+kernel, so the score is not $\mathcal{J}$-invariant in noise2self's
+sense. 0 means the
 neighbors predict a row exactly, 1 that the graph does no better than the
 mean. Two baselines share the run and rows: every row in one cell (the
 plain heat-kernel smoother) and the rows permuted, a random partition with
-matched cell sizes (three draws per batch). Scores are averaged over
-heads and batches.
+matched cell sizes that is independent of the input (three draws per
+batch). Scores are averaged over heads and batches.
 
 \paragraph{Diagnostic scripts (\texttt{experiments/ste-arm/}).}
 The straight-through and geometry results rest on further single-purpose
@@ -1757,7 +1773,7 @@ real data may lie below the reference:
 \toprule
 code & Gaussian reference & achieved & ratio \\
 \midrule
-380 bits (one layer's prefix) & 0.4208 & 0.6427 & 1.53$\times$ \\
+380 bits (one layer's prefix) & 0.4208 & 0.537 & 1.28$\times$ \\
 1900 bits, $5\times76$ & 0.0499 & 0.1535 & 3.08$\times$ \\
 1900 bits, $5\times380$, $k{=}2$ & 0.0499 & 0.1844 & 3.70$\times$ \\
 \bottomrule
@@ -2830,7 +2846,11 @@ at layer 0 (\texttt{top4\_shm}), by at most 0.005 at layers 1--3, and by
 0.031 at layer 4 only in \texttt{softmax}, where the layer is inert
 anyway; a random partition with matched cell sizes is never better than
 the smoother, and a one-entry code (\texttt{top1}) is worse than it above
-layer 0. One seed per arm; these runs trained on the evaluation tail.
+layer 0. Since the score is not $\mathcal{J}$-invariant (Appendix~\ref{app:methods}),
+the permuted partition is a floor only for partitions that ignore the
+input: a partition computed from the input, trained or not, can gain on
+it without clustering anything. One seed per arm; these runs trained on
+the evaluation tail.
 
 \begin{figure}[tp]
 \centering
@@ -2856,7 +2876,12 @@ $(\mathbf{w}\cdot\mathbf{u})(\mathbf{v}\cdot\mathbf{u})$, so
 $\lvert\cos\angle(\mathbf{w},\mathbf{v})\rvert$ says what kind of feature it is:
 near 1 the form is rank 1, proportional to $(\mathbf{w}\cdot\mathbf{u})^2$,
 even in $\mathbf{u}$ and so blind to the sign of the input along
-$\mathbf{w}$; near 0 it is a saddle that sees the sign of each projection
+$\mathbf{w}$; near 0 it is a saddle, which sees whether its two
+projections agree in sign but is just as even, since
+$(\mathbf{w}\cdot(-\mathbf{u}))(\mathbf{v}\cdot(-\mathbf{u})) =
+(\mathbf{w}\cdot\mathbf{u})(\mathbf{v}\cdot\mathbf{u})$ on the semantic
+coordinates. Rank changes the shape of the region a feature responds to,
+not its sign-blindness, which only the constant coordinate breaks
 (protocol in Appendix~\ref{app:methods}). Figure~\ref{fig:bilinspec} reads
 it from the weights of the softmax stack (\texttt{resid\_nc}) and the
 hard-code stack (\texttt{ste\_h76\_init01}).

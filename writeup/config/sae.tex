@@ -8,7 +8,7 @@
 \midrule
 input & the SONAR cache and eval tail of the Ontologizers, $d{=}1024$ \\
 objective & whitened MSE, as the Ontologizers \\
-architecture & pre-subtracted decoder bias, tied initialization \\
+architecture & pre-subtracted decoder bias, encoder initialized tied to the decoder, except \texttt{m5120\_k32\_bl}'s two factors, which are random and scaled to the tied encoder's pre-activation size \\
 decoder & unit-norm directions, the columns of $W_{\mathrm{dec}}$, except \texttt{g160softmax}'s, which carry magnitude because its coefficients are bounded \\
 dead latents & \texttt{aux\_k} 512 ($\topk$ and grouped runs) or neuron resampling every 5000 steps (L1 runs) \\
 optimizer & Adam, batch 4096 \\

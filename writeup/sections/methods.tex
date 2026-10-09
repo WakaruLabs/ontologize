@@ -176,8 +176,9 @@ In practice $H$ is not needed, as including a
 $\mathrm{cossim}_b$ loss also minimizes $H$.
 $\mathrm{KL}_m$ serves to anchor the batch mean of each assignment vector
 $\mathbf{p}_{ni}$ to a uniform distribution.
-This results in a uniform $\mathbf{p}_{ni}$ code corresponding
-to a maximally generic feature vector.
+It keeps every entry in use, since a head that collapses onto one entry
+pays the full $\log_2 k$ bits, and it is meant to make a uniform
+$\mathbf{p}_{ni}$ code correspond to a maximally generic feature vector.
 
 \subsubsection{Dictionary}
 \label{sec:dict}

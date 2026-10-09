@@ -60,8 +60,11 @@ def topk_relu(pre: Float[Array, "... m"], topk: int) -> Float[Array, "... m"]:
 def eigenfeatures(W1: Float[Array, "m d1"], W2: Float[Array, "m d1"],
                   W_dec: Float[Array, "m d"]) -> Float[Array, "m d"]:
     """Input-space top eigenvector of each bilinear latent's symmetric form
-    `sym(w1 w2^T)`. The form is rank 2, so the top-|eigenvalue| eigenvector
-    is closed-form, `w1/|w1| + sign(w1.w2) w2/|w2|`, with no `eigh`. The
+    `sym(w1 w2^T)`. The form has rank at most 2, so the top-|eigenvalue|
+    eigenvector is closed-form, `w1/|w1| + sign(w1.w2) w2/|w2|`, with no
+    `eigh`. When w1.w2 < 0 its eigenvalue is negative: the form falls along
+    it, so it is a direction the latent rejects, and the positive-eigenvalue
+    eigenvector `w1/|w1| + w2/|w2|` is the one that excites it. The
     constant coordinate is dropped and the result unit-normalized and
     sign-aligned to the latent's decoder row (the form is even, so its sign
     is otherwise arbitrary)."""

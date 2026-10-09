@@ -281,7 +281,8 @@ class DictEnc(nn.Module):
     def pwak_l2(self, P: Float[Array, "... h k"],
                 E: Optional[Float[Array, "... d_in"]] = None,
                 pwak_s: int = 0, pwak_tau: float = 0.2) -> Float[Array, ""]:
-        """Noise2self error of this layer's own input predicted from its
+        """Leave-one-out (noise2self-style, not J-invariant) error of this
+        layer's own input predicted from its
         partition-gated neighbourhood, as a fraction of the batch's
         spread -- 0 if neighbours predict a sample exactly, 1 if the graph
         does no better than the batch mean. See

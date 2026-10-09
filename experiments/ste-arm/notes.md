@@ -763,13 +763,15 @@ water-filling floor, though, depth is the less efficient use of bits:
 
 | code | floor | achieved | ratio |
 |---|---|---|---|
-| 380 bits (one layer's prefix) | 0.4208 | 0.6427 | 1.53x |
+| 380 bits (one layer's prefix) | 0.4208 | 0.537 | 1.28x |
 | 1900 bits, 5x76 | 0.0499 | 0.1535 | 3.08x |
 | 1900 bits, 5x380 k=2 | 0.0499 | 0.1844 | 3.70x |
 
 So the cascade buys absolute accuracy and loses rate efficiency: a
-single layer sits half again above its bound where the five-layer stack
-sits three times above its.
+single layer sits about a quarter above its bound where the five-layer
+stack sits three times above its. (The 380-bit row once read 0.6427 /
+1.53x, the shipped `ste_h76`'s layer-0 prefix from the per-layer table
+below; 0.537 is `ste_h76_init01`'s, from `codeuse.py`.)
 
 **`k=2` answers its own question, in the negative for this file's
 premise.** At identical bits and identical samples, 380 binary heads

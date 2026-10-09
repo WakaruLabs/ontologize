@@ -57,12 +57,15 @@ per-head entry order (permutation) and any logit gauge the temperature
 absorbs; what must be reproducible for the heads to be properties of the
 data rather than of one run is therefore the partition itself and the
 decode directions up to relabeling. Section~\ref{sec:seeds} measured
-exactly that on the hard code, on SONAR and GPT-2. Past layer 0 what
-reproduces is the layer, not the head: a variable merge of the layer's
-heads~\cite[Def.~37]{geiger2025}, of which the per-head variables are a
-seed-dependent factorization --- and on GPT-2 not even that beyond
-layer 1. Layer 0 partly reproduces, on SONAR almost entirely through a
-single large-atom head.
+exactly that on the hard code, on SONAR and GPT-2. Past layer 0 no head
+reproduces, and nothing measured there shows that the layer does either:
+per-layer subspaces agree only as much as each model agrees with the
+data's principal directions. Whether a layer reproduces as a variable
+merge of its heads~\cite[Def.~37]{geiger2025}, of which the per-head
+variables are a seed-dependent factorization, needs a whole-layer
+comparison that translates one seed's layer code into the other's. Layer
+0 partly reproduces, on SONAR almost entirely through a single large-atom
+head.
 
 \paragraph{Why the cascade costs reproducibility.} The stack's
 reproducibility deficit at matched head size
@@ -399,7 +402,7 @@ entropy-coded rate --- an entropy penalty on the hard code's usage,
 quantization-aware SAEs swept through the 1{,}900-bit region --- would
 compare the architectures rather than these models.
 \item \textbf{Winner dropout for the one-layer variants.} \texttt{g160top1}'s
-28\% dead latents are within-head winner-take-all starvation. They
+29\% dead latents are within-head winner-take-all starvation. They
 survived Gao et al.'s auxiliary loss on dead latents~\cite{gao2024}
 (\texttt{aux\_k} 512, on throughout training), which gives a dead latent
 gradient without making it win its head. Two older remedies are the

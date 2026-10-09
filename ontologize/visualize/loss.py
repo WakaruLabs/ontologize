@@ -25,6 +25,11 @@ from pathlib import Path
 #          still aligns column for column (`read_loss` reads the missing
 #          tail as NaN)
 #
+# Append-only holds from 16 columns on. Rows narrower than 16 come from
+# runs that predate this layout and do not align past column 7: the
+# selection sweep's 11-wide rows hold `KL_m` at column 8, which
+# `read_loss` would label `cossim_k`. Read those by run, not by these names.
+#
 # Retired columns keep their slot and read NaN in new runs: `cossim_h`
 # (7) and `cossim_flat` (16), both superseded by `support` (18), the
 # heads' support overlap in the dictionary space

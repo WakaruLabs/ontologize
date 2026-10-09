@@ -17,7 +17,9 @@ cosine c = cos(w, v):
              blind to the sign of x along it (its superlevel sets are
              pairs of antipodal half-spaces, or a slab when lambda < 0)
   c = 0      lambda_- = -lambda_+: a saddle, (w.x)(v.x) with orthogonal
-             factors, which does see the sign of each projection
+             factors, which sees whether the two projections agree in
+             sign but is just as even in x; only the constant coordinate
+             breaks the sign-blindness, at any rank
   top        max|lambda| / sum|lambda| = (1 + |c|) / 2
   neg        negative share of |lambda| mass = (1 - c) / 2; above 1/2
              the dominant eigenvalue is negative

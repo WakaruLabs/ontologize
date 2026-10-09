@@ -13,7 +13,10 @@ scores it during training, but as an evaluation on the tail:
 
 D is the heat-kernel affinity of the layer's input E (self-edges removed,
 `pwak.affinity`, --tau), so each sample is predicted from its
-co-classified neighbours and never from itself. E is the input the layer's
+co-classified neighbours' values, never its own. Its own input still sets
+its weights, so the score is leave-one-out, not J-invariant, and any
+input-dependent partition gains on it somewhat even on structureless
+data. E is the input the layer's
 classifier sees: X for layer 0 (unit-normalized when the run has
 `resid_gain` and no encoder, as the classifier sees it), the residual
 from `autointerp.onto_acts_fn(..., inputs=True)` above that. 0 means the
@@ -27,7 +30,9 @@ series are
   joint        the layer's joint gate sum_h P_h P_h^T: the training stat
   random       the same assignments with the sample rows permuted, i.e. a
                random partition with exactly matched cell sizes and
-               softness (mean +- sd over --nulls draws; per head, averaged)
+               softness (mean +- sd over --nulls draws; per head, averaged).
+               It ignores the input, so it is a floor only for partitions
+               that do too
   unpartitioned  one cell holding every sample: the plain heat-kernel
                smoother. Horizontal on layer 0, where every run shares the
                input; above it each run has its own residual, so it is a
