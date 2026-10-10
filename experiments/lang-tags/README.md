@@ -27,6 +27,7 @@ output under `--out`, default `data/out/sonar/langtags`):
 uv run python experiments/lang-tags/retag.py texts     # ~10 min, network
 uv run python experiments/lang-tags/retag.py encode    # ~12 min, GPU
 uv run python experiments/lang-tags/retag.py compare   # a few min, GPU JAX
+uv run python experiments/lang-tags/retag.py english   # ~2 min, CPU
 ```
 
 ## Stages
@@ -36,6 +37,7 @@ uv run python experiments/lang-tags/retag.py compare   # a few min, GPU JAX
 | `texts` | replays rows `[0, 86 * --per-lang)` of the stream (the interleave is a strict round robin, so that is exactly `--per-lang` rows of every language) and keeps each row's full text | `texts.jsonl` |
 | `encode` | encodes every row under its intended tag (`MC4_TO_SONAR`), and the first `--verify` rows of each language under the tag the cache used, with the cache's pooling (masked mean over the 512-token window, then L2) | `encodes.npz` |
 | `compare` | compares the cached rows with their intended-tag versions and runs the shipped models on both | `summary.json`, `langs.csv` |
+| `english` | asks whether the English tag makes a text's English content (its share of common English words and boilerplate) a larger factor of its embedding: rank correlation with the tag shift, variance linear in the share, and how well each encoding tells mixed from pure texts within a language | `english.json` |
 
 `encode` pads each batch to its longest row instead of to 512; padding is
 masked and M2M100's positions skip pad tokens, so the cached-tag

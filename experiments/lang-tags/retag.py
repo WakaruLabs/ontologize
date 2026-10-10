@@ -27,10 +27,22 @@ Stages (outputs under --out):
            (FVU, per-layer code agreement against a same-size random
            perturbation, best-head language NMI)
            -> summary.json, langs.csv
+  english  whether the English tag makes a text's English content a
+           larger factor of its embedding. A row's English share is the
+           fraction of its words in a list of common English words and
+           web boilerplate rarely used in other languages
+           (`english_share`). On the rows whose tag changed: the
+           within-language rank correlation of the share with the tag
+           shift; the share of each language's whitened variance linear
+           in it (`linear_share`), cached against intended; and how well
+           each encoding, centered per language, tells texts above a
+           share cut from the rest (5-fold logistic AUC)
+           -> english.json
 
   uv run python experiments/lang-tags/retag.py texts
   uv run python experiments/lang-tags/retag.py encode
   uv run python experiments/lang-tags/retag.py compare
+  uv run python experiments/lang-tags/retag.py english
 
 The sample is rows from the head of the cache, which the models trained
 on; `compare` also scores the models on the cache tail so the in-sample
@@ -65,7 +77,7 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("stage", choices=["texts", "encode", "compare"])
+    p.add_argument("stage", choices=["texts", "encode", "compare", "english"])
     p.add_argument("--cache", default="data/sonar_embeddings/mc4_4M.npy")
     p.add_argument("--out", default="data/out/sonar/langtags")
     p.add_argument("--per-lang", type=int, default=400,
@@ -87,6 +99,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--tail-rows", type=int, default=32768,
                    help="cache tail rows for the models' held-out FVU")
     p.add_argument("--eval-b", type=int, default=2048)
+    p.add_argument("--cuts", type=float, nargs="+", default=[0.02, 0.05, 0.10],
+                   help="english: English-share cuts for the mixed-text AUC")
     p.add_argument("--seed", type=int, default=42)
     return p.parse_args()
 
@@ -609,10 +623,154 @@ def compare(cfg: argparse.Namespace) -> None:
     print(f"\n-> {out / 'summary.json'}, {out / 'langs.csv'}")
 
 
+# ---------- stage: english ----------
+
+ENGLISH_WORDS = frozenset("""the and of with for this that you your are was
+were have has will would from they their which what about more can our been
+there when who not but its these those than then them she his her him also
+into only other some such just like how any each new should could after
+before because while where through over between under being does did done
+get got make made home page click here contact privacy policy search login
+sign read comments share posted reply email website online free shipping
+view next previous copyright reserved rights terms conditions
+download""".split())
+
+
+def english_share(text: str) -> float:
+    """Fraction of a text's words (runs of letters) in ENGLISH_WORDS."""
+    import re
+    words = re.findall(r"[^\W\d_]+", text.lower())
+    return sum(x in ENGLISH_WORDS for x in words) / len(words) if words else 0.0
+
+
+def linear_share(X: Float[np.ndarray, "n d"], s: Float[np.ndarray, "n"],
+                 w: Float[np.ndarray, "d"]) -> float:
+    """Share of X's (w-weighted) variance that is linear in s: each
+    coordinate regressed on s, explained energy over total energy."""
+    Xw = (X - X.mean(0)) * np.sqrt(w)
+    sc = s - s.mean()
+    if not sc.any():
+        return float("nan")
+    beta = sc @ Xw / (sc @ sc)
+    return float((np.outer(sc, beta) ** 2).sum() / (Xw ** 2).sum())
+
+
+def group_centered(X: Float[np.ndarray, "n d"], g: Int[np.ndarray, "n"],
+                   w: Float[np.ndarray, "d"]) -> Float[np.ndarray, "n d"]:
+    """X whitened by w, centered within each group, columns standardized."""
+    Z = X * np.sqrt(w)
+    for k in np.unique(g):
+        Z[g == k] -= Z[g == k].mean(0)
+    return Z / np.maximum(Z.std(0), 1e-9)
+
+
+def rank_auc(y: Float[np.ndarray, "n"], score: Float[np.ndarray, "n"]) -> float:
+    """Area under the ROC curve from the rank-sum statistic."""
+    from scipy.stats import rankdata
+    r = rankdata(score)
+    n1 = y.sum()
+    return float((r[y > 0].sum() - n1 * (n1 + 1) / 2) / (n1 * (len(y) - n1)))
+
+
+def logistic_auc(Z: Float[np.ndarray, "n d"], y: Float[np.ndarray, "n"],
+                 fold: Int[np.ndarray, "n"], lam: float = 10.0) -> float:
+    """Held-out AUC of a class-balanced L2 logistic regression, fit on all
+    folds but one and scored on that one, pooled over folds."""
+    from scipy.optimize import minimize
+
+    def fit(Zt, yt):
+        wt = np.where(yt > 0, 0.5 / yt.mean(), 0.5 / (1 - yt.mean()))
+
+        def f(p):
+            z = Zt @ p[1:] + p[0]
+            loss = ((wt * (np.logaddexp(0, z) - yt * z)).mean()
+                    + lam * (p[1:] @ p[1:]) / len(yt))
+            r = wt * (1 / (1 + np.exp(-z)) - yt) / len(yt)
+            return loss, np.concatenate(
+                [[r.sum()], Zt.T @ r + 2 * lam * p[1:] / len(yt)])
+
+        return minimize(f, np.zeros(Zt.shape[1] + 1), jac=True,
+                        method="L-BFGS-B", options={"maxiter": 500}).x
+
+    pred = np.zeros(len(y))
+    for k in np.unique(fold):
+        p = fit(Z[fold != k], y[fold != k])
+        pred[fold == k] = Z[fold == k] @ p[1:] + p[0]
+    return rank_auc(y, pred)
+
+
+def english(cfg: argparse.Namespace) -> None:
+    from scipy.stats import spearmanr
+
+    out = Path(cfg.out)
+    E = np.load(out / "encodes.npz")
+    rows, langs = E["rows"], E["langs"].astype(str)
+    X_int = E["X_int"].astype(np.float64)
+    X_c = np.asarray(np.load(cfg.cache, mmap_mode="r")[rows], np.float64)
+    w = np.load(cfg.mse_weights).astype(np.float64)
+    text = {}
+    with open(out / "texts.jsonl") as f:
+        for line in f:
+            r = json.loads(line)
+            text[r["row"]] = r["text"]
+    s = np.array([english_share(text[int(r)]) for r in rows])
+    changed = np.array([cached_tag(l) != MC4_TO_SONAR[l] for l in langs])
+
+    per_lang = {}
+    for lang in sorted(set(langs[changed])):
+        m = langs == lang
+        Xi, Xc, sl = X_int[m], X_c[m], s[m]
+        var = (((Xi - Xi.mean(0)) ** 2) * w).sum(1).mean()
+        shift = (((Xc - Xi) ** 2) * w).sum(1) / var
+        per_lang[lang] = {
+            "share_mean": float(sl.mean()),
+            "rho_shift": (float(spearmanr(sl, shift).statistic)
+                          if sl.std() > 0 else float("nan")),
+            "linear_cached": linear_share(Xc, sl, w),
+            "linear_intended": linear_share(Xi, sl, w)}
+    rho = np.array([v["rho_shift"] for v in per_lang.values()])
+    lc = np.array([v["linear_cached"] for v in per_lang.values()])
+    li = np.array([v["linear_intended"] for v in per_lang.values()])
+    summary = {
+        "langs": len(per_lang),
+        "share_over_0.05": float((s[changed] > 0.05).mean()),
+        "rho_shift_median": float(np.nanmedian(rho)),
+        "rho_shift_negative": int((rho < 0).sum()),
+        "linear_cached_median": float(np.nanmedian(lc)),
+        "linear_intended_median": float(np.nanmedian(li)),
+        "linear_cached_larger": int((lc > li).sum())}
+    print(f"{len(per_lang)} languages whose tag changed; "
+          f"{summary['share_over_0.05']:.1%} of their rows above 5% English")
+    print(f"tag shift against English share: median Spearman "
+          f"{summary['rho_shift_median']:+.3f}, negative in "
+          f"{summary['rho_shift_negative']}/{len(rho)}")
+    print(f"within-language whitened variance linear in English share: "
+          f"cached {summary['linear_cached_median']:.4f}, intended "
+          f"{summary['linear_intended_median']:.4f} (medians); cached larger "
+          f"in {summary['linear_cached_larger']}/{len(lc)}")
+
+    g = np.unique(langs[changed], return_inverse=True)[1]
+    Zc = group_centered(X_c[changed], g, w)
+    Zi = group_centered(X_int[changed], g, w)
+    fold = np.random.default_rng(cfg.seed).integers(0, 5, int(changed.sum()))
+    summary["mixed_auc"] = {}
+    for cut in cfg.cuts:
+        y = (s[changed] > cut).astype(np.float64)
+        a_c, a_i = logistic_auc(Zc, y, fold), logistic_auc(Zi, y, fold)
+        summary["mixed_auc"][str(cut)] = {"rows": float(y.mean()),
+                                         "cached": a_c, "intended": a_i}
+        print(f"English share > {cut:g} ({y.mean():.1%} of rows): AUC cached "
+              f"{a_c:.3f}, intended {a_i:.3f}")
+    summary["per_lang"] = per_lang
+    (out / "english.json").write_text(json.dumps(summary, indent=2))
+    print(f"-> {out / 'english.json'}")
+
+
 def main() -> None:
     cfg = parse_args()
     os.chdir(ROOT)
-    {"texts": texts, "encode": encode, "compare": compare}[cfg.stage](cfg)
+    {"texts": texts, "encode": encode, "compare": compare,
+     "english": english}[cfg.stage](cfg)
 
 
 if __name__ == "__main__":

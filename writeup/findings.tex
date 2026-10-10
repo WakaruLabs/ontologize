@@ -336,7 +336,9 @@ description, with every evaluation's defining equation or algorithm.
 \paragraph{Data.}
 The SONAR models train on a fixed cache of 4{,}000{,}000 unit-norm SONAR
 sentence embeddings ($d{=}1024$) from an interleaved 86-language mC4
-sample, with a language label per row and text recoverable by row index.
+sample, with a language label per row and text recoverable by row index;
+80 of the 86 languages, 93\% of rows, were encoded under SONAR's English
+source tag rather than their own (Appendix~\ref{app:data}).
 Sections~\ref{sec:gpt2} and~\ref{sec:seeds} also use residual-stream
 activations of GPT-2 small~\cite{radford2019} at the output of block 8 of
 12 ($d{=}768$), a substrate where sparse dictionary learning is known to

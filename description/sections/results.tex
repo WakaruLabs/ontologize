@@ -12,7 +12,11 @@ Three models recur. The softmax Ontologizer \texttt{resid\_nc} has $l{=}5$
 layers of $h{=}32$ heads with $k{=}32$ entries, a soft code. The
 straight-through Ontologizer \texttt{ste\_h76\_init01} has $5\times76$
 heads at $k{=}32$, a hard code of 1900 bits. The SAEs are $\topk$ SAEs
-on the same cache and objective. Scores are $\mathrm{FVU}_w$ on the
+on the same cache and objective. The cache holds SONAR embeddings of an
+86-language mC4 sample, 93\% of them encoded under SONAR's English source
+tag rather than their own, which moves an embedding by about twice the
+hard code's reconstruction error but changes how much of it language
+explains only from 7.4\% to 6.7\%. Scores are $\mathrm{FVU}_w$ on the
 final 32{,}768 cache rows, which the SAEs and the straight-through arms
 never train on. The softmax Ontologizers predate that holdout, but their
 scores move by at most 0.3\% on freshly encoded rows that no model saw.
@@ -233,7 +237,12 @@ $0.1535$ and $0.1535$. Nothing that identifies an individual head
 agrees: matched head partitions score a mean NMI of $0.012$ against a
 $0.005$ null, and head contributions a centered cosine of $0.007$
 against $0.002$, while a run against its own earlier checkpoint scores
-$0.38$ on partitions. GPT-2 replicates the pattern: only the first
+$0.38$ on partitions. Nor do the two seeds compute one reconstruction:
+their whitened residuals correlate at $0.30$, where the two seeds of a
+$k_{\mathrm{SAE}}{=}32$ SAE reach $0.83$. Within one run each head keeps
+its atoms (cosine $0.98$--$0.99$ to its own checkpoint 19{,}500 steps
+earlier), so what fails is replication across seeds, not stability in
+training. GPT-2 replicates the pattern: only the first
 layer reproduces, at under a fifth of a same-run control. The softmax
 Ontologizer fares no better, matching at most $0.1\%$ of entries across
 seeds where the $k_{\mathrm{SAE}}{=}32$ SAE pair matches 3--31\%. The first layer is the
@@ -284,7 +293,11 @@ Per-latent lenses mis-measure classifier codes, whose content lives in
 partitions rather than latent magnitudes. Blinded detection F1 of
 latent descriptions tracks code density, not architecture (correlation
 $-0.89$ with log density across six models), and the Ontologizer sits on
-the SAE trend. Descriptions decoded from parameters alone fail outright
+the SAE trend. Much of that is language: a sparse code's latent whose top
+rows share one language is described by naming it and detected at F1
+$0.90$--$0.97$ against random rows, and on features spanning as many
+languages as random rows do, the sparse SAE's lead over the Ontologizer
+shrinks from $0.17$ to $0.10$. Descriptions decoded from parameters alone fail outright
 (F1 $0.04$ for the Ontologizer and at most $0.14$ for any model, against
 an always-match null of $0.67$): a decoded
 atom is an instance of what an entry writes, not a criterion for it, and

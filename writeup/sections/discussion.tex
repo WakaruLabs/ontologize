@@ -213,11 +213,13 @@ The soft code is the more steerable at low collateral; steerability does
 not track reconstruction, and the classifier's own gradient is the right
 direction only where the input reaches the classifier directly.
 \item \textbf{Individual heads past layer 0 are not reproducible, and
-layer 0 only partly.} Seeds agree on the error to four digits. Past layer
-0 they agree on nothing that identifies a head --- partitions,
-contributions, subspaces beyond the data's, or Grams --- each tested
-against a same-shape null, on SONAR and on GPT-2, and again under the
-direct-atom design of Section~\ref{sec:gpt2hard}. Layer 0 reproduces at
+layer 0 only partly.} Seeds agree on the error to four digits but not
+on the reconstruction: their residuals correlate at 0.30, where an SAE's
+seeds reach 0.83. Past layer 0 they agree on nothing that identifies a
+head --- partitions, contributions, subspaces beyond the data's, or
+Grams --- each tested against a same-shape null, on SONAR and on GPT-2,
+and again under the direct-atom design of Section~\ref{sec:gpt2hard},
+though within one run every head persists. Layer 0 reproduces at
 under a fifth of a same-run control. Its lead over the deeper layers is
 not atom magnitude: its atoms are no larger, and its larger contributions
 are its gain, which is a property of the layer. Within layer 0, heads
@@ -238,13 +240,16 @@ one head that recurs across seeds. Language, the
 one factor with free labels, was a probe rather than an expected
 variable: it is carried as neighborhoods across heads, never by one
 head, consistent with languages being weakly separated regions of SONAR
-space. On that probe the hard code carries four times what the softmax
+space. On that probe the hard code carries 3.5--3.9 times what the softmax
 reference does, so partitions do align with known factors; a test of
 whether heads are natural variables needs topic or genre labels.
 \item \textbf{Per-latent lenses mis-measure classifier codes.} Sparse
 probing ranks the Ontologizer worst while partition-level analysis finds
 verified causal language heads; detection F1 is $\sim$80\% explained by
-code density, and the Ontologizer sits on the SAE density trend.
+code density and more by how many languages a latent's top rows span,
+which moves with it, and on features spanning as many languages as
+random rows do, the sparse codes' lead over the Ontologizer falls to 0.10
+or less.
 Parameter-space decodes are instances, not descriptions, and must be
 taken as deviations from the head mean to be legible at all, as the
 geometry of categorical concepts predicts: a category's value vectors

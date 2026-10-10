@@ -205,3 +205,118 @@ decode. Decoding at the norm predicted from the direction (or storing the
 norm as a sidecar in any re-encode) removes most of the textual
 difference; anything that feeds steered vectors to a model reading
 SONAR's own scale, such as an LCM, needs one of the two.
+
+## 2026-10-10: localization on the correctly tagged languages (`langprobe.py --only-langs`)
+
+Only en, en-multi, fr, es, de and zh were encoded under their own tags,
+so the cache's language localization can be read on them alone.
+`langprobe.py` (single-latent F1 at a threshold fitted on training rows,
+then logistic probes on the top 4 and 16 latents by t-statistic) on the
+writeup's localization models plus the two hard codes, in the full
+86-language task (defaults) and in three five-language populations:
+the correctly tagged `en fr es de zh` and two mis-tagged matches of the
+same shape, `en it pt nl ja` and `en ca ro sv ko` (`--only-langs ...
+--train-rows 262144 --test-rows 32768`: about 3,050 training and 381
+test rows per language). Always-match F1 is 0.023 in the full task and
+0.333 in a five-language population.
+
+The full task reproduces the writeup's localization table on CPU:
+`m11264_k160` exactly (0.119 / 0.393 / 0.473, dense 0.676), the other
+SAEs within 0.002 except `g160top1` at f1@4 (0.207 against 0.200), and
+the softmax Ontologizer at f1@16 (0.135 against 0.117).
+
+Five-language populations, macro f1@1 / f1@16 (dense probe 0.946-0.996
+on the correct set, 0.923-0.975 on the controls):
+
+| model | correct tags | it pt nl ja | ca ro sv ko |
+|---|---|---|---|
+| m11264_k160 | 0.684 / 0.876 | 0.841 / 0.926 | 0.841 / 0.931 |
+| m5120_k32 | 0.624 / 0.815 | 0.868 / 0.922 | 0.876 / 0.912 |
+| m11264_k32 | 0.551 / 0.818 | 0.860 / 0.898 | 0.871 / 0.908 |
+| m5120_k32_bl | 0.695 / 0.847 | 0.840 / 0.891 | 0.786 / 0.887 |
+| m5120_k32_p5 | 0.625 / 0.813 | 0.862 / 0.894 | 0.870 / 0.911 |
+| m5120_g160top1 | 0.592 / 0.817 | 0.542 / 0.770 | 0.700 / 0.807 |
+| m5120_g160softmax | 0.432 / 0.727 | 0.437 / 0.743 | 0.433 / 0.760 |
+| m11264_k5120 | 0.439 / 0.645 | 0.448 / 0.683 | 0.447 / 0.676 |
+| resid_nc (softmax) | 0.333 / 0.335 | 0.333 / 0.333 | 0.333 / 0.336 |
+| ste_h76_init01 (hard stack) | 0.685 / 0.780 | 0.804 / 0.848 | 0.806 / 0.871 |
+| ste_l1_h380_i01 (hard flat) | 0.609 / 0.811 | 0.798 / 0.860 | 0.703 / 0.841 |
+
+- **Among the correctly tagged languages, French and German are never
+  localized by one latent or entry.** Their best single-latent F1 is
+  0.39-0.50 in every model, against the 0.33 floor. In the four
+  `topk` SAEs and `g160top1` the best latent for both, and for Spanish
+  in most, is one latent that fires on all three (`m11264_k160` 3573,
+  `m5120_k32` 1631, `m11264_k32` 1631, `m5120_k32_p5` 179, `g160top1`
+  3055), which gives F1 near 0.5 for each (0.45 in `g160top1`); in the
+  bilinear SAE and the hard codes the best latent or entry for them
+  separates them only from Chinese (0.40). Spanish has its own latent in
+  `m11264_k160` (0.744, the latent that is Portuguese's in the it-pt-nl
+  population), `m5120_k32_bl` (0.751) and the hard stack (0.725).
+  English (0.64-0.96) and Chinese (0.86-0.997 in the sparse codes and
+  hard codes, 0.63 in `m11264_k32`) are localized.
+- **Matched populations of English-tagged languages localize far
+  better**: macro f1@1 0.70-0.88 against 0.55-0.70 in every model but
+  `g160top1` (mixed) and the dense codes (no difference), although the
+  dense probe separates the correct set at least as well. Each
+  English-tagged Latin-script language carries a signature of its own
+  (it 0.75-0.84, nl 0.80-0.91, ro 0.84-0.90 in most models). With 16
+  latents the gap narrows (0.78-0.88 against 0.84-0.93) but stays.
+- **In the full task the same latent reads the other way.** Separating
+  the three correctly tagged Latin-script languages from the
+  English-tagged majority, it gives fr, es and de F1@1 near 0.49 each in
+  the four `topk` SAEs, against 0.03-0.15 for it, pt, nl, ca, ro and sv;
+  so per-language scores
+  inside the 86-way task favor the correct tags, as the 86-way ridge
+  probe above does (fr/es/de 0.93 against 0.82 for their mis-tagged
+  neighbors).
+- **The hard codes localize as well as the best SAE.** In the full task
+  their entries reach f1@1 0.121 (stack) and 0.120 (flat), level with
+  `m11264_k160`'s 0.119, though below the SAEs at 4 and 16 latents
+  (0.15 / 0.36 and 0.14 / 0.32). The softmax Ontologizer's entries sit
+  at the always-match floor in every population (0.022 against 0.023;
+  0.333), so the writeup's "decisively the worst localizers" is the soft
+  code having no single-entry or 16-entry language signal at all.
+
+So most of the cache's single-latent localization of Latin-script
+languages is the English tag's signature: under their own tags SONAR
+leaves French, Spanish and German separable (dense 0.95-0.98) but no
+dictionary trained on this cache gives them a latent each. Chinese,
+English and non-Latin scripts localize either way. Whether a dictionary
+trained on a correctly tagged cache would carve the Latin-script
+languages apart is untested. (`langprobe.py`, outputs in
+`data/out/sonar/langprobe/<model>/` and
+`data/out/sonar/langprobe_only/{correct,ctl_itptnlja,ctl_carosvko}/<model>/`.)
+
+## 2026-10-10: does the English tag amplify code-switching? (`retag.py english`)
+
+Autointerp descriptions often name mixed-language text: non-English
+pages with embedded English keywords, metadata or tags, or
+code-switching between a language and English. One explanation would be
+the tag: told the text is English, the encoder might make how much
+English a text contains a larger factor of its embedding, and latents
+along it would fire most on mixed texts. On the 80 mis-tagged languages
+of the sample, with a row's English share the fraction of its words in a
+list of common English words and web boilerplate (11% of rows above 5%):
+
+| | English tag (cache) | own tag |
+|---|---|---|
+| within-language whitened variance linear in English share (median) | 0.55% | 0.56% |
+| mixed vs pure, language removed: AUC at share > 2% / 5% / 10% | 0.792 / 0.836 / 0.850 | 0.816 / 0.854 / 0.871 |
+
+- English content does make the tag less wrong: the more English a text
+  holds, the less it moved (within-language Spearman median -0.095,
+  negative in 66 of 80 languages).
+- But the tag does not amplify it. The variance linear in English share
+  is the same under both tags (larger under the English tag in 36 of 80
+  languages), and mixed texts are slightly easier to tell from pure ones
+  under the correct tags.
+
+So the embedding gives a dictionary no more reason to spend latents on
+code-switching under the English tag than under SONAR's own; the
+mixed-language features more likely reflect mC4 itself, whose
+non-English pages carry English boilerplate (19% of their rows are above
+2%), and, for dense codes, top rows that span many languages. Whether a
+dictionary trained on a correctly tagged cache would allocate latents
+the same way is untested. (`retag.py english`,
+`data/out/sonar/langtags/english.json`.)

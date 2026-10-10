@@ -207,7 +207,12 @@ its decode direction saturates near 0.65 (Figure~\ref{fig:steer-curves}b), so a 
 cannot be realized at any strength, and it passes the soft model only
 beyond collateral 0.85, where most of the other heads have moved too.
 Steering by target layer reverses the aggregate ranking of the decode and
-gradient directions (Appendix~\ref{sec:steerlayer}).
+gradient directions (Appendix~\ref{sec:steerlayer}). In both stacks the
+decode step realizes through directions the data barely vary along: at
+the full step's length, its component in the subspace holding the bottom
+fifth of the data's variance realizes 95\% (hard) and 100\% (softmax) of
+what the whole step does, and its component in the top half 20\% and 8\%
+(Appendix~\ref{sec:steernull}).
 
 \paragraph{Against supervised steering vectors.} The same measurement
 scores the two standard supervised steering vectors for each target: the
@@ -259,7 +264,10 @@ Table~\ref{tab:steersup}. (a) The softmax stack
 as many other heads as the random step (a direction drawn isotropically
 in the embedding's raw coordinates), to within about 0.05, except
 \texttt{g160top1}'s decode direction, which disturbs far fewer; what a
-direction buys is its height above the random curve. The logistic probe
+direction buys is its height above the random curve. Against a random
+step shaped like the data, the softmax stack's own directions disturb
+0.14--0.20 more heads at strength 0.25 and the hard codes' at most 0.07
+more (Appendix~\ref{sec:steernull}). The logistic probe
 tracks the difference of means (within 0.03 realized, 0.05 collateral)
 and is not drawn.}
 \label{fig:steer-curves}
@@ -338,15 +346,29 @@ descriptions rank the sparse codes (the $k_{\mathrm{SAE}}{=}32$ SAE and the
 single-layer hard variant, 0.65) above the bilinear SAE (0.58), the
 reference model and the dense control (0.47) and the single-layer soft
 variant (0.45), and density alone carries about 80\% of that variance
-(Figure~\ref{fig:autointerp-density}a). The reference Ontologizer sits on
-the SAEs' density trend, while the hard variant lies 0.12 above it,
-unusually describable for its density (Figure~\ref{fig:autointerp-density}b;
-Appendix~\ref{sec:headautointerp}). Per-latent detection F1 therefore
-cannot compare architectures at unmatched density, and every soft
-Ontologizer is dense by construction. Distribution-based monosemanticity
+(Figure~\ref{fig:autointerp-density}a). Much of it is language. mC4
+cycles through 86 languages, and neither the contrastive background nor
+the detection negatives are matched for language, so a latent whose top
+rows share one is described by naming it and detected against random
+rows: 63 of the $k_{\mathrm{SAE}}{=}32$ SAE's 250 latents and 41 of the
+hard variant's 150 have their 15 judged rows in one to three languages
+and are detected at F1 0.90--0.97, while no dense code has such a latent.
+Across the six runs mean language purity accounts for 93\% of the
+variance in mean F1 (98\% for contrastive descriptions), though over six
+runs it moves with density. Restricted to features whose top rows span
+13--15 languages, as random rows do, the gap to the reference Ontologizer
+in activation descriptions shrinks from 0.17 to 0.10 for the
+$k_{\mathrm{SAE}}{=}32$ SAE and to 0.01 for the hard variant. The reference Ontologizer sits on the SAEs' density
+trend, and the hard variant, 0.12 above it on all features
+(Figure~\ref{fig:autointerp-density}b), is 0.02 above a trend refitted on
+the multilingual ones (Appendix~\ref{sec:headautointerp}). Per-latent
+detection F1 therefore cannot compare architectures at unmatched density
+or language spread, and every soft Ontologizer is dense by construction.
+Distribution-based monosemanticity
 scores show the same confound, rising as an SAE's L0 falls at fixed
 width~\cite{fereidouni2025evaluatingsparseautoencodersmonosemantic}. The contrastive descriptions
-(\texttt{cacts}) give the honest number: they score below plain summaries
+(\texttt{cacts}) give the more honest number, though their background is
+not matched for language either: they score below plain summaries
 everywhere, least for the sparse codes (by 0.04--0.05) and most for the
 dense control (by 0.14), so part of every plain-summary score is generic
 matching.
@@ -408,7 +430,11 @@ configuration is in Table~\ref{tab:cfg-ste-sonar}). The GPT-2 arms ran
 without them, at $t{=}1$ with absolute logit noise $\sigma_K{=}0.02$ and
 $s_{\mathrm{KL}_m}{=}10^{-6}$ (Table~\ref{tab:cfg-ste-gpt2}), the naive
 port's settings, so any comparison between the substrates also compares
-two calibrations.
+two calibrations. Nor did their logits behave alike: in
+\texttt{ste\_h76} they grew 452-fold, until the noise changed about 1\%
+of layer-0 assignments, while in the concatenated seed pair they stayed
+at their initial scale and the noise changed 71--90\% of layer-0
+assignments at every checkpoint scored (Appendix~\ref{sec:calib}).
 
 \subsection{Initialization: a third of the error}
 
@@ -547,7 +573,9 @@ native decode & 0.044 / 0.678 & 0.169 / 0.043 \\
 
 Collateral is not a property of the intervention. In both models every
 direction disturbs as many other heads as a random step of the same
-length, to within 0.05 (Figure~\ref{fig:steer-curves}b, c), because the heads sit almost on their decision
+length, to within 0.05 (Figure~\ref{fig:steer-curves}b, c), and as many
+as a random step shaped like the data to within 0.025 in the stack and
+0.07 in the flat arm (Appendix~\ref{sec:steernull}), because the heads sit almost on their decision
 boundaries: the median margin between winner and runner-up logits is
 $1.5\times10^{-4}$, at layer 0 and in the flat arm alike, so a step of a
 quarter of the input's norm crosses many of them. Linearizing each head's
@@ -555,7 +583,9 @@ logits with the upstream codes held fixed separates two sources. The
 stack's layer-0 heads flip directly about as often as the flat arm's (0.22
 against 0.24), so what the stack adds is downstream layers reclassifying a
 changed residual: the cascade roughly doubles collateral but is not its
-only source. At the model's own step size (the forced entry's output
+only source. The same reclassification answers a removed head by
+describing the input anew rather than restoring the old description
+(Appendix~\ref{sec:removals}). At the model's own step size (the forced entry's output
 change, unscaled) the flat arm's step is small (a median 0.028 of
 $\lVert\mathbf{x}\rVert$) and moves 4\% of the other heads, while the
 stack's (0.13) realizes 8\% of targets across layers and moves 54\%, as a
@@ -583,7 +613,8 @@ what is compared & stack & flat & null \\
 head partitions (mean matched NMI) & 0.0121 & 0.0177 & 0.0048 \\
 head contributions (centered cosine) & 0.0074 & --- & 0.0015 \\
 per-layer subspace, rank 8 & = data's & --- & see text \\
-per-head atom Grams & 1.05--1.11$\times$ chance & --- & within-layer pairing \\
+atom Grams, entries matched & 1.05--1.19$\times$ chance & --- & within-layer pairing \\
+reconstruction (residual correlation) & 0.30 & 0.34 & 0.53 (same run) \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -591,16 +622,23 @@ per-head atom Grams & 1.05--1.11$\times$ chance & --- & within-layer pairing \\
 Partitions agree barely above the null, where a run scores 0.38 against
 its own earlier checkpoint. Contributions agree no better. Per-layer
 subspaces agree exactly as much as each model agrees with the data's own
-principal directions, and per-head Grams match at chance across seeds,
-compared in a canonical entry order that cannot test persistence within a
-run (Appendix~\ref{sec:seedsdetail}). What
-reproduces is aggregate (the error) or the data's own (its principal
-directions), and what identifies an individual head, with one exception,
-does not. That is the pattern of weak rather than strong universality, in
-which networks trained on the same task share an algorithm while
-differing, even between seeds, in the features that
-implement it~\cite{chughtai2023}, though equal error alone does not show
-that two seeds compute the same reconstruction. Claims about individual heads,
+principal directions, and per-head Grams match at chance across seeds
+even with entries matched exactly, while within one run each head's Gram
+matches its own earlier checkpoint at 8.5--10.7$\times$ chance
+(Appendix~\ref{sec:seedsdetail}): heads persist within a run and do not
+replicate across seeds. Nor is the reconstruction one function. The two
+seeds' whitened residuals correlate at 0.30 (the flat arm's at 0.34),
+against 0.53 for the stack against its own checkpoint 19{,}500 steps
+earlier and 0.83 for the $k_{\mathrm{SAE}}{=}32$ SAE's seed pair, whose
+two seeds compute nearly the same reconstruction
+(\texttt{reconseeds.py}). What reproduces is aggregate (the error) or the
+data's own (its principal directions), and what identifies an individual
+head, with one exception, does not. That is the pattern of weak rather
+than strong universality, in which networks trained on the same task
+share an algorithm while differing, even between seeds, in the features
+that implement it~\cite{chughtai2023}, though here equal error comes from
+different reconstructions, in the flat arm as in the stack, so the
+cascade does not cause the disagreement. Claims about individual heads,
 including the Burmese entry and the per-head steering tables, therefore
 describe one seed. Non-negativity and the layer-dependent gain put
 structure into the floor of every such measure, and several of them,
@@ -648,8 +686,10 @@ it cannot resolve the deep layers; against the tight contribution null
 they sit two to four times above it, at about 1\% of the control, which is
 real and negligible. The excess over the null is larger than on SONAR
 ($24\times$ against 5--11$\times$), almost all of it in layer 0, though
-the GPT-2 arms also ran without the SONAR arm's calibration
-(Table~\ref{tab:cfg-ste-gpt2}; Appendix~\ref{sec:calib}).
+the GPT-2 arms also ran without the SONAR arm's calibration, and in this
+pair the training noise, not the classifier, chose most layer-0
+assignments throughout training (Table~\ref{tab:cfg-ste-gpt2};
+Appendix~\ref{sec:calib}).
 
 \subsubsection{What layer 0's lead is made of}
 
@@ -681,8 +721,8 @@ the embedding. No head encodes it outright. The best reaches a partition
 NMI of 0.18 against an attainable 0.875 (0.165 on the second seed), and no
 head-health lever changes that (Table~\ref{tab:headlang}). Partitions do
 carry the factor well above chance, and the hard code carries more of it:
-four times the softmax reference on null-corrected best-head NMI, and 0.42
-against 0.28 in a 32-head probe. Single cells and conjunctions of cells
+3.5--3.9 times the softmax reference on null-corrected best-head NMI,
+and 0.42 against 0.27 in a 32-head probe. Single cells and conjunctions of cells
 detect language neighborhoods rather than identities (Finnish with
 Estonian, Japanese with Korean), which matches an embedding in which
 languages are weakly separated regions rather than directions

@@ -2576,20 +2576,29 @@ chance of 0.012:
 
 | arm | structure | best-head NMI | less null | probe m=1 | m=32 |
 |---|---|---|---|---|---|
-| ste_h76 | 5x76 | 0.269 | 0.261 | 0.165 | 0.378 |
-| + kcos setpoint | 5x76 | 0.287 | 0.279 | 0.139 | 0.318 |
-| - mean-entropy bonus | 5x76 | 0.085 | 0.078 | 0.038 | 0.322 |
-| + head-independence | 5x76 | 0.199 | 0.189 | 0.097 | 0.383 |
-| flat | 1x380 | 0.277 | 0.276 | 0.102 | 0.257 |
-| flat + kcos | 1x380 | 0.247 | 0.246 | 0.080 | 0.271 |
-| softmax reference | 5x32 | 0.055 | 0.043 | 0.036 | 0.275 |
-| ste_h76_init01 (fixed init) | 5x76 | 0.180 | 0.170 | 0.103 | 0.423 |
-| ste_h76_i01_s43 (fixed init, seed 43) | 5x76 | 0.165 | 0.155 | 0.089 | 0.428 |
+| ste_h76 | 5x76 | 0.269 | 0.261 | 0.165 | 0.385 |
+| + kcos setpoint | 5x76 | 0.287 | 0.279 | 0.139 | 0.317 |
+| - mean-entropy bonus | 5x76 | 0.085 | 0.078 | 0.038 | 0.321 |
+| + head-independence | 5x76 | 0.199 | 0.189 | 0.097 | 0.389 |
+| flat | 1x380 | 0.277 | 0.276 | 0.102 | 0.259 |
+| flat + kcos | 1x380 | 0.247 | 0.246 | 0.080 | 0.273 |
+| softmax reference | 5x32 | 0.055 | 0.044 | 0.036 | 0.275 |
+| ste_h76_init01 (fixed init) | 5x76 | 0.180 | 0.169 | 0.103 | 0.420 |
+| ste_h76_i01_s43 (fixed init, seed 43) | 5x76 | 0.165 | 0.154 | 0.089 | 0.430 |
+
+(Heads ranked on the probe-training rows, each probe's ridge chosen on
+a validation split: `headlang.py`, rerun 2026-10-10 into
+`data/out/sonar/headlang_all` for the first seven rows, each model's
+latest checkpoint, t = 0.00015 except the softmax reference's 0.03; the
+fixed-init rows from `data/out/sonar/headlang_init01_complete`. Against
+the earlier in-sample ranking and fixed ridge, only m = 32 moves, by at
+most 0.007; "less null" is the exact difference, where the fixed-init
+rows earlier read 0.170 and 0.155 from rounded values.)
 
 The first seven rows are on the shipped initialization. **The fixed
 initialization concentrates language less in any one head and carries
 more of it across heads**: best-head NMI falls from 0.269 to 0.17-0.18
-while the 32-head probe rises from 0.378 to 0.42-0.43, consistently
+while the 32-head probe rises from 0.385 to 0.42-0.43, consistently
 across both seeds. Their best language heads are L0 h46 and L0 h14 --
 the latter seed 43's topic head (below), which picks up language as a
 side effect of partitioning by topic.
@@ -2615,7 +2624,7 @@ both regimes); it is fixed.
 
 **The hard code carries more of the known factor**: six times the
 softmax reference on null-corrected best-head NMI on the shipped
-initialization, and about four times (3.6-4.0) on the fixed one.
+initialization, and 3.5-3.9 times on the fixed one.
 
 ### Completeness, and selection on the training rows (`headlang.py`)
 
@@ -2647,8 +2656,7 @@ the highest training-row NMI are exactly the layer-0 heads, and on
 held-out rows every layer-0 head scores at least 0.022 / 0.020 against
 at most 0.016 / 0.015 for any deeper head. The best heads are unchanged
 (L0 h46 at 0.180 and L0 h14 at 0.165, 0.21 and 0.19 of the 0.875
-ceiling). In the table above only the fixed-init rows' m = 32 moves,
-to 0.420 and 0.430 from 0.423 and 0.428. On the tail split in half, the
+ceiling). On the tail split in half, the
 split of the check this came from, the rows read 0.409, 0.224, 0.239,
 0.022, 0.058, 0.252 and 0.508: with four times the training rows the
 deeper heads go from 0.058 to 0.128.

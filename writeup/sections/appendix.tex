@@ -172,7 +172,19 @@ All SONAR models are trained on a fixed cache of 4{,}000{,}000
 SONAR sentence embeddings ($d{=}1024$, unit-norm) computed from an
 interleaved 86-language mC4 sample, with a language label sidecar. The
 stream order is deterministic, so raw text is recoverable by row index
-(verified against the language sidecar per row). The cloud is unit-normed
+(verified against the language sidecar per row). Only six of the 86
+configurations (English twice, French, Spanish, German and Chinese) were
+encoded under their own SONAR source-language tags; the other 80, 93\%
+of rows, were encoded under the English tag, which SONAR reads as the
+text's language. Re-encoding 400 rows per language under the intended
+tags (\texttt{experiments/lang-tags/retag.py}) moves the changed rows by
+a whitened FVU of 0.305, about twice the hard code's reconstruction
+error and almost all of it specific to each row, while language explains
+6.7\% of the embedding's variance under the English tag and 7.4\% under
+the intended ones; the trained models' error rises by 4--12\% on the
+correctly tagged versions, the hard code and the SAEs alike. ``SONAR
+embeddings'' here means SONAR's embeddings under these tags, and the
+language results inherit the difference (Appendix~\ref{sec:langlocal}). The cloud is unit-normed
 but not centered: $\lVert\mathbb{E}[\mathbf{x}]\rVert = 0.564$, so it is a
 spherical cap and $0.318$ of every squared norm is one shared direction.
 It is dense without being isotropic --- effective dimension 108 of 1024
@@ -1010,7 +1022,17 @@ neighbors predict a row exactly, 1 that the graph does no better than the
 mean. Two baselines share the run and rows: every row in one cell (the
 plain heat-kernel smoother) and the rows permuted, a random partition with
 matched cell sizes that is independent of the input (three draws per
-batch). Scores are averaged over heads and batches.
+batch). Scores are averaged over heads and batches. A
+$\mathcal{J}$-invariant split form (\texttt{--jinv}) centers each batch's
+input, rotates it at random and cuts it in half: one half builds every
+gate and kernel, the other is predicted, so no row's predicted
+coordinates set its own weights. Under it the bandwidth is chosen as the
+one whose plain smoother scores lowest, as DEWAKSS chooses its
+own~\cite{tjarnberg2021}, and the null for a partition is
+random-projection heads, each putting a row in the cell of its largest
+projection on $k$ Gaussian directions: singly, as the joint gate of
+eight, and as the joint gate of 64, which estimates their collision
+kernel.
 
 \paragraph{Diagnostic scripts (\texttt{experiments/ste-arm/}).}
 The straight-through and geometry results rest on further single-purpose
@@ -1243,34 +1265,51 @@ $\sim$0.75 collateral before any intervention, whereas the dense-mixture
 classifier codes start near zero.
 
 \subsection{Concept (language) localization}
+\label{sec:langlocal}
 
-\begin{table}[htbp]\centering\small
-\begin{tabular}{@{}lrrrr@{}}
+\begin{table}[htbp]\centering\small\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lrrrrrr@{}}
 \toprule
-model & F1@1 & F1@4 & F1@16 & dense \\
+& \multicolumn{3}{c}{86 languages} & \multicolumn{3}{c}{five languages, F1@1} \\
+\cmidrule(lr){2-4}\cmidrule(l){5-7}
+model & F1@1 & F1@4 & F1@16 & own tags & \stackhead[r]{it pt\\nl ja} & \stackhead[r]{ca ro\\sv ko} \\
 \midrule
-k160          & \textbf{0.119} & 0.393 & \textbf{0.473} & 0.676 \\
-k32 ($m{=}5120$) & 0.089 & 0.347 & 0.465 & 0.676 \\
-m11264\_k32   & 0.078 & 0.364 & 0.471 & 0.676 \\
-k32\_bl       & 0.084 & 0.228 & 0.368 & 0.676 \\
-g160softmax   & 0.068 & 0.162 & 0.328 & 0.676 \\
-g160top1      & 0.066 & 0.200 & 0.302 & 0.676 \\
-k32\_p5       & 0.061 & 0.322 & 0.454 & 0.676 \\
-k5120         & 0.064 & 0.130 & 0.237 & 0.676 \\
-onto (entries) & 0.022 & 0.021 & 0.117 & 0.677 \\
+k160             & 0.119 & \textbf{0.393} & \textbf{0.473} & 0.684 & 0.841 & 0.841 \\
+k32 ($m{=}5120$) & 0.089 & 0.347 & 0.465 & 0.624 & 0.868 & 0.876 \\
+m11264\_k32      & 0.078 & 0.364 & 0.471 & 0.551 & 0.860 & 0.871 \\
+k32\_bl          & 0.084 & 0.228 & 0.368 & 0.695 & 0.840 & 0.786 \\
+k32\_p5          & 0.061 & 0.322 & 0.456 & 0.625 & 0.862 & 0.870 \\
+g160top1         & 0.066 & 0.207 & 0.302 & 0.592 & 0.542 & 0.700 \\
+g160softmax      & 0.067 & 0.162 & 0.328 & 0.432 & 0.437 & 0.433 \\
+k5120            & 0.064 & 0.130 & 0.237 & 0.439 & 0.448 & 0.447 \\
+softmax Ontologizer (entries) & 0.022 & 0.022 & 0.135 & 0.333 & 0.333 & 0.333 \\
+hard-code stack (entries) & \textbf{0.121} & 0.153 & 0.362 & 0.685 & 0.804 & 0.806 \\
+hard-code flat (entries) & 0.120 & 0.141 & 0.319 & 0.609 & 0.798 & 0.703 \\
 \bottomrule
 \end{tabular}
-\caption{Macro one-vs-rest F1 over 86 languages, held-out tail.}
+\caption{Language localization (\texttt{langprobe.py}): one-vs-rest F1
+of the single best latent and of logistic probes on the best 4 and 16,
+on held-out tail rows. Left, over all 86 languages, where always-match
+scores 0.023 and a dense probe on the embedding 0.676. Right, single-latent
+macro F1 within three five-language populations, where always-match
+scores 0.333: English, French, Spanish, German and Chinese, the languages
+encoded under their own SONAR tags (Appendix~\ref{app:data}), and two
+populations of the same shape encoded under the English tag. The softmax
+Ontologizer is \texttt{resid\_nc}, the hard codes
+\texttt{ste\_h76\_init01} and \texttt{ste\_l1\_h380\_i01}.}
+\label{tab:langlocal}
 \end{table}
 
 Language remains distributed in every model (best single-latent macro-F1
-0.119 vs.\ dense ceiling 0.676; script-distinctive languages such as
-Chinese reach $\sim$0.98 from one latent, same-script families smear),
-and localization \emph{anticorrelates} with reconstruction across the
-family. The Ontologizer's entry probabilities are decisively the worst
-localizers (F1@1 $=0.022$). Read on SAE terms this is an indictment; read
-on classifier terms it is expected: a head encodes a factor in its
-\emph{assignment}, not in any single entry's probability, and partition-level
+0.121 against a dense ceiling of 0.676; script-distinctive languages such
+as Chinese reach $\sim$0.98 from one latent, same-script families smear;
+Table~\ref{tab:langlocal}). The softmax Ontologizer's entry probabilities
+localize nothing: at one and four entries their F1 is the always-match
+floor. The hard codes' entries, which are their assignments, localize at
+one entry as well as the best SAE (0.121 and 0.120 against 0.119), though
+less at 4 and 16. Read on SAE terms the soft code's floor is an
+indictment; read on classifier terms it is expected: a soft head encodes
+a factor in its \emph{assignment}, not in any single entry's probability, and partition-level
 analysis of \texttt{resid\_nc} found layer-1 heads whose partitions carry
 script/family mutual information, one of which ((L1,h8,k17)) was causally
 verified to force Burmese output. The partition-level instrument
@@ -1281,7 +1320,30 @@ quarter of the hard code's. Language factors are carried weakly and
 across many heads' partitions, not by a few: in both hard-code seeds the
 76 most language-informative of the 380 heads are exactly the 76 layer-0
 heads (\texttt{headlang.py}), the best of them reaching about a fifth of
-the attainable NMI, and every deeper head carries less than any of them.
+the attainable NMI, every deeper head carries less than any of them, and
+without the top 32 the rest of the code still reads most of what they do
+(Appendix~\ref{sec:langdetail}).
+
+\paragraph{What the English tag does to localization.} Most of the
+cache was encoded under SONAR's English source tag
+(Appendix~\ref{app:data}), and the tag shapes this table. Each $\topk$
+SAE has one latent that fires on French, Spanish and German, the three
+Latin-script languages encoded under their own tags, and so separates
+them from the English-tagged rest without separating them from each
+other: it gives each F1@1 near 0.49, against 0.03--0.15 for Italian,
+Portuguese, Dutch, Catalan, Romanian and Swedish. Restricted to the
+correctly tagged languages, French and German get no latent or entry of
+their own in any model (best F1@1 0.39--0.50 against the 0.33 floor),
+while English (0.64--0.96) and Chinese (0.86--0.997 in the sparse and
+hard codes) do. Populations of the same shape under the English tag
+localize at macro F1@1 0.70--0.88 against 0.55--0.70 for the correctly
+tagged one in every model but \texttt{g160top1} and the dense codes,
+although a dense probe separates the correctly tagged five at least as
+well (0.95--1.00 against 0.92--0.98): each English-tagged Latin-script
+language carries a signature of its own. So most single-latent
+localization of Latin-script languages here is the tag's signature, not
+the language's. Whether a dictionary trained on correctly tagged
+embeddings would give those languages a latent each is untested.
 
 Entry-level enrichment asks the same question cell by cell
 (Figure~\ref{fig:enrich}, \texttt{enrich.py}). In \texttt{resid\_nc},
@@ -1317,13 +1379,17 @@ support-frozen least squares: 2.2--2.4\% for k32 variants, 8.5\% for
 k160, 0.6\% bilinear, 1.9\% p5); \texttt{g160top1} is essentially
 perfectly calibrated (0.3\%) --- its reconstruction deficit is pure
 selection. For the Ontologizer's truncated deviation codes the refit
-removes 16\% at $\nu{=}1$ and 33\% at $\nu{=}2$, but that is the share any
+removes 16\% at $\nu{=}1$ and 33\% at $\nu{=}2$, about the share any
 $\lvert\mathcal{S}\rvert$ free coefficients would remove from a residual
-spread evenly over the whitened coordinates, $\lvert\mathcal{S}\rvert/d$
-= 160/1024 and 320/1024 for \texttt{resid\_nc}'s $5\times32$ heads, so
-these shares do not show that the pin-and-renormalize convention
-mis-scales what it keeps until a random-support control is run (supports
-of $\geq d$ coefficients are excluded as underdetermined). Separately, the
+spread evenly over the whitened coordinates ($\lvert\mathcal{S}\rvert/d$
+= 160/1024 and 320/1024 for \texttt{resid\_nc}'s $5\times32$ heads).
+A support drawn at random, at the same size per sample, removes more:
+19\% and 36\% for the Ontologizer ($\nu$ random entries per head), and
+20\%, 13\% and 4.6\% for k160, \texttt{g160top1} and k32, against their
+own 8.5\%, 0.3\% and 2.2\% (\texttt{refit.py}). No code's own support
+removes more than chance, so nothing here shows the pin-and-renormalize
+convention mis-scaling what it keeps (supports of $\geq d$ coefficients
+are excluded as underdetermined). Separately, the
 gap between non-adaptive truncation (freeze soft $P$, truncate, decode
 linearly) and in-forward truncation (later layers reclassify against the
 truncated prefix residual) is large --- $0.268$ vs.\ $0.094$ at $\nu{=}8$:
@@ -1726,6 +1792,48 @@ runs and a weak correlation, it excludes \texttt{g160softmax}, whose
 thresholded firing rate is exactly zero, and the $2/k$ threshold is not
 monotone in true density.
 
+\paragraph{Describability against language.} Counting the distinct
+languages among each feature's 15 judged rows (\texttt{autointerp.py
+language}; Table~\ref{tab:autointerp-lang}) separates the sparse codes
+from the dense ones before any description is read. Within each sparse
+run F1 falls as the count grows (Spearman $-0.47$ to $-0.67$, activation
+descriptions), and within the dense runs it does not ($-0.06$ to
+$+0.03$). For \texttt{k32} and \texttt{g160top1} the modal language makes
+up 28--30\% of the held-out positives the judge sees, against about 1\%
+of the negatives and of the contrastive background. Refitted on the
+features spanning 13--15 languages, the contrastive trend in log firing
+rate puts \texttt{g160top1} 0.018 above it rather than 0.120, and the
+Ontologizer 0.049 above it rather than 0.029 below. Per feature, purity
+explains a fifth of the variance in F1 (0.20 for activation descriptions,
+0.22 for contrastive ones) and log firing rate 1--4\%. Holding language
+fixed needs matched rows on both sides, which \texttt{autointerp.py
+match} draws for a contrastive background (\texttt{describe --mode
+cacts\_lang}) and for the negatives (\texttt{score --negatives lang});
+neither has been scored.
+
+\begin{table}[htbp]\centering\small\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lrrrrrrr@{}}
+\toprule
+& \multicolumn{4}{c}{features by languages spanned} & & \multicolumn{2}{c}{F1, all / 13--15 languages} \\
+\cmidrule(lr){2-5}\cmidrule(l){7-8}
+model & 1--3 & 4--9 & 10--12 & 13--15 & purity & \texttt{acts} & \texttt{cacts} \\
+\midrule
+onto (resid\_nc)   & 0  & 5  & 43 & 177 & 0.158 & 0.473 / 0.460 & 0.392 / 0.380 \\
+k32                & 63 & 55 & 68 & 64  & 0.466 & 0.645 / 0.564 & 0.603 / 0.482 \\
+k32\_bl            & 9  & 9  & 10 & 47  & 0.277 & 0.578 / 0.502 & 0.470 / 0.338 \\
+g160top1           & 41 & 24 & 32 & 53  & 0.440 & 0.646 / 0.467 & 0.594 / 0.383 \\
+g160softmax        & 0  & 5  & 72 & 179 & 0.183 & 0.449 / 0.443 & 0.364 / 0.347 \\
+k5120 (dense ctrl) & 0  & 2  & 18 & 236 & 0.131 & 0.470 / 0.470 & 0.332 / 0.322 \\
+\bottomrule
+\end{tabular}
+\caption{Detection F1 of Table~\ref{tab:autointerp} by the number of
+distinct languages among each feature's 15 judged rows (the 10 a
+description was written from and the 5 held-out positives; 15 random rows
+span 13.8). Purity is the share of the description rows in their modal
+language. One seed per run.}
+\label{tab:autointerp-lang}
+\end{table}
+
 \section{Supplementary results: the straight-through arm}
 \label{app:ste}
 
@@ -1777,8 +1885,20 @@ abruptly after $\sim$1700 steps; $10^{-5}$ is stable. The shipped arm is
 $t{=}1.5\times10^{-4}$, lr $10^{-5}$, \texttt{--noise-k batchnorm
 --sd-k 0.3}, $s_{\mathrm{KL}_m}{=}10^{-4}$, trained 24 epochs
 (369{,}500 steps). The temperature is hand-matched to a logit scale
-measured once; the principled version normalizes logits per head or
-controls $t$ against a spread$/t$ setpoint.
+measured once, and that scale moves: over training the shipped arm's
+layer-0 logits shrink 2.9-fold, so spread$/t$ falls from 13 at
+initialization to 4.5, while its relative noise changes 20--29\% of
+layer-0 assignments throughout (\texttt{logitscale.py}, on 2{,}048 tail
+rows). Scale invariance leaves the logits free to move either way, and
+the GPT-2 arms, at the naive port's settings, show the other way:
+\texttt{ste\_h76}'s layer-0 logits, from a classifier without a gate,
+grew 452-fold, so its absolute noise, which changed more than half of the
+layer-0 assignments through 50{,}000 steps, changed about 1\% from
+150{,}000 on. The concatenated seed pair's sigmoid-gated classifiers kept
+their initial scale, and there the noise changed 71--90\% of layer-0
+assignments at every one of 16 checkpoints scored. The principled
+version normalizes logits per head or controls $t$ against a spread$/t$
+setpoint.
 
 \subsection{Capacity beyond bits, and training dynamics}
 \label{sec:capacity}
@@ -2194,6 +2314,92 @@ softmax stack's own intervention and the supervised vector tie.
 \texttt{g160top1}'s own intervention is the most precise step any method
 takes, disturbing 1.4\% of other heads against 18\% for random.
 
+\subsection{Data-shaped controls, and where a decode step realizes}
+\label{sec:steernull}
+
+Every steering curve is scored against an isotropic random step. SONAR's
+evaluation tail is anisotropic --- 158 of its 1024 principal components
+hold half its variance, 474 hold 80\% --- so a unit step in raw
+coordinates is three times as long in the data's own (Mahalanobis) metric
+as a step shaped like the data, each relative to the distance between two
+tail rows, while the objective's diagonal whitening barely registers the
+difference (1.045 against 1.005). \texttt{steerembed.py} also scores three
+random controls of the same raw length: the isotropic draw shaped by the
+covariance's square root, the same draw shaped by its inverse square root
+(toward what the data barely vary along), and the step toward another
+tail row. Collateral at strength 0.25, on the targets and rows of
+Table~\ref{tab:steersup}:
+
+\begin{center}\small\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lrrrrrr@{}}
+\toprule
+model & isotropic & shaped & to a row & inverse & decode & diff.\ of means \\
+\midrule
+softmax stack   & 0.539 & 0.408 & 0.410 & 0.803 & 0.549 & 0.424 \\
+hard-code stack & 0.653 & 0.634 & 0.640 & 0.754 & 0.658 & 0.629 \\
+hard-code flat  & 0.367 & 0.315 & 0.309 & 0.521 & 0.328 & 0.274 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Against the data-shaped steps the softmax stack's decode direction
+disturbs 0.14 more heads, and its gradient, margin and adjoint directions
+0.15--0.20 more, though all are within 0.07 of the isotropic step. In the
+hard-code stack every direction stays within 0.025 of the data-shaped
+steps. In the flat arm the decode direction and the difference of means
+stay within 0.041 of them, and the gradient-based directions sit 0.06--0.07
+above, at the isotropic level. Steps toward what the data barely vary
+along disturb the most heads in every model.
+
+Splitting the decode direction at the leading principal subspace holding
+50\% or 80\% of the variance, and stepping each part at the full step's
+length, locates what realizes the target. In both stacks the part in the
+bottom fifth of the variance realizes 95\% (hard) and 100\% (softmax) of
+what the full step does, and the part in the top half 20\% and 8\%; the
+flat arm realizes through either part (0.958 from the top 80\% alone,
+against 0.996). The decode direction leans toward the low-variance end:
+the data's variance along it is 1.6--1.8 times the mean eigenvalue,
+against 6.2--6.7 for a data-shaped step and 7.1--11.7 for the difference
+of means. That is the sensitivity to directions the data barely vary
+along which Ilyas et al.~\cite{ilyas2019} tie to non-robust features.
+Equal raw length is the budget used throughout, so the split says where
+the classifiers are sensitive per unit of raw length; whether the SONAR
+decoder reads the low-variance part is untested. One seed per model.
+
+\subsection{What a removal does downstream}
+\label{sec:removals}
+
+Removing a head shows what the cascade does with a change it did not
+choose (\texttt{textstrip.py --removals}). For 16 random heads per layer
+on 512 tail rows, each head's assignment is replaced by the uniform one,
+by the head's mean assignment, by its runner-up entry (what winner
+dropout trains on) or by another row's assignment, and the
+reconstruction is rebuilt either live, with later layers reclassifying
+the changed residual, or frozen, with only that head's contribution
+changed. Two readouts, whitened and each a share of the unablated
+reconstruction's error: the error the removal adds, and how far the
+output moves from the unablated reconstruction. In the hard-code stack
+the live forward cuts a layer-0 head's added error to 0.23 of the frozen
+value (0.48, 0.68 and 0.84 at layers 1--3), and cuts the runner-up
+replacement most (0.13), as backup heads take over a knocked-out head's
+role in IOI~\cite{wang2023ioi}. Yet the live output lands 19 times as far
+from the unablated reconstruction as the frozen one (31, 19 and 7 times
+at layers 1--3): the later layers describe the input anew rather than
+restore the old description. Decoded to text, on 12 tail rows and the
+two heads per layer whose uniform removal moves the reconstruction
+furthest, a live uniform removal raises the decoder's per-token negative
+log-likelihood of the input's own decoding by nothing beyond the
+reconstruction's ($-0.011$ nats, against 0.036 frozen and 0.016 for a
+random step toward another row of the frozen change's length), though
+scored against the unablated reconstruction's text it looks like damage
+(0.139 against 0.040). The reference softmax model's later layers cancel
+a removal outright: a frozen layer-0 uniform removal adds 505\% to the
+error and a live one 0.5\%. These text runs compute the model in float32
+on the CPU; JAX's default matmul precision on the GPU changes 226 of the
+hard stack's 4{,}560 codes on these 12 rows (159 of the 912 at layer 4),
+so cell-level comparisons across devices need matched precision. One
+seed per model.
+
 \subsection{Head independence: a measurement artifact}
 \label{sec:hsic}
 
@@ -2266,21 +2472,29 @@ seeds, 101.3$\times$ and 101.2$\times$ to the data), so the agreement is
 the data's and nothing is left for the architecture. At layer 4 each
 seed tracks the data $\sim$23$\times$ above chance while agreeing with the
 other only 9$\times$: they pick \emph{different} data-aligned directions.
-\emph{Grams.} Per-layer row collinearity agrees to four digits (0.2880 /
-0.2891 at layer 0), but the Gram spectrum is nearly one-parameter --- the
-top eigenvalue is exactly $1+(k-1)\,\kappa_i$, carries 82\% of the
-spectrum's norm, and is forced by non-negativity. Compared entrywise in
-canonical order (each head's entries sorted by their mean cosine to the
-rest of the head), Grams agree at chance across seeds
-(1.05--1.11$\times$). The same comparison reads near chance against the
-same run 19{,}500 steps earlier too (1.07--1.15$\times$), but that is a
-property of the order, not of the heads: with a nearly one-parameter Gram
-every entry's mean cosine is nearly the same, so the canonical sort is set
-by small differences that need not survive from one checkpoint to the
-next. Training never relabels entries (dead-entry revival is off in both
-runs), so within a run the stored order is the correspondence to compare.
-Decoding atoms to output space first changes nothing in canonical order
-(1.18$\times$ at layer 0 to 1.03$\times$ at layer 4).
+\emph{Grams} (\texttt{atomgram.py}). Per-layer row collinearity agrees
+to four digits (0.2880 / 0.2891 at layer 0), but the Gram spectrum is
+nearly one-parameter --- the top eigenvalue is exactly
+$1+(k-1)\,\kappa_i$, carries 82\% of the spectrum's norm, and is forced
+by non-negativity. Comparing two heads' Grams entrywise needs a
+correspondence between their entries. In canonical order (each head's
+entries sorted by their mean cosine to the rest of the head), Grams agree
+at chance against a null that pairs heads within the layer, across seeds
+(1.06--1.11$\times$) and against the same run 19{,}500 steps earlier
+alike (1.05--1.14$\times$). The second is a property of the order, not of
+the heads: with a nearly one-parameter Gram every entry's mean cosine is
+nearly the same, so the sort is set by small differences that change
+between checkpoints, and within one run it pairs only 33--66\% of heads
+with themselves. Training never relabels entries (dead-entry revival is
+off in both runs), so within a run the stored order is the
+correspondence, and in it each head's Gram matches its earlier self at
+8.5--10.7$\times$ chance (7.5--10.0$\times$ on decoded atoms), its
+decoded atoms at cosine 0.98--0.99 against 0.05--0.08 for the layer's
+other heads. Across seeds, with entries matched by linear assignment on
+their centered decoded atoms, which fixes the correspondence exactly,
+Grams stay at chance (1.05--1.19$\times$), the matched atoms at cosine
+0.07--0.15 against 0.06--0.10. Heads persist within a run and do not
+replicate across seeds.
 
 \subsection{What makes layer 0 reproduce: gain, atoms, and depth}
 \label{sec:l0size}
@@ -2523,22 +2737,25 @@ chance 0.012):
 \toprule
 arm & shape & best-head NMI & less null & probe $h'{=}1$ & $h'{=}32$ \\
 \midrule
-\texttt{ste\_h76\_init01} & $5\times76$ & 0.180 & 0.170 & 0.103 & 0.423 \\
-\quad seed 43 & $5\times76$ & 0.165 & 0.155 & 0.089 & 0.428 \\
-softmax reference & $5\times32$ & 0.055 & 0.043 & 0.036 & 0.275 \\
+\texttt{ste\_h76\_init01} & $5\times76$ & 0.180 & 0.169 & 0.103 & 0.420 \\
+\quad seed 43 & $5\times76$ & 0.165 & 0.154 & 0.089 & 0.430 \\
+softmax reference & $5\times32$ & 0.055 & 0.044 & 0.036 & 0.275 \\
 \midrule
 \multicolumn{6}{@{}l}{\emph{unfixed initialization}} \\
-\texttt{ste\_h76} & $5\times76$ & 0.269 & 0.261 & 0.165 & 0.378 \\
-\quad + collinearity setpoint & $5\times76$ & 0.287 & 0.279 & 0.139 & 0.318 \\
-\quad $-$ mean-entropy bonus & $5\times76$ & 0.085 & 0.078 & 0.038 & 0.322 \\
-\quad + head independence & $5\times76$ & 0.199 & 0.189 & 0.097 & 0.383 \\
-flat & $1\times380$ & 0.277 & 0.276 & 0.102 & 0.257 \\
-\quad + collinearity setpoint & $1\times380$ & 0.247 & 0.246 & 0.080 & 0.271 \\
+\texttt{ste\_h76} & $5\times76$ & 0.269 & 0.261 & 0.165 & 0.385 \\
+\quad + collinearity setpoint & $5\times76$ & 0.287 & 0.279 & 0.139 & 0.317 \\
+\quad $-$ mean-entropy bonus & $5\times76$ & 0.085 & 0.078 & 0.038 & 0.321 \\
+\quad + head independence & $5\times76$ & 0.199 & 0.189 & 0.097 & 0.389 \\
+flat & $1\times380$ & 0.277 & 0.276 & 0.102 & 0.259 \\
+\quad + collinearity setpoint & $1\times380$ & 0.247 & 0.246 & 0.080 & 0.273 \\
 \bottomrule
 \end{tabular}
-\caption{\texttt{headlang.py}. The attainable NMI for a 5-bit head
-against the 6.43-bit label is 0.875. Head-health levers and the flat arm
-were measured only at the unfixed initialization.}
+\caption{\texttt{headlang.py}. Heads are ranked by NMI on the
+probe-training rows and scored on the held-out tail, and each probe's
+ridge penalty is chosen on a validation split of the training rows. The
+attainable NMI for a 5-bit head against the 6.43-bit label is 0.875.
+Head-health levers and the flat arm were measured only at the unfixed
+initialization.}
 \label{tab:headlang}
 \end{table}
 
@@ -2547,13 +2764,21 @@ outright: the best reaches 0.18 of an attainable 0.875, and no head-health
 lever lifts any arm past 0.29 (a $k{=}32$ head could not hold 86
 languages anyway, $\log_2 32 = 5 < 6.43$ bits). What the probe does show
 is that partitions carry a known factor well above chance, and that
-\textbf{the hard code carries more of it}: four times the softmax
-reference on null-corrected best-head NMI, and 0.42--0.43 against 0.28
+\textbf{the hard code carries more of it}: 3.5--3.9 times the softmax
+reference on null-corrected best-head NMI, and 0.42--0.43 against 0.27
 in a 32-head probe, consistently across seeds. The fixed initialization
-spreads language over more heads than the unfixed one did (best head
-0.17 against 0.26, 32-head probe 0.42 against 0.38). The stack beats the
-flat arm on probe accuracy at every head budget (0.378 vs.\ 0.257 at
-$h'{=}32$, both unfixed). (\texttt{summary.json}'s
+spreads language over more heads than the unfixed one did
+(null-corrected best head 0.15--0.17 against 0.26, 32-head probe
+0.42--0.43 against 0.38). The stack beats the flat arm on probe accuracy at every head
+budget (0.385 vs.\ 0.259 at $h'{=}32$, both unfixed).
+
+\emph{Completeness.} The top 32 heads, all in layer 0, read 0.42--0.43,
+73--74\% of what all 380 read (0.57--0.58), but they are not complete in
+the sense of IOI's circuit criterion~\cite{wang2023ioi}, under which
+removing them should leave the rest of the code unable to do the task:
+the other 348 heads still read 0.34--0.36, the other 44 layer-0 heads
+alone 0.26, and the 304 deeper heads together 0.13 (32 random deeper
+heads, 0.03). Language is spread over layer 0, not held by a few heads. (\texttt{summary.json}'s
 \texttt{info\_share\_best} favors the flat arm, but it divides by summed
 plug-in MI whose per-head bias differs eightfold between the shapes; do
 not read it across architectures.)
@@ -2879,6 +3104,32 @@ the permuted partition is a floor only for partitions that ignore the
 input: a partition computed from the input, trained or not, can gain on
 it without clustering anything. One seed per arm; these runs trained on
 the evaluation tail.
+
+\paragraph{Under a $\mathcal{J}$-invariant score, partitions show no more
+than locality.} The split form (Appendix~\ref{app:methods}) on
+\texttt{ste\_h76\_init01}, all 76 heads per layer, settles both
+confounds. It selects a bandwidth of 0.05 at layers 0 and 4 and 0.03 at
+layers 1--3, and under it the layer-0 smoother at 0.05 scores 0.112
+below the smoother at Figure~\ref{fig:selection}'s 0.2, more than any
+head or gate gains at 0.2 (at most 0.060). A random-projection head is a
+locality-sensitive hash~\cite{harpeled2012}: the chance it puts two rows
+in one cell falls as the angle between them grows, so gating the heat
+kernel by it sharpens the kernel the way a smaller bandwidth does. At a
+bandwidth of 0.2 one random head gains 0.017 over the smoother under the
+leave-one-out score and nothing under the split form ($-0.001$), so its
+gain was the leak, while the joint gate of eight keeps 0.042 and the
+collision kernel 0.047: they sharpen a kernel that is too flat. At the
+selected bandwidth single trained heads score worse than the smoother at
+every layer (by 0.040 at layer 0, 0.065--0.069 at layers 1--3 and 0.030
+at layer 4), as single random heads do (0.030 and 0.063--0.068), and the
+layer's joint gate of trained heads gains 0.034 at layer 0 and
+0.005--0.006 above it, where the random collision kernel gains 0.039 and
+0.005--0.009. Trained heads read every coordinate, so these comparisons
+use the leave-one-out form; against random-projection heads, trained
+partitions show nothing beyond locality. On isotropic rows the split
+form holds its floor down to a bandwidth of 0.05, while the
+leave-one-out form falls below it by 0.010 at 0.2 and 0.090 at 0.02,
+which is its leak. One seed (\texttt{selection.py --jinv}).
 
 \begin{figure}[tp]
 \centering

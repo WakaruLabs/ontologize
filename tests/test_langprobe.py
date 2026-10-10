@@ -66,3 +66,21 @@ def test_logistic_probe_beats_single_latent_on_conjunction():
     f1_1 = langprobe.f1_at(A[2000:, 3], y[2000:], thr1)
     assert f1_2 > f1_1 + 0.05
     assert f1_2 > 0.75
+
+
+def test_only_rows_keeps_the_listed_languages_in_order():
+    langs = np.array(["en", "fr", "de", "fr", "zh", "en", "it"])
+    rows = np.arange(1, 7)
+    kept = langprobe.only_rows(langs, rows, ["fr", "en"])
+    assert kept.tolist() == [1, 3, 5]
+    assert set(langs[kept]) == {"fr", "en"}
+
+
+def test_only_rows_refuses_a_language_with_no_rows():
+    langs = np.array(["en", "fr", "de"])
+    try:
+        langprobe.only_rows(langs, np.arange(3), ["en", "pt"])
+    except SystemExit as e:
+        assert "pt" in str(e)
+    else:
+        raise AssertionError("a missing language was not refused")

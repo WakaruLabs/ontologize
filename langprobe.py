@@ -16,12 +16,18 @@ to <out>/langs.csv. Works on sae.py runs and Ontologizer checkpoints
 alike (autointerp activation convention), so "is language a latent-level
 concept" is answerable per rung.
 
-  uv run python langprobe.py --model data/out/sonar/sae/m5120_k32/params.npz
+--only-langs keeps only the rows of the listed sidecar languages, in
+training and test alike, so each probe separates its language from the
+others listed and from nothing else. The training rows are still the
+first --train-rows of the cache, so a short list wants a larger window.
+
+  uv run python langprobe.py --model data/out/sonar/sae_conv/m5120_k32/params.npz
   uv run python langprobe.py --model data/out/sonar/multilingual/resid_nc
+  uv run python langprobe.py --model data/out/sonar/multilingual/resid_nc \\
+      --only-langs en fr es de zh --train-rows 262144 --test-rows 32768
 
 Probe training rows come from the cache head, test rows from the tail
-(the sae.py eval split). NOTE: Ontologizer checkpoints restore on GPU
-JAX only (sharding metadata).
+(the sae.py eval split).
 """
 # disable preallocation so this can share the GPU (same as sonar.py)
 import os
@@ -34,7 +40,9 @@ import json
 import numpy as np
 import jax
 import jax.numpy as jnp
+from jaxtyping import Int, Shaped
 from pathlib import Path
+from typing import Sequence
 
 from splitting import load_model
 
@@ -53,6 +61,8 @@ def parse_args():
     p.add_argument("--ks", type=int, nargs="+", default=[1, 4, 16])
     p.add_argument("--min-count", type=int, default=200,
                    help="skip languages with fewer training rows")
+    p.add_argument("--only-langs", nargs="+", default=None,
+                   help="keep only the rows of these sidecar languages")
     p.add_argument("--no-dense", action="store_true",
                    help="skip the raw-embedding ceiling probes")
     p.add_argument("--step", type=int, default=0)
@@ -128,6 +138,16 @@ def fit_logistic(X, y, steps=300, lr=0.1, seed=0):
     return score
 
 
+def only_rows(langs: Shaped[np.ndarray, "n"], rows: Int[np.ndarray, "r"],
+              keep: Sequence[str]) -> Int[np.ndarray, "s"]:
+    """The rows whose sidecar language is in `keep`, in their order."""
+    labels = np.asarray(langs[rows])
+    missing = set(keep) - set(labels.tolist())
+    if missing:
+        raise SystemExit(f"--only-langs: no rows of {sorted(missing)}")
+    return rows[np.isin(labels, list(keep))]
+
+
 def collect(acts_fn, mm, rows, b, cols):
     """Activation columns `cols` for the given row slice."""
     out = np.empty((len(rows), len(cols)), np.float32)
@@ -147,11 +167,14 @@ def main():
     langs_path = cfg.langs or str(Path(cfg.cache).with_name(
         Path(cfg.cache).name.replace(".npy", ".langs.npy")))
     all_langs = np.load(langs_path, mmap_mode="r")
-    n_tr = cfg.train_rows // cfg.b * cfg.b
-    tr_rows = np.arange(n_tr)
+    tr_rows = np.arange(cfg.train_rows // cfg.b * cfg.b)
     te_rows = np.arange(len(mm) - cfg.test_rows, len(mm))
-    y_tr_lang = np.asarray(all_langs[:n_tr])
-    y_te_lang = np.asarray(all_langs[-cfg.test_rows:])
+    if cfg.only_langs:
+        tr_rows = only_rows(all_langs, tr_rows, cfg.only_langs)
+        te_rows = only_rows(all_langs, te_rows, cfg.only_langs)
+    n_tr = len(tr_rows)
+    y_tr_lang = np.asarray(all_langs[tr_rows])
+    y_te_lang = np.asarray(all_langs[te_rows])
 
     codes, y_tr = np.unique(y_tr_lang, return_inverse=True)
     L = len(codes)
@@ -163,7 +186,8 @@ def main():
     S = np.zeros((L, F))
     S2 = np.zeros((L, F))
     for i in range(0, n_tr, cfg.b):
-        A = acts_fn(jnp.asarray(np.asarray(mm[i:i + cfg.b], dtype=np.float32)))
+        A = acts_fn(jnp.asarray(np.asarray(mm[tr_rows[i:i + cfg.b]],
+                                           dtype=np.float32)))
         O = onehot[i:i + cfg.b]
         S += np.asarray(O.T @ A, np.float64)
         S2 += np.asarray(O.T @ (A * A), np.float64)
@@ -218,7 +242,8 @@ def main():
         print(f"  {k}: {np.mean([r[k] for r in rows_out]):.3f}")
     (out / "meta.json").write_text(json.dumps(
         {"model": str(cfg.model), "train_rows": n_tr,
-         "test_rows": cfg.test_rows, "ks": cfg.ks}))
+         "test_rows": len(te_rows), "ks": cfg.ks,
+         "only_langs": cfg.only_langs}))
     print(f"-> {out / 'langs.csv'}")
 
 
