@@ -108,6 +108,55 @@ def test_onto_output_is_linear_in_classifications(build, X):
     assert np.allclose(np.asarray(Y), np.asarray(Y_lin), atol=1e-4)
 
 
+def test_random_support_layout():
+    b, n_head, k, m = 32, 5, 8, 3
+    idx = np.asarray(refit.random_support(jax.random.PRNGKey(0), b, n_head,
+                                          k, m))
+    assert idx.shape == (b, n_head * m)
+    per = idx.reshape(b, n_head, m)
+    # each head's draws stay in its own block and never repeat
+    assert (per // k == np.arange(n_head)[None, :, None]).all()
+    assert all(len(set(row)) == m for row in per.reshape(-1, m))
+    flat = np.asarray(refit.random_support(jax.random.PRNGKey(1), b, 1, 50,
+                                           20))
+    assert flat.shape == (b, 20) and flat.min() >= 0 and flat.max() < 50
+    assert all(len(set(row)) == 20 for row in flat)
+
+
+def test_correction_on_own_support_is_the_refit():
+    """raw - offset in the support's span (an SAE's decode): correcting
+    raw on its own support lands on the refit from the offset."""
+    dirs, base, idx, p, X = synth(4)
+    w_sqrt = jnp.asarray(np.random.default_rng(5).uniform(0.5, 2.0, D),
+                         jnp.float32)
+    X = X + np.random.default_rng(6).normal(size=X.shape).astype(np.float32)
+    raw = base + np.einsum("bk,bkd->bd", 0.7 * p, dirs[idx])
+    ones = jnp.ones(idx.shape, jnp.float32)
+    fit = refit.refit_recon(jnp.asarray(X), jnp.asarray(dirs),
+                            jnp.asarray(idx), ones, jnp.asarray(base), w_sqrt)
+    e_fit = float((((fit - X) * w_sqrt) ** 2).mean())
+    e_corr = float(refit.correction_fvu(
+        jnp.asarray(X), jnp.asarray(raw.astype(np.float32)),
+        jnp.asarray(dirs), jnp.asarray(idx), ones, w_sqrt))
+    assert np.isclose(e_corr, e_fit, rtol=1e-4)
+
+
+def test_random_support_removes_its_share_of_an_isotropic_residual():
+    """|S| directions chosen without the residual remove |S|/d of it in
+    expectation: the iso_share reference."""
+    rng = np.random.default_rng(7)
+    d, F_, S, b = 64, 200, 16, 4096
+    dirs = jnp.asarray(rng.normal(size=(F_, d)), jnp.float32)
+    X = jnp.asarray(rng.normal(size=(b, d)), jnp.float32)
+    raw = jnp.zeros((b, d))
+    idx = refit.random_support(jax.random.PRNGKey(2), b, 1, F_, S)
+    e = float(refit.correction_fvu(X, raw, dirs, idx,
+                                   jnp.ones((b, S), jnp.float32),
+                                   jnp.ones(d)))
+    share = 1.0 - e / float((X ** 2).mean())
+    assert abs(share - S / d) < 0.01
+
+
 def test_onto_supports_shapes_and_renorm():
     rng = np.random.default_rng(3)
     l, h, k, b, m = 2, 3, 8, 16, 2

@@ -1,15 +1,21 @@
 """autointerp.py pure helpers: contrastive background selection must never
 leak what the score stage grades on, the null control must never grade a
-feature against its own description, and both must be deterministic."""
+feature against its own description, and both must be deterministic. The
+language stage's statistics must reproduce from precision and recall, and
+language-matched rows must match, stay below the feature's median, and
+never show the describer a row the judge grades."""
 import numpy as np
 import pytest
 
 from conftest import KW, X  # noqa: F401  (X is a fixture)
 from autointerp import (CAL_PROMPT_CHARS, CONTRAST_PROMPT, SUMMARIZE_PROMPT,
-                        call_weight, contrast_rows, detection_items,
-                        cap_pairing, next_slot, null_pairing, read_scores,
-                        snippet,
-                        stratified_features)
+                        call_weight, campaign_label, campaign_languages,
+                        contrast_rows, detection_accuracy, detection_items,
+                        cap_pairing, load_lang_rows, matched_rows,
+                        modal_language, needed_rows, next_slot, null_pairing,
+                        ols_r2, prf, random_span, read_scores, snippet,
+                        span_bins, spearman, stratified_features,
+                        trend_residuals)
 
 
 def test_next_slot_spacing_and_idle_catchup():
@@ -228,3 +234,210 @@ def test_entry_directions_keep_the_bias_out():
     P = rng.dirichlet(np.ones(k), size=(6, l, h)).astype(np.float32)
     np.testing.assert_allclose(P.reshape(6, -1) @ dirs + offset, embed(P),
                                atol=1e-4)
+
+
+# ---------- language stratification ----------
+
+def test_modal_language_share_and_ties():
+    assert modal_language(np.array(["en", "fr", "en", "de"])) == ("en", 0.5)
+    # a tie goes to the label that sorts first
+    assert modal_language(np.array(["fr", "de", "fr", "de"])) == ("de", 0.5)
+
+
+@pytest.mark.parametrize("pred", [
+    [1, 2, 3, 4, 5],            # every positive, no false positive
+    [1, 2, 6],                  # TP 2, FP 1
+    [1, 6, 7, 8, 9, 10],        # TP 1, FP 5
+    list(range(1, 11)),         # always match
+])
+def test_detection_accuracy_recovers_the_confusion(pred):
+    # precision and recall as score() writes them, to three decimals
+    truth = [1, 2, 3, 4, 5]
+    p, r, _ = prf(pred, truth)
+    tp, fp = len(set(pred) & set(truth)), len(set(pred) - set(truth))
+    lo, hi = detection_accuracy(float(f"{p:.3f}"), float(f"{r:.3f}"), 5)
+    assert lo == hi == pytest.approx((tp + 5 - fp) / 10)
+
+
+def test_detection_accuracy_brackets_a_miss():
+    # with no true positive the false positives cannot be recovered
+    for pred in ([], [6], [6, 7, 8, 9, 10]):
+        p, r, _ = prf(pred, [1, 2, 3, 4, 5])
+        assert detection_accuracy(p, r, 5) == (0.0, 0.5)
+
+
+def test_matched_rows_follow_the_target_languages():
+    cand = np.arange(100, 160)
+    langs = np.array(["en"] * 20 + ["fr"] * 20 + ["de"] * 20)
+    target = np.array(["fr", "en", "fr", "de", "fr"])
+    rows, n = matched_rows(target, cand, langs, np.random.default_rng(0))
+    assert n == 5 and len(set(rows)) == 5
+    lang_of = dict(zip(cand.tolist(), langs))
+    assert [lang_of[r] for r in rows.tolist()] == target.tolist()
+    # deterministic in the generator's seed
+    again, _ = matched_rows(target, cand, langs, np.random.default_rng(0))
+    assert np.array_equal(rows, again)
+
+
+def test_matched_rows_fill_a_shortfall_from_the_rest():
+    cand = np.arange(10)
+    langs = np.array(["en"] * 9 + ["my"])
+    rows, n = matched_rows(np.array(["my"] * 3), cand, langs,
+                           np.random.default_rng(0))
+    assert n == 1 and 9 in rows       # the one Burmese candidate
+    assert len(set(rows.tolist())) == 3
+    with pytest.raises(ValueError):
+        matched_rows(np.array(["en"] * 11), cand, langs,
+                     np.random.default_rng(0))
+
+
+def test_span_bins_and_random_span():
+    assert span_bins([1, 4, 10, 13], 15) == ["1-3", "4-9", "10-12", "13-15"]
+    assert random_span(np.array([5.0]), 15) == pytest.approx(1.0)
+    assert random_span(np.ones(86), 1) == pytest.approx(1.0)
+    assert random_span(np.ones(86), 15) == pytest.approx(
+        86 * (1 - (85 / 86) ** 15))
+
+
+def test_ols_r2_and_spearman():
+    x = np.array([1.0, 2.0, 3.0, 4.0])
+    assert ols_r2(2 * x + 1, x) == pytest.approx(1.0)
+    rng = np.random.default_rng(0)
+    assert ols_r2(rng.normal(size=500), rng.normal(size=500)) < 0.02
+    assert spearman([1, 2, 3], [9, 4, 1]) == pytest.approx(-1.0)
+    assert np.isnan(spearman([1, 1, 1], [1, 2, 3]))
+
+
+def test_trend_residuals_fit_only_the_chosen_campaigns():
+    # the line is fitted in log rate through `fit`; a campaign outside it is
+    # read off the line, and a code that never fires has no residual
+    freq = np.array([0.01, 0.1, 1.0, 0.1, 0.0])
+    f1 = 0.5 + 0.1 * np.log(np.where(freq > 0, freq, 1.0))
+    f1[3] += 0.2
+    res = trend_residuals(freq, f1, np.array([True, True, True, False,
+                                              True]))
+    np.testing.assert_allclose(res[:4], [0, 0, 0, 0.2], atol=1e-12)
+    assert np.isnan(res[4])
+
+
+def test_needed_rows_and_campaign_label(tmp_path):
+    np.savez(tmp_path / "features.npz", sel=np.array([3]),
+             top_i=np.array([[1, 2]]), neg_i=np.array([[5]]))
+    np.savez(tmp_path / "lang_rows.npz", sel=np.array([3]),
+             neg_i=np.array([[7]]), bg_i=np.array([[8, 9]]))
+    assert needed_rows([tmp_path / "features.npz",
+                        tmp_path / "lang_rows.npz"]) == {1, 2, 5, 7, 8, 9}
+    assert campaign_label(tmp_path / "m5120_k32" / "sae", tmp_path,
+                          "sae") == "m5120_k32"
+    assert campaign_label(tmp_path / "onto" / "onto", tmp_path,
+                          "onto") == "onto"
+    assert campaign_label(tmp_path / "onto", tmp_path, "onto") == "onto"
+
+
+def test_load_lang_rows_checks_the_sample(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        load_lang_rows(tmp_path, np.array([1, 2]), 5)
+    np.savez(tmp_path / "lang_rows.npz", sel=np.array([1, 2]),
+             neg_i=np.zeros((2, 5), int), bg_i=np.zeros((2, 10), int))
+    assert load_lang_rows(tmp_path, np.array([1, 2]), 5)["bg_i"].shape \
+        == (2, 10)
+    with pytest.raises(ValueError):           # drawn for another sample
+        load_lang_rows(tmp_path, np.array([1, 3]), 5)
+    with pytest.raises(ValueError):           # too few negatives
+        load_lang_rows(tmp_path, np.array([1, 2]), 6)
+
+
+def test_campaign_languages_shares_and_scores(tmp_path):
+    import json
+    # rows cycle through four languages
+    langs = np.array(["en", "fr", "de", "my"] * 10)
+    # description rows en en en fr, held-out positives en de
+    np.savez(tmp_path / "features.npz", sel=np.array([7]),
+             top_i=np.array([[0, 4, 8, 1, 12, 2]]),
+             neg_i=np.array([[3, 7, 11]]), freq=np.array([0.2]))
+    (tmp_path / "meta.json").write_text(json.dumps(
+        {"model": "sae", "n_desc": 4, "seed": 42, "rows": 40}))
+    (tmp_path / "scores.csv").write_text(
+        "feature,mode,precision,recall,f1\n"
+        "7,acts,0.667,1.0,0.8\n7,params,0.0,0.0,0.0\n")
+    np.savez(tmp_path / "lang_rows.npz", sel=np.array([7]),
+             neg_i=np.array([[36, 13]]), bg_i=np.array([[16, 20, 24, 28]]))
+    meta, feats, scored = campaign_languages(tmp_path, langs, 2, ("acts",))
+    f = feats[7]
+    assert (f["lang"], f["purity"], f["n_lang"]) == ("en", 0.75, 3)
+    assert f["pos_share"] == 0.5          # en, de
+    assert f["neg_share"] == 0.0          # my, my
+    assert f["bg_share"] == 0.0           # the one background row left: 11
+    assert (f["bg_share_lang"], f["neg_share_lang"]) == (1.0, 0.5)
+    assert len(scored) == 1 and scored[0]["mode"] == "acts"
+    # TP 2 of 2, FP 1 of 2: accuracy 3/4
+    assert scored[0]["acc_lo"] == scored[0]["acc_hi"] == 0.75
+
+
+def test_match_draws_matched_rows_below_the_median(tmp_path):
+    # a toy top-k SAE and cache, harvested the way harvest() records it
+    import argparse
+    import json
+    import jax
+    import sae as sae_mod
+    from autointerp import match
+
+    d, m, n_rows, topk = 8, 16, 256, 4
+    rng = np.random.default_rng(0)
+    X = rng.normal(size=(n_rows, d)).astype(np.float32)
+    np.save(tmp_path / "cache.npy", X)
+    langs = np.array(["en", "fr", "de", "my"] * (n_rows // 4))
+    np.save(tmp_path / "cache.langs.npy", langs)
+    run = tmp_path / "sae_run"
+    run.mkdir()
+    params = sae_mod.init_params(jax.random.PRNGKey(0), d, m,
+                                 X.mean(0))
+    np.savez(run / "params.npz", **{k: np.asarray(v)
+                                    for k, v in params.items()})
+    (run / "meta.json").write_text(json.dumps(
+        {"topk": topk, "groups": 0, "group_fn": "top1"}))
+    A = np.asarray(sae_mod.encode({k: np.asarray(v) for k, v in
+                                   params.items()}, X, topk))
+    sel = np.array([0, 3, 5])
+    top_i = np.argsort(-A[:, sel], axis=0)[:20].T
+    q50 = np.quantile(A[:, sel].astype(np.float16).astype(np.float32), 0.5,
+                      axis=0)
+    neg_i = np.stack([rng.choice(np.setdiff1d(
+        np.flatnonzero(A[:, f] <= q), t), 8, replace=False)
+        for f, q, t in zip(sel, q50, top_i)])
+    camp = tmp_path / "campaign"
+    camp.mkdir()
+    np.savez(camp / "features.npz", sel=sel, top_i=top_i, neg_i=neg_i,
+             q50=q50, freq=(A[:, sel].astype(np.float16) > 0).mean(0))
+    (camp / "meta.json").write_text(json.dumps(
+        {"model": "sae", "ckpt": str(run / "params.npz"), "topk": topk,
+         "rows": n_rows, "n_desc": 10, "seed": 42}))
+    cfg = argparse.Namespace(dir=str(camp), ckpt="", cache=str(
+        tmp_path / "cache.npy"), b=64, sub_batches=4, n_test=5)
+
+    match(cfg)
+    lr = np.load(camp / "lang_rows.npz")
+    assert np.array_equal(lr["sel"], sel)
+    for j, f in enumerate(sel):
+        pos, desc = top_i[j, 10:15], top_i[j, :10]
+        neg, bg = lr["neg_i"][j], lr["bg_i"][j]
+        # matched, low-activation, and outside the feature's top rows
+        assert lr["neg_matched"][j] == 5 and lr["bg_matched"][j] == 10
+        assert np.array_equal(langs[neg], langs[pos])
+        assert np.array_equal(langs[bg], langs[desc])
+        assert (A[neg, f] <= q50[j]).all() and (A[bg, f] <= q50[j]).all()
+        assert not set(neg) & set(top_i[j]) and not set(bg) & set(top_i[j])
+        # the background never shows a row either negative set grades
+        assert not set(bg) & (set(neg) | set(neg_i[j, :5]))
+    first = {k: lr[k] for k in lr.files}
+    match(cfg)                                    # deterministic
+    again = np.load(camp / "lang_rows.npz")
+    assert all(np.array_equal(first[k], again[k]) for k in first)
+
+    # a checkpoint whose firing rates are not the harvest's is refused
+    other = sae_mod.init_params(jax.random.PRNGKey(1), d, m, X.mean(0))
+    np.savez(run / "other.npz", **{k: np.asarray(v)
+                                   for k, v in other.items()})
+    cfg.ckpt = str(run / "other.npz")
+    with pytest.raises(ValueError, match="firing rates"):
+        match(cfg)

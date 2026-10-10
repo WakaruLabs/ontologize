@@ -39,7 +39,9 @@ the classifier. Three settings have to change, each for a measured
 reason. The root cause is one property: **the argmax forward is
 scale-invariant, so nothing ever pushes the classifier's logits up.**
 They sit at their initialization scale, measured here at a standard
-deviation of 0.0015 within a head, for the whole run.
+deviation of 0.0015 within a head, for the whole run. That holds for
+the naive port on SONAR; the ungated GPT-2 arms' logits grew several
+hundredfold (below).
 
 - **Logit noise must be relative, not absolute.** `sd_K=0.02` is an
   absolute perturbation in logit units. Against a spread of 0.0015 it
@@ -79,6 +81,45 @@ stable; 3e-6 is too slow to be worth it.
 
 Note the learning-rate confound when reading any of these tables: arms
 at different `lr` are not comparable step-for-step.
+
+### The layer-0 logit scale over training, and on GPT-2 (`logitscale.py`)
+
+At initialization the layer-0 logit SD is 2/(d+1) in closed form
+(lecun_normal on the unit shape plus its constant coordinate): 0.00195
+on SONAR and 0.00260 on GPT-2, measured within a head at 0.00183 and
+0.00252. The gated router of `ste_h20_cat128` starts at 0.0255. On
+RMSNorm's sqrt(d) sphere the same classifiers would start at 1.0
+(0.96-0.97 measured), or 0.54 for the gated one. Measured on 2,048 tail
+rows, with t and sd_K read from each run's log; the flips are the share
+of layer-0 assignments the run's own training logit noise changes
+(winner dropout not included):
+
+| run | t | within-head SD 10k / 100k / end | end / closed form | noise flips 10k / 50k / 100k / end |
+|---|---|---|---|---|
+| SONAR `ste_h76_init01` | 1.5e-4 | 0.00144 / 0.00084 / 0.00068 | 0.35 | 0.22 / 0.20 / 0.20 / 0.29 |
+| GPT-2 `ste_h76_init01` | 1 | 0.0068 / 0.33 / 0.86 (196.5k) | 331 | 0.86 / 0.53 / 0.24 / 0.01 |
+| GPT-2 `ste_h76` | 1 | 0.0067 / 0.33 / 1.17 | 452 | 0.86 / 0.52 / 0.25 / 0.01 |
+| GPT-2 `ste_h20_cat128` | 1 | 0.025 / 0.016 / 0.025 | 1.00 | 0.83 / 0.88 / 0.85 / 0.71 |
+| GPT-2 `ste_h20_cat128-43` | 1 | 0.025 / 0.016 / 0.026 | 1.00 | 0.84 / 0.88 / 0.86 / 0.71 |
+
+- The SONAR arm's logits shrink 2.9-fold, bottoming at 0.00058 at 250k,
+  so spread/t drifts from 13.0 at initialization to 4.5, through a low
+  of 3.8. Its relative noise changes 20-29% of assignments throughout.
+- GPT-2 `ste_h76`'s logits grow 452-fold (row norm 1.0 to 3.27). Its
+  absolute noise changes more than half of the assignments through 50k
+  steps, a quarter at 100k, and about 1% from 150k on.
+- The gated seed pair's logits stay at their initial scale (0.56-1.0x
+  the closed form, spread/t about 0.02), and its noise changes 71-90% of
+  layer-0 assignments at every one of the 16 checkpoints scored. The
+  replication on GPT-2 compares runs whose layer-0 assignments are
+  mostly chosen by noise during training.
+
+(`logitscale.py --model data/out/sonar/multilingual/ste_h76_init01`,
+`data/out/sonar/logitscale`; `logitscale.py --cache
+data/activations/gpt2_l8.npy --out data/out/gpt2_l8/logitscale --model`
+the four GPT-2 runs `--steps 10000 20000 30000 40000 50000 60000 70000
+80000 90000 100000 150000 196500 200000 250000 300000 350000 371900`;
+2026-10-09.)
 
 ## Result
 
@@ -202,6 +243,23 @@ What it changes:
   | m11264_k160 | 0.2585 | **0.2364** | 8.5% |
   | m5120_g160top1 | 0.2741 | **0.2732** | 0.3% |
   | m5120_k32 | 0.4994 | 0.4883 | 2.2% |
+
+  Each share now reads against a random support of the same size per
+  sample (`random_share`) and against |S|/d, what |S| free coefficients
+  would remove from a residual spread evenly over the whitened
+  coordinates (rerun 2026-10-10, same rows). Random supports remove
+  0.199 (k160), 0.128 (g160top1) and 0.046 (k32), against |S|/d of
+  0.156, 0.156 and 0.031, so every SAE's own support removes less than
+  chance: its residual lies less in the span of its own decoder
+  directions than in a random set's. `resid_nc`'s deviation codes remove
+  0.164 / 0.328 / 0.641 at nu = 1 / 2 / 4 (0.167 / 0.336 / 0.648 counted
+  as a correction of the raw truncation, `correction_share`), against
+  0.190 / 0.364 / 0.676 for random entries, nu per head, and |S|/d of
+  0.156 / 0.312 / 0.625. So the Ontologizer's 16% and 33% are below
+  chance too, and no evidence that pin-and-renormalize mis-scales what
+  it keeps. (`refit.py --sae data/out/sonar/sae_conv/{m11264_k160,
+  m5120_g160top1,m5120_k32}/params.npz --onto
+  data/out/sonar/multilingual/resid_nc --out data/out/sonar/refit_conv`.)
 
   With its four gains pinned (below, "The code is not the whole
   channel") the arm is a pure 1900-bit code at 0.1582. At matched total
@@ -2033,15 +2091,16 @@ direction is closed unless a different dependence statistic is proposed.
 
 Two runs differing only in seed, both at the fixed initialization,
 reach **identical** held-out error -- 0.1535 and 0.1535 for the stack,
-0.2870 and 0.2871 for the flat arm. Nothing below that agrees. Four
-measurements, each against its own null:
+0.2870 and 0.2871 for the flat arm. Nothing below that agrees. Five
+measurements, each against its own null or reference:
 
 | what is compared | stack | flat | null |
 |---|---|---|---|
 | head partitions (NMI, `partition.py`) | 0.0121 | 0.0177 | 0.0048 |
 | head contributions (cosine, centered) | 0.0074 | -- | 0.0015 |
 | per-layer subspace, rank 8 | see below | -- | 1.0x chance |
-| per-head atom Grams | 1.05-1.11x within-layer chance | -- | -- |
+| per-head atom Grams, entries matched (`atomgram.py`) | 1.05-1.19x within-layer chance | -- | -- |
+| reconstructions (whitened residual correlation, `reconseeds.py`) | 0.302 | 0.341 | the stack against its step 350,000: 0.529; the `k32` SAE's seeds: 0.834 |
 
 **Partitions.** The best-matched pair of heads across seeds reaches an
 NMI of 0.42, but the mean is 0.012 against a 0.005 shuffled null. The
@@ -2091,42 +2150,51 @@ learned -- random `abs()`'d rows give rowcos 0.64 and 97% of the norm
 in the top eigenvalue, where signed rows give 0.00 and 22%. So the Gram
 has about one free parameter.
 
-Comparing the Grams themselves rather than their spectra -- atoms put
-in a canonical order by each one's mean cosine to the others in its own
-head, then differenced off-diagonally -- puts individual agreement at
-chance, against a null that pairs heads *within the same layer*:
+Comparing the Grams themselves rather than their spectra needs a
+correspondence between two heads' entries, and how it is fixed decides
+the answer (`atomgram.py`). Put in a canonical order -- atoms sorted by
+each one's mean cosine to the others in its own head, Grams differenced
+off-diagonally -- individual agreement sits at chance, against a null
+that pairs heads *within the same layer*:
 
-| layer | across seeds | same run, 19.5k steps earlier |
-|---|---|---|
-| 0 | 1.11x | 1.15x |
-| 1 | 1.05x | 1.07x |
-| 2 | 1.06x | 1.07x |
-| 3 | 1.06x | 1.07x |
-| 4 | 1.07x | 1.11x |
+| layer | across seeds, canonical | same run 19.5k steps earlier, canonical | same run, stored order | across seeds, matched |
+|---|---|---|---|---|
+| 0 | 1.11x | 1.14x | 9.89x | 1.19x |
+| 1 | 1.06x | 1.05x | 8.53x | 1.06x |
+| 2 | 1.06x | 1.06x | 8.59x | 1.05x |
+| 3 | 1.06x | 1.07x | 9.81x | 1.06x |
+| 4 | 1.07x | 1.10x | 10.70x | 1.06x |
 
-The second column does not show that a head's Gram is fixed. With a
-nearly one-parameter Gram every atom's mean cosine is nearly the same, so
-the canonical sort is set by small differences that change between
-checkpoints, and training never relabels entries (`p_revive` 0 in both
-runs), so within a run the stored order is the true correspondence. In
-stored order a re-implementation of this comparison reads 7.5-10.7x
-chance within the run, and each head's matched atoms sit at cosine
-0.98-0.99 to its earlier self against 0.05-0.08 for the layer's other
-heads; across seeds a matched comparison stays at chance, 1.05-1.19x
-(`scratch/literature/checks/representation/gram_gauge.py`, 2026-10-09;
-not yet a repo script). So heads persist within a run and do not
-replicate across seeds. The one free parameter reproduces to four digits
-because non-negativity forces it.
+(The first three columns compare atoms in `e_dec`, uncentered; the last
+compares centered decoded atoms, entries matched by linear assignment on
+them. The canonical columns re-implement the comparison as first stated,
+whose script was not kept, and differ from its 1.05-1.11x and
+1.07-1.15x in the second decimal.) The canonical order cannot test
+persistence. With a nearly one-parameter Gram every atom's mean cosine
+is nearly the same, so the sort is set by small differences that change
+between checkpoints: within one run it pairs only 33-66% of heads with
+themselves. Training never relabels entries (`p_revive` 0 in both runs),
+so within a run the stored order is the true correspondence, and in it
+the comparison reads 8.5-10.7x chance (7.5-10.0x on decoded atoms); each
+head's matched centered decoded atoms sit at cosine 0.976-0.990 to its
+earlier self, against 0.052-0.079 for the layer's other heads. Across
+seeds the gauge-exact comparison stays at chance, 1.05-1.19x, with
+matched atoms at cosine 0.070-0.147 against 0.063-0.097. So heads
+persist within a run and do not replicate across seeds. The one free
+parameter reproduces to four digits because non-negativity forces it.
 
-The table above is computed in `e_dec`, where 74-78% of each atom is in
-the decoder's null space and so cannot be either learned or reproduced
-(see the row-collinearity section). Decoding the atoms into output space
-first removes that and changes nothing: 1.18x at layer 0 falling to
-1.03x at layer 4. The conclusion survives, but it survived by luck
-rather than design, and any future comparison of dictionaries should
-decode before measuring.
+In `e_dec`, 74-78% of each atom is in the decoder's null space and so
+can be neither learned nor reproduced (see the row-collinearity
+section). Decoding and centering the atoms first changes the canonical
+comparison little: 1.18x at layer 0 falling to 1.03x at layer 4 within
+the run, 1.19x falling to 1.06-1.08x across seeds. A comparison of
+dictionaries should still decode before measuring.
 
-Three figures from earlier passes were wrong and are worth recording as
+(`atomgram.py`, 2026-10-09;
+`data/out/sonar/atomgram/ste_h76_init01_369500_vs_ste_h76_init01_350000`
+and `.../ste_h76_init01_369500_vs_ste_h76_i01_s43_369500`.)
+
+Four figures from earlier passes were wrong and are worth recording as
 traps. Against a whole-model random pairing the spectra read 35x, which
 was entirely the layer signal, since layers differ in collinearity by
 0.12 to 0.29 while heads within a layer differ by a standard deviation
@@ -2135,7 +2203,9 @@ condition only -- different Grams can share a spectrum -- so it
 overstated the direct figure by roughly twofold. And a first direct pass
 recomputed its normalizer per layer, which produced ratios below 1 for
 an assignment minimizing that same distance; impossible, and the only
-reason it was caught.
+reason it was caught. The fourth is the canonical order's chance against
+the run's own earlier checkpoint, above, which was the sort's
+instability and not the heads'.
 
 What the Gram does measure is how far training drives the atoms apart
 against the constraint: 0.64 at random, 0.29 at layer 0, 0.12 at layer
@@ -2152,7 +2222,8 @@ null, which is what a seed-independent input predicts.
 
 **So what reproduces is aggregate or layer-level:** the total error to
 four digits, per-layer collinearity to four digits, and the data's
-dominant directions. What does not reproduce is anything identifying an
+dominant directions, though not the reconstruction itself (below). What
+does not reproduce is anything identifying an
 individual head -- what it separates, what it contributes, the subspace
 it works in beyond what the data forces, or its own internal geometry.
 Feature-level claims about individual heads have no foundation in this
@@ -2166,7 +2237,8 @@ detects agreement at 0.38 when there is any. Uncentered contributions
 read 0.205 with 99.5% layer agreement, which was the non-negative
 dictionary's shared offset. Subspaces read 25-33x above chance until the
 cache's own directions turned out to score the same. And the Gram read
-35x, then 1.5-3.0x, then chance. The pattern is consistent enough to
+35x, then 1.5-3.0x, then chance, and its chance within a run was the
+canonical order's. The pattern is consistent enough to
 state as a rule: in this architecture, non-negativity and the
 layer-dependent gain put structure into every measure's floor, so a
 result without a null of the same shape is not a result.
@@ -2174,6 +2246,39 @@ result without a null of the same shape is not a result.
 Layer 0 is the exception in every head-level measure and in none of the
 aggregate ones, which is consistent with it being the only layer whose
 input does not depend on upstream choices.
+
+### Reconstructions across seeds (`reconseeds.py`)
+
+Equal error is not one function. On the tail in the whitened frame,
+`cross` is the squared distance between two reconstructions on the FVU
+scale and `indep` its value were the two residuals uncorrelated:
+
+| pair | FVU each | cross | indep | residual corr |
+|---|---|---|---|---|
+| `k32` SAE, seeds 42/43 | 0.4994 / 0.4967 | 0.1656 | 0.9961 | 0.834 |
+| flat arm `ste_l1_h380_i01`, seeds 42/43 | 0.2870 / 0.2871 | 0.3783 | 0.5741 | 0.341 |
+| stack `ste_h76_init01`, seeds 42/43 | 0.1535 / 0.1535 | 0.2144 | 0.3071 | 0.302 |
+| stack against its own step 350,000 | 0.1535 / 0.1535 | 0.1445 | 0.3070 | 0.529 |
+
+The SAE's two seeds compute nearly one function. Both hard-code arms'
+seeds have a residual correlation of about a third, the flat arm's no
+higher than the stack's, so the failure is not the cascade's. Even one
+run against itself 19,500 steps earlier reaches only 0.53. Across the
+stack's prefixes the seeds' agreement falls with depth: residual
+correlation 0.70 after layer 0, 0.30 after layer 4 (against its own
+earlier checkpoint, 0.94 to 0.53). The SAE seeds' decoders agree less
+than their reconstructions:
+- 24% of live latents have a copy at cosine > 0.9 in the other seed;
+- the best match's cosine has median 0.39 and mean 0.54, or 0.74
+  weighted by firing rate;
+- the one-to-one assignment's mean cosine is 0.51;
+- on a given row, 43% of A's active latents have a copy (cosine > 0.9)
+  active in B.
+
+(`reconseeds.py`, 2026-10-09;
+`data/out/sonar/reconseeds/{m5120_k32_vs_m5120_k32_s43,
+ste_l1_h380_i01_369500_vs_ste_l1_h380_i01_s43_369500,
+ste_h76_init01_369500_vs_ste_h76_i01_s43_369500}`.)
 
 ### The same picture on GPT-2, concat (`partition.py`, `headcontrib.py`)
 
@@ -2512,6 +2617,48 @@ both regimes); it is fixed.
 softmax reference on null-corrected best-head NMI on the shipped
 initialization, and about four times (3.6-4.0) on the fixed one.
 
+### Completeness, and selection on the training rows (`headlang.py`)
+
+`headlang.py` now ranks heads by NMI on the probe-training rows and
+scores every probe and reported NMI on the held-out tail, and picks each
+probe's ridge penalty on the last quarter of the training rows (the
+fixed 1e-2 overfit large head sets, putting all 380 heads at 0.327,
+below the top 32). Around C, the top 32 heads, it adds completeness rows
+in IOI's sense: if every head but C reads language about as well as the
+whole code, C is not where the code keeps it. Hard-code seeds at step
+369,500; 65,536 training rows, the 32,768-row tail; dense ceiling 0.721,
+chance 0.012:
+
+| heads | seed 42 | seed 43 |
+|---|---|---|
+| C: top 32 by NMI (all layer 0) | 0.420 | 0.430 |
+| ranks 33-64 | 0.242 | 0.235 |
+| layer 0 minus C (44) | 0.263 | 0.256 |
+| 32 random deeper heads | 0.034 | 0.032 |
+| layers 1-4 (304) | 0.128 | 0.126 |
+| all heads minus C (348) | 0.356 | 0.342 |
+| all 380 heads | 0.574 | 0.580 |
+
+C reads 73-74% of what the whole code reads but is not complete: every
+head but C still reads 0.34-0.36, and the other 44 layer-0 heads alone
+0.26, while the 304 deeper heads together read 0.13. Language is spread
+over layer 0, not held by a few heads. In both seeds the 76 heads with
+the highest training-row NMI are exactly the layer-0 heads, and on
+held-out rows every layer-0 head scores at least 0.022 / 0.020 against
+at most 0.016 / 0.015 for any deeper head. The best heads are unchanged
+(L0 h46 at 0.180 and L0 h14 at 0.165, 0.21 and 0.19 of the 0.875
+ceiling). In the table above only the fixed-init rows' m = 32 moves,
+to 0.420 and 0.430 from 0.423 and 0.428. On the tail split in half, the
+split of the check this came from, the rows read 0.409, 0.224, 0.239,
+0.022, 0.058, 0.252 and 0.508: with four times the training rows the
+deeper heads go from 0.058 to 0.128.
+
+(`headlang.py --model data/out/sonar/multilingual/ste_h76_init01
+data/out/sonar/multilingual/ste_h76_i01_s43 --step 369500 --temperature
+0.00015 --out data/out/sonar/headlang_init01_complete`; half split:
+`--train-rows 16384 --test-rows 16384 --out
+data/out/sonar/headlang_init01_half`; 2026-10-09.)
+
 ### Per-label cells, script, and conjunctions (`headscript.py`)
 
 Three finer readings of the same claim on `ste_h76`, all on the cache
@@ -2780,6 +2927,59 @@ entries a head uses, which the null NMI column reports: 0.008 for the
 binary. Across architectures it reverses the probe's verdict, and the
 probe is the one without a bias term.
 
+#### Most of the describability gap is language identity (`autointerp.py language`)
+
+mC4 cycles through 86 languages, so a latent whose top rows share one
+language can be described by naming it, and the default `cacts`
+background and detection negatives are random rows, against which such
+a description is easy to detect. Counting the distinct languages among
+each feature's 15 judged rows (10 described, 5 held-out positives; 15
+random rows span 13.8):
+
+| run | 1-3 | 4-9 | 10-12 | 13-15 | purity | acts F1 all / 13-15 | cacts F1 all / 13-15 | acts accuracy, 13-15 |
+|---|---|---|---|---|---|---|---|---|
+| m5120_k32 | 63 | 55 | 68 | 64 | 0.466 | 0.645 / 0.564 | 0.603 / 0.482 | 0.59-0.60 |
+| m5120_k32_bl | 9 | 9 | 10 | 47 | 0.277 | 0.578 / 0.502 | 0.470 / 0.338 | 0.52-0.54 |
+| m5120_g160top1 | 41 | 24 | 32 | 53 | 0.440 | 0.646 / 0.467 | 0.594 / 0.383 | 0.53-0.55 |
+| m11264_k5120 | 0 | 2 | 18 | 236 | 0.131 | 0.470 / 0.470 | 0.332 / 0.322 | 0.49-0.53 |
+| m5120_g160softmax | 0 | 5 | 72 | 179 | 0.183 | 0.449 / 0.443 | 0.364 / 0.347 | 0.49-0.53 |
+| onto | 0 | 5 | 43 | 177 | 0.158 | 0.473 / 0.460 | 0.392 / 0.380 | 0.45-0.52 |
+
+(purity: the description rows' modal-language share. Accuracy is
+recovered from precision and recall, a bracket where a feature has no
+true positive.)
+
+- Latents whose top rows are in 1-3 languages are detected at acts F1
+  0.90-0.97 and accuracy 0.91-0.98. No dense code has one.
+- Within each sparse run F1 falls with the language count (Spearman
+  -0.47 to -0.67, acts); within the dense runs it does not (-0.06 to
+  +0.03).
+- On multilingual features (13-15 languages) the gap to the Ontologizer
+  shrinks from 0.17 to 0.10 for k32 (acts; cacts 0.21 to 0.10) and from
+  0.17 to 0.01 for g160top1 (cacts 0.20 to 0.00).
+- Refitted on multilingual features, the firing-rate trend of the
+  section above puts g160top1 +0.018 above the line rather than +0.120,
+  and onto +0.049 rather than -0.029.
+- Across the six runs mean purity explains R^2 0.93 (acts) and 0.98
+  (cacts) of mean F1, against density's ~80%; but density and purity
+  move together across six runs of one seed each, and per feature purity
+  explains only 0.20 and 0.22 (log firing rate 0.01 and 0.04).
+- For k32 and g160top1 the modal language makes up 28-30% of the
+  held-out positives the judge sees, against ~1% of the negatives and
+  the background.
+
+`autointerp.py match`, then `describe --mode cacts_lang` and
+`score --negatives lang`, holds language fixed between the two sides;
+they have not been run with the judge. A full rescore is 5 judge calls
+per feature, 6,060 over the six campaigns (3,636 for `cacts_lang` and
+`acts` against matched negatives alone), and the SAE campaigns need
+`--ckpt data/out/sonar/sae_conv/<run>/params.npz`, since the paths their
+harvests recorded have moved.
+
+(`uv run python autointerp.py language`, defaults;
+`data/out/sonar/autointerp/language/{summary.json,bins.csv,features.csv}`;
+2026-10-09.)
+
 ## Steering at the model's own magnitude, against SAEs (`steerembed.py`)
 
 The steering tables above sweep a unit direction over fixed strengths and
@@ -2940,6 +3140,81 @@ the median step as a fraction of |x| and each control's collateral:
   (0.999 against 0.91-0.97 at equal budget). At native magnitude difference
   of means realizes more (0.77-0.82 against 0.46-0.50), but it takes
   2.3-2.5x longer steps, so that is budget, not direction.
+
+## Data-shaped controls, and where a decode step realizes (`steerembed.py`)
+
+Every steering direction above is scored against an isotropic random
+step. SONAR's eval tail is anisotropic -- 158 of 1024 principal
+components hold half its variance, 474 hold 80% -- so a unit step in raw
+coordinates is 3.0x as long in the data's own (Mahalanobis) metric as one
+shaped like the data, each relative to the distance between two tail
+rows; the objective's diagonal whitening barely sees the difference
+(1.045 against 1.005). `steerembed.py` now also scores three random
+controls at the same raw length -- `cov` (the isotropic draw shaped by
+Sigma^{1/2}), `icov` (Sigma^{-1/2} z) and `diff` (another reference row
+minus this one, textstrip's null) -- and splits the decode direction into
+its part in the leading principal subspace holding 50% or 80% of the
+variance (`on50`, `on80`) and the rest (`off50`, `off80`). Targets and
+rows are the earlier runs' (seed 42). On the hard stack and the flat arm
+the shared directions reproduce `steerembed_sup` to 0.002 in collateral
+and 0.018 in realization (CPU against GPU rounding at the hard code's
+near-ties); on the softmax stack one entry crossed `--min-rate` on CPU,
+so its layer 1-4 targets moved one entry over and its rows are a fresh
+draw.
+
+Collateral at strength 0.25:
+
+| model | random | cov | diff | icov | decode | diff. of means |
+|---|---|---|---|---|---|---|
+| hard stack (`ste_h76_init01`) | 0.653 | 0.634 | 0.640 | 0.754 | 0.658 | 0.629 |
+| softmax stack (`sweep_softmax_shm`) | 0.539 | 0.408 | 0.410 | 0.803 | 0.549 | 0.424 |
+| flat arm (`ste_l1_h380_i01_hm1e4`) | 0.367 | 0.315 | 0.309 | 0.521 | 0.328 | 0.274 |
+
+- The softmax stack's decode direction disturbs 0.14 more heads than a
+  data-shaped step of its length (`cov` and `diff` alike), though it is
+  at the isotropic step's level (+0.010). Its difference of means sits
+  0.015 above the data-shaped steps.
+- On the hard stack and the flat arm the decode direction stays within
+  0.025 of the data-shaped steps and the difference of means within
+  0.041, so "every direction disturbs as many other heads as a random
+  step" survives the data-shaped control there.
+- Steps toward what the data barely vary along (`icov`) disturb the most
+  heads in every model.
+
+Realized / collateral at strength 0.25, every part at the full step's
+raw length:
+
+| model | decode | on50 | off50 | on80 | off80 | random |
+|---|---|---|---|---|---|---|
+| hard stack | 0.353 / 0.658 | 0.070 / 0.625 | 0.360 / 0.665 | 0.199 / 0.648 | 0.336 / 0.666 | 0.020 / 0.653 |
+| softmax stack | 0.785 / 0.549 | 0.061 / 0.333 | 0.793 / 0.573 | 0.249 / 0.391 | 0.782 / 0.614 | 0.013 / 0.539 |
+| flat arm | 0.996 / 0.328 | 0.654 / 0.278 | 0.997 / 0.356 | 0.958 / 0.313 | 0.990 / 0.377 | 0.008 / 0.367 |
+
+- In both stacks the decode step realizes through the directions the
+  data barely vary along: its part in the bottom fifth of the variance
+  realizes 95% (hard) and 100% (softmax) of what the full step does, its
+  part in the top half 20% and 8%. The flat arm realizes through either
+  part (`on80` 0.958). At strength 1.0 the top-half part reaches more:
+  0.244 against 0.608 (hard), 0.326 against 0.573 (softmax).
+- The decode direction is tilted toward the low-variance end
+  (`geometry.csv`): the data's variance along it is 1.80x (hard), 1.58x
+  (softmax) and 1.75x (flat) the mean eigenvalue, against 0.97 for an
+  isotropic direction, 6.2-6.7 for a data-shaped one and 7.1-11.7 for
+  the difference of means; 17-29% of its energy lies in the top 158
+  components.
+- Equal raw length is the budget the writeup uses. A step in the
+  high-variance subspace is short against the data's spread there, so
+  the split says where the classifiers are sensitive per unit l2.
+  Whether the SONAR decoder reads the low-variance part is untested.
+
+(`steerembed.py` with its defaults -- 12 targets per layer, 32 rows
+each, strengths 0.25-4, `--cov-rows 32768`, `--var 0.5 0.8`,
+`--mse-weights data/out/sonar/mse_weights.npy`, seed 42 -- on CPU;
+`data/out/sonar/steerembed_null/<run>/{steer.csv,geometry.csv,summary.json}`;
+2026-10-09.) The literature pass's checks of the same questions read
+0.89 / 0.99 and 0.19 / 0.11 for the split, on targets they drew
+themselves, and a softmax excess of 0.16, differencing two runs' rows
+where this pairs them.
 
 ## Why collateral is direction-blind (`steergeom.py`)
 
@@ -3380,14 +3655,41 @@ Live minus frozen, by layer of the ablated head:
   the difference of two random tail rows at the frozen delta's whitened
   length (median 6.5% and 3.4% of x_hat). So at this resolution, the text
   damage of an ablation is set by its size, not by what the head carried.
-- **Downstream layers repair a soft ablation and amplify a hard one.** In
-  `resid_nc` the live ablation does less damage than the frozen one
-  (0.015 vs 0.071, live worse in 30% of cells; layer 0: 0.019 vs 0.270),
-  as later layers re-read the residual and re-classify toward the
-  original. In `ste_h76_init01` it does more (0.151 vs 0.042, live worse
-  in 78% of cells; layer 1: 0.218 vs 0.003): later hard classifiers flip,
-  and the flips add error. This fits the residual cascade amplifying
-  disturbance in the depth results, seen here in text.
+- **Downstream layers compensate a removal in both stacks; the hard
+  stack does it by re-describing the input.** In `resid_nc` the live
+  ablation does less damage than the frozen one (0.015 vs 0.071, live
+  worse in 30% of cells; layer 0: 0.019 vs 0.270), as later layers
+  re-read the residual and re-classify toward the original. In
+  `ste_h76_init01` it looks like the reverse against decode(x_hat)
+  (0.151 vs 0.042, live worse in 78% of cells; layer 1: 0.218 vs 0.003),
+  but decode(x_hat) is the unablated reconstruction's text, and the live
+  forward moves away from it toward another description of x. Rescored
+  in one run against both references (`textstrip_x`), the live ablation
+  costs 0.139 against frozen 0.040 and null 0.028 measured from
+  decode(x_hat) (live worse in 86% of cells), and nothing beyond the
+  reconstruction measured from decode(x), less each row's recon dNLL:
+  -0.011 against frozen 0.036 and null 0.016 (layer 0: -0.010 against
+  0.148), live worse in 38% of cells. `resid_nc` compensates under both references
+  (live/frozen 0.25 against decode(x_hat), 0.21 against decode(x)). In
+  embedding space (`--removals`, 16 random heads per layer, 512 tail
+  rows), the hard stack's live forward cuts a layer-0 head's added
+  whitened error to 0.23x the frozen value (0.48, 0.68 and 0.84 at
+  layers 1-3), and cuts most the runner-up replacement winner dropout
+  rehearses (0.13, 0.19, 0.35, 0.51), while landing 19x (layer 0), 31x,
+  19x and 7x farther from x_hat than the frozen removal. `resid_nc`'s
+  live forward cancels the added error at layers 0-2 (a frozen layer-0
+  uniform removal adds 505%, a live one 0.5%).
+  (`textstrip.py --removals --seed 0 --b 512`,
+  `<run>/textstrip/removals.json`; both references from `textstrip.py
+  --out <run>/textstrip_x`, JAX on CPU and the decoder on cuda, 12 rows,
+  seed 42; 2026-10-09.) The `textstrip_x` runs compute the model at
+  float32, while the tables above came from JAX on the GPU at its
+  default matmul precision, under which 226 of the hard stack's 4,560
+  codes on these 12 rows differ (159 of 912 at layer 4; CPU and GPU at
+  `highest` precision agree exactly). So the two runs agree per layer
+  only roughly: the hard stack's layer 0 reads 0.377 / 0.189 / 0.113
+  live / frozen / null against decode(x_hat) in `textstrip_x`, its
+  recon 0.668 against decode(x).
 - **A head's write alone carries almost none of the sentence.** Its own
   write scores 0.06–0.08 nats better than its average write over 1024 tail
   rows (better in 54% of cells), against about 3.3 nats for either.
@@ -3590,6 +3892,43 @@ uv run python selection.py --runs "$S/sweep_top[0-9]*" "$S/sweep_softmax*" \
     --exclude relu --grid s_Hm n_sel \
     --sae-csv data/out/sonar/pareto_unified/pareto.csv
 ```
+
+### The partition score made J-invariant, with its bandwidth chosen (`selection.py --jinv`)
+
+`selection.py`'s score is noise2self-style but not J-invariant: a row's
+own input sets the kernel weights its prediction uses. `--jinv` adds the
+split form -- gate and kernel built from half of a random rotation of
+the coordinates, scored on the other half -- picks the bandwidth tau by
+it, and adds random-projection heads, which are locality-sensitive
+hashes, as the null: one random head, the joint gate of eight, and the
+collision kernel of 64. `ste_h76_init01`, all 76 heads per layer, s = 1;
+gains are against the smoother at the same tau and form:
+
+- The split score selects tau = 0.05 at layers 0 and 4 and 0.03 at
+  layers 1-3. At layer 0 the smoother at tau = 0.05 beats the tau = 0.2
+  smoother by 0.112, more than any head or gate gains at tau = 0.2 (at
+  most +0.060).
+- At tau = 0.2 a single random head gains +0.017 on the full score and
+  -0.001 on the split one, so its gain was the leak. The joint gate of
+  eight random heads keeps +0.042 split and the collision kernel +0.047:
+  they sharpen a kernel that is too flat.
+- At the selected tau single trained heads lose to the smoother on the
+  full score at every layer (-0.040 at layer 0, -0.065 to -0.069 at
+  layers 1-3, -0.030 at layer 4), as single random heads do (-0.030 and
+  -0.063 to -0.068). The trained joint gains +0.034 at layer 0 and
+  +0.005 to +0.006 above it, on the leaky full form, where the random
+  collision kernel gains +0.039 and +0.005 to +0.009. Trained heads read
+  every coordinate, so they have no split form; against the
+  random-projection null they do not win.
+- On isotropic rows the split smoother holds its floor of 1.0010 down to
+  tau = 0.05 (1.0015), while the full form leaks 0.010 at tau = 0.2 and
+  0.090 at tau = 0.02.
+
+(`selection.py --runs data/out/sonar/multilingual/ste_h76_init01 --jinv
+--max-heads 76 --taus 0.2 0.1 0.05 0.03 0.02 0.01 --out
+data/out/sonar/selection_jinv`, on CPU, 2026-10-09; `jinv.csv`,
+`jinv_isotropic.csv`. At tau = 0.01 the isotropic rows underflow in
+`pwak.affinity`'s float32 and are not read.)
 
 ## Run
 

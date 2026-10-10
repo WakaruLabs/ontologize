@@ -11,6 +11,23 @@ this benchmark says how much each costs relative to what its own support
 could achieve. Coefficients are unconstrained (sign flips allowed), so
 refit is an upper bound on what magnitude correction can recover.
 
+Each share is read against two references, since free coefficients
+remove some of any residual. `random_share` is the share removed by
+correcting the raw reconstruction with the whitened least-squares fit of
+its residual on a support drawn at random, at the same size per sample
+(an SAE's |S| distinct latents of all m, the Ontologizer's m distinct
+entries of each head); `correction_share` is the same correction on the
+code's own support. For an SAE that is the refit itself, since its raw
+decode lies in its support's span. The Ontologizer's refit instead starts
+from the pinned-code decode, which differs from the raw truncation by
+the renormalization of the pinned entries, so for it the like-for-like
+comparison is correction_share against random_share. `iso_share` is |S|/d,
+what |S| free coefficients remove from a residual spread evenly over the
+d whitened coordinates: the share is the in-sample R^2 of the residual
+regressed on |S| directions. A share at its references is what any
+support of that size removes, not evidence that the activation rule
+mis-scales what it keeps.
+
 SAE runs: support = active latents, directions = W_dec rows, offset =
 b_dec. Group-softmax runs are skipped (dense support, nothing frozen).
 
@@ -26,14 +43,15 @@ later layers reclassify against the truncated prefix residual, and its
 FVUs are accordingly lower (the gap measures the residual stack's
 downstream compensation). Points with l*h*m >= d are skipped: an
 underdetermined per-sample LS fits anything exactly, which is not a
-shrinkage measurement (m=4 at K=640/1024 is already generous -- compare
-against a random-support control before quoting it). Requires GPU JAX
-for checkpoint restore.
+shrinkage measurement (m=4 at K=640/1024 is already generous, which its
+random share shows).
 
   uv run python refit.py                          # all sae.py runs
   uv run python refit.py --onto data/out/sonar/multilingual/resid_nc
 
-Scores the cache tail (the sae.py eval split). Writes <out>/refit.csv.
+Scores the cache tail (the sae.py eval split). Writes <out>/refit.csv:
+point, fvu_raw, fvu_refit, magnitude_share, support (mean |S| per
+sample), correction_share, random_share, iso_share.
 """
 # disable preallocation so this can share the GPU (same as sonar.py)
 import os
@@ -46,6 +64,7 @@ import json
 import numpy as np
 import jax
 import jax.numpy as jnp
+from jaxtyping import Array, Float, Int
 from pathlib import Path
 
 import sae
@@ -71,6 +90,8 @@ def parse_args():
                         "per-sample LS is O(K^2) memory / O(K^3) time, and "
                         "refitting a near-dense support is uninformative)")
     p.add_argument("--ridge", type=float, default=1e-6)
+    p.add_argument("--seed", type=int, default=0,
+                   help="seed of the random supports behind random_share")
     p.add_argument("--step", type=int, default=0)
     p.add_argument("--temperature", type=float, default=0.03)
     p.add_argument("--out", default="data/out/sonar/refit")
@@ -147,6 +168,27 @@ def onto_supports(P, origin, m, l, h, k):
     return idx, Pt.reshape(P.shape[0], -1)
 
 
+def random_support(key: Array, b: int, n_head: int, k: int, m: int
+                   ) -> Int[Array, "b n_head*m"]:
+    """m distinct entries drawn uniformly from each of n_head heads of k,
+    as flat ids head * k + entry, in head order (onto_supports' layout).
+    n_head = 1 draws m distinct ids from all k."""
+    _, ki = jax.lax.top_k(jax.random.uniform(key, (b, n_head, k)), m)
+    return (jnp.arange(n_head)[None, :, None] * k + ki).reshape(b, -1)
+
+
+def correction_fvu(X: Float[Array, "b d"], raw: Float[Array, "b d"],
+                   dirs: Float[Array, "F d"], idx: Int[Array, "b K"],
+                   mask: Float[Array, "b K"], w_sqrt: Float[Array, "d"],
+                   ridge: float = 1e-6) -> Float[Array, ""]:
+    """Mean whitened squared error of raw plus the least-squares fit of its
+    residual on the support idx (mask as in refit_recon). On a code's own
+    support this is the refit whenever raw - offset lies in the support's
+    span, as an SAE's does; on a random support it is the null."""
+    fit = refit_recon(X, dirs, idx, mask, raw, w_sqrt, ridge)
+    return (((fit - X) * w_sqrt) ** 2).mean()
+
+
 def main():
     cfg = parse_args()
     out = Path(cfg.out)
@@ -159,7 +201,17 @@ def main():
     w_sqrt = jnp.asarray(np.sqrt(w), jnp.float32)
     wj = jnp.asarray(w, jnp.float32)
     base_w = float((X_all.var(0) * w).mean())
+    d_out = X_all.shape[1]
+    key = jax.random.PRNGKey(cfg.seed)
+    # (point, fvu_raw, fvu_refit, support, fvu_correction, fvu_random)
     rows = []
+
+    def batch_means(run, be):
+        """Per-batch outputs of run(X, key) averaged over the full batches
+        of be tail rows, each batch with its own key."""
+        return np.mean([np.asarray(run(jnp.asarray(X_all[i:i + be]),
+                                       jax.random.fold_in(key, i)))
+                        for i in range(0, n - be + 1, be)], 0)
 
     paths = cfg.sae
     if paths is None:
@@ -184,22 +236,31 @@ def main():
             print(f"skip {path} (support {K_sup} > --max-support)")
             continue
         params = {k_: jnp.asarray(v) for k_, v in np.load(path).items()}
+        m_lat = params["W_dec"].shape[0]
 
         @jax.jit
-        def run(X):
+        def run(X, key):
             z, idx, mask = sae_supports(params, X, topk, groups, gfn)
             raw = sae.decode(params, z)
             fit = refit_recon(X, params["W_dec"], idx, mask,
                               params["b_dec"], w_sqrt, cfg.ridge)
-            return (((raw - X) ** 2) * wj).mean(), \
-                   (((fit - X) ** 2) * wj).mean()
+            # the same count of active slots, on latents drawn from all m
+            rand = random_support(key, X.shape[0], 1, m_lat, idx.shape[1])
+            return jnp.stack([
+                (((raw - X) ** 2) * wj).mean(),
+                (((fit - X) ** 2) * wj).mean(),
+                mask.sum(-1).mean(),
+                correction_fvu(X, raw, params["W_dec"], idx, mask, w_sqrt,
+                               cfg.ridge),
+                correction_fvu(X, raw, params["W_dec"], rand, mask, w_sqrt,
+                               cfg.ridge)])
 
-        be = eff_batch(K_sup, X_all.shape[1], cfg.b)
-        e = np.mean([np.asarray(run(jnp.asarray(X_all[i:i + be])))
-                     for i in range(0, n - be + 1, be)], 0)
+        e = batch_means(run, eff_batch(K_sup, d_out, cfg.b))
         name = Path(path).parent.name
-        rows.append((f"sae {name}", e[0] / base_w, e[1] / base_w))
-        print(f"sae {name}: raw {rows[-1][1]:.4f}  refit {rows[-1][2]:.4f}")
+        rows.append((f"sae {name}", e[0] / base_w, e[1] / base_w, e[2],
+                     e[3] / base_w, e[4] / base_w))
+        print(f"sae {name}: raw {rows[-1][1]:.4f}  refit {rows[-1][2]:.4f}"
+              f"  random-support refit {rows[-1][5]:.4f}")
 
     if cfg.onto:
         acts, G, meta = onto_linear_model(cfg.onto, cfg.step, cfg.temperature)
@@ -215,7 +276,6 @@ def main():
         b0 = meta["offset"][None]                     # decoder bias
         c = origin.reshape(-1) @ G + b0               # pinned-code decode
 
-        d_out = X_all.shape[1]
         for m in cfg.ms:
             if not 0 < m < k or l * h * m > cfg.max_support:
                 continue
@@ -227,34 +287,50 @@ def main():
                 continue
 
             @jax.jit
-            def run(X, m=m):
+            def run(X, key, m=m):
                 P = acts(X)
                 idx, Pt = onto_supports(P, origin, m, l, h, k)
                 raw = Pt @ G + b0
                 base = c + jnp.zeros_like(X)
+                ones = jnp.ones(idx.shape, jnp.float32)
                 # kept slots refit their deviation from the origin
-                fit = refit_recon(X, G, idx,
-                                  jnp.ones(idx.shape, jnp.float32),
-                                  base, w_sqrt, cfg.ridge)
-                return (((raw - X) ** 2) * wj).mean(), \
-                       (((fit - X) ** 2) * wj).mean()
+                fit = refit_recon(X, G, idx, ones, base, w_sqrt, cfg.ridge)
+                rand = random_support(key, X.shape[0], l * h, k, m)
+                return jnp.stack([
+                    (((raw - X) ** 2) * wj).mean(),
+                    (((fit - X) ** 2) * wj).mean(),
+                    jnp.float32(l * h * m),
+                    correction_fvu(X, raw, G, idx, ones, w_sqrt, cfg.ridge),
+                    correction_fvu(X, raw, G, rand, ones, w_sqrt,
+                                   cfg.ridge)])
 
-            be = eff_batch(l * h * m, X_all.shape[1], cfg.b)
-            e = np.mean([np.asarray(run(jnp.asarray(X_all[i:i + be])))
-                         for i in range(0, n - be + 1, be)], 0)
-            rows.append((f"onto dev m={m}", e[0] / base_w, e[1] / base_w))
+            e = batch_means(run, eff_batch(l * h * m, d_out, cfg.b))
+            rows.append((f"onto dev m={m}", e[0] / base_w, e[1] / base_w,
+                         e[2], e[3] / base_w, e[4] / base_w))
             print(f"onto dev m={m}: raw {rows[-1][1]:.4f}  "
-                  f"refit {rows[-1][2]:.4f}")
+                  f"refit {rows[-1][2]:.4f}  "
+                  f"random-support refit {rows[-1][5]:.4f}")
 
-    print(f"\n{'point':<28} {'FVU raw':>9} {'FVU refit':>10} {'magn share':>11}")
-    for name, raw, fit in rows:
-        share = (raw - fit) / raw if raw else 0.0
-        print(f"{name:<28} {raw:>9.4f} {fit:>10.4f} {share:>11.3f}")
+    def shares(raw, fit, support, corr, rand):
+        """magnitude_share, correction_share, random_share, iso_share."""
+        part = (lambda e: (raw - e) / raw) if raw else (lambda e: 0.0)
+        return part(fit), part(corr), part(rand), support / d_out
+
+    print(f"\n{'point':<28} {'FVU raw':>9} {'FVU refit':>10} "
+          f"{'magn share':>11} {'|S|':>6} {'own corr':>9} {'random':>7} "
+          f"{'|S|/d':>6}")
+    for name, raw, fit, support, corr, rand in rows:
+        magn, own, rnd, iso = shares(raw, fit, support, corr, rand)
+        print(f"{name:<28} {raw:>9.4f} {fit:>10.4f} {magn:>11.3f} "
+              f"{support:>6.1f} {own:>9.3f} {rnd:>7.3f} {iso:>6.3f}")
     with open(out / "refit.csv", "w", newline="") as f:
         wr = csv.writer(f)
-        wr.writerow(["point", "fvu_raw", "fvu_refit", "magnitude_share"])
-        for name, raw, fit in rows:
-            wr.writerow([name, raw, fit, (raw - fit) / raw if raw else 0.0])
+        wr.writerow(["point", "fvu_raw", "fvu_refit", "magnitude_share",
+                     "support", "correction_share", "random_share",
+                     "iso_share"])
+        for name, raw, fit, support, corr, rand in rows:
+            magn, own, rnd, iso = shares(raw, fit, support, corr, rand)
+            wr.writerow([name, raw, fit, magn, support, own, rnd, iso])
     print(f"-> {out / 'refit.csv'}")
 
 

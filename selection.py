@@ -48,6 +48,35 @@ size-matched random series, not against 1. All-singletons is not drawn: every
 row of G is zero there, so it predicts 0 for every sample, a fixed
 function of E rather than a property of any partition.
 
+SPLIT SCORE (--jinv, with the curve): a J-invariant form of the score,
+the bandwidth it selects, and the null a partition must beat there. Each
+batch's layer input is centered, rotated by a random orthogonal Q fixed
+per run, and cut in half: view A builds every gate and kernel, view B is
+the value scored (`split_views`), so no row's scored coordinates set its
+own weights, which Noise2Self's guarantee requires. The bandwidth is
+chosen as DEWAKSS chooses its own, as the --taus value whose plain
+smoother scores lowest under the split form (`select_bandwidth`; the
+`selected` column). At every --taus, jinv.csv holds the full
+(leave-one-out) and split forms of
+  smoother       one cell: the unpartitioned series
+  trained_head   the scored heads, mean (full form only: a trained head
+                 reads every coordinate of E, so it has no split form)
+  trained_joint  the layer's joint gate (full form only)
+  lsh_head       random-projection heads of the run's k, one at a time
+                 (mean over --lsh-heads)
+  lsh_joint      the joint gate of those --lsh-heads
+  lsh_kernel     the joint gate of --lsh-kernel heads drawn separately,
+                 which estimates the family's collision kernel
+A random-projection head (`lsh_assign`) is a locality-sensitive hash
+(Har-Peled, Indyk & Motwani 2012): its collision probability depends only
+on the angle between two rows and falls as the angle grows, so gating the
+heat kernel by it sharpens the kernel the way a smaller tau does. A
+partition shows more than locality only by beating these, against the
+smoother at the selected bandwidth. jinv_isotropic.csv scores the
+smoother on isotropic Gaussian rows, where any J-invariant predictor
+scores at least (b/(b-1))^2 at s=1: the split form stays at or above it,
+and the full form falls below it by its leak.
+
 GRID (--grid ROW COL): held-out whitened FVU over a 2-D grid of settings.
 Each run's FVU is pareto.py's: the "soft" row (the model as it runs, at
 its temperature) or --point hard, read from an existing pareto.csv when
@@ -82,13 +111,16 @@ env_config field (l, h, k, select, e_dec, s_Hm, temperature_end, ...):
       --x n_sel --hue s_Hm
   uv run python selection.py --runs ... --grid s_Hm n_sel \\
       --sae-csv data/out/sonar/pareto_unified/pareto.csv
+  uv run python selection.py --runs ... --jinv --taus 0.2 0.1 0.05 0.03
   uv run python selection.py --replot --out <dir>          # either figure
 
 Writes <out>/n2s.csv (long form: run, x, hue, layer, s, stat, value),
 n2s.json (the keys, tau and row settings) and n2s_s<S>.png, or grid.csv
 and grid.png; --replot redraws from them (pass --grid with any two keys
-for the grid; the CSV records the real ones). NOTE: Ontologizer checkpoints restore on GPU
-JAX only.
+for the grid; the CSV records the real ones). --jinv adds jinv.csv (long
+form: run, x, hue, layer, s, tau, form, series, value, selected) and
+jinv_isotropic.csv (tau, s, full, split, floor), and prints each run's
+gains over the smoother at the same tau; with --replot it reprints them.
 """
 # disable preallocation so this can share the GPU (same as sonar.py)
 import os
@@ -157,6 +189,20 @@ def parse_args(argv=None):
                    help="random-partition draws per batch")
     p.add_argument("--max-heads", type=int, default=32,
                    help="curve: heads scored per layer, evenly spaced")
+    p.add_argument("--jinv", action="store_true",
+                   help="curve: also write the split (J-invariant) score, "
+                   "the bandwidth it selects and the random-projection "
+                   "null to jinv.csv")
+    p.add_argument("--taus", type=float, nargs="+",
+                   default=[0.2, 0.1, 0.05, 0.03, 0.02, 0.01],
+                   help="--jinv: heat-kernel temperatures scored and "
+                   "selected among")
+    p.add_argument("--lsh-heads", type=int, default=8,
+                   help="--jinv: random-projection heads per batch, scored "
+                   "one at a time and as one joint gate")
+    p.add_argument("--lsh-kernel", type=int, default=64,
+                   help="--jinv: random-projection heads in the joint gate "
+                   "that estimates the collision kernel")
     p.add_argument("--replot", action="store_true",
                    help="redraw from <out>/n2s.csv or grid.csv")
     p.add_argument("--seed", type=int, default=42)
@@ -280,6 +326,123 @@ def layer_scores(P: Float[Array, "b h k"], E: Float[Array, "b d"],
 layer_scores_jit = jax.jit(layer_scores, static_argnames=("ss", "tau"))
 
 
+# ---------- split score, bandwidth, random-projection null ----------
+
+JINV_SERIES = ("smoother", "trained_head", "trained_joint", "lsh_head",
+               "lsh_joint", "lsh_kernel")
+
+
+def split_views(E: Float[Array, "b d"], Q: Float[Array, "d d"]
+                ) -> tuple[Float[Array, "b a"], Float[Array, "b c"]]:
+    """The split score's two views of a batch: E centered, rotated by Q and
+    cut into its first d // 2 coordinates (A, which builds every gate and
+    kernel) and the rest (B, the values scored). The rotation spreads every
+    direction of E over both views."""
+    Z = (E - E.mean(0, keepdims=True)) @ Q
+    a = E.shape[1] // 2
+    return Z[:, :a], Z[:, a:]
+
+
+def lsh_assign(E: Float[Array, "b d"], W: Float[Array, "n d k"]
+               ) -> Float[Array, "n b k"]:
+    """One-hot assignments of n random-projection heads: each puts a row in
+    the cell of its largest projection on k Gaussian directions, after
+    centering on the batch mean."""
+    Ec = E - E.mean(0, keepdims=True)
+    return jax.nn.one_hot(jnp.einsum("bd,ndk->nbk", Ec, W).argmax(-1),
+                          W.shape[-1], dtype=E.dtype)
+
+
+def joint_gate(Q: Float[Array, "n b k"]) -> Float[Array, "b b"]:
+    """How many of the n heads put rows i and j in one cell. `wak` removes
+    any constant factor, so this scores as the mean co-assignment, which
+    over many random-projection heads estimates their collision kernel."""
+    return jnp.einsum("nik,njk->ij", Q, Q)
+
+
+def jinv_layer(P: Float[Array, "b h k"], E: Float[Array, "b d"],
+               heads: Int[Array, "m"], Q: Float[Array, "d d"],
+               W: Float[Array, "n d k"], W_A: Float[Array, "n a k"],
+               V: Float[Array, "c d k"], V_A: Float[Array, "c a k"],
+               ss: Sequence[int], taus: Sequence[float]) -> dict:
+    """One batch, one layer: `n2s_score`'s ratio at every bandwidth in
+    `taus` for each JINV_SERIES, keyed "<series>/<form>", each (T, S).
+    The full form scores E on the kernel of E; the split form scores view
+    B on gates and the kernel of view A (`split_views`). W draws the
+    random-projection heads scored singly and jointly, V those of the
+    collision kernel; W_A and V_A are their view-A counterparts."""
+    P, E = P.astype(jnp.float32), E.astype(jnp.float32)
+    A, B = split_views(E, Q)
+    ss = tuple(ss)
+    ones = jnp.ones((E.shape[0], E.shape[0]), E.dtype)
+    R, R_A = lsh_assign(E, W), lsh_assign(A, W_A)
+    gates = {"trained_joint/full": jnp.einsum("ihc,jhc->ij", P, P),
+             "lsh_joint/full": joint_gate(R),
+             "lsh_joint/split": joint_gate(R_A),
+             "lsh_kernel/full": joint_gate(lsh_assign(E, V)),
+             "lsh_kernel/split": joint_gate(lsh_assign(A, V_A))}
+    out = {}
+    for tau in taus:
+        D, D_A = affinity(E, tau), affinity(A, tau)
+        kernel = {"full": (D, E), "split": (D_A, B)}
+
+        def single(Qs, form):
+            K, Y = kernel[form]
+            return jax.lax.map(lambda p: n2s_score(p @ p.T, K, Y, ss),
+                               Qs).mean(0)
+
+        row = {"smoother/full": n2s_score(ones, D, E, ss),
+               "smoother/split": n2s_score(ones, D_A, B, ss),
+               "trained_head/full": single(
+                   P[:, heads].transpose(1, 0, 2), "full"),
+               "lsh_head/full": single(R, "full"),
+               "lsh_head/split": single(R_A, "split")}
+        for key, g in gates.items():
+            K, Y = kernel[key.split("/")[1]]
+            row[key] = n2s_score(g, K, Y, ss)
+        for key, v in row.items():
+            out.setdefault(key, []).append(v)
+    return {key: jnp.stack(v) for key, v in out.items()}
+
+
+jinv_layer_jit = jax.jit(jinv_layer, static_argnames=("ss", "taus"))
+
+
+def select_bandwidth(taus: Sequence[float],
+                     split: Float[np.ndarray, "T"]) -> float:
+    """The bandwidth whose smoother scores lowest under the split form:
+    DEWAKSS's choice, valid because that score is J-invariant."""
+    return taus[int(np.argmin(split))]
+
+
+def isotropic_scores(taus: Sequence[float], b: int, d: int, nb: int,
+                     ss: Sequence[int], seed: int = 0) -> dict:
+    """The smoother's full and split scores on structureless rows
+    (isotropic Gaussian, unit-normalized), each (T, S), averaged over nb
+    batches of b. Any J-invariant predictor scores at least (b/(b-1))^2
+    there at s=1, so the full form's shortfall below it is its leak."""
+    rng = np.random.default_rng(seed)
+    acc = {"full": [], "split": []}
+
+    @jax.jit
+    def one(E, Q):
+        A, B = split_views(E, Q)
+        ones = jnp.ones((b, b), E.dtype)
+        return (jnp.stack([n2s_score(ones, affinity(E, t), E, tuple(ss))
+                           for t in taus]),
+                jnp.stack([n2s_score(ones, affinity(A, t), B, tuple(ss))
+                           for t in taus]))
+
+    for _ in range(nb):
+        E = rng.standard_normal((b, d))
+        E /= np.linalg.norm(E, axis=1, keepdims=True)
+        Q = np.linalg.qr(rng.standard_normal((d, d)))[0]
+        f, s = one(jnp.asarray(E, jnp.float32), jnp.asarray(Q, jnp.float32))
+        acc["full"].append(np.asarray(f))
+        acc["split"].append(np.asarray(s))
+    return {form: np.mean(v, 0) for form, v in acc.items()}
+
+
 def head_subset(h: int, m: int) -> np.ndarray:
     """At most m head indices, evenly spaced over [0, h)."""
     return np.unique(np.linspace(0, h - 1, min(m, h)).round().astype(int))
@@ -301,17 +464,27 @@ def summarize(acc: dict) -> dict:
             "unpartitioned": np.mean(acc["unpartitioned"], 0)}
 
 
-def score_run(ckpt, st: dict, X_all: Float[np.ndarray, "n d"], cfg) -> dict:
-    """{layer: summarize(...)} for one run on the shared tail rows."""
+def score_run(ckpt, st: dict, X_all: Float[np.ndarray, "n d"], cfg):
+    """({layer: summarize(...)}, {layer: {key: (T, S)}} or None) for one
+    run on the shared tail rows; the second is `jinv_layer` averaged over
+    batches, under --jinv. Its draws come from their own generator, so
+    --jinv leaves the first unchanged."""
     from autointerp import onto_acts_fn
     T = run_temperature(st)
     acts, _, _, meta, layer_inputs = onto_acts_fn(ckpt, 0, T, inputs=True)
     l, h, k = meta["l"], meta["h"], meta["k"]
     heads = jnp.asarray(head_subset(h, cfg.max_heads))
     rng = np.random.default_rng(cfg.seed)
+    jrng = np.random.default_rng([cfg.seed, 1])
+    rotations = {}  # input width -> Q, one per run
+
+    def gauss(n, w):
+        return jnp.asarray(jrng.standard_normal((n, w, k)), jnp.float32)
+
     unit0 = st.get("resid_gain") and not st.get("encoded")
     accs = [{key: [] for key in ("head", "joint", "unpartitioned", "random",
                                  "random_joint")} for _ in range(l)]
+    jaccs = [{} for _ in range(l)]
     for i in range(0, len(X_all), cfg.b):
         X = jnp.asarray(X_all[i:i + cfg.b])
         P = acts(X).reshape(len(X), l, h, k)
@@ -325,9 +498,24 @@ def score_run(ckpt, st: dict, X_all: Float[np.ndarray, "n d"], cfg) -> dict:
                                  cfg.tau)
             for key, v in r.items():
                 accs[L][key].append(np.asarray(v))
+            if cfg.jinv:
+                d_in = E.shape[1]
+                if d_in not in rotations:
+                    rotations[d_in] = jnp.asarray(np.linalg.qr(
+                        jrng.standard_normal((d_in, d_in)))[0], jnp.float32)
+                a = d_in // 2
+                r = jinv_layer_jit(
+                    P[:, L], E, heads, rotations[d_in],
+                    gauss(cfg.lsh_heads, d_in), gauss(cfg.lsh_heads, a),
+                    gauss(cfg.lsh_kernel, d_in), gauss(cfg.lsh_kernel, a),
+                    tuple(cfg.s), tuple(cfg.taus))
+                for key, v in r.items():
+                    jaccs[L].setdefault(key, []).append(np.asarray(v))
     print(f"  {st['name']} step {st['step']} T={T:g}: {l}x{h}x{k}, "
           f"{len(heads)} heads/layer scored")
-    return {L: summarize(a) for L, a in enumerate(accs)}
+    jinv = ({L: {key: np.mean(v, 0) for key, v in a.items()}
+             for L, a in enumerate(jaccs)} if cfg.jinv else None)
+    return {L: summarize(a) for L, a in enumerate(accs)}, jinv
 
 
 def n2s_rows(name: str, x, hue, scores: dict, ss: Sequence[int]):
@@ -343,6 +531,67 @@ def read_rows(path) -> list:
         next(rd)
         return [(r[0], r[1], r[2], int(r[3]), int(r[4]), r[5], float(r[6]))
                 for r in rd]
+
+
+JINV_COLS = ("run", "x", "hue", "layer", "s", "tau", "form", "series",
+             "value", "selected")
+
+
+def jinv_rows(name: str, x, hue, jinv: dict, ss: Sequence[int],
+              taus: Sequence[float]) -> list:
+    """Long-form jinv.csv rows of one run's `score_run` split scores;
+    `selected` marks, per layer and depth, the bandwidth
+    `select_bandwidth` picks."""
+    rows = []
+    for L, d in jinv.items():
+        for j, s in enumerate(ss):
+            best = select_bandwidth(taus, d["smoother/split"][:, j])
+            for key, v in d.items():
+                series, form = key.split("/")
+                rows += [(name, x, hue, L, s, tau, form, series,
+                          float(v[t, j]), int(tau == best))
+                         for t, tau in enumerate(taus)]
+    return rows
+
+
+def read_jinv_rows(path) -> list:
+    with open(path) as f:
+        rd = csv.reader(f)
+        next(rd)
+        return [(r[0], r[1], r[2], int(r[3]), int(r[4]), float(r[5]), r[6],
+                 r[7], float(r[8]), int(r[9])) for r in rd]
+
+
+def print_jinv(rows, tau_ref: float):
+    """Per run, layer and depth: the smoother's full/split scores and its
+    gain over the smoother at tau_ref, then every other series' gain over
+    the smoother at the same tau and form (positive: the series predicts
+    better). * marks the selected bandwidth."""
+    val = {(r[0], r[3], r[4], r[5], r[6], r[7]): r[8] for r in rows}
+    sel = {(r[0], r[3], r[4]): r[5] for r in rows if r[9]}
+    taus = sort_values([r[5] for r in rows])[::-1]
+    cols = [(srs, f) for srs in JINV_SERIES[1:] for f in ("full", "split")
+            if any(r[7] == srs and r[6] == f for r in rows)]
+    for (run, L, s), best in sel.items():
+        print(f"\n  {run} layer {L} s={s}: split score selects tau={best:g}")
+        print(f"  {'tau':>7} {'smoother f/s':>15} {'vs ' + str(tau_ref):>15} "
+              + " ".join(f"{a[:13] + ' ' + b[0]:>15}" for a, b in cols))
+        for tau in taus:
+            sm = [val.get((run, L, s, tau, f, "smoother")) for f in
+                  ("full", "split")]
+            ref = [val.get((run, L, s, tau_ref, f, "smoother")) for f in
+                   ("full", "split")]
+            gain = [f"{r_ - v:+.4f}" if None not in (r_, v) else "--"
+                    for r_, v in zip(ref, sm)]
+            cells = []
+            for srs, f in cols:
+                v = val.get((run, L, s, tau, f, srs))
+                base = sm[0] if f == "full" else sm[1]
+                cells.append(f"{base - v:+.4f}" if v is not None else "--")
+            mark = "*" if tau == best else " "
+            print(f"  {tau:>6g}{mark} {sm[0]:>7.4f}/{sm[1]:<7.4f} "
+                  f"{'/'.join(gain):>15} "
+                  + " ".join(f"{c:>15}" for c in cells))
 
 
 # ---------- curve figure ----------
@@ -715,6 +964,8 @@ def main():
         rows = read_rows(out / "n2s.csv")
         meta = json.loads((out / "n2s.json").read_text())
         cfg.x, cfg.hue, cfg.tau = meta["x"], meta["hue"], meta["tau"]
+        if cfg.jinv:
+            print_jinv(read_jinv_rows(out / "jinv.csv"), cfg.tau)
     else:
         runs = expand_runs(cfg.runs, cfg.exclude)
         assert cfg.rows % cfg.b == 0, "--rows must be a multiple of --b"
@@ -727,23 +978,51 @@ def main():
         X_all = np.asarray(mm[idx], dtype=np.float32)[
             rng.permutation(len(idx))]
         print(f"{len(runs)} runs on {cfg.rows} tail rows, batches of {cfg.b}")
-        rows = []
+        rows, jrows = [], []
         for run in runs:
             st = run_settings(run)
-            sc = score_run(run, st, X_all, cfg)
-            rows += n2s_rows(st["name"], st.get(cfg.x),
-                             st.get(cfg.hue) if cfg.hue else "", sc, cfg.s)
+            sc, jinv = score_run(run, st, X_all, cfg)
+            x, hue = st.get(cfg.x), st.get(cfg.hue) if cfg.hue else ""
+            rows += n2s_rows(st["name"], x, hue, sc, cfg.s)
+            if jinv is not None:
+                jrows += jinv_rows(st["name"], x, hue, jinv, cfg.s,
+                                   cfg.taus)
             jax.clear_caches()
         with open(out / "n2s.csv", "w", newline="") as f:
             wr = csv.writer(f)
             wr.writerow(["run", "x", "hue", "layer", "s", "stat", "value"])
             wr.writerows(rows)
-        (out / "n2s.json").write_text(json.dumps(
-            {"x": cfg.x, "hue": cfg.hue, "tau": cfg.tau, "rows": cfg.rows,
-             "b": cfg.b, "nulls": cfg.nulls, "max_heads": cfg.max_heads,
-             "cache": cfg.cache, "eval_rows": cfg.eval_rows,
-             "runs": runs}, indent=1))
+        meta = {"x": cfg.x, "hue": cfg.hue, "tau": cfg.tau, "rows": cfg.rows,
+                "b": cfg.b, "nulls": cfg.nulls, "max_heads": cfg.max_heads,
+                "cache": cfg.cache, "eval_rows": cfg.eval_rows, "runs": runs}
+        if cfg.jinv:
+            meta["jinv"] = {"taus": cfg.taus, "lsh_heads": cfg.lsh_heads,
+                            "lsh_kernel": cfg.lsh_kernel}
+        (out / "n2s.json").write_text(json.dumps(meta, indent=1))
         print(f"-> {out / 'n2s.csv'}")
+        if cfg.jinv:
+            with open(out / "jinv.csv", "w", newline="") as f:
+                wr = csv.writer(f)
+                wr.writerow(JINV_COLS)
+                wr.writerows(jrows)
+            iso = isotropic_scores(cfg.taus, cfg.b, X_all.shape[1],
+                                   cfg.rows // cfg.b, cfg.s, cfg.seed)
+            floor = (cfg.b / (cfg.b - 1)) ** 2
+            with open(out / "jinv_isotropic.csv", "w", newline="") as f:
+                wr = csv.writer(f)
+                wr.writerow(["tau", "s", "full", "split", "floor"])
+                for t, tau in enumerate(cfg.taus):
+                    for j, s in enumerate(cfg.s):
+                        wr.writerow([tau, s, iso["full"][t, j],
+                                     iso["split"][t, j], floor])
+            print_jinv(jrows, cfg.tau)
+            print(f"\n  isotropic rows (b={cfg.b}, d={X_all.shape[1]}), "
+                  f"smoother full/split, floor {floor:.4f} at s=1:")
+            for t, tau in enumerate(cfg.taus):
+                print(f"  {tau:>7g} " + "  ".join(
+                    f"s={s}: {iso['full'][t, j]:.4f}/{iso['split'][t, j]:.4f}"
+                    for j, s in enumerate(cfg.s)))
+            print(f"-> {out / 'jinv.csv'}, {out / 'jinv_isotropic.csv'}")
     for s in sorted({r[4] for r in rows}):
         path = out / f"n2s_s{s}.png"
         draw_curve(rows, s, cfg.x, cfg.hue, f"{out.name}: held-out "

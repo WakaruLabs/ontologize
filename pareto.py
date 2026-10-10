@@ -100,18 +100,36 @@ def parse_args():
     return p.parse_args()
 
 
+def _plain(tree):
+    """Orbax tree metadata as plain dicts/lists, which tree_map can walk."""
+    if hasattr(tree, "keys"):
+        return {k: _plain(tree[k]) for k in tree.keys()}
+    if isinstance(tree, (list, tuple)):
+        return type(tree)(_plain(v) for v in tree)
+    return tree
+
+
 def load_onto(ckpt, step):
+    """Model, params on the default device, and the step restored. Arrays are
+    restored as numpy and then placed: orbax's default restore reuses the
+    sharding saved with them, which names a device a CPU-only process
+    (JAX_PLATFORMS=cpu) does not have."""
     manager = ocp.CheckpointManager(
         Path(ckpt).resolve(),
         checkpointers={"state": ocp.PyTreeCheckpointer(),
                        "spec": ocp.PyTreeCheckpointer()})
     step = step or manager.latest_step()
     model = Ontologizer(**restore_spec(manager, step))
-    state = manager.restore(step, items={"state": None})["state"]
+    args = jax.tree_util.tree_map(
+        lambda _: ocp.RestoreArgs(restore_type=np.ndarray),
+        _plain(manager.item_metadata(step)["state"]))
+    state = manager.restore(
+        step, items={"state": None},
+        restore_kwargs={"state": {"restore_args": args}})["state"]
     params = state["params"] if "opt_state" in state else state
     while "params" in params:
         params = params["params"]
-    return model, params, step
+    return model, jax.device_put(params), step
 
 
 def topdev(P, origin, m, k):

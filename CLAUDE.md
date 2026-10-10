@@ -92,8 +92,12 @@ uv run python sae.py           # train a field-standard top-k SAE on the same
                                # structure one rung at a time (heads / deepsup layers)
 uv run python pareto.py        # reconstruction-vs-code-capacity Pareto table:
                                # Ontologizer top-m deviation codes vs trained SAEs
-uv run python autointerp.py -h # 4-stage auto-interp pipeline (harvest/texts/
-                               # describe/score) over Ontologizer tags & SAE latents
+uv run python autointerp.py -h # auto-interp pipeline (harvest/texts/describe/
+                               # score) over Ontologizer tags & SAE latents;
+                               # `language` stratifies detection by how many
+                               # languages a feature's top rows span; `match`
+                               # draws language-matched rows for
+                               # --mode cacts_lang / --negatives lang
 uv run python headstruct.py -h # post-hoc head-structure discovery: do SAE latents
                                # form exhaustive/exclusive groups? (split-half + nulls);
                                # --modularity also scores each group's sample partition
@@ -122,11 +126,19 @@ uv run python textfid.py -h    # downstream text fidelity ("loss recovered"): de
 uv run python textstrip.py -h  # per-sentence text strips: layer prefixes, and per
                                # head live/frozen uniform + zero ablation, a null
                                # step of equal length, the head's write alone;
-                               # scored by dNLL (chrF flips on rounding), HTML out
+                               # ablations scored by dNLL against decode(x_hat)
+                               # and decode(x) (chrF flips on rounding), with a
+                               # per-layer live/frozen table, HTML out.
+                               # --removals: the live/frozen split in embedding
+                               # space for unif/mean/runnerup/resample
+                               # replacements of random heads (added error vs
+                               # departure from x_hat), no decoder
 uv run python langprobe.py -h  # SAEBench-style k-sparse probing of language
                                # identity (langs sidecar); dense-probe ceiling
 uv run python refit.py -h      # shrinkage: refit LS coefficients on each frozen
-                               # support; selection-vs-magnitude error split
+                               # support; selection-vs-magnitude error split,
+                               # each share beside a random support's of the
+                               # same size (random_share) and |S|/d
 uv run python quantrate.py -h  # operational rate: quantize every continuous number
                                # a code sends (SAE coefficients, soft assignments,
                                # gains), entropy-code the symbols, sweep the step;
@@ -156,7 +168,10 @@ uv run python bilinspec.py -h  # classifier geometry from weights only: |cos(w,v
                                # per layer and vs step
 uv run python selection.py -h  # held-out noise2self partition score vs a sweep key
                                # with unpartitioned + size-matched random baselines
-                               # drawn; --grid ROW COL = pareto.py's FVU over a grid
+                               # drawn; --grid ROW COL = pareto.py's FVU over a grid;
+                               # --jinv adds the J-invariant split score, the
+                               # bandwidth it selects (--taus) and random-projection
+                               # (LSH) heads as the null, in jinv.csv
 uv run python anatomy.py -h    # one (layer, head) as a block figure for the methods
                                # section: P_h, PWAK kernel, rowcos, support_overlap, W_h
 uv run python steerfid.py -h   # steering fidelity: effect (cycle-consistency
@@ -168,7 +183,7 @@ Seed stability: train a replica with `sae.py --seed 43` (run dirs get an
 `_s43` suffix) and feed the pair to `splitting.py` — its "A matched"/"B
 matched" columns are the reproducible-feature fractions.
 
-Tests: the curated suite lives in `tests/`, wired via `[tool.pytest.ini_options] testpaths = ["tests"]` in `pyproject.toml`, so a bare `uv run pytest` runs only it (fast, CPU-only — `tests/conftest.py` forces `JAX_PLATFORMS=cpu`, so it is safe to run alongside a live GPU training run). It covers: `deepsup_sg` gradient semantics, `resid_norm`/`resid_const` conditioning (including bilinear sign-blindness), the `s_Hm`/`KL_m` batch mean-entropy bonus, top-k tag selection (`select="top<k>"`), the `s_L2pwak`/`L2_pwak` noise2self partition score, noise-path NaN regressions, checkpoint save/restore including the `n_stats` stats-width migration and the legacy-spec-key rename, `ConcatDictBlock`'s overridden statistics, the gated SAE encoder's gradient routing, `NLinearBlock.withL1`'s gate-factor L1, `L1_S`'s position in the stats row, `support_overlap` and the retired `cossim_h`/`cossim_flat` slots (`test_support`), fibers and head dropout (`test_fibers`), the SAE modules' layout converters and configuration checks (`test_sae_modules`), `TokenizeTransform`'s source-language tags (`test_tokenize`), and a short end-to-end training loop per live run configuration. The suite's largest block now tests the root eval scripts' pure helpers (`test_sae`, `test_autointerp`, `test_pareto`, `test_headstruct`, `test_headcoh`, `test_compose`, `test_splitting`, `test_textfid`, `test_langprobe`, `test_refit`, `test_steerfid`, `test_encode_acts`, `test_assignmap`, `test_enrich`, `test_headnmi`, `test_entrydrift`, `test_bilinspec`, `test_selection`, `test_anatomy`, `test_textstrip`, `test_quantrate` import them directly) — breaking `sae.py` or its siblings breaks the suite, so keep those scripts import-safe under `__main__` guards.
+Tests: the curated suite lives in `tests/`, wired via `[tool.pytest.ini_options] testpaths = ["tests"]` in `pyproject.toml`, so a bare `uv run pytest` runs only it (fast, CPU-only — `tests/conftest.py` forces `JAX_PLATFORMS=cpu`, so it is safe to run alongside a live GPU training run). It covers: `deepsup_sg` gradient semantics, `resid_norm`/`resid_const` conditioning (including bilinear sign-blindness), the `s_Hm`/`KL_m` batch mean-entropy bonus, top-k tag selection (`select="top<k>"`), the `s_L2pwak`/`L2_pwak` noise2self partition score, noise-path NaN regressions, checkpoint save/restore including the `n_stats` stats-width migration and the legacy-spec-key rename, `ConcatDictBlock`'s overridden statistics, the gated SAE encoder's gradient routing, `NLinearBlock.withL1`'s gate-factor L1, `L1_S`'s position in the stats row, `support_overlap` and the retired `cossim_h`/`cossim_flat` slots (`test_support`), fibers and head dropout (`test_fibers`), the SAE modules' layout converters and configuration checks (`test_sae_modules`), `TokenizeTransform`'s source-language tags (`test_tokenize`), and a short end-to-end training loop per live run configuration. The suite's largest block now tests the root eval scripts' pure helpers (`test_sae`, `test_autointerp`, `test_pareto`, `test_headstruct`, `test_headcoh`, `test_compose`, `test_splitting`, `test_textfid`, `test_langprobe`, `test_refit`, `test_steerfid`, `test_encode_acts`, `test_assignmap`, `test_enrich`, `test_headnmi`, `test_entrydrift`, `test_bilinspec`, `test_selection`, `test_anatomy`, `test_textstrip`, `test_quantrate` import them directly), and some `experiments/ste-arm` analyses' the same way (`test_steerembed`, `test_headlang`, `test_logitscale`, `test_atomgram`, `test_reconseeds`) — breaking `sae.py` or its siblings breaks the suite, so keep those scripts import-safe under `__main__` guards.
 
 ```bash
 uv run pytest -v
@@ -200,7 +215,7 @@ Layers build on a common base in `layers/sparse.py`:
 
 - **`config.py`** — `Hyperparams` (loss weights, optimizer, temperature/noise settings; builds the `Ontologizer` and drives `init`/`train`), `Metadata` (paths, checkpoint cadence, data source type; builds the orbax `CheckpointManager` and the `SampleLoader`), `TrainingEnv` (glues `Ontologizer` spec + `Hyperparams` + `Metadata`, handles resume-from-checkpoint and truncating `loss.csv`/`log.jsonl` on resume).
 - **`ontostate.py`** — `OntoState` (a Flax `TrainState` subclass carrying the model instance itself as a static field, plus a rolling stats buffer). `state_init`, `update` (jitted optax step with optional global-norm grad clipping), `train` (the actual training loop, checkpointing + stats-flushing every `save_each` steps).
-- **`serialize.py`** — two separable things. Its `save_model`/`load_model` pair (orbax `StandardSave`/`StandardRestore`) overlaps with `OntoState.save`/`Metadata.manager` and is **not** used by the main training path (`Hyperparams.load`/`TrainingEnv.init` use the manager/spec-item approach in `config.py`/`ontostate.py` instead) — don't assume both are equally live. But `migrate_spec` in the same module **is** live everywhere: a model is serialized as `dataclasses.asdict(model)` and rebuilt by splatting that back into `Ontologizer`, so renaming a field makes every earlier checkpoint unconstructable. `migrate_spec` maps known legacy names forward. Loaders build their model from `restore_spec(manager, step)`, which restores the spec and migrates it with the stored weights' shapes (orbax metadata, no arrays loaded) — `pareto.py` (and every script using its `load_onto`), `autointerp.py`, `decode.py`, `decode_tags.py`, `inference/steerable.py`, `Hyperparams.load`, `freeze_diag.py`, and `dictgeom.py`/`lastlayer.py`/`decodehead.py` in `experiments/ste-arm`. Add a rename to `LEGACY_SPEC_KEYS` when you make one. A field whose default is not what checkpoints from before the field did needs an entry in `ABSENT_SPEC_DEFAULTS` (absent ⇒ that value): `resid_gain` is there, because it was added at False and defaulted to True minutes later, so a spec without it trained without gain-shape. `const0` (whether `resid_const`'s coordinate reaches layer 0) cannot be read off a spec — every checkpoint before the field lacks it, with and without the coordinate — so `migrate_spec(spec, params)` infers it from the stored layer-0 classifier width; that is what makes `resid_nc`/`resid_nc_hm` (trained before layer 0 had the coordinate) loadable. Without shapes it falls to the default and such a checkpoint fails with a shape error rather than loading wrong. Beyond renames it drops only what cannot change the model: `headline`-branch fields at their no-op value (`HEADLINE_INERT_SPEC_KEYS`, raising if one is switched on) and the stats-only `fast_stats`. Any other unrecognized key still raises rather than being silently dropped.
+- **`serialize.py`** — two separable things. Its `save_model`/`load_model` pair (orbax `StandardSave`/`StandardRestore`) overlaps with `OntoState.save`/`Metadata.manager` and is **not** used by the main training path (`Hyperparams.load`/`TrainingEnv.init` use the manager/spec-item approach in `config.py`/`ontostate.py` instead) — don't assume both are equally live. But `migrate_spec` in the same module **is** live everywhere: a model is serialized as `dataclasses.asdict(model)` and rebuilt by splatting that back into `Ontologizer`, so renaming a field makes every earlier checkpoint unconstructable. `migrate_spec` maps known legacy names forward. Loaders build their model from `restore_spec(manager, step)`, which restores the spec and migrates it with the stored weights' shapes (orbax metadata, no arrays loaded) — `pareto.py` (and every script using its `load_onto`), `autointerp.py`, `decode.py`, `decode_tags.py`, `inference/steerable.py`, `Hyperparams.load`, `freeze_diag.py`, and `dictgeom.py`/`lastlayer.py`/`decodehead.py` in `experiments/ste-arm`. `load_onto` restores every array as numpy and then places it on the default device, so a checkpoint saved on the GPU loads under `JAX_PLATFORMS=cpu`; orbax's default restore reuses the saved sharding, which names a device a CPU-only process lacks, and fails there. Add a rename to `LEGACY_SPEC_KEYS` when you make one. A field whose default is not what checkpoints from before the field did needs an entry in `ABSENT_SPEC_DEFAULTS` (absent ⇒ that value): `resid_gain` is there, because it was added at False and defaulted to True minutes later, so a spec without it trained without gain-shape. `const0` (whether `resid_const`'s coordinate reaches layer 0) cannot be read off a spec — every checkpoint before the field lacks it, with and without the coordinate — so `migrate_spec(spec, params)` infers it from the stored layer-0 classifier width; that is what makes `resid_nc`/`resid_nc_hm` (trained before layer 0 had the coordinate) loadable. Without shapes it falls to the default and such a checkpoint fails with a shape error rather than loading wrong. Beyond renames it drops only what cannot change the model: `headline`-branch fields at their no-op value (`HEADLINE_INERT_SPEC_KEYS`, raising if one is switched on) and the stats-only `fast_stats`. Any other unrecognized key still raises rather than being silently dropped.
 
 Model serialization is plain `dataclasses.asdict(model)` (there is no `@model_spec()` decorator or dedicated spec-class pattern in this codebase — if you see references to one, it's stale).
 

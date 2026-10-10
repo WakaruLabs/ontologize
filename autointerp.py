@@ -33,6 +33,24 @@ Pipeline (stages write artifacts to --out and are resumable/re-runnable):
                against a DIFFERENT feature's same-mode description (kind
                column), so F1 - null F1 isolates what the description's
                content earns.
+  5. language  no model, no judge: detection by the language spread of
+               each feature's top rows, over every campaign under --out.
+               Per campaign and mode, F1 and accuracy by how many distinct
+               languages the rows a description was written from and
+               graded on span; language purity (the description rows'
+               modal-language share) against F1 and firing rate; and the
+               firing-rate trend of mean F1 refitted on the multilingual
+               features alone. Writes <out>/language/.
+
+  match        optional, after harvest: language-matched rows for
+               `describe --mode cacts_lang` and `score --negatives lang`.
+               Per feature, negatives in the languages of its held-out
+               positives and a contrastive background in the languages of
+               its description rows, both drawn from the rows below the
+               feature's median activation, the pool harvest draws its
+               negatives from. Needs the checkpoint; writes
+               <dir>/lang_rows.npz, whose rows the texts stage recovers
+               like any other.
 
 Fairness notes: prompts never mention the method; positives for scoring
 are disjoint from the texts used to write the description; features are
@@ -40,7 +58,11 @@ sampled stratified by firing-rate decile; "activation" is each method's
 natural quantity (tag probability / latent coefficient), whose per-feature
 ranking is unaffected by the deviation-from-origin reading. Negatives are
 random low-activation rows, so a description can be penalized for a true
-but overly broad property -- that noise is shared by both methods. The
+but overly broad property -- that noise is shared by both methods. They
+are not matched for language: mC4 cycles through 86 languages, so naming
+the language a feature's top rows share separates them from random rows
+whatever else the feature responds to. `match` with `--mode cacts_lang`
+and `--negatives lang` holds language fixed between the two sides. The
 judge cannot cheat by inspection: it is a bare Messages API call -- one
 user turn, no tools, no system prompt, no filesystem or repo context -- so
 the description string and the snippets are the only bytes it ever sees,
@@ -59,6 +81,17 @@ non-firing ones in surface register), which is what --null measures.
                  data/out/sonar/autointerp/sae/features.npz
   uv run python autointerp.py describe --dir data/out/sonar/autointerp/onto
   uv run python autointerp.py score --dir data/out/sonar/autointerp/onto
+  uv run python autointerp.py language          # every campaign under --out
+
+  # language-matched rescore of an existing campaign
+  uv run python autointerp.py match --dir data/out/sonar/autointerp/onto/onto
+  uv run python autointerp.py texts \\
+      --features data/out/sonar/autointerp/onto/onto/lang_rows.npz
+  uv run python autointerp.py describe --mode cacts_lang \\
+      --dir data/out/sonar/autointerp/onto/onto
+  uv run python autointerp.py score --negatives lang \\
+      --only-modes acts cacts cacts_lang \\
+      --dir data/out/sonar/autointerp/onto/onto
 """
 import os
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
@@ -74,11 +107,13 @@ import urllib.error
 import urllib.request
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
+from jaxtyping import Bool, Float, Int, Shaped
 from pathlib import Path
 
 ROOT = Path(__file__).parent
 CACHE = ROOT / "data/sonar_embeddings/mc4_4M.npy"
 OUT = ROOT / "data/out/sonar/autointerp"
+ONTO_CKPT = "data/out/sonar/multilingual/resid_nc"
 DECODER_ID = "raxtemur/SONAR_200_text_decoder"
 ENCODER_ID = "cointegrated/SONAR_200_text_encoder"
 
@@ -275,6 +310,118 @@ def read_scores(path):
     return rows, legacy
 
 
+# description modes a judge writes, the ones the language stage reports
+JUDGE_MODES = ("acts", "cacts", "cacts_lang")
+# row arrays of features.npz / lang_rows.npz whose texts the texts stage
+# recovers
+ROW_KEYS = ("top_i", "neg_i", "bg_i")
+
+
+def langs_path(cache):
+    """The cache's per-row language sidecar, written by encode_corpus.py."""
+    cache = Path(cache)
+    return cache.with_name(cache.name.replace(".npy", ".langs.npy"))
+
+
+def needed_rows(paths):
+    """Every cache row the texts stage must recover for these files."""
+    need = set()
+    for path in paths:
+        dat = np.load(path)
+        for key in ROW_KEYS:
+            if key in dat:
+                need |= set(dat[key].ravel().tolist())
+    return need
+
+
+def modal_language(labels: Shaped[np.ndarray, "n"]) -> tuple[str, float]:
+    """The most common label and its share; a tie goes to the label that
+    sorts first."""
+    u, c = np.unique(labels, return_counts=True)
+    i = int(c.argmax())
+    return str(u[i]), float(c[i]) / len(labels)
+
+
+def detection_accuracy(precision: float, recall: float,
+                       n_test: int) -> tuple[float, float]:
+    """Accuracy of one detection item set of n_test positives and n_test
+    negatives, recovered from its precision and recall as a (low, high)
+    bracket. TP = n_test * recall and FP = TP / precision - TP give the
+    accuracy (TP + n_test - FP) / (2 n_test) exactly when TP > 0; with no
+    true positive the false positives are unknown and it lies in [0, 1/2]."""
+    tp = round(n_test * recall)
+    if tp == 0:
+        return 0.0, 0.5
+    acc = (tp + n_test - round(tp / precision - tp)) / (2 * n_test)
+    return acc, acc
+
+
+def matched_rows(target: Shaped[np.ndarray, "n"], cand: Int[np.ndarray, "c"],
+                 cand_langs: Shaped[np.ndarray, "c"], rng: np.random.Generator
+                 ) -> tuple[Int[np.ndarray, "n"], int]:
+    """len(target) distinct rows of `cand`, the i-th in language target[i]
+    wherever enough candidates are in that language, drawn without
+    replacement; a position whose language has run out takes a remaining
+    candidate at random. Returns the rows and how many are matched."""
+    if len(cand) < len(target):
+        raise ValueError(f"{len(cand)} candidates for {len(target)} rows")
+    out = np.full(len(target), -1, np.int64)
+    free = np.ones(len(cand), bool)
+    for lang in np.unique(target):
+        want = np.flatnonzero(target == lang)
+        have = np.flatnonzero(free & (cand_langs == lang))
+        pick = rng.choice(have, min(len(want), len(have)), replace=False)
+        out[want[:len(pick)]] = cand[pick]
+        free[pick] = False
+    short = np.flatnonzero(out < 0)
+    out[short] = cand[rng.choice(np.flatnonzero(free), len(short),
+                                 replace=False)]
+    return out, len(target) - len(short)
+
+
+def span_bins(edges, n_rows):
+    """Labels of the language-count bins with these sorted lower edges, the
+    last closed at n_rows, the most languages n_rows rows can span."""
+    his = [e - 1 for e in edges[1:]] + [n_rows]
+    return [f"{lo}-{hi}" for lo, hi in zip(edges, his)]
+
+
+def spearman(a, b):
+    """Rank correlation; NaN when either side is constant."""
+    from scipy.stats import spearmanr
+    a, b = np.asarray(a, float), np.asarray(b, float)
+    if a.std() == 0 or b.std() == 0:
+        return float("nan")
+    return float(spearmanr(a, b).statistic)
+
+
+def ols_r2(y: Float[np.ndarray, "n"], *cols: Float[np.ndarray, "n"]) -> float:
+    """Share of y's variance explained by least squares on `cols` and an
+    intercept."""
+    X = np.column_stack([np.ones(len(y)), *cols])
+    beta, *_ = np.linalg.lstsq(X, y, rcond=None)
+    return float(1 - (y - X @ beta).var() / y.var())
+
+
+def trend_residuals(freq: Float[np.ndarray, "r"], f1: Float[np.ndarray, "r"],
+                    fit: Bool[np.ndarray, "r"]) -> Float[np.ndarray, "r"]:
+    """Each campaign's mean F1 less the least-squares line in log firing
+    rate through the campaigns in `fit`; NaN for a code that never fires,
+    which has no log rate."""
+    fires = freq > 0
+    slope, icept = np.polyfit(np.log(freq[fit & fires]), f1[fit & fires], 1)
+    with np.errstate(divide="ignore"):
+        line = icept + slope * np.log(freq)
+    return np.where(fires, f1 - line, np.nan)
+
+
+def random_span(counts: Float[np.ndarray, "c"], n: int) -> float:
+    """Expected number of distinct labels among n rows drawn at random, with
+    replacement, from a corpus with these label counts."""
+    p = np.asarray(counts, float) / np.sum(counts)
+    return float(np.sum(1 - (1 - p) ** n))
+
+
 # ---------- judge plumbing ----------
 
 def next_slot(prev, now, gap):
@@ -438,20 +585,9 @@ def onto_acts_fn(ckpt, step, temperature, inputs=False):
     forward="labels"). Layer 0's input is X itself, so it is not repeated."""
     import jax
     import jax.numpy as jnp
-    import orbax.checkpoint as ocp
-    from ontologize.ontologizer import Ontologizer
-    from ontologize.training.serialize import restore_spec
+    from pareto import load_onto
 
-    manager = ocp.CheckpointManager(
-        Path(ckpt).resolve(),
-        checkpointers={'state': ocp.PyTreeCheckpointer(),
-                       'spec': ocp.PyTreeCheckpointer()})
-    step = step or manager.latest_step()
-    model = Ontologizer(**restore_spec(manager, step))
-    state = manager.restore(step, items={'state': None})['state']
-    params = state['params'] if 'opt_state' in state else state
-    while 'params' in params:
-        params = params['params']
+    model, params, step = load_onto(ckpt, step)
     params = {'params': params}
     l, h, k = model.l, model.h, model.k
 
@@ -532,6 +668,18 @@ def sae_acts_fn(ckpt, topk):
     return acts, params, m, meta
 
 
+def fire_threshold(meta):
+    """The activation above which a feature fires. An Ontologizer entry's
+    assignment and a grouped-softmax latent are strictly positive simplex
+    weights, so firing means meaningfully above uniform (2/k); any other
+    latent fires when nonzero."""
+    if meta["model"] == "onto":
+        return 2.0 / meta["k"]
+    if meta.get("group_fn") == "softmax" and meta.get("groups"):
+        return 2.0 / (meta["m"] // meta["groups"])
+    return 0.0
+
+
 def harvest(cfg):
     import jax.numpy as jnp
 
@@ -539,7 +687,7 @@ def harvest(cfg):
     out.mkdir(parents=True, exist_ok=True)
     if cfg.model == "onto":
         acts_fn, embed_fn, F, meta = onto_acts_fn(
-            cfg.ckpt, cfg.step, cfg.temperature)
+            cfg.ckpt or ONTO_CKPT, cfg.step, cfg.temperature)
     else:
         acts_fn, sae_params, F, meta = sae_acts_fn(cfg.ckpt, cfg.topk)
 
@@ -564,15 +712,7 @@ def harvest(cfg):
     sub_rows = np.concatenate(sub_rows)
     sub_acts = np.concatenate(sub_acts)  # (S, F)
 
-    if cfg.model == "onto":
-        thresh = 2.0 / meta["k"]
-    elif meta.get("group_fn") == "softmax" and meta.get("groups"):
-        # grouped-softmax latents are strictly positive simplex weights;
-        # "fires" = meaningfully above uniform, as for onto tags
-        thresh = 2.0 / (meta["m"] // meta["groups"])
-    else:
-        thresh = 0.0
-    freq = (sub_acts > thresh).mean(0)
+    freq = (sub_acts > fire_threshold(meta)).mean(0)
     if getattr(cfg, "feature_ids", None):
         sel = np.asarray(sorted(set(cfg.feature_ids)), np.int64)
         assert sel.max() < sub_acts.shape[1] and sel.min() >= 0, \
@@ -631,6 +771,93 @@ def harvest(cfg):
     print(f"harvest: {len(sel)}/{F} features -> {out/'features.npz'}")
 
 
+# ---------- stage: match ----------
+
+def match(cfg):
+    """Language-matched rows for an existing campaign, in lang_rows.npz next
+    to its features.npz: per feature, `neg_i`, n_test negatives in the
+    languages of its held-out positives, and `bg_i`, n_desc contrastive
+    background rows in the languages of its description rows, with the
+    matched count of each. Candidates are the harvest subsample's rows below
+    the feature's median activation (q50) outside its top rows, harvest's
+    own negative pool; the background also excludes both sets of scoring
+    negatives, so a description never sees a row it is graded on. The
+    checkpoint is --ckpt, else the SAE path harvest recorded (an
+    Ontologizer's meta.json records none); its firing rates on the
+    subsample must reproduce the harvest's, so a moved or retrained
+    checkpoint is refused rather than matched against."""
+    import jax.numpy as jnp
+    from tqdm import tqdm
+
+    d = Path(cfg.dir)
+    dat = np.load(d / "features.npz")
+    meta = json.loads((d / "meta.json").read_text())
+    if meta["model"] == "onto":
+        acts_fn, _, _, _ = onto_acts_fn(cfg.ckpt or ONTO_CKPT, meta["step"],
+                                        meta["temperature"])
+    else:
+        acts_fn, _, _, _ = sae_acts_fn(cfg.ckpt or meta["ckpt"],
+                                       meta["topk"])
+    sel, top_i, n_desc = dat["sel"], dat["top_i"], meta["n_desc"]
+
+    # the subsample harvest measured q50 on: every stride-th batch
+    mm = np.load(cfg.cache, mmap_mode="r")
+    n, b = meta["rows"], cfg.b
+    stride = max(1, (n // b) // cfg.sub_batches)
+    rows, acts = [], []
+    for i in tqdm(range(0, n - b + 1, b * stride), desc="match"):
+        A = np.asarray(acts_fn(jnp.asarray(
+            np.asarray(mm[i:i + b], dtype=np.float32))))
+        rows.append(np.arange(i, i + b))
+        acts.append(A[:, sel].astype(np.float16))  # as harvest stores them
+    rows, acts = np.concatenate(rows), np.concatenate(acts)  # (S,), (S, F)
+    drift = np.abs((acts > fire_threshold(meta)).mean(0) - dat["freq"]).max()
+    if drift > 0.01:
+        raise ValueError(
+            f"match: firing rates differ from the harvest's by up to "
+            f"{drift:.3f}; this is not the checkpoint {d} was harvested "
+            f"from (pass --ckpt)")
+    langs = np.load(langs_path(cfg.cache), mmap_mode="r")
+    row_langs = np.asarray(langs[rows])
+
+    neg_i = np.zeros((len(sel), cfg.n_test), np.int64)
+    bg_i = np.zeros((len(sel), n_desc), np.int64)
+    neg_matched = np.zeros(len(sel), np.int64)
+    bg_matched = np.zeros(len(sel), np.int64)
+    for j, f in enumerate(sel):
+        rng = np.random.default_rng([meta["seed"], int(f)])
+        ok = (acts[:, j] <= dat["q50"][j]) & ~np.isin(rows, top_i[j])
+        cand, cand_langs = rows[ok], row_langs[ok]
+        pos = top_i[j, n_desc:n_desc + cfg.n_test]
+        neg_i[j], neg_matched[j] = matched_rows(
+            np.asarray(langs[pos]), cand, cand_langs, rng)
+        keep = ~np.isin(cand, np.concatenate(
+            [neg_i[j], dat["neg_i"][j, :cfg.n_test]]))
+        bg_i[j], bg_matched[j] = matched_rows(
+            np.asarray(langs[top_i[j, :n_desc]]), cand[keep],
+            cand_langs[keep], rng)
+    np.savez(d / "lang_rows.npz", sel=sel, neg_i=neg_i, bg_i=bg_i,
+             neg_matched=neg_matched, bg_matched=bg_matched)
+    print(f"match: {len(sel)} features, negatives "
+          f"{neg_matched.sum() / neg_i.size:.1%} and background "
+          f"{bg_matched.sum() / bg_i.size:.1%} language-matched -> "
+          f"{d / 'lang_rows.npz'}")
+
+
+def load_lang_rows(d, sel, n_test):
+    """`match`'s rows for campaign d, checked against its feature sample."""
+    path = Path(d) / "lang_rows.npz"
+    if not path.exists():
+        raise FileNotFoundError(f"{path}: run the match stage first")
+    lr = np.load(path)
+    if not np.array_equal(lr["sel"], sel):
+        raise ValueError(f"{path} was drawn for another feature sample")
+    if lr["neg_i"].shape[1] < n_test:
+        raise ValueError(f"{path} holds {lr['neg_i'].shape[1]} negatives per "
+                         f"feature, fewer than --n-test {n_test}")
+    return lr
+
+
 # ---------- stage: texts ----------
 
 def texts(cfg):
@@ -638,11 +865,7 @@ def texts(cfg):
     from ontologize.data.loaders import HFDataSource
     from ontologize.data.multilingual import mc4_data
 
-    need = set()
-    for fpath in cfg.features:
-        dat = np.load(fpath)
-        need |= set(dat["top_i"].ravel().tolist())
-        need |= set(dat["neg_i"].ravel().tolist())
+    need = needed_rows(cfg.features)
     path = Path(cfg.out) / "texts.jsonl"
     have = set()
     if path.exists():
@@ -657,11 +880,10 @@ def texts(cfg):
     # texts are recovered by replaying the (deterministic) mC4 stream to the
     # cache row index; the .langs.npy sidecar written by encode_corpus.py
     # gives a per-row alignment check that catches any stream drift
-    langs_path = Path(cfg.cache).with_name(
-        Path(cfg.cache).name.replace(".npy", ".langs.npy"))
-    L = np.load(langs_path, mmap_mode="r") if langs_path.exists() else None
+    sidecar = langs_path(cfg.cache)
+    L = np.load(sidecar, mmap_mode="r") if sidecar.exists() else None
     if L is None:
-        print(f"WARNING: {langs_path} missing; stream alignment unverified")
+        print(f"WARNING: {sidecar} missing; stream alignment unverified")
 
     ds = mc4_data("allenai/c4", split="train", streaming=True)
     it = iter(HFDataSource(ds, text_key="text"))
@@ -725,6 +947,10 @@ def describe(cfg):
         n += flush(describe_acts(cfg, dat, meta, done))
     if cfg.mode == "cacts":
         n += flush(describe_acts(cfg, dat, meta, done, contrast=True))
+    if cfg.mode == "cacts_lang":
+        bg = load_lang_rows(d, dat["sel"], cfg.n_test)["bg_i"]
+        n += flush(describe_acts(cfg, dat, meta, done, contrast=True,
+                                 bg_rows=bg))
     print(f"describe: +{n} -> {out}")
 
 
@@ -761,10 +987,15 @@ def describe_params(cfg, dat, done, key="emb", mode="params"):
     return recs
 
 
-def describe_acts(cfg, dat, meta, done, contrast=False):
+def describe_acts(cfg, dat, meta, done, contrast=False, bg_rows=None):
+    """Judge-written descriptions: "acts" from the top rows alone, "cacts"
+    beside a contrastive background of random rows, and "cacts_lang" beside
+    `bg_rows` (feature x row), the language-matched background `match`
+    draws."""
     txt = load_texts(cfg.out)
     llm_map = make_llm(cfg.judge, cfg.dry_dir(), cfg.jobs, cfg.rate)
-    mode = "cacts" if contrast else "acts"
+    mode = ("cacts_lang" if bg_rows is not None else
+            "cacts" if contrast else "acts")
     # contrast background: any feature's negatives are random low-activation
     # corpus draws, and they are already in texts.jsonl
     pool = np.unique(dat["neg_i"]) if contrast else None
@@ -775,8 +1006,10 @@ def describe_acts(cfg, dat, meta, done, contrast=False):
         rows = dat["top_i"][j, :meta["n_desc"]]
         pos = "\n".join(f"- {snippet(txt[int(r)]['text'])}" for r in rows)
         if contrast:
-            bg = contrast_rows(int(f), dat["top_i"][j], dat["neg_i"][j], pool,
-                               meta["n_desc"], cfg.n_test, meta["seed"])
+            bg = (bg_rows[j] if bg_rows is not None else
+                  contrast_rows(int(f), dat["top_i"][j], dat["neg_i"][j],
+                                pool, meta["n_desc"], cfg.n_test,
+                                meta["seed"]))
             neg = "\n".join(f"- {snippet(txt[int(r)]['text'])}" for r in bg)
             prompt = CONTRAST_PROMPT.format(pos=pos, neg=neg)
         else:
@@ -799,8 +1032,18 @@ def score(cfg):
     txt = load_texts(cfg.out)
     with open(d / "descriptions.jsonl") as f:
         descs = [json.loads(l) for l in f]
+    if cfg.only_modes:
+        descs = [r for r in descs if r["mode"] in cfg.only_modes]
     llm_map = make_llm(cfg.judge, cfg.dry_dir(), cfg.jobs, cfg.rate)
     sel_pos = {int(f): j for j, f in enumerate(dat["sel"])}
+    # language-matched negatives grade the same positives; their rows are
+    # recorded under their own kinds so both item sets live in one file
+    if cfg.negatives == "lang":
+        neg_i = load_lang_rows(d, dat["sel"], cfg.n_test)["neg_i"]
+        kinds = {"self": "self_lang", "null": "null_lang"}
+    else:
+        neg_i = dat["neg_i"]
+        kinds = {"self": "self", "null": "null"}
 
     # resume: a crashed run has already paid for some judgements
     path = d / "scores.csv"
@@ -834,12 +1077,13 @@ def score(cfg):
         f = int(rec["feature"])
         j = sel_pos[f]
         rows, truth = detection_items(
-            f, dat["top_i"][j], dat["neg_i"][j],
+            f, dat["top_i"][j], neg_i[j],
             meta["n_desc"], cfg.n_test, meta["seed"])
         samples = "\n".join(f"{i+1}. {snippet(txt[int(r)]['text'])}"
                             for i, r in enumerate(rows))
-        for kind in ("self", "null"):
-            desc = (rec["description"] if kind == "self"
+        for base in ("self", "null"):
+            kind = kinds[base]
+            desc = (rec["description"] if base == "self"
                     else nulls.get(rec["mode"], {}).get(f))
             if desc is None or (f, rec["mode"], kind) in done:
                 continue
@@ -880,25 +1124,302 @@ def summarize_scores(path):
         by.setdefault(r["mode"], {}).setdefault(r["kind"], []).append(
             float(r["f1"]))
     for mode, kinds in sorted(by.items()):
-        s, nul = kinds.get("self", []), kinds.get("null", [])
-        line = f"score[{mode}]: mean F1 {np.mean(s):.3f} (n={len(s)})" \
-            if s else f"score[{mode}]: no self scores"
-        if s and nul:
-            line += (f" | null {np.mean(nul):.3f} (n={len(nul)})"
-                     f" | delta {np.mean(s) - np.mean(nul):+.3f}")
-        print(f"{line} -> {path}")
+        for suffix, tag in (("", mode), ("_lang", f"{mode}, lang negatives")):
+            s = kinds.get("self" + suffix, [])
+            nul = kinds.get("null" + suffix, [])
+            if not (s or nul):
+                continue
+            line = f"score[{tag}]: mean F1 {np.mean(s):.3f} (n={len(s)})" \
+                if s else f"score[{tag}]: no self scores"
+            if s and nul:
+                line += (f" | null {np.mean(nul):.3f} (n={len(nul)})"
+                         f" | delta {np.mean(s) - np.mean(nul):+.3f}")
+            print(f"{line} -> {path}")
 
 
-# ---------- CLI ----------
+# ---------- stage: language ----------
+
+def campaign_label(d, out, model):
+    """A campaign's name: its directory under --out, less the model
+    directory harvest writes into (m5120_k32/sae -> m5120_k32)."""
+    try:
+        parts = Path(d).resolve().relative_to(Path(out).resolve()).parts
+    except ValueError:
+        parts = Path(d).parts[-2:]
+    if len(parts) > 1 and parts[-1] == model:
+        parts = parts[:-1]
+    return "/".join(parts)
+
+
+def campaign_languages(d, langs, n_test, modes):
+    """One campaign's per-feature language statistics, joined with its
+    scores. A feature's judged rows are its n_desc description rows and
+    n_test held-out positives; `lang` is the description rows' modal
+    language, `purity` its share of them, and the *_share columns its share
+    of what the judge sees beside them (the cacts background, the held-out
+    positives and the negatives, and with lang_rows.npz the matched
+    background and negatives). Returns (meta, {feature: stats}, one record
+    per score row in `modes`)."""
+    d = Path(d)
+    dat = np.load(d / "features.npz")
+    meta = json.loads((d / "meta.json").read_text())
+    n_desc, seed = meta["n_desc"], meta["seed"]
+    top_i, neg_i = dat["top_i"], dat["neg_i"]
+    matched = (np.load(d / "lang_rows.npz")
+               if (d / "lang_rows.npz").exists() else None)
+    pool = np.unique(neg_i)
+
+    def share(rows, lang):
+        return float(np.mean(np.asarray(langs[np.asarray(rows)]) == lang))
+
+    feats = {}
+    for j, f in enumerate(dat["sel"]):
+        f = int(f)
+        seen = np.asarray(langs[top_i[j, :n_desc + n_test]])
+        lang, purity = modal_language(seen[:n_desc])
+        bg = contrast_rows(f, top_i[j], neg_i[j], pool, n_desc, n_test, seed)
+        feats[f] = {"feature": f, "freq": float(dat["freq"][j]),
+                    "n_lang": len(np.unique(seen)), "lang": lang,
+                    "purity": purity, "bg_share": share(bg, lang),
+                    "pos_share": float(np.mean(seen[n_desc:] == lang)),
+                    "neg_share": share(neg_i[j, :n_test], lang)}
+        if matched is not None:
+            feats[f]["bg_share_lang"] = share(matched["bg_i"][j], lang)
+            feats[f]["neg_share_lang"] = share(
+                matched["neg_i"][j, :n_test], lang)
+    scored = []
+    for r in read_scores(d / "scores.csv")[0]:
+        f = int(r["feature"])
+        if r["mode"] not in modes or f not in feats:
+            continue
+        p, rc = float(r["precision"]), float(r["recall"])
+        lo, hi = detection_accuracy(p, rc, n_test)
+        scored.append({**feats[f], "mode": r["mode"], "kind": r["kind"],
+                       "precision": p, "recall": rc, "f1": float(r["f1"]),
+                       "acc_lo": lo, "acc_hi": hi})
+    return meta, feats, scored
+
+
+def language(cfg):
+    """Detection against the language spread of each feature's top rows,
+    per campaign, and purity against F1 across campaigns and features. A
+    feature is multilingual when its judged rows span the last --lang-bins
+    bin; `random_span` is what that many random rows span. Writes
+    features.csv (one row per score), bins.csv and summary.json to
+    <out>/language/."""
+    out = Path(cfg.out)
+    dirs = ([Path(p) for p in cfg.dirs] if cfg.dirs else
+            sorted(p.parent for p in out.glob("**/features.npz")
+                   if (p.parent / "scores.csv").exists()))
+    if not dirs:
+        raise SystemExit(f"language: no scored campaign under {out}")
+    langs = np.load(langs_path(cfg.cache), mmap_mode="r")
+    modes = cfg.only_modes or JUDGE_MODES
+    edges = sorted(cfg.lang_bins)
+    camps = []
+    for d in dirs:
+        meta, feats, scored = campaign_languages(d, langs, cfg.n_test, modes)
+        camps.append((campaign_label(d, out, meta["model"]), meta, feats,
+                      scored))
+    n_rows = camps[0][1]["n_desc"] + cfg.n_test
+    labels = span_bins(edges, n_rows)
+    # what random rows span, for reading the multilingual bin
+    _, counts = np.unique(np.asarray(langs[:camps[0][1]["rows"]]),
+                          return_counts=True)
+    span = random_span(counts, n_rows)
+
+    def binned(recs):
+        return np.searchsorted(edges, [r["n_lang"] for r in recs],
+                               side="right") - 1
+
+    def stats(recs):
+        if not recs:
+            return {"n": 0}
+        f1 = np.array([r["f1"] for r in recs])
+        return {"n": len(recs), "f1": float(f1.mean()),
+                "acc": [float(np.mean([r["acc_lo"] for r in recs])),
+                        float(np.mean([r["acc_hi"] for r in recs]))]}
+
+    runs, bins_rows = {}, []
+    for name, meta, feats, scored in camps:
+        F = list(feats.values())
+        fb = binned(F)
+        run = {"model": meta["model"], "features": len(F),
+               "freq": float(np.mean([r["freq"] for r in F])),
+               "purity": float(np.mean([r["purity"] for r in F])),
+               "pure_share": float(np.mean([r["purity"] >= cfg.pure
+                                            for r in F])),
+               "span": {lab: int((fb == b).sum())
+                        for b, lab in enumerate(labels)},
+               **{k: float(np.mean([r[k] for r in F]))
+                  for k in ("bg_share", "pos_share", "neg_share",
+                            "bg_share_lang", "neg_share_lang") if k in F[0]},
+               "modes": {}}
+        for mode, kind in sorted({(s["mode"], s["kind"]) for s in scored}):
+            S = [s for s in scored if s["mode"] == mode and s["kind"] == kind]
+            sb = binned(S)
+            for b, lab in [(b, lab) for b, lab in enumerate(labels)] + [
+                    (None, "all")]:
+                part = [s for s, x in zip(S, sb) if b is None or x == b]
+                st = stats(part)
+                bins_rows.append([name, mode, kind, lab, st["n"],
+                                  st.get("f1", ""), *st.get("acc", ["", ""])])
+            multi = [s for s, x in zip(S, sb) if x == len(labels) - 1]
+            pure = [s for s in S if s["purity"] >= cfg.pure]
+            mixed = [s for s in S if s["purity"] < cfg.pure]
+            run["modes"][mode if kind == "self" else f"{mode}/{kind}"] = {
+                **stats(S), "multilingual": stats(multi),
+                "pure": stats(pure), "mixed": stats(mixed),
+                "rho_span": spearman([s["f1"] for s in S],
+                                     [s["n_lang"] for s in S])}
+        runs[name] = run
+
+    # across campaigns and features, self scores only
+    names = list(runs)
+    model_level, feature_level, trend, gap = {}, {}, {}, {}
+    onto = [n for n in names if runs[n]["model"] == "onto"]
+    for mode in modes:
+        have = [n for n in names if mode in runs[n]["modes"]]
+        if len(have) < 3:
+            continue
+        mean_f1 = np.array([runs[n]["modes"][mode]["f1"] for n in have])
+        multi_f1 = np.array([runs[n]["modes"][mode]["multilingual"]
+                             .get("f1", np.nan) for n in have])
+        model_level[mode] = {
+            "campaigns": len(have),
+            "r2_purity": ols_r2(mean_f1,
+                                np.array([runs[n]["purity"] for n in have]))}
+        S = [s for _, _, _, sc in camps for s in sc
+             if s["mode"] == mode and s["kind"] == "self"]
+        y = np.array([s["f1"] for s in S])
+        pur = np.array([s["purity"] for s in S])
+        # a feature that never fires is floored at a rate of 1e-6
+        lf = np.log10(np.maximum([s["freq"] for s in S], 1e-6))
+        feature_level[mode] = {"features": len(S),
+                               "r2_purity": ols_r2(y, pur),
+                               "r2_log_freq": ols_r2(y, lf),
+                               "r2_both": ols_r2(y, pur, lf)}
+        # the trend is fitted to the SAE campaigns and read off for all
+        freq = np.array([runs[n]["freq"] for n in have])
+        fit = np.array([runs[n]["model"] == "sae" for n in have])
+        if (fit & (freq > 0)).sum() >= 2:
+            res_all = trend_residuals(freq, mean_f1, fit)
+            res_multi = trend_residuals(freq, multi_f1, fit)
+            trend[mode] = {
+                "fit": [n for n, x, q in zip(have, fit, freq) if x and q > 0],
+                "residual": {n: [float(a), float(m)] for n, a, m
+                             in zip(have, res_all, res_multi)
+                             if not np.isnan(a)}}
+        if len(onto) == 1 and onto[0] in have:
+            ref = runs[onto[0]]["modes"][mode]
+
+            def gaps(n):
+                m = runs[n]["modes"][mode]
+                return [m["f1"] - ref["f1"],
+                        m["multilingual"].get("f1", np.nan)
+                        - ref["multilingual"].get("f1", np.nan)]
+            gap[mode] = {n: gaps(n) for n in have if n != onto[0]}
+
+    dest = out / "language"
+    dest.mkdir(parents=True, exist_ok=True)
+    cols = ["campaign", "model", "feature", "mode", "kind", "f1",
+            "precision", "recall", "acc_lo", "acc_hi", "n_lang", "lang",
+            "purity", "freq", "bg_share", "pos_share", "neg_share",
+            "bg_share_lang", "neg_share_lang"]
+    with open(dest / "features.csv", "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(cols)
+        for name, meta, _, scored in camps:
+            for s in scored:
+                w.writerow([name, meta["model"]] + [s.get(c, "")
+                                                    for c in cols[2:]])
+    with open(dest / "bins.csv", "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["campaign", "mode", "kind", "span", "n", "f1", "acc_lo",
+                    "acc_hi"])
+        w.writerows(bins_rows)
+    summary = finite({
+        "rows_judged": n_rows, "span_bins": labels,
+        "multilingual": labels[-1], "random_span": span, "pure": cfg.pure,
+        "campaigns": runs, "model_level": model_level,
+        "feature_level": feature_level, "trend": trend, "gap_to_onto": gap})
+    (dest / "summary.json").write_text(json.dumps(summary, indent=2))
+    print_language(summary)
+    print(f"language: {len(camps)} campaigns -> {dest}")
+
+
+def finite(obj):
+    """obj with every NaN float replaced by None, which JSON can hold."""
+    if isinstance(obj, dict):
+        return {k: finite(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [finite(v) for v in obj]
+    if isinstance(obj, (float, np.floating)):
+        return None if np.isnan(obj) else float(obj)
+    return obj
+
+
+def print_language(s):
+    """The language stage's summary, as text."""
+    fmt = lambda x, p=3: "  -  " if x is None else f"{x:.{p}f}"
+    sgn = lambda x: "   -  " if x is None else f"{x:+.3f}"
+    labels, runs = s["span_bins"], s["campaigns"]
+    print(f"{s['rows_judged']} judged rows per feature; random rows span "
+          f"{s['random_span']:.1f} languages; multilingual = "
+          f"{s['multilingual']} languages; pure = purity >= {s['pure']}")
+    print(f"{'campaign':18s} {'feats':>5s} {'purity':>6s} {'pure':>5s} "
+          + " ".join(f"{lab:>5s}" for lab in labels)
+          + "  bg/pos/neg modal-language share")
+    for name, r in runs.items():
+        print(f"{name:18s} {r['features']:5d} {r['purity']:6.3f} "
+              f"{r['pure_share']:5.2f} "
+              + " ".join(f"{r['span'][lab]:5d}" for lab in labels)
+              + f"  {r['bg_share']:.3f}/{r['pos_share']:.2f}/"
+              f"{r['neg_share']:.2f}")
+    keys = sorted({m for r in runs.values() for m in r["modes"]})
+    for mode in keys:
+        print(f"\n{mode}: mean F1 (all, {labels[-1]}, pure, mixed), "
+              "accuracy (all, multilingual), Spearman(F1, languages)")
+        for name, r in runs.items():
+            m = r["modes"].get(mode)
+            if m is None:
+                continue
+            ml = m["multilingual"]
+            print(f"  {name:18s} {fmt(m['f1'])} (n={m['n']:3d})  "
+                  f"{fmt(ml.get('f1'))} (n={ml['n']:3d})  "
+                  f"{fmt(m['pure'].get('f1'))}  {fmt(m['mixed'].get('f1'))}"
+                  f"  [{fmt(m['acc'][0])}, {fmt(m['acc'][1])}]  "
+                  + (f"[{fmt(ml['acc'][0])}, {fmt(ml['acc'][1])}]"
+                     if ml["n"] else "      -       ")
+                  + f"  {sgn(m['rho_span'])}")
+    for mode, g in s["gap_to_onto"].items():
+        print(f"\n{mode}: gap to the Ontologizer, all -> multilingual: "
+              + ", ".join(f"{n} {sgn(a)} -> {sgn(b)}"
+                          for n, (a, b) in g.items()))
+    for mode, m in s["model_level"].items():
+        f = s["feature_level"][mode]
+        print(f"\n{mode}: R^2 of mean F1 on mean purity over "
+              f"{m['campaigns']} campaigns {fmt(m['r2_purity'])}; per feature "
+              f"(n={f['features']}) purity {fmt(f['r2_purity'])}, log firing "
+              f"rate {fmt(f['r2_log_freq'])}, both {fmt(f['r2_both'])}")
+    for mode, t in s["trend"].items():
+        print(f"\n{mode}: distance above the firing-rate trend fitted to "
+              f"{', '.join(t['fit'])}, all -> multilingual features:")
+        for n, (a, b) in t["residual"].items():
+            print(f"  {n:18s} {sgn(a)} -> {sgn(b)}")
 
 def main():
     p = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("stage", choices=["harvest", "texts", "describe", "score"])
+    p.add_argument("stage", choices=["harvest", "texts", "describe", "score",
+                                     "language", "match"])
     p.add_argument("--out", default=str(OUT))
     p.add_argument("--model", choices=["onto", "sae"], default="onto")
-    p.add_argument("--ckpt", default="data/out/sonar/multilingual/resid_nc")
+    p.add_argument("--ckpt", default=None,
+                   help="an Ontologizer run dir (default resid_nc) or an SAE "
+                        "params.npz; match defaults to the SAE path the "
+                        "harvest recorded")
     p.add_argument("--step", type=int, default=0)
     p.add_argument("--topk", type=int, default=32, help="sae harvest only")
     p.add_argument("--temperature", type=float, default=0.03)
@@ -922,17 +1443,38 @@ def main():
                    help="harvest exactly these feature indices instead of a "
                         "stratified sample, for interrogating one head. An "
                         "Ontologizer tag is layer*h*k + head*k + entry")
-    p.add_argument("--dir", help="harvest output dir (describe/score)")
+    p.add_argument("--dir", help="harvest output dir (describe/score/match)")
+    p.add_argument("--dirs", nargs="+", default=None,
+                   help="campaign dirs for the language stage (default: "
+                        "every scored campaign under --out)")
     p.add_argument("--mode",
-                   choices=["params", "pdev", "acts", "cacts", "eig", "both",
-                            "all"],
+                   choices=["params", "pdev", "acts", "cacts", "cacts_lang",
+                            "eig", "both", "all"],
                    default="both",
                    help="description modes: both = params+acts; pdev = the "
                         "params decode less the pure-origin decode (onto); "
                         "eig = bilinear-SAE eigenfeature decodes; all = "
                         "params+pdev+eig+acts; cacts = contrastive acts (top "
                         "texts vs random corpus draws), run explicitly, never "
-                        "part of both/all")
+                        "part of both/all; cacts_lang = cacts against the "
+                        "language-matched background of the match stage")
+    p.add_argument("--only-modes", nargs="+", default=None,
+                   help="score only descriptions of these modes; the language "
+                        "stage reports these (default: the judge-written "
+                        f"modes, {', '.join(JUDGE_MODES)})")
+    p.add_argument("--negatives", choices=["random", "lang"],
+                   default="random",
+                   help="score stage: random = the harvest's low-activation "
+                        "negatives; lang = the match stage's negatives in the "
+                        "held-out positives' languages, recorded as kinds "
+                        "self_lang/null_lang")
+    p.add_argument("--lang-bins", type=int, nargs="+", default=[1, 4, 10, 13],
+                   help="language stage: lower edges of the bins of distinct "
+                        "languages among a feature's judged rows; the last "
+                        "bin is the multilingual one")
+    p.add_argument("--pure", type=float, default=0.8,
+                   help="language stage: purity at or above which a feature "
+                        "counts as language-pure")
     p.add_argument("--device", default="cpu",
                    help="torch device for the M2M100 decode")
     p.add_argument("--b-decode", type=int, default=16)
@@ -967,8 +1509,8 @@ def main():
         return d
     cfg.dry_dir = dry_dir
 
-    {"harvest": harvest, "texts": texts,
-     "describe": describe, "score": score}[cfg.stage](cfg)
+    {"harvest": harvest, "texts": texts, "describe": describe,
+     "score": score, "language": language, "match": match}[cfg.stage](cfg)
 
 
 if __name__ == "__main__":

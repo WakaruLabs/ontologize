@@ -32,18 +32,18 @@ and for the --heads-per-layer heads (l, i) of each layer whose removal
 moves x_hat furthest (the whitened norm of the unif_frozen delta; a top
 over all layers, --heads-per-row, is nearly always layer 0's):
 
-  unif         head i of layer l uniform-ablated (P_i = 1/k)  decode(x_hat)
-               in the live forward: later layers re-read the
+  unif         head i of layer l uniform-ablated (P_i = 1/k)  decode(x_hat),
+               in the live forward: later layers re-read the   decode(x)
                changed residual and re-classify
-  unif_frozen  x_hat - phi_li + phi_li^unif: the same          decode(x_hat)
-               ablation with every other head and layer held
-  zero         head i zero-ablated (P_i = 0) in the live       decode(x_hat)
-               forward. The dictionary is non-negative, so
+  unif_frozen  x_hat - phi_li + phi_li^unif: the same          decode(x_hat),
+               ablation with every other head and layer held   decode(x)
+  zero         head i zero-ablated (P_i = 0) in the live       decode(x_hat),
+               forward. The dictionary is non-negative, so     decode(x)
                this also removes the head's share of the
                offset every head carries; uniform ablation
                keeps it, which is why it is the primary one
-  null         x_hat plus a random step as long (whitened) as  decode(x_hat)
-               unif_frozen's delta, along the difference of
+  null         x_hat plus a random step as long (whitened) as  decode(x_hat),
+               unif_frozen's delta, along the difference of    decode(x)
                two random cache-tail rows: a data-matched
                direction, not an isotropic one
   only         decode(0) + phi_li: the head's write alone      decode(x)
@@ -60,26 +60,66 @@ makes. The script prints how closely its probes reproduce the model's
 own forward, the contributions sum to x_hat, and the live and frozen
 ablations agree in the last layer.
 
+The ablations and the null have two scores. `dnll` against decode(x_hat)
+is how far the decode moves from the unablated reconstruction's;
+`dnll_x` against decode(x), less the row's recon dNLL, is what the
+condition costs against the input beyond the reconstruction's own cost
+(the conditions scored against decode(x) alone have dnll_x = dnll). A
+live forward that re-describes the input, moving to another
+reconstruction about as close to x, scores high on the first and near 0
+on the second; one that loses content scores high on both. For each,
+the summary gives per layer the live/frozen ratio of means, the share of
+cells where the live ablation does more damage, and the rank correlation
+of frozen and live damage across cells (`live_frozen_by_layer`).
+
 Cost is set by decoding, ~rows * (L + 1 + 5 * heads per row) generations
-plus one per distinct head, and one scoring pass per condition, so this
-is strip mode: a handful of sentences, not an aggregate over heads. The
-summary also gives the removed contribution's size relative to x_hat
-(both whitened): a frozen ablation that damages the text no more than a
-null step of its length says the damage is set by the step's size, not
-by what the head wrote.
+plus one per distinct head, and one scoring pass per condition and
+reference, so this is strip mode: a handful of sentences, not an
+aggregate over heads. The summary also gives the removed contribution's
+size relative to x_hat (both whitened): a frozen ablation that damages
+the text no more than a null step of its length says the damage is set
+by the step's size, not by what the head wrote.
+
+--removals asks the live/frozen question in embedding space instead, with
+no decoder, over --random-heads heads drawn per layer and --rows tail rows
+(default 512). Each head's assignments are replaced by one of
+
+  unif      1/k on every entry (the strips' ablation)
+  mean      the head's mean assignment over these rows (its entry usage,
+            for a hard head)
+  runnerup  one-hot on the second-largest logit: the entry winner dropout
+            makes a head emit in training
+  resample  the assignment of another of these rows (a random permutation)
+
+and the model reconstructs live or frozen, as above. Two readouts, both
+whitened squared distances over the unablated reconstruction's whitened
+error, as ratios of means over rows:
+
+  added      |x - y'|^2 / |x - x_hat|^2 - 1: what the removal costs
+             against the input (0.10 adds 10% to the error)
+  departure  |x_hat - y'|^2 / |x - x_hat|^2: how far the output moves
+             from the unablated reconstruction, the embedding-space
+             counterpart of dnll
+
+per layer and replacement, with live/frozen ratios (below 1: later layers
+compensate) and, per layer, the rank correlation across heads of frozen
+and live damage under unif. Writes <out>/removals.json.
 
   uv run python textstrip.py --ckpt data/out/sonar/multilingual/resid_nc \\
       --device cuda
   uv run python textstrip.py --ckpt data/out/sonar/multilingual/ste_h76_init01 \\
       --heads 0:12 2:5 --rows 8 --device cuda
+  JAX_PLATFORMS=cpu uv run python textstrip.py --removals \\
+      --ckpt data/out/sonar/multilingual/ste_h76_init01 --step 369500
 
 --heads L:I ... shows those heads on every row instead of the top ones.
-The temperature defaults to the run's schedule at the restored step.
+The temperature defaults to the run's schedule at the restored step. The
+model runs on JAX's default backend (JAX_PLATFORMS=cpu keeps it off the
+GPU); --device places only the decoder.
 Writes <out>/strips.jsonl (every decode and score), strips.html (one
 table per sentence, cells shaded by dNLL), meta.json (the settings) and
 summary.json; --replot rebuilds the HTML and summary from strips.jsonl
-and meta.json. NOTE: Ontologizer
-checkpoints restore on GPU JAX only.
+and meta.json.
 """
 # disable preallocation so this can share the GPU (same as sonar.py)
 import os
@@ -98,11 +138,14 @@ from jaxtyping import Float, Int
 
 NONE, UNIF, ZERO = 0, 1, 2
 
-# the reference decode each condition is scored against
+# the reference decode each condition's dnll is scored against; those
+# scored against decode(x_hat) are scored against decode(x) too (dnll_x)
 AGAINST = {"recon": "x", "prefix": "x", "only": "x", "only_mean": "x",
            "unif": "recon", "unif_frozen": "recon", "zero": "recon",
            "null": "recon"}
 HEAD_CONDS = ("unif", "unif_frozen", "zero", "null", "only", "only_mean")
+# --removals' replacements for a head's assignments
+REMOVALS = ("unif", "mean", "runnerup", "resample")
 
 
 def parse_args():
@@ -115,8 +158,9 @@ def parse_args():
     p.add_argument("--cache", default="data/sonar_embeddings/mc4_4M.npy")
     p.add_argument("--eval-rows", type=int, default=32768,
                    help="held-out tail rows of the cache (sae.py's default)")
-    p.add_argument("--rows", type=int, default=12,
-                   help="sentences, drawn at random from the tail")
+    p.add_argument("--rows", type=int, default=None,
+                   help="sentences, drawn at random from the tail "
+                   "(default 12; 512 with --removals)")
     p.add_argument("--row", type=int, nargs="+", default=None,
                    help="absolute cache rows to show instead")
     p.add_argument("--heads-per-layer", type=int, default=2,
@@ -139,6 +183,11 @@ def parse_args():
     p.add_argument("--replot", action="store_true",
                    help="rebuild strips.html and summary.json from "
                    "<out>/strips.jsonl without the model")
+    p.add_argument("--removals", action="store_true",
+                   help="embedding-space live/frozen readouts of four head "
+                   "removals instead of strips; no decoder")
+    p.add_argument("--random-heads", type=int, default=16,
+                   help="heads drawn at random per layer for --removals")
     return p.parse_args()
 
 
@@ -206,9 +255,107 @@ def null_steps(A: Float[np.ndarray, "m d"], B: Float[np.ndarray, "m d"],
     return (U * np.asarray(norms)[:, None]).astype(np.float32)
 
 
-METRICS = ("chrf", "dnll")
+def replace_head(P: Float[np.ndarray, "b h k"], layer: int,
+                 abl_layer: Int[np.ndarray, "b"], abl_head: Int[np.ndarray, "b"],
+                 P_new: Float[np.ndarray, "b k"]) -> Float[np.ndarray, "b h k"]:
+    """`P` with row n's head `abl_head[n]` assigned `P_new[n]` where row n's
+    removal targets `layer`; other rows and heads pass through. Shapes are
+    static, so one compile serves every (layer, head, replacement)."""
+    import jax.numpy as jnp
+    h = P.shape[-2]
+    hit = ((abl_layer == layer)[:, None]
+           & (jnp.arange(h)[None, :] == abl_head[:, None]))
+    return jnp.where(hit[..., None], P_new[:, None, :].astype(P.dtype), P)
+
+
+def removal_assignments(P: Float[np.ndarray, "n k"], K: Float[np.ndarray, "n k"],
+                        perm: Int[np.ndarray, "n"]) -> dict:
+    """The --removals replacements for one head's assignments `P`, given its
+    logits `K`: `unif` 1/k; `mean` the head's mean assignment over these
+    rows; `runnerup` one-hot on the second-largest logit, the entry winner
+    dropout makes a head emit; `resample` the assignment of row perm[n]."""
+    P = np.asarray(P)
+    n, k = P.shape
+    second = np.argsort(np.asarray(K), -1, kind="stable")[:, -2]
+    return {"unif": np.full((n, k), 1.0 / k, P.dtype),
+            "mean": np.repeat(P.mean(0, keepdims=True), n, 0),
+            "runnerup": np.eye(k, dtype=P.dtype)[second],
+            "resample": P[np.asarray(perm)]}
+
+
+def removal_damage(X: Float[np.ndarray, "n d"], x_hat: Float[np.ndarray, "n d"],
+                   Y: Float[np.ndarray, "n d"], w: Float[np.ndarray, "d"]
+                   ) -> tuple:
+    """(added error, departure) of the reconstructions `Y` under a removal:
+    |x - y|^2 / |x - x_hat|^2 - 1 and |x_hat - y|^2 / |x - x_hat|^2, whitened
+    squared distances as ratios of means over rows."""
+    w = np.asarray(w, np.float64)
+    sq = lambda A, B: float((w * (np.asarray(A, np.float64)
+                                  - np.asarray(B, np.float64)) ** 2
+                             ).sum(-1).mean())
+    e0 = sq(X, x_hat)
+    return sq(X, Y) / e0 - 1.0, sq(x_hat, Y) / e0
+
+
+def spearman(a: Float[np.ndarray, "n"], b: Float[np.ndarray, "n"]
+             ) -> Optional[float]:
+    """Spearman's rank correlation; None below three pairs or when either
+    side is constant."""
+    a, b = np.asarray(a, float), np.asarray(b, float)
+    if len(a) < 3 or np.ptp(a) == 0 or np.ptp(b) == 0:
+        return None
+    from scipy.stats import spearmanr
+    return float(spearmanr(a, b).statistic)
+
+
+METRICS = ("chrf", "dnll", "dnll_x")
 # the sign of a difference that means more damage, per metric
-WORSE = {"chrf": -1.0, "dnll": 1.0}
+WORSE = {"chrf": -1.0, "dnll": 1.0, "dnll_x": 1.0}
+
+
+def live_frozen_by_layer(records: Sequence[dict], metric: str = "dnll"
+                         ) -> Optional[dict]:
+    """The live/frozen split of the uniform ablation per layer of the
+    ablated head, and over all layers ("all"), on the (row, layer, head)
+    cells that have unif, unif_frozen and null: each one's mean `metric`,
+    the live/frozen ratio of means, the share of cells where the live
+    ablation does more damage, and the rank correlation of frozen and live
+    damage across cells. For dnll_x every value is less its row's recon
+    dNLL: the cost against decode(x) beyond the reconstruction's."""
+    base = {r["row"]: next((c["dnll"] for c in r["cells"]
+                            if c["cond"] == "recon"), None) for r in records}
+    by = {}
+    for r in records:
+        for c in r["cells"]:
+            v = c.get(metric)
+            if c["cond"] not in ("unif", "unif_frozen", "null") or v is None:
+                continue
+            if metric == "dnll_x":
+                if base[r["row"]] is None:
+                    continue
+                v -= base[r["row"]]
+            by.setdefault((c["layer"], r["row"], c["head"]), {})[c["cond"]] = v
+    full = {key: d for key, d in by.items()
+            if {"unif", "unif_frozen", "null"} <= d.keys()}
+    if not full:
+        return None
+
+    def row(keys):
+        v = np.asarray([[full[k]["unif"], full[k]["unif_frozen"],
+                         full[k]["null"]] for k in keys], float)
+        live, frozen, null = v.T
+        return {"n": len(v), "live": float(live.mean()),
+                "frozen": float(frozen.mean()), "null": float(null.mean()),
+                "ratio": (float(live.mean() / frozen.mean())
+                          if frozen.mean() != 0 else None),
+                "frac_live_worse": float((live > frozen).mean()),
+                "spearman": spearman(frozen, live)}
+
+    keys = sorted(full)
+    out = {str(L): row([k for k in keys if k[0] == L])
+           for L in sorted({k[0] for k in keys})}
+    out["all"] = row(keys)
+    return out
 
 
 def summarize(records: Sequence[dict]) -> dict:
@@ -252,6 +399,8 @@ def summarize(records: Sequence[dict]) -> dict:
             str(L): {m: stat([c.get(m) for c in by.get(cond, [])
                               if c["layer"] == L]) for m in METRICS}
             for L in sorted({c["layer"] for c in by.get(cond, [])})}
+    s["live_frozen_by_layer"] = {m: live_frozen_by_layer(records, m)
+                                 for m in ("dnll", "dnll_x")}
     # how big the removed contributions are next to the reconstruction
     xn = {r["row"]: r.get("xnorm") for r in records}
     ratio = [c["dnorm"] / xn[c["row"]] for c in by.get("unif_frozen", [])
@@ -287,9 +436,13 @@ def render_html(records: Sequence[dict], title: str, summary: dict) -> str:
     def cell(c):
         if c is None:
             return "<td></td>"
+        both = AGAINST[c["cond"]] == "recon" and c.get("dnll_x") is not None
+        score = (f'dNLL x&#770; {_fmt(c.get("dnll"), "+.2f")}, '
+                 f'x {_fmt(c["dnll_x"], "+.2f")}' if both else
+                 f'dNLL {_fmt(c.get("dnll"), "+.2f")}')
         return (f'<td style="background:{_shade(c.get("dnll"))}">'
                 f'<div class="t">{e(c["text"])}</div>'
-                f'<div class="s">dNLL {_fmt(c.get("dnll"), "+.2f")} &middot; '
+                f'<div class="s">{score} &middot; '
                 f'chrF {c["chrf"]:.2f}</div></td>')
 
     out = [
@@ -307,21 +460,27 @@ def render_html(records: Sequence[dict], title: str, summary: dict) -> str:
         "</style></head><body>",
         f"<h1 style='font-size:18px'>{e(title)}</h1>",
         "<p>Each cell is a decode, scored against its reference decode: "
-        "ablations and the null against decode(x&#770;); recon, prefixes, "
-        "only and only_mean against decode(x). dNLL is the decoder's "
+        "ablations and the null against decode(x&#770;) and also against "
+        "decode(x); recon, prefixes, only and only_mean against decode(x). "
+        "dNLL is the decoder's "
         "per-token NLL of the reference decode under the cell's embedding, "
-        f"less under the reference's own; cells are shaded by it on a "
+        f"less under the reference's own; cells are shaded by the first "
+        f"reference's on a "
         f"square-root scale, white at 0 and full red at {DNLL_TOP:g} nats per "
-        f"token. chrF compares the two texts "
+        f"token. chrF compares the decode with the first reference "
         "and flips on rounding-level changes, so read it as a display, "
         "not a score.</p>",
         "<table><tr><th>condition</th><th>n</th><th>mean dNLL</th>"
-        "<th>SE</th><th>mean chrF</th><th>SE</th></tr>"]
+        "<th>SE</th><th>vs decode(x)</th><th>SE</th>"
+        "<th>mean chrF</th><th>SE</th></tr>"]
     for c, v in summary["conditions"].items():
         d, f = v["dnll"], v["chrf"]
+        dx = v.get("dnll_x") or {"mean": None, "se": None}
         out.append(f"<tr><td class='k'>{e(c)}</td><td>{f['n']}</td>"
                    f"<td>{_fmt(d['mean'], '+.3f')}</td>"
                    f"<td>{_fmt(d['se'], '.3f')}</td>"
+                   f"<td>{_fmt(dx['mean'], '+.3f')}</td>"
+                   f"<td>{_fmt(dx['se'], '.3f')}</td>"
                    f"<td>{_fmt(f['mean'], '.3f')}</td>"
                    f"<td>{_fmt(f['se'], '.3f')}</td></tr>")
     out.append("</table>")
@@ -411,6 +570,60 @@ def contrib_probe(module, X, T: float):
     return jnp.stack(phi, 1), jnp.stack(phi_u, 1), zero
 
 
+def classify_probe(module, X, T: float):
+    """Every layer's logits and assignments under the plain forward, both
+    (l, b, h, k), and its reconstruction x_hat (b, d_out)."""
+    import jax.numpy as jnp
+    E, _ = module.encode(X, 0.0, None)
+    R = module.resid(E)
+    Ein = module.constinput(E)
+    Ks, Ps = [], []
+    for i, de in enumerate(module.dictencs):
+        U, G = de.gainshape_in(Ein)
+        K = de.classifier(U)
+        P = de.dict.cluster(K, T)
+        Ks.append(K)
+        Ps.append(P)
+        R = R + de.gained(de.dict.combine(de.head_outputs(U, P)), G)
+        if i < module.l - 1:
+            Ein = module.nextinput(X, R, P.reshape(X.shape[0], -1))
+    return jnp.stack(Ks), jnp.stack(Ps), module.decode(R)
+
+
+def removal_probe(module, X, abl_layer, abl_head, P_new, T: float):
+    """Reconstructions with row n's head abl_head[n] of layer abl_layer[n]
+    assigned P_new[n] in place of its own classification (`replace_head`),
+    as (live, frozen), each (b, d_out). live: later layers re-read the
+    changed residual and re-classify. frozen: only that head's write
+    changes, every other head and gain held, so it is x_hat plus the
+    change in the head's gained write (unif_frozen for P_new = 1/k)."""
+    import jax.numpy as jnp
+    E, _ = module.encode(X, 0.0, None)
+    R = R_live = module.resid(E)
+    Ein = Ein_live = module.constinput(E)
+    dR = jnp.zeros_like(R)
+    for i, de in enumerate(module.dictencs):
+        U, G = de.gainshape_in(Ein)
+        P = de.dict.cluster(de.classifier(U), T)
+        Y = de.dict.combine(de.head_outputs(U, P))
+        Y_new = de.dict.combine(de.head_outputs(
+            U, replace_head(P, i, abl_layer, abl_head, P_new)))
+        dR = dR + de.gained(Y_new - Y, G)
+        R = R + de.gained(Y, G)
+        U_live, G_live = de.gainshape_in(Ein_live)
+        P_live = de.dict.cluster(de.classifier(U_live), T)
+        R_live = R_live + de.gained(de.dict.combine(de.head_outputs(
+            U_live, replace_head(P_live, i, abl_layer, abl_head, P_new))),
+            G_live)
+        if i < module.l - 1:
+            # each stream forwards its own classification before the
+            # replacement, as `withArgs` does (only `resid_labels` reads it)
+            Ein = module.nextinput(X, R, P.reshape(X.shape[0], -1))
+            Ein_live = module.nextinput(X, R_live,
+                                        P_live.reshape(X.shape[0], -1))
+    return module.decode(R_live), module.decode(R + dR)
+
+
 # ---------- driver ----------
 
 def write_outputs(out: Path, records: list, title: str, meta: dict):
@@ -421,11 +634,14 @@ def write_outputs(out: Path, records: list, title: str, meta: dict):
     pm = lambda v, f: ("   -   " if v["mean"] is None else
                        format(v["mean"], f) + ("" if v["se"] is None
                                                else f" +- {v['se']:.3f}"))
-    print("\ncondition      n   dNLL             chrF             against")
+    print("\ncondition      n   dNLL             chrF             against"
+          "        dNLL vs decode(x)")
     for c, v in s["conditions"].items():
+        both = AGAINST[c] == "recon"
         print(f"  {c:<12} {v['chrf']['n']:>4}  {pm(v['dnll'], '+.3f'):<16} "
               f"{pm(v['chrf'], '.3f'):<16} "
-              f"{'decode(x)' if AGAINST[c] == 'x' else 'decode(x_hat)'}")
+              f"{'decode(x_hat)' if both else 'decode(x)':<14} "
+              + (pm(v['dnll_x'], '+.3f') if both else ""))
     for key, txt in (("unif_frozen_vs_null", "frozen ablation vs null"),
                      ("unif_vs_unif_frozen", "live vs frozen ablation"),
                      ("only_vs_only_mean", "head's write vs its mean")):
@@ -438,13 +654,23 @@ def write_outputs(out: Path, records: list, title: str, meta: dict):
     if s["delta_over_xhat_median"] is not None:
         print(f"  removed contribution / x_hat (whitened), median "
               f"{s['delta_over_xhat_median']:.3f}")
-    print("  dNLL by layer:   unif     unif_frozen   null")
-    for L in s["unif_frozen_by_layer"]:
-        g = lambda c: s[f"{c}_by_layer"].get(L, {}).get("dnll", {}).get("mean")
-        print(f"    layer {L}:    " + "     ".join(
-            "  -   " if g(c) is None else f"{g(c):+.3f}"
-            for c in ("unif", "unif_frozen", "null")))
+    for m, txt in (("dnll", "against decode(x_hat)"),
+                   ("dnll_x", "against decode(x), less the row's recon dNLL")):
+        table = s["live_frozen_by_layer"][m]
+        if table:
+            print(f"  uniform ablation by layer, live vs frozen, {txt}:")
+            print_live_frozen(table)
     print(f"-> {out / 'strips.html'}\n-> {out / 'strips.jsonl'}")
+
+
+def print_live_frozen(table: dict):
+    num = lambda v, f: "-" if v is None else format(v, f)
+    print(f"    {'layer':>5} {'n':>4} {'live':>7} {'frozen':>7} {'null':>7} "
+          f"{'live/frz':>8} {'P(live>frz)':>11} {'rank r':>7}")
+    for L, v in table.items():
+        print(f"    {L:>5} {v['n']:>4} {v['live']:7.3f} {v['frozen']:7.3f} "
+              f"{v['null']:7.3f} {num(v['ratio'], '.2f'):>8} "
+              f"{v['frac_live_worse']:11.2f} {num(v['spearman'], '+.2f'):>7}")
 
 
 def main():
@@ -457,21 +683,18 @@ def main():
         meta = json.loads((out / "meta.json").read_text())
         write_outputs(out, records, title_of(meta), meta)
         return
+    if cfg.removals:
+        run_removals(cfg, out)
+        return
 
     import jax
     import jax.numpy as jnp
-    from assignmap import read_hyper, temperature_at
     from pareto import load_onto
     from textfid import SonarDecoder, chrf
 
     model, params, step = load_onto(cfg.ckpt, cfg.step)
     l, h = model.l, model.h
-    T = cfg.temperature
-    if T is None:
-        hyper = read_hyper(cfg.ckpt)
-        assert hyper is not None, \
-            "no env_config in log.jsonl; pass --temperature"
-        T = temperature_at(hyper, step)
+    T = run_temperature(cfg, step)
     w = np.load(cfg.mse_weights).astype(np.float64)
     meta = {"run": Path(cfg.ckpt).name, "step": int(step),
             "temperature": float(T), "seed": cfg.seed}
@@ -483,7 +706,8 @@ def main():
     lo = n_all - cfg.eval_rows
     rng = np.random.default_rng(cfg.seed)
     rows = (np.asarray(cfg.row) if cfg.row else
-            lo + np.sort(rng.choice(cfg.eval_rows, cfg.rows, replace=False)))
+            lo + np.sort(rng.choice(cfg.eval_rows, cfg.rows or 12,
+                                    replace=False)))
     X = np.asarray(mm[rows], dtype=np.float32)
     assert X.shape[1] == len(w), "mse weights do not match the cache width"
     side = Path(cfg.cache).with_name(
@@ -588,6 +812,9 @@ def main():
             ("only_mean", mean_cell, cn, "x")]
     jobs += [(k, blocks[k], cn, AGAINST[k])
              for k in ("unif", "unif_frozen", "zero", "null", "only")]
+    # the conditions scored against decode(x_hat), against decode(x) too
+    jobs += [(f"{k}_x", blocks[k], cn, "x")
+             for k in ("unif", "unif_frozen", "zero", "null")]
     print(f"scoring {sum(len(j[1]) for j in jobs)} embeddings")
     nll = {k: dec.nll(Yj.astype(np.float32),
                       [against_seq[ref](n) for n in ns])
@@ -601,12 +828,15 @@ def main():
         ref, rec = text["ref"][n], text["recon"][n]
         against = {"x": ref, "recon": rec}
 
-        def mk(cond, txt, nl, layer=None, head=None, dn=None):
+        def mk(cond, txt, nl, layer=None, head=None, dn=None, nl_x=None):
             a = AGAINST[cond]
+            dnll = float(nl - floor[a][n])
             return {"row": int(rows[n]), "cond": cond, "layer": layer,
                     "head": head, "text": txt, "dnorm": dn,
                     "chrf": chrf(against[a], txt), "nll": float(nl),
-                    "dnll": float(nl - floor[a][n])}
+                    "dnll": dnll,
+                    "dnll_x": (dnll if a == "x"
+                               else float(nl_x - floor["x"][n]))}
 
         cs = [mk("prefix", text["prefix"][L * nr + n],
                  nll["prefix"][L * nr + n], layer=L) for L in range(l - 1)]
@@ -616,7 +846,9 @@ def main():
                 continue
             dn = float(dnorm[n, L, i])
             for cond in ("unif", "unif_frozen", "zero", "null", "only"):
-                cs.append(mk(cond, text[cond][j], nll[cond][j], L, i, dn))
+                cs.append(mk(cond, text[cond][j], nll[cond][j], L, i, dn,
+                             nll[f"{cond}_x"][j]
+                             if AGAINST[cond] == "recon" else None))
             cs.append(mk("only_mean", mean_txt[(L, i)], nll["only_mean"][j],
                          L, i, dn))
         records.append({"row": int(rows[n]), "lang": langs[n], "ref": ref,
@@ -634,6 +866,127 @@ def main():
              "mean_rows": cfg.mean_rows, "forced_heads": cfg.heads}
     (out / "meta.json").write_text(json.dumps(meta, indent=2))
     write_outputs(out, records, title_of(meta), meta)
+
+
+def run_temperature(cfg, step: int) -> float:
+    """--temperature, else the run's schedule at the restored step."""
+    if cfg.temperature is not None:
+        return cfg.temperature
+    from assignmap import read_hyper, temperature_at
+    hyper = read_hyper(cfg.ckpt)
+    assert hyper is not None, "no env_config in log.jsonl; pass --temperature"
+    return temperature_at(hyper, step)
+
+
+def run_removals(cfg, out: Path):
+    """--removals: every replacement of `removal_assignments`, live and
+    frozen (`removal_probe`), for --random-heads heads per layer on the
+    tail rows, scored by `removal_damage`; writes <out>/removals.json."""
+    import jax
+    import jax.numpy as jnp
+    from pareto import load_onto
+
+    model, params, step = load_onto(cfg.ckpt, cfg.step)
+    l, h = model.l, model.h
+    T = run_temperature(cfg, step)
+    w = np.load(cfg.mse_weights).astype(np.float64)
+    mm = np.load(cfg.cache, mmap_mode="r")
+    lo = mm.shape[0] - cfg.eval_rows
+    rng = np.random.default_rng(cfg.seed)
+    rows = (np.asarray(cfg.row) if cfg.row else
+            lo + np.sort(rng.choice(cfg.eval_rows, cfg.rows or 512,
+                                    replace=False)))
+    X = np.asarray(mm[rows], dtype=np.float32)
+    assert X.shape[1] == len(w), "mse weights do not match the cache width"
+    n = len(rows)
+    # every draw before any compute, in a fixed order: each layer's heads,
+    # then one permutation of the rows per head
+    heads, perms = [], []
+    for L in range(l):
+        hs = rng.choice(h, cfg.random_heads, replace=False)
+        heads.append([int(i) for i in hs])
+        perms.append([rng.permutation(n) for _ in hs])
+
+    p = {"params": params}
+    cls_j = jax.jit(lambda q, x: model.apply(q, x, T, method=classify_probe))
+    rem_j = jax.jit(lambda q, x, a, b, c: model.apply(
+        q, x, a, b, c, T, method=removal_probe))
+    parts = [cls_j(p, jnp.asarray(X[i:i + cfg.b])) for i in range(0, n, cfg.b)]
+    K = np.concatenate([np.asarray(v[0]) for v in parts], 1)  # (l, n, h, k)
+    P = np.concatenate([np.asarray(v[1]) for v in parts], 1)
+    x_hat = np.concatenate([np.asarray(v[2]) for v in parts], 0)
+    own = np.asarray(model.apply(p, jnp.asarray(X[:cfg.b]), temperature=T))
+    err0 = float((w * (X.astype(np.float64) - x_hat) ** 2).sum(-1).mean())
+    print(f"{Path(cfg.ckpt).name} step {step}: {l} layers x {h} heads x "
+          f"{model.k} entries, T={T:g}; {n} rows; unablated whitened error "
+          f"{err0:.4f} per row; probe vs model forward: max |diff| "
+          f"{np.abs(own - x_hat[:cfg.b]).max():.1e}")
+
+    def reconstruct(L, i, P_new):
+        """(live, frozen) for every row with head (L, i) assigned P_new."""
+        al = np.full(len(P_new), L, np.int32)
+        ah = np.full(len(P_new), i, np.int32)
+        Xr = np.tile(X, (len(P_new) // n, 1))
+        got = [rem_j(p, *(jnp.asarray(v[j:j + cfg.b])
+                          for v in (Xr, al, ah, P_new)))
+               for j in range(0, len(P_new), cfg.b)]
+        return tuple(np.concatenate([np.asarray(g[m]) for g in got])
+                     for m in (0, 1))
+
+    names = ("added_live", "added_frozen", "departure_live",
+             "departure_frozen")
+    ratio = lambda a, b: float(a / b) if b != 0 else None
+    num = lambda v, f: "-" if v is None else format(v, f)
+    per_head, damage, rank = {}, {}, {}
+    for L in range(l):
+        acc = {c: {m: [] for m in names} for c in REMOVALS}
+        for i, perm in zip(heads[L], perms[L]):
+            new = removal_assignments(P[L][:, i], K[L][:, i], perm)
+            live, frozen = reconstruct(
+                L, i, np.concatenate([new[c] for c in REMOVALS]))
+            if L == l - 1 and i == heads[L][0]:
+                print(f"last-layer live vs frozen: max |diff| "
+                      f"{np.abs(live - frozen).max():.1e} (the same "
+                      f"reconstruction up to rounding)")
+            for j, c in enumerate(REMOVALS):
+                block = slice(j * n, (j + 1) * n)
+                a_l, d_l = removal_damage(X, x_hat, live[block], w)
+                a_f, d_f = removal_damage(X, x_hat, frozen[block], w)
+                for m, v in zip(names, (a_l, a_f, d_l, d_f)):
+                    acc[c][m].append(v)
+        damage[str(L)] = {}
+        for c in REMOVALS:
+            mean = {m: float(np.mean(acc[c][m])) for m in names}
+            damage[str(L)][c] = mean | {
+                "added_ratio": ratio(mean["added_live"], mean["added_frozen"]),
+                "departure_ratio": ratio(mean["departure_live"],
+                                         mean["departure_frozen"])}
+        u = acc["unif"]
+        rank[str(L)] = {
+            "added": spearman(u["added_frozen"], u["added_live"]),
+            "departure": spearman(u["departure_frozen"], u["departure_live"])}
+        per_head[str(L)] = {"heads": heads[L], **acc}
+
+        print(f"  layer {L} ({len(heads[L])} heads)   added: frozen / live "
+              f"(ratio)      departure: frozen / live (ratio)")
+        for c in REMOVALS:
+            d = damage[str(L)][c]
+            print(f"    {c:<9} {d['added_frozen']:8.3f} / "
+                  f"{d['added_live']:7.3f} (x{num(d['added_ratio'], '.2f')})"
+                  f"   {d['departure_frozen']:8.3f} / "
+                  f"{d['departure_live']:7.3f} "
+                  f"(x{num(d['departure_ratio'], '.2f')})")
+        print(f"    rank r across heads, frozen vs live (unif): added "
+              f"{num(rank[str(L)]['added'], '+.2f')}, departure "
+              f"{num(rank[str(L)]['departure'], '+.2f')}")
+
+    out.mkdir(parents=True, exist_ok=True)
+    rec = {"run": Path(cfg.ckpt).name, "step": int(step),
+           "temperature": float(T), "seed": cfg.seed, "rows": n,
+           "random_heads": cfg.random_heads, "err0": err0,
+           "damage": damage, "spearman": rank, "per_head": per_head}
+    (out / "removals.json").write_text(json.dumps(rec, indent=1))
+    print(f"-> {out / 'removals.json'}")
 
 
 def title_of(meta: dict) -> str:

@@ -37,7 +37,42 @@ only the first:
             drops its sign, while ascent direction depends on it; and an
             eigenvector is the dominant QUADRATIC direction, not the
             first-order one, so it is only the right answer near x = 0.
-  random    a random unit direction, the control curve.
+  random    an isotropic random unit direction, the control curve.
+
+A unit step in raw coordinates is long or short in the data's own metric
+depending on how it lies against the data's covariance, so the isotropic
+control is one shape among several. Three more controls take the same raw
+length, the first two reshaping its draw z ~ N(0, I), with Sigma the
+covariance of the last --cov-rows cache rows:
+
+  cov       Sigma^{1/2} z: shaped like the data
+  icov      Sigma^{-1/2} z: weighted toward the directions the data barely
+            vary along (eigenvalues floored at 1e-6 of the largest)
+  diff      another reference row minus this one: a step toward a real row
+
+Each is scored as a direction is, so `hit` is the rate at which the target
+entry is selected by accident and `collateral` the share of the other
+l*h - 1 heads that moved (the share of all l*h heads differs from it by at
+most 1/(l*h)). `decode` is also split by where it lies in the data's
+spread:
+
+  on<p>     its projection on the top principal subspace of those rows,
+            the fewest components holding p% of their variance (--var)
+  off<p>    the remainder
+
+geometry.csv places every direction against the data, per target, as the
+median over the steered rows of each unit direction v's
+
+  var_share    v' Sigma v over Sigma's mean eigenvalue: 1 for an isotropic
+               direction on average
+  whitened     its length in the objective's metric (--mse-weights)
+  mahalanobis  its length in the data's own metric, |Sigma^{-1/2} v|
+  top<p>       the share of |v|^2 inside the top-p% subspace
+
+both lengths relative to the median distance between two tail rows in
+that metric and scaled to raw units, so a direction shaped like the data
+reads about 1 in either, and an isotropic one reads more in the
+Mahalanobis metric the more anisotropic the data are.
 
   uv run python experiments/ste-arm/steerembed.py \\
       --model data/out/sonar/multilingual/ste_h76 --temperature 0.00015
@@ -99,7 +134,7 @@ import csv
 import json
 import sys
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, NamedTuple, Sequence, Tuple
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
@@ -139,6 +174,16 @@ def parse_args() -> argparse.Namespace:
                    help="rows per forward in the baseline pass")
     p.add_argument("--min-rate", type=float, default=0.005,
                    help="skip entries the model almost never selects")
+    p.add_argument("--cov-rows", type=int, default=32768,
+                   help="cache-tail rows whose covariance shapes the cov, "
+                        "icov and diff controls, the on/off split and the "
+                        "geometry")
+    p.add_argument("--var", type=float, nargs="+", default=[0.5, 0.8],
+                   help="variance fractions whose principal subspaces split "
+                        "the decode direction into on<p> and off<p>")
+    p.add_argument("--mse-weights", default="data/out/sonar/mse_weights.npy",
+                   help="the objective's inverse-variance weights, for the "
+                        "whitened length in geometry.csv")
     p.add_argument("--step", type=int, default=0)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--out", default=None)
@@ -164,6 +209,10 @@ def main_onto(cfg: argparse.Namespace) -> None:
 
     mm = np.load(cfg.cache, mmap_mode="r")
     Xref = jnp.asarray(np.asarray(mm[-cfg.ref_rows:], np.float32))
+    metric, ranks = load_metric(cfg)
+    Sh, Sih, Q = (jnp.asarray(a, jnp.float32)
+                  for a in (metric.Sh, metric.Sih, metric.Q))
+    pair_rng = np.random.default_rng([cfg.seed, 2])
 
     def codes(module, X: Float[Array, "b d_in"]
               ) -> Tuple[Float[Array, "l b h k"], Float[Array, "b d_out"]]:
@@ -365,10 +414,7 @@ def main_onto(cfg: argparse.Namespace) -> None:
             p, X, li, hi, ki, method=adjoint_oriented_dir),
         static_argnums=(2, 3, 4))
 
-    def unit(V: Float[Array, "b d"]) -> Float[Array, "b d"]:
-        return V / (jnp.linalg.norm(V, axis=-1, keepdims=True) + 1e-9)
-
-    rows = []
+    rows, geo = [], []
     Xs_all = Xref
     for (li, hi, ki) in feats:
         # steer rows that do NOT already select the entry
@@ -380,7 +426,8 @@ def main_onto(cfg: argparse.Namespace) -> None:
 
         Yb = f_codes(params, X)[1]
         delta = f_forced(params, X, li, hi, ki) - Yb
-        rnd = unit(jax.random.normal(jax.random.PRNGKey(int(idx[0])), X.shape))
+        z = jax.random.normal(jax.random.PRNGKey(int(idx[0])), X.shape)
+        rnd = unit(z)
         rows += _native(delta, rnd, X,
                         lambda Xi: np.asarray(jnp.argmax(
                             f_codes(params, Xi)[0], -1)),
@@ -402,8 +449,12 @@ def main_onto(cfg: argparse.Namespace) -> None:
             "adjoint_or": unit(f_adjor(params, X, li, hi, ki)),
             "dm": unit(jnp.broadcast_to(dm, X.shape)),
             "probe": jnp.broadcast_to(probe, X.shape),
-            "random": rnd,
+            **controls(z, X, Xs_all[jnp.asarray(
+                partners(idx, Xs_all.shape[0], pair_rng))], Sh, Sih),
+            **split_dirs(delta, Q, ranks),
         }
+        geo += geometry_rows(dirs, metric, ranks,
+                             dict(layer=li, head=hi, entry=ki))
         for s in cfg.strengths:
             for kind, D in dirs.items():
                 Xi = X + s * n * D
@@ -414,28 +465,19 @@ def main_onto(cfg: argparse.Namespace) -> None:
                     hit=float((A[li, :, hi] == ki).mean()),
                     collateral=float(_collateral(A, A0, li, hi))))
 
-    with open(out / "steer.csv", "w", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=list(rows[0]))
-        w.writeheader()
-        w.writerows(rows)
-
-    print(f"{'kind':>8} {'strength':>9} {'realized':>9} {'collateral':>11}")
-    summary = {}
-    for kind in ("decode", "grad", "margin", "adjoint", "adjoint_or", "dm",
-                 "probe", "random"):
-        for s in cfg.strengths:
-            R = [r for r in rows if r["kind"] == kind and r["strength"] == s]
-            hit = float(np.mean([r["hit"] for r in R]))
-            col = float(np.mean([r["collateral"] for r in R]))
-            summary[f"{kind}@{s}"] = {"hit": hit, "collateral": col}
-            print(f"{kind:>8} {s:9.2f} {hit:9.3f} {col:11.3f}")
+    _write_csv(out / "steer.csv", rows)
+    _write_csv(out / "geometry.csv", geo)
+    summary = _swept_summary(rows, cfg.strengths)
     summary.update(_native_summary(rows))
+    geometry = _geometry_summary(geo)
     print(f"\nbaseline: the entry was selected on 0 of the steered rows by "
           f"construction; chance for a head is 1/k = {1/k:.3f}")
     (out / "summary.json").write_text(json.dumps(
         {"model": str(cfg.model), "step": int(step), "T": T,
          "n_features": len(feats), "n_samples": cfg.n_samples,
-         "chance": 1 / k, "results": summary}, indent=2))
+         "chance": 1 / k, "results": summary,
+         **_metric_summary(cfg, metric, ranks), "geometry": geometry},
+        indent=2))
     print(f"-> {out}")
 
 
@@ -457,6 +499,10 @@ def main_sae(cfg: argparse.Namespace) -> None:
 
     mm = np.load(cfg.cache, mmap_mode="r")
     Xref = jnp.asarray(np.asarray(mm[-cfg.ref_rows:], np.float32))
+    metric, ranks = load_metric(cfg)
+    Sh, Sih, Q = (jnp.asarray(a, jnp.float32)
+                  for a in (metric.Sh, metric.Sih, metric.Q))
+    pair_rng = np.random.default_rng([cfg.seed, 2])
 
     def select(X: Float[Array, "b d"]) -> Int[Array, "b c"]:
         """The code's discrete outcome: per-head winner (-1 when a top1
@@ -531,10 +577,7 @@ def main_sae(cfg: argparse.Namespace) -> None:
           f"of rows; steering {len(feats)} of them, {cfg.n_samples} rows "
           f"each\n")
 
-    def unit(V: Float[Array, "b d"]) -> Float[Array, "b d"]:
-        return V / (jnp.linalg.norm(V, axis=-1, keepdims=True) + 1e-9)
-
-    rows = []
+    rows, geo = [], []
     for j in feats:
         j = int(j)
         idx = np.where(~hits(S_ref, j))[0]
@@ -547,7 +590,8 @@ def main_sae(cfg: argparse.Namespace) -> None:
             cur = np.where(win >= 0, (j // gs) * gs + win, -1)
         else:
             cur = np.full(X.shape[0], -1)
-        rnd = unit(jax.random.normal(jax.random.PRNGKey(int(idx[0])), X.shape))
+        z = jax.random.normal(jax.random.PRNGKey(int(idx[0])), X.shape)
+        rnd = unit(z)
         rows += _native(jnp.broadcast_to(a_on[j] * W_dec[j], X.shape), rnd, X,
                         lambda Xi: np.asarray(f_select(Xi)),
                         lambda S: hits(S, j),
@@ -560,15 +604,22 @@ def main_sae(cfg: argparse.Namespace) -> None:
                         lambda S: _collateral_sae(S, S0, j, gs),
                         dict(latent=j, base_rate=float(rate[j])),
                         name="native_dm")
+        delta = jnp.broadcast_to(W_dec[j], X.shape)
         dirs = {
-            "decode": unit(jnp.broadcast_to(W_dec[j], X.shape)),
+            "decode": unit(delta),
             "grad": unit(f_grad(X, jnp.asarray(j), jnp.asarray(cur))),
-            "dm": unit(jnp.broadcast_to(dm, X.shape)),
-            "probe": jnp.broadcast_to(probe, X.shape),
-            "random": rnd,
         }
         if eig is not None:
             dirs["eig"] = unit(jnp.broadcast_to(eig[j], X.shape))
+        dirs.update({
+            "dm": unit(jnp.broadcast_to(dm, X.shape)),
+            "probe": jnp.broadcast_to(probe, X.shape),
+            **controls(z, X, Xref[jnp.asarray(
+                partners(idx, Xref.shape[0], pair_rng))], Sh, Sih),
+            **split_dirs(delta, Q, ranks),
+        })
+        geo += geometry_rows(dirs, metric, ranks,
+                             dict(latent=j, base_rate=float(rate[j])))
         for s in cfg.strengths:
             for kind, D in dirs.items():
                 Xi = X + s * n * D
@@ -579,30 +630,19 @@ def main_sae(cfg: argparse.Namespace) -> None:
                     hit=float(hits(S, j).mean()),
                     collateral=float(_collateral_sae(S, S0, j, gs))))
 
-    with open(out / "steer.csv", "w", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=list(rows[0]))
-        w.writeheader()
-        w.writerows(rows)
-
-    kinds = ["decode", "grad"] + (["eig"] if eig is not None else []) \
-        + ["dm", "probe", "random"]
-    print(f"{'kind':>8} {'strength':>9} {'realized':>9} {'collateral':>11}")
-    summary = {}
-    for kind in kinds:
-        for s in cfg.strengths:
-            R = [r for r in rows if r["kind"] == kind and r["strength"] == s]
-            hit = float(np.mean([r["hit"] for r in R]))
-            col = float(np.mean([r["collateral"] for r in R]))
-            summary[f"{kind}@{s}"] = {"hit": hit, "collateral": col}
-            print(f"{kind:>8} {s:9.2f} {hit:9.3f} {col:11.3f}")
+    _write_csv(out / "steer.csv", rows)
+    _write_csv(out / "geometry.csv", geo)
+    summary = _swept_summary(rows, cfg.strengths)
     summary.update(_native_summary(rows))
+    geometry = _geometry_summary(geo)
     base = float(rate[feats].mean())
     print(f"\nbaseline: the latent was selected on 0 of the steered rows by "
           f"construction; its mean selection rate elsewhere is {base:.3f}")
     (out / "summary.json").write_text(json.dumps(
         {"model": str(cfg.model), "m": m, "topk": topk, "groups": groups,
          "group_fn": group_fn, "n_features": len(feats),
-         "n_samples": cfg.n_samples, "chance": base, "results": summary},
+         "n_samples": cfg.n_samples, "chance": base, "results": summary,
+         **_metric_summary(cfg, metric, ranks), "geometry": geometry},
         indent=2))
     print(f"-> {out}")
 
@@ -655,6 +695,188 @@ def supervised_dirs(Xref: Float[Array, "n d"], y: Bool[np.ndarray, "n"],
         p, st = step(p, st)
     w = p["w"]
     return dm, w / (jnp.linalg.norm(w) + 1e-9)
+
+
+def unit(V: Float[Array, "b d"]) -> Float[Array, "b d"]:
+    return V / (jnp.linalg.norm(V, axis=-1, keepdims=True) + 1e-9)
+
+
+class DataMetric(NamedTuple):
+    """The cache tail's covariance in the forms the data-shaped controls and
+    geometry.csv use, and the median distance between two of its rows in
+    each metric the geometry reports."""
+    lam: Float[np.ndarray, "d"]       # eigenvalues, descending
+    Q: Float[np.ndarray, "d d"]       # their eigenvectors, as columns
+    Sh: Float[np.ndarray, "d d"]      # Sigma^{1/2}
+    Sih: Float[np.ndarray, "d d"]     # Sigma^{-1/2}, eigenvalues floored
+    w: Float[np.ndarray, "d"]         # the objective's inverse-variance weights
+    d_raw: float
+    d_w: float
+    d_m: float
+
+
+def data_metric(Xt: Float[np.ndarray, "n d"], w: Float[np.ndarray, "d"],
+                rng: np.random.Generator, floor: float = 1e-6,
+                n_pairs: int = 4096) -> DataMetric:
+    """Sigma = cov(Xt) and its square roots. `floor`, a fraction of the
+    largest eigenvalue, bounds Sigma^{-1/2} along directions the rows do
+    not vary along; the distances are medians over `n_pairs` random pairs
+    of rows."""
+    Xt = np.asarray(Xt, np.float64)
+    w = np.asarray(w, np.float64)
+    lam, Q = np.linalg.eigh(np.cov(Xt, rowvar=False))
+    lam = np.maximum(lam[::-1], 0.0)
+    Q = np.ascontiguousarray(Q[:, ::-1])
+    Sh = (Q * np.sqrt(lam)) @ Q.T
+    Sih = (Q / np.sqrt(np.maximum(lam, lam[0] * floor))) @ Q.T
+    pair = rng.choice(len(Xt), (n_pairs, 2))
+    D = Xt[pair[:, 0]] - Xt[pair[:, 1]]
+    return DataMetric(
+        lam=lam, Q=Q, Sh=Sh, Sih=Sih, w=w,
+        d_raw=float(np.median(np.linalg.norm(D, axis=1))),
+        d_w=float(np.median(np.sqrt((D ** 2 * w).sum(1)))),
+        d_m=float(np.median(np.linalg.norm(D @ Sih, axis=1))))
+
+
+def principal_ranks(lam: Float[np.ndarray, "d"], fracs: Sequence[float]
+                    ) -> Dict[float, int]:
+    """For each fraction p, the fewest leading components (lam descending)
+    that hold p of the variance."""
+    cum = np.cumsum(lam) / lam.sum()
+    return {p: min(int(np.searchsorted(cum, p)) + 1, len(lam)) for p in fracs}
+
+
+def pct(p: float) -> str:
+    """A variance fraction as the percent in a kind's name: 0.5 -> "50"."""
+    return f"{100 * p:g}"
+
+
+def load_metric(cfg: argparse.Namespace
+                ) -> Tuple[DataMetric, Dict[float, int]]:
+    """The metric of the last --cov-rows cache rows, and the principal
+    ranks --var asks for."""
+    mm = np.load(cfg.cache, mmap_mode="r")
+    w = np.load(cfg.mse_weights)
+    if w.shape != mm.shape[1:]:
+        raise SystemExit(f"--mse-weights {cfg.mse_weights} has shape "
+                         f"{w.shape}, the cache's rows {mm.shape[1:]}")
+    metric = data_metric(np.asarray(mm[-cfg.cov_rows:], np.float64), w,
+                         np.random.default_rng([cfg.seed, 1]))
+    return metric, principal_ranks(metric.lam, cfg.var)
+
+
+def partners(idx: Int[np.ndarray, "b"], n: int, rng: np.random.Generator
+             ) -> Int[np.ndarray, "b"]:
+    """For each row in idx, a uniformly random other row of the n."""
+    return (idx + 1 + rng.integers(0, n - 1, len(idx))) % n
+
+
+def controls(z: Float[Array, "b d"], X: Float[Array, "b d"],
+             X_other: Float[Array, "b d"], Sh: Float[Array, "d d"],
+             Sih: Float[Array, "d d"]) -> Dict[str, Float[Array, "b d"]]:
+    """The untargeted unit steps: one draw z ~ N(0, I) taken isotropic
+    (`random`), shaped like the data (`cov`) and against it (`icov`), and
+    the step toward another row (`diff`). Sh and Sih are symmetric, so
+    z @ Sh is Sigma^{1/2} z row by row."""
+    return {"random": unit(z), "cov": unit(z @ Sh), "icov": unit(z @ Sih),
+            "diff": unit(X_other - X)}
+
+
+def split_dirs(delta: Float[Array, "b d"], Q: Float[Array, "d d"],
+               ranks: Dict[float, int]) -> Dict[str, Float[Array, "b d"]]:
+    """delta's projection on each leading principal subspace (`on<p>`) and
+    what is left of it (`off<p>`), each at unit length."""
+    out = {}
+    for p, r in ranks.items():
+        on = (delta @ Q[:, :r]) @ Q[:, :r].T
+        out[f"on{pct(p)}"] = unit(on)
+        out[f"off{pct(p)}"] = unit(delta - on)
+    return out
+
+
+GEOMETRY = ("var_share", "whitened", "mahalanobis")
+
+
+def step_geometry(V: Float[np.ndarray, "b d"], metric: DataMetric,
+                  ranks: Dict[float, int]
+                  ) -> Dict[str, Float[np.ndarray, "b"]]:
+    """Each row of V as a unit direction v: v' Sigma v over Sigma's mean
+    eigenvalue; v's whitened and Mahalanobis lengths, each relative to the
+    median distance between two rows in that metric and scaled to raw
+    units; and the share of |v|^2 in each leading principal subspace."""
+    V = np.asarray(V, np.float64)
+    V = V / np.maximum(np.linalg.norm(V, axis=-1, keepdims=True), 1e-12)
+    C = V @ metric.Q
+    out = {
+        "var_share": (C ** 2 * metric.lam).sum(-1) / metric.lam.mean(),
+        "whitened": (np.sqrt((V ** 2 * metric.w).sum(-1))
+                     / metric.d_w * metric.d_raw),
+        "mahalanobis": (np.linalg.norm(V @ metric.Sih, axis=-1)
+                        / metric.d_m * metric.d_raw)}
+    for p, r in ranks.items():
+        out[f"top{pct(p)}"] = (C[:, :r] ** 2).sum(-1)
+    return out
+
+
+def geometry_rows(dirs: Dict[str, Float[Array, "b d"]], metric: DataMetric,
+                  ranks: Dict[float, int], ident: Dict[str, Any]
+                  ) -> List[Dict[str, Any]]:
+    """One geometry.csv row per direction kind, each statistic's median
+    over the steered rows."""
+    return [dict(kind=kind, **ident,
+                 **{s: float(np.median(v)) for s, v in step_geometry(
+                     np.asarray(D), metric, ranks).items()})
+            for kind, D in dirs.items()]
+
+
+def _write_csv(path: Path, rows: List[Dict[str, Any]]) -> None:
+    with open(path, "w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(rows[0]))
+        w.writeheader()
+        w.writerows(rows)
+
+
+def _swept_summary(rows: List[Dict[str, Any]], strengths: Sequence[float]
+                   ) -> Dict[str, Dict[str, float]]:
+    """Print and return realization and collateral per swept kind and
+    strength, the kinds in the order they were scored."""
+    kinds = list(dict.fromkeys(r["kind"] for r in rows
+                               if not r["kind"].startswith("native")))
+    print(f"{'kind':>10} {'strength':>9} {'realized':>9} {'collateral':>11}")
+    out = {}
+    for kind in kinds:
+        for s in strengths:
+            R = [r for r in rows if r["kind"] == kind and r["strength"] == s]
+            hit = float(np.mean([r["hit"] for r in R]))
+            col = float(np.mean([r["collateral"] for r in R]))
+            out[f"{kind}@{s}"] = {"hit": hit, "collateral": col}
+            print(f"{kind:>10} {s:9.2f} {hit:9.3f} {col:11.3f}")
+    return out
+
+
+def _geometry_summary(geo: List[Dict[str, Any]]
+                      ) -> Dict[str, Dict[str, float]]:
+    """Print and return each kind's geometry, the median over targets."""
+    stats = [s for s in geo[0] if s in GEOMETRY or s.startswith("top")]
+    print(f"\n{'kind':>10} " + " ".join(f"{s:>11}" for s in stats)
+          + "   (median over targets of the median over rows)")
+    out = {}
+    for kind in dict.fromkeys(r["kind"] for r in geo):
+        R = [r for r in geo if r["kind"] == kind]
+        out[kind] = {s: float(np.median([r[s] for r in R])) for s in stats}
+        print(f"{kind:>10} "
+              + " ".join(f"{out[kind][s]:11.3f}" for s in stats))
+    return out
+
+
+def _metric_summary(cfg: argparse.Namespace, metric: DataMetric,
+                    ranks: Dict[float, int]) -> Dict[str, Any]:
+    """What the controls and the geometry were measured against."""
+    return {"cov_rows": cfg.cov_rows, "mse_weights": cfg.mse_weights,
+            "ranks": {pct(p): r for p, r in ranks.items()},
+            "median_pair_distance": {"raw": metric.d_raw,
+                                     "whitened": metric.d_w,
+                                     "mahalanobis": metric.d_m}}
 
 
 def _native(delta: Float[Array, "b d"], rnd: Float[Array, "b d"],

@@ -69,6 +69,92 @@ def test_true_partition_beats_random_and_unpartitioned():
     assert true < 1.0
 
 
+def test_split_views_rotate_the_centred_input():
+    rng = np.random.default_rng(2)
+    E = jnp.asarray(rng.normal(size=(30, 9)) + 3.0, jnp.float32)
+    Q = jnp.asarray(np.linalg.qr(rng.normal(size=(9, 9)))[0], jnp.float32)
+    A, B = selection.split_views(E, Q)
+    assert A.shape == (30, 4) and B.shape == (30, 5)
+    back = np.concatenate([A, B], 1) @ np.asarray(Q).T
+    np.testing.assert_allclose(back, E - E.mean(0), atol=1e-5)
+
+
+def test_lsh_assign_is_one_hot_and_ignores_the_batch_mean():
+    rng = np.random.default_rng(3)
+    E = jnp.asarray(rng.normal(size=(50, 6)), jnp.float32)
+    W = jnp.asarray(rng.normal(size=(4, 6, 5)), jnp.float32)
+    R = np.asarray(selection.lsh_assign(E, W))
+    assert R.shape == (4, 50, 5)
+    np.testing.assert_array_equal(R.sum(-1), 1.0)
+    want = ((np.asarray(E) - np.asarray(E).mean(0)) @ np.asarray(W)
+            ).argmax(-1)
+    np.testing.assert_array_equal(R.argmax(-1), want)
+    np.testing.assert_array_equal(
+        np.asarray(selection.lsh_assign(E + 7.0, W)), R)
+    # the joint gate counts agreeing heads
+    G = np.asarray(selection.joint_gate(jnp.asarray(R)))
+    np.testing.assert_array_equal(G, (R.argmax(-1)[:, :, None]
+                                      == R.argmax(-1)[:, None, :]).sum(0))
+
+
+def test_jinv_full_form_matches_layer_scores():
+    E, lab = _clustered()
+    rng = np.random.default_rng(4)
+    n, d, k = len(lab), E.shape[1], 3
+    P = jnp.asarray(rng.dirichlet(np.ones(k), size=(n, 2)), jnp.float32)
+    heads = jnp.arange(2)
+    Q = jnp.asarray(np.linalg.qr(rng.normal(size=(d, d)))[0], jnp.float32)
+    g = lambda c, w: jnp.asarray(rng.normal(size=(c, w, k)), jnp.float32)
+    J = selection.jinv_layer(P, E, heads, Q, g(3, d), g(3, d // 2),
+                             g(5, d), g(5, d // 2), (1, 2), (0.5, 0.2))
+    r = selection.layer_scores(P, E, heads, jnp.zeros((0, n), int),
+                               (1, 2), 0.2)
+    assert J["smoother/full"].shape == (2, 2)
+    np.testing.assert_allclose(J["smoother/full"][1], r["unpartitioned"],
+                               rtol=1e-5)
+    np.testing.assert_allclose(J["trained_head/full"][1],
+                               np.asarray(r["head"]).mean(0), rtol=1e-5)
+    np.testing.assert_allclose(J["trained_joint/full"][1], r["joint"],
+                               rtol=1e-5)
+    assert "trained_head/split" not in J and "lsh_kernel/split" in J
+
+
+def test_split_score_holds_its_floor_where_the_full_score_leaks():
+    """On structureless rows the one-cell smoother predicts each row from
+    the others; J-invariant, it cannot beat (b/(b-1))^2 at s=1."""
+    b, d = 256, 64
+    iso = selection.isotropic_scores((0.2, 0.05), b, d, 2, (1,), seed=0)
+    floor = (b / (b - 1)) ** 2
+    assert np.all(iso["split"][:, 0] > floor - 0.01)
+    assert iso["full"][1, 0] < floor - 0.05      # the sharp kernel leaks
+    assert iso["full"][1, 0] < iso["full"][0, 0]
+
+
+def test_select_bandwidth_and_jinv_rows():
+    taus = (0.2, 0.05, 0.01)
+    assert selection.select_bandwidth(taus, np.array([0.9, 0.8, 1.2])) == 0.05
+    jinv = {0: {"smoother/full": np.array([[0.9], [0.7], [0.5]]),
+                "smoother/split": np.array([[0.9], [0.8], [1.2]]),
+                "lsh_head/split": np.array([[0.95], [0.85], [1.3]])}}
+    rows = selection.jinv_rows("r", 1, "", jinv, (1,), taus)
+    assert len(rows) == 3 * 3
+    assert {r[5] for r in rows if r[9]} == {0.05}
+    assert all(len(r) == len(selection.JINV_COLS) for r in rows)
+
+
+def test_print_jinv_reports_gains(capsys):
+    taus = (0.2, 0.05)
+    jinv = {0: {"smoother/full": np.array([[0.9], [0.7]]),
+                "smoother/split": np.array([[0.9], [0.8]]),
+                "trained_head/full": np.array([[0.85], [0.75]]),
+                "lsh_head/split": np.array([[0.95], [0.85]])}}
+    selection.print_jinv(selection.jinv_rows("r", 1, "", jinv, (1,), taus),
+                         0.2)
+    out = capsys.readouterr().out
+    assert "selects tau=0.05" in out
+    assert "+0.0500" in out and "-0.0500" in out
+
+
 def test_random_partition_keeps_cell_sizes():
     lab = np.repeat(np.arange(3), [5, 10, 15])
     P = np.eye(3)[lab]
