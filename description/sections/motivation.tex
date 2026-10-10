@@ -5,7 +5,8 @@
 \subsubsection{The ontology identification problem}
 We can't yet reliably look inside a model and draw conclusions about its
 goals or world model; interpretability has found a model's hidden
-objective in a planted test~\cite{marks2025}.
+objective in a planted test, but a semantic search of the training data,
+with no access to the model, surfaced the same evidence~\cite{marks2025}.
 This is a major limitation on almost all proposed alignment agendas,
 because behavior alone cannot settle the question: a model can behave
 differently when it believes it is being trained, and when that belief
@@ -28,9 +29,10 @@ features implement it: evidence for weak but not strong
 universality~\cite{chughtai2023}. In language models, SAE features of a
 Transformer and a Mamba trained on the same data match nearly as well as
 those of two Transformer seeds~\cite{wang2024}.
-This implies the existence of at least a weak version of
-natural abstractions~\cite{lang2023},
-which would be a very convenient shortcut for auditing a model.
+This is evidence for a weak form of the universality hypothesis, the
+part of the natural abstraction hypothesis that says many cognitive
+systems learn similar abstractions~\cite{lang2023}; if it holds, it
+would be a very convenient shortcut for auditing a model.
 
 Natural abstractions could be considered the set of concepts we could use to communicate with aliens. 
 They should consistently emerge through unsupervised learning (in the limit given some constraints).
@@ -80,11 +82,12 @@ ontology identification subproblems. MAD requires mapping between the model's ac
 the model's ontology. ELK requires mapping between the model's ontology
 and human ontology. These are hard but not intractable problems.
 Recently, developmental interpretability
-(devinterp) techniques have enabled identification of ``developmental
-stages'' corresponding to learning specific
-tasks~\cite{hoogland2024developmental}. This is strong evidence that
-learning consists primarily of the network
-grokking~\cite{nanda2023progress} discrete concepts. While these results
+(devinterp) techniques have divided training into ``developmental
+stages'', each marked by a change in the network's internal structure
+and behavior, such as learning bigram statistics or forming induction
+heads~\cite{hoogland2024developmental}. This is suggestive evidence,
+from two small transformers, that learning consists primarily of the
+network grokking~\cite{nanda2023progress} discrete concepts. While these results
 are promising for MAD, locating these emergent capabilities in the
 model's activations remains an open problem.
 

@@ -160,8 +160,8 @@ rather than by nearest-codeword search. Vectors of categorical variables
 trained with straight-through gradients are also the latent state of
 discrete world models~\cite{hafner2021,hafner2023}, which sample each
 categorical from the softmax the backward differentiates rather than take
-its argmax, and mix 1\% uniform into it; there the codes are compressed
-state, never read as features. Codebook Features~\cite{tamkin2023} is the
+its argmax (DreamerV3 also mixes 1\% uniform into it~\cite{hafner2023});
+there the codes are compressed state, never read as features. Codebook Features~\cite{tamkin2023} is the
 closest interpretability ancestor: it finetunes VQ bottlenecks into
 a network, one codebook per attention head ahead of the shared output
 projection (in effect \texttt{ConcatDictBlock} with its shared decoder),

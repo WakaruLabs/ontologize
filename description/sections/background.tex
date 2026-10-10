@@ -1,8 +1,12 @@
 \section{Background}
 Mechanistic interpretability currently can do supervised steering well
-or unsupervised steering poorly. This has prompted the Google Deep Mind
-interpretability team to pivot to a pragmatic steering
-agenda~\cite{gdmprogress2025}. On current benchmarks the supervised
+or unsupervised steering poorly. The Google DeepMind mechanistic
+interpretability team has pivoted from ambitious reverse-engineering to
+pragmatic interpretability judged on proxy tasks, and has deprioritized
+SAE research: SAE probes did not generalize better out of distribution,
+and SAEs did not beat a steering vector built from one contrastive pair
+of prompts at suppressing a model's awareness of being
+evaluated~\cite{gdmprogress2025}. On current benchmarks the supervised
 difference of means steers better than SAE latents, though worse than
 prompting~\cite{wu2025axbenchsteeringllmssimple}. But a supervised
 method finds only the concepts an experimenter already has labels for,
@@ -11,9 +15,10 @@ model computes with: a subspace intervention optimized for its effect
 can instead activate a dormant pathway~\cite{makelov2023}. The dominant
 unsupervised paradigm is the sparse autoencoder (SAE). A model's hidden
 state is approximated as a finite state machine consisting of discrete
-features. The initial implementation used a $\relu$ activation and
-sparsity loss~\cite{bricken2023}, though more recent implementations have
-used a $\topk$ activation function without a sparsity loss~\cite{gao2024}.
+features. The first implementations used a $\relu$ activation and
+sparsity loss~\cite{cunningham2023,bricken2023}, though more recent
+implementations have used a $\topk$ activation function without a
+sparsity loss~\cite{gao2024}.
 
 \subsection{Common problems with SAEs}
 The motivation is to decompile a model to a finite state machine (FSM).

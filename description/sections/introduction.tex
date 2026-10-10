@@ -10,7 +10,10 @@ to be
 \end{enumerate}
 However most existing techniques, such as sparse autoencoders (SAEs),
 produce features that can perform arbitrarily badly on these desiderata.
-Feature splitting breaks compositionality~\cite{bricken2023,chanin2025}. They can't usually be
+As a dictionary grows, features split into narrower
+ones~\cite{bricken2023}, and a narrow feature can absorb a broader one,
+which then fails to fire where it applies~\cite{chanin2025}, so the code
+is not compositional. SAE features can't usually be
 statically analyzed (though bilinear SAE variants can be). Sparsity
 trades off against reconstruction fidelity, limiting the extent to which
 features can be used for steering.

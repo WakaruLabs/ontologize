@@ -161,11 +161,12 @@ exactly the same parameter count, and every head in both uses its entries
 almost uniformly. The stack's
 error is $1.79\times$ lower ($0.1535$ against $0.2750$), and the gain
 comes from pairing each stage's input with the sample's own earlier
-error: a flat layer is an additive quantizer~\cite{babenko2014} whose
-heads choose in parallel, so no head sees another's error (harmless in a
-product quantizer~\cite{jegou2011}, whose heads own disjoint coordinates,
-but not when atoms overlap), while the stack is a residual
-quantizer~\cite{zeghidour2021}. The stack also trains each of its prefixes
+error: a flat layer decodes like an additive
+quantizer~\cite{babenko2014}, but its heads choose in parallel rather
+than each against what the others leave, so no head sees another's error
+(harmless in a product quantizer~\cite{jegou2011}, whose heads own
+disjoint coordinates, but not when atoms overlap), while the stack is a
+residual quantizer~\cite{zeghidour2021}. The stack also trains each of its prefixes
 to reconstruct, which a single layer cannot, and that difference is not
 yet separated from the pairing.
 
