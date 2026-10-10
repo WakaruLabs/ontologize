@@ -252,10 +252,12 @@ $\mathrm{relu}(W_{\mathrm{enc}}(\mathbf{x}-\mathbf{b}_{\mathrm{dec}})+\mathbf{b}
 reconstruction $\hat{\mathbf{x}} = W_{\mathrm{dec}}\mathbf{z} + \mathbf{b}_{\mathrm{dec}}$,
 with $\topk$ selection of $k_{\mathrm{SAE}}$ latents, decoder directions
 (the columns of $W_{\mathrm{dec}}$) renormalized to unit norm after every
-step, the encoder initialized to the decoder's transpose, and
+step, a linear encoder initialized to the decoder's transpose, and
 \texttt{aux\_k} dead-latent revival (512 dead latents at weight $1/32$, a
 latent counting as dead after 1000 steps without firing), trained to
-convergence. Unlike their recipe, $\mathbf{b}_{\mathrm{dec}}$ starts at the
+convergence. Unlike their recipe, the $\topk$ pre-activation keeps the
+encoder bias $\mathbf{b}_{\mathrm{enc}}$, which their $\topk$ encoder
+omits, $\mathbf{b}_{\mathrm{dec}}$ starts at the
 data mean rather than the geometric median, the objective is whitened,
 Adam runs with its default $\epsilon$ and without weight averaging or
 decoder-gradient projection, and training makes many passes over a fixed
@@ -875,7 +877,10 @@ plain summaries invite on noisy multilingual web text. Scoring is blinded
 detection over held-out positives and negatives, identical for all
 modes; per-feature F1, to be read against the always-match null of
 $\mathrm{F1} \approx 0.67$ on balanced items. The judge is Haiku
-(\texttt{claude-haiku-4-5}) via the Anthropic Messages API, rate-metered,
+(\texttt{claude-haiku-4-5}), which also writes the \texttt{acts} and
+\texttt{cacts} descriptions, so describer and judge are one model and no
+second judge or human rater checks its decisions. It runs via the
+Anthropic Messages API, rate-metered,
 with bounded reply length; failed judgements are never recorded (an
 earlier outage mode scored empty replies as $\mathrm{F1}=0$). Six models:
 the Ontologizer, rungs \texttt{k32}/\texttt{k32\_bl}/\texttt{g160top1}/%
@@ -1272,8 +1277,11 @@ verified to force Burmese output. The partition-level instrument
 (\texttt{headlang.py}) was later run on a config-matched softmax
 reference and on the hard-code arms (Section~\ref{sec:lang}): the softmax
 reference's best head reaches a null-corrected NMI of only $0.043$, a
-quarter of the hard code's. Language factors are carried by a \emph{few}
-heads' partitions, weakly, and most heads classify something else.
+quarter of the hard code's. Language factors are carried weakly and
+across many heads' partitions, not by a few: in both hard-code seeds the
+76 most language-informative of the 380 heads are exactly the 76 layer-0
+heads (\texttt{headlang.py}), the best of them reaching about a fifth of
+the attainable NMI, and every deeper head carries less than any of them.
 
 Entry-level enrichment asks the same question cell by cell
 (Figure~\ref{fig:enrich}, \texttt{enrich.py}). In \texttt{resid\_nc},
@@ -1308,10 +1316,14 @@ $\topk$ SAEs have small magnitude error (share of raw $\fvu$ removed by
 support-frozen least squares: 2.2--2.4\% for k32 variants, 8.5\% for
 k160, 0.6\% bilinear, 1.9\% p5); \texttt{g160top1} is essentially
 perfectly calibrated (0.3\%) --- its reconstruction deficit is pure
-selection. The Ontologizer's truncated deviation codes are
-magnitude-heavy: 16\% at $\nu{=}1$, 33\% at $\nu{=}2$, i.e.\ the
-pin-and-renormalize convention mis-scales what it keeps (supports of
-$\geq d$ coefficients are excluded as underdetermined). Separately, the
+selection. For the Ontologizer's truncated deviation codes the refit
+removes 16\% at $\nu{=}1$ and 33\% at $\nu{=}2$, but that is the share any
+$\lvert\mathcal{S}\rvert$ free coefficients would remove from a residual
+spread evenly over the whitened coordinates, $\lvert\mathcal{S}\rvert/d$
+= 160/1024 and 320/1024 for \texttt{resid\_nc}'s $5\times32$ heads, so
+these shares do not show that the pin-and-renormalize convention
+mis-scales what it keeps until a random-support control is run (supports
+of $\geq d$ coefficients are excluded as underdetermined). Separately, the
 gap between non-adaptive truncation (freeze soft $P$, truncate, decode
 linearly) and in-forward truncation (later layers reclassify against the
 truncated prefix residual) is large --- $0.268$ vs.\ $0.094$ at $\nu{=}8$:
@@ -1654,25 +1666,31 @@ magnitude.}
 \label{fig:naturalness}
 \end{figure}
 
-\paragraph{A classification as a training objective.} A REINFORCE policy
-over steering directions on frozen \texttt{resid\_nc\_hm}, rewarded by one
+\paragraph{A classification as a training objective.} A policy over
+steering directions on frozen \texttt{resid\_nc\_hm}, rewarded by one
 classification's quantile-normalized score at a matched intervention
 budget, converges cleanly in the differentiable in-embedding tier,
-saturating within roughly 40 steps at flat collateral
-(Figure~\ref{fig:rl}). The policy adds a direction to the embedding at a
-fixed magnitude, the residual form that latent-space steering of
-diffusion policies outperforms by acting on the generator's input
-instead~\cite{wagenmaker2025}, and a direction optimized against a
-classifier can realize its target through directions the data never vary
-along~\cite{makelov2023}. Neither the decode-cycle tier nor a convergence
-race against paired steering has been run.
+saturating within roughly 40 steps (Figure~\ref{fig:rl}). That tier trains
+by gradient ascent through the frozen model, as a ceiling for the
+decode-cycle tier, whose reward passes through text generation and so
+needs REINFORCE~\cite{williams1992}; the curve does not show how fast
+REINFORCE would learn. Its collateral cannot move far either. The policy
+adds a direction to the unit-norm embedding at a fixed length of 0.5 and
+renormalizes, which caps the collateral at 0.134; it falls from 0.105 to
+0.083 as the policy tilts its direction toward the row and so shortens
+its effective step. The policy's step is the residual form that
+latent-space steering of diffusion policies outperforms by acting on the
+generator's input instead~\cite{wagenmaker2025}, and a direction
+optimized against a classifier can realize its target through directions
+the data never vary along~\cite{makelov2023}. Neither the decode-cycle
+tier nor a convergence race against paired steering has been run.
 
 \begin{figure}[htbp]\centering
 \includegraphics[width=\linewidth]{figures/fig-rl.pdf}
-\caption{REINFORCE against a single frozen classification's
-quantile-normalized score, in-embedding tier. The policy saturates the
-reward within roughly 40 steps (a) while collateral stays at its
-starting level (b).}
+\caption{A steering policy trained by gradient ascent on a single frozen
+classification's quantile-normalized score, in-embedding tier. The policy
+saturates the reward within roughly 40 steps (a); collateral, capped at
+0.134 by the fixed step length, falls from 0.105 to 0.083 (b).}
 \label{fig:rl}
 \end{figure}
 
@@ -1716,9 +1734,12 @@ monotone in true density.
 
 A naive port (live configuration, \texttt{select="ste"}) trains but the
 classifier learns nothing. The root cause is one property: \textbf{the
-argmax forward is scale-invariant, so nothing pushes the logits up}; they
-sit at their initialization scale (within-head standard deviation
-$0.0015$) for the whole run. VQ-VAE meets the same gap, an encoder scale
+argmax forward is scale-invariant, so here nothing pushed the logits up};
+they sat at their initialization scale for the whole run (within-head
+standard deviation $0.0015$, near the $2/(d{+}1) \approx 0.0020$ that the
+fan-in initialization gives a bilinear logit on a unit-norm shape with its
+constant coordinate --- the variance argument behind scaled dot-product
+attention~\cite[fn.~4]{vaswani2017}, at degree two). VQ-VAE meets the same gap, an encoder scale
 the code does not constrain, with a commitment loss~\cite{vandenoord2017}.
 Three settings follow from it.
 \emph{Logit noise must be relative}: $\sigma_K{=}0.02$ is thirteen times
@@ -1783,7 +1804,9 @@ code & Gaussian reference & achieved & ratio \\
 \paragraph{Bits are not the whole capacity.} At identical bits, 380
 binary heads reach $0.1844$ against 76 thirty-two-way heads at $0.1535$:
 bits go as $h\log_2 k$ but the codebook goes as $h\cdot k$ (3800 atoms
-against 12{,}160). A neural codec's residual quantizers point the same
+against 12{,}160). The binary arm also trained at half the batch size
+(Table~\ref{tab:cfg-ste-sonar}), so the gap mixes the larger codebook with
+a noisier gradient. A neural codec's residual quantizers point the same
 way: at a fixed 80 bits per frame, eight stages of 1024 codes beat eighty
 of two~\cite{zeghidour2021}. The binary arm gets within 17\% on $2.9\times$ fewer
 parameters, with features that are one bit each --- the form that is
@@ -2247,12 +2270,17 @@ other only 9$\times$: they pick \emph{different} data-aligned directions.
 0.2891 at layer 0), but the Gram spectrum is nearly one-parameter --- the
 top eigenvalue is exactly $1+(k-1)\,\kappa_i$, carries 82\% of the
 spectrum's norm, and is forced by non-negativity. Compared entrywise in
-canonical order, Grams agree at chance across seeds (1.05--1.11$\times$)
-and \emph{equally} at chance against the same run 19{,}500 steps earlier
-(1.07--1.15$\times$): a head's Gram is close to a fixed property of the
-configuration rather than something learned. Decoding atoms to output
-space first changes nothing (1.18$\times$ at layer 0 to 1.03$\times$ at
-layer 4).
+canonical order (each head's entries sorted by their mean cosine to the
+rest of the head), Grams agree at chance across seeds
+(1.05--1.11$\times$). The same comparison reads near chance against the
+same run 19{,}500 steps earlier too (1.07--1.15$\times$), but that is a
+property of the order, not of the heads: with a nearly one-parameter Gram
+every entry's mean cosine is nearly the same, so the canonical sort is set
+by small differences that need not survive from one checkpoint to the
+next. Training never relabels entries (dead-entry revival is off in both
+runs), so within a run the stored order is the correspondence to compare.
+Decoding atoms to output space first changes nothing in canonical order
+(1.18$\times$ at layer 0 to 1.03$\times$ at layer 4).
 
 \subsection{What makes layer 0 reproduce: gain, atoms, and depth}
 \label{sec:l0size}

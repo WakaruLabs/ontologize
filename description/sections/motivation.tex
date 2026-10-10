@@ -3,8 +3,17 @@
 \subsection{Threat Model}
 
 \subsubsection{The ontology identification problem}
-We can't currently look inside a model and make any conclusions about its goals or world model.
-This is a major limitation on almost all proposed alignment agendas.
+We can't yet reliably look inside a model and draw conclusions about its
+goals or world model; interpretability has found a model's hidden
+objective in a planted test~\cite{marks2025}.
+This is a major limitation on almost all proposed alignment agendas,
+because behavior alone cannot settle the question: a model can behave
+differently when it believes it is being trained, and when that belief
+reaches it through training documents rather than its prompt, the
+difference can persist with no written reasoning to
+inspect~\cite{greenblatt2024}. Only some models show such a
+gap~\cite{sheshadri2025}, but that a good record under test need not
+predict later behavior is an old argument~\cite[Ch.~8]{bostrom2014}.
 
 \paragraph{Inner misalignment}
 We don't currently know how to specify a robust goal for a model.
@@ -79,16 +88,24 @@ grokking~\cite{nanda2023progress} discrete concepts. While these results
 are promising for MAD, locating these emergent capabilities in the
 model's activations remains an open problem.
 
-Interpretability glosses broadly as ``let humans understand AI''. The
-alternative is to get AI to understand humans better, and that scales
-badly: making the model smarter leads to subtler and subtler issues
-with larger and larger effects. And what we're doing is not just
+Interpretability glosses broadly as ``let humans understand AI''. Getting
+AI to understand humans better scales badly: making the model smarter
+leads to subtler and subtler issues with larger and larger effects.
+Between the two sits scalable oversight, in which models help humans
+supervise models: people working with an unreliable dialog assistant
+already outperform both the assistant and themselves
+alone~\cite{bowman2022}, and interpretability is one of the channels such
+oversight can draw on. And what we're doing is not just
 letting humans understand AI. Because an LLM reflects humanity from its
 training data, high quality conceptual interpretability provides
 machine-comprehensible mathematical representations of every concept
 that humanity cares about. We work on interp for the usual
-corrigibility reasons, and also because feature representation is one
-of the most challenging parts of outer alignment. This attacks both.
+corrigibility reasons, and also because outer alignment needs a stable
+place to attach values: a goal defined over one of a model's concepts
+must keep pointing at that concept as the model's representations are
+revised~\cite[Ch.~12]{bostrom2014}. The preliminary results measure a
+small version of this problem: past the first layer, no head survives a
+change of seed (Section~\ref{sec:prelim-seed}). This attacks both.
 
 \subsubsection{Macro-scale strategy}
 Broadly, the goals are to

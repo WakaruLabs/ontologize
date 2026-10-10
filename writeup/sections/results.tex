@@ -256,7 +256,8 @@ Table~\ref{tab:steersup}. (a) The softmax stack
 (\texttt{ste\_h76\_init01}). (c) The flat hard code
 (\texttt{ste\_l1\_h380\_i01\_hm1e4}). (d) The single-layer hard variant
 \texttt{g160top1}. At each strength the models' own directions disturb
-as many other heads as the random step, to within about 0.05, except
+as many other heads as the random step (a direction drawn isotropically
+in the embedding's raw coordinates), to within about 0.05, except
 \texttt{g160top1}'s decode direction, which disturbs far fewer; what a
 direction buys is its height above the random curve. The logistic probe
 tracks the difference of means (within 0.03 realized, 0.05 collateral)
@@ -398,12 +399,16 @@ $\fvu$ target & bits & heads at $k{=}32$, $l{=}5$ \\
 Heads are the cheap axis: bits and parameters both grow linearly in $h$,
 and heads run in parallel where layers run in sequence. The arm has
 $5\times76$ heads of 32 entries, 1900 bits and 51.93M parameters.
-Training a classifier under a hard forward takes three settings, all
-because the argmax is scale-invariant and nothing pushes the logits up:
-logit noise relative to the logit scale, a surrogate temperature matched
-to that scale, and a rescaled $s_{\mathrm{KL}_m}$
-(Appendix~\ref{sec:calib}; every arm's configuration is in
-Table~\ref{tab:cfg-ste-sonar}).
+Training a classifier under a hard forward on SONAR takes three settings,
+all because the argmax is scale-invariant and, in a naive port, nothing
+pushed the logits up from their small initial scale: logit noise relative
+to the logit scale, a surrogate temperature matched to that scale, and a
+rescaled $s_{\mathrm{KL}_m}$ (Appendix~\ref{sec:calib}; every arm's
+configuration is in Table~\ref{tab:cfg-ste-sonar}). The GPT-2 arms ran
+without them, at $t{=}1$ with absolute logit noise $\sigma_K{=}0.02$ and
+$s_{\mathrm{KL}_m}{=}10^{-6}$ (Table~\ref{tab:cfg-ste-gpt2}), the naive
+port's settings, so any comparison between the substrates also compares
+two calibrations.
 
 \subsection{Initialization: a third of the error}
 
@@ -507,7 +512,10 @@ additive quantizer whose heads choose in parallel~\cite{babenko2014}, so
 no head sees another's error --- harmless in a product quantizer, whose
 heads own disjoint coordinates, but not when atoms overlap; the stack is a
 residual quantizer, each stage coding what earlier stages
-missed~\cite{zeghidour2021}.
+missed~\cite{zeghidour2021}. Every stack also trains each of its prefixes
+to reconstruct (deep supervision), which a single layer cannot, so
+whether the gain needs that supervision or only the residual forward is
+not yet separated.
 
 \subsection{Entanglement: the cost of the cascade}
 \label{sec:entangle}
@@ -581,8 +589,9 @@ per-head atom Grams & 1.05--1.11$\times$ chance & --- & within-layer pairing \\
 Partitions agree barely above the null, where a run scores 0.38 against
 its own earlier checkpoint. Contributions agree no better. Per-layer
 subspaces agree exactly as much as each model agrees with the data's own
-principal directions, and per-head Grams match at chance even against the
-same run's earlier checkpoint (Appendix~\ref{sec:seedsdetail}). What
+principal directions, and per-head Grams match at chance across seeds,
+compared in a canonical entry order that cannot test persistence within a
+run (Appendix~\ref{sec:seedsdetail}). What
 reproduces is aggregate (the error) or the data's own (its principal
 directions), and what identifies an individual head, with one exception,
 does not. That is the pattern of weak rather than strong universality, in
@@ -636,7 +645,9 @@ between two 256-way partitions of 32{,}768 rows is dominated by bias, so
 it cannot resolve the deep layers; against the tight contribution null
 they sit two to four times above it, at about 1\% of the control, which is
 real and negligible. The excess over the null is larger than on SONAR
-($24\times$ against 5--11$\times$), almost all of it in layer 0.
+($24\times$ against 5--11$\times$), almost all of it in layer 0, though
+the GPT-2 arms also ran without the SONAR arm's calibration
+(Table~\ref{tab:cfg-ste-gpt2}; Appendix~\ref{sec:calib}).
 
 \subsubsection{What layer 0's lead is made of}
 

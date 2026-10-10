@@ -165,7 +165,9 @@ error: a flat layer is an additive quantizer~\cite{babenko2014} whose
 heads choose in parallel, so no head sees another's error (harmless in a
 product quantizer~\cite{jegou2011}, whose heads own disjoint coordinates,
 but not when atoms overlap), while the stack is a residual
-quantizer~\cite{zeghidour2021}.
+quantizer~\cite{zeghidour2021}. The stack also trains each of its prefixes
+to reconstruct, which a single layer cannot, and that difference is not
+yet separated from the pairing.
 
 The same cascade entangles the heads. A step in embedding space along a
 target entry's decode direction, a quarter of the input's norm long,

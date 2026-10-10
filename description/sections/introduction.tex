@@ -19,8 +19,9 @@ Arguably the simplest interpretability technique is a linear probe, and
 the simplest control technique is a steering vector. On current
 benchmarks both beat features from unsupervised techniques such as SAEs,
 probes at detecting concepts and the difference of means at steering
-them~\cite{wu2025axbenchsteeringllmssimple}, but they require labeled
-contrastive datasets. In the spirit of MoEfication~\cite{zhang2022}, we
+them~\cite{wu2025axbenchsteeringllmssimple}, but they require contrastive
+data built around a concept someone has already named, labeled or
+not~\cite{burns2023ccs}. In the spirit of MoEfication~\cite{zhang2022}, we
 propose a technique based on decomposing a representation space into a
 set of contrastive classifiers. Each class corresponds to a representative vector. Inputs
 are encoded as a series of classifications, and reconstructed from the

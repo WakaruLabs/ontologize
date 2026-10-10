@@ -2104,13 +2104,19 @@ chance, against a null that pairs heads *within the same layer*:
 | 3 | 1.06x | 1.07x |
 | 4 | 1.07x | 1.11x |
 
-The second column is the sharper result. One run against its own recent
-checkpoint scores the same as a different seed, where the partition
-measure separates those two comparisons thirtyfold (0.38 against
-0.012). So a head's Gram barely moves across 19,500 steps of training
-and barely moves across a seed: it is close to a fixed property of the
-configuration rather than something learned, which is why its one free
-parameter reproduces to four digits.
+The second column does not show that a head's Gram is fixed. With a
+nearly one-parameter Gram every atom's mean cosine is nearly the same, so
+the canonical sort is set by small differences that change between
+checkpoints, and training never relabels entries (`p_revive` 0 in both
+runs), so within a run the stored order is the true correspondence. In
+stored order a re-implementation of this comparison reads 7.5-10.7x
+chance within the run, and each head's matched atoms sit at cosine
+0.98-0.99 to its earlier self against 0.05-0.08 for the layer's other
+heads; across seeds a matched comparison stays at chance, 1.05-1.19x
+(`scratch/literature/checks/representation/gram_gauge.py`, 2026-10-09;
+not yet a repo script). So heads persist within a run and do not
+replicate across seeds. The one free parameter reproduces to four digits
+because non-negativity forces it.
 
 The table above is computed in `e_dec`, where 74-78% of each atom is in
 the decoder's null space and so cannot be either learned or reproduced

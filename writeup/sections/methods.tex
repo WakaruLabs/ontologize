@@ -203,7 +203,11 @@ assignment sums to one, $\mathbf{f}_i$ lies in the simplex whose vertices
 are the head's atoms (Figure~\ref{fig:head-simplex}), the shape Park et
 al.~\cite{park2025} derive for the representation of a categorical
 concept: a head's entries are mutually exclusive alternatives, not
-independently firing features.
+independently firing features. The lookup has the form of attention over
+the head's own dictionary, a softmax over per-entry scores weighting the
+atoms as values~\cite{bahdanau2015,luong2015,vaswani2017}, with scores
+computed from the input alone; with a linear classifier it is one update
+of a modern Hopfield layer at inverse temperature $1/t$~\cite{ramsauer2021}.
 Algorithm~\ref{alg:dictblock} gives the full training pass, with the
 regularizing perturbations and statistics around this lookup.
 
@@ -422,7 +426,11 @@ the working dtype.
 Normalizing fixes the classifier's input scale: a bilinear classifier's
 logits scale with the square of its input's norm, so they would explode
 on large inputs (raw GPT-2 activations) and vanish on the small residuals
-deep layers see; the gain carries the magnitude instead.
+deep layers see; the gain carries the magnitude instead. This is the
+re-scaling invariance of RMSNorm~\cite{zhang2019rms} without its learned
+gain, on the unit sphere rather than RMSNorm's sphere of radius
+$\sqrt{d}$, which is why the classifier's initial logits are small
+(Appendix~\ref{sec:calib}).
 A constant coordinate $[1]$ is appended, giving a dimension of $d+1$.
 This prevents the sign information of $\mathbf{y}_\ell$ from being lost
 by the bilinear transformation.

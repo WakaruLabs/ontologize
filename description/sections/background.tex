@@ -68,9 +68,10 @@ experts~\cite{xu2025redundancydiversespecializedmultiexpert}.
 Less explored is the effect of the structure imposed by the MoEfied
 architecture on the interpretability of feature space. A common approach
 to scalably interpreting features is to have an LLM explain each feature
-from its activating examples and score the explanation by how well a
-second LLM, given only the explanation, separates activating from
-non-activating contexts~\cite{paulo2025}. With an unstructured feature
+from its activating examples and score the explanation by how well an
+LLM judge, given only the explanation, separates activating from
+non-activating contexts~\cite{paulo2025}; in the results here one model
+both writes and judges the explanations. With an unstructured feature
 space, it quickly becomes intractable to interpret all permutations of
 features this way. It is however possible to instead apply this
 technique to expert routings. The ReLU feed-forward layers of a trained

@@ -10,8 +10,8 @@ selection & straight-through (\texttt{ste}) \\
 classifier & bilinear (order 2) \\
 forward & residual; \texttt{resid\_norm}, \texttt{resid\_const}, \texttt{resid\_gain}; joint deep supervision \\
 optimizer & Adam, lr $5\times10^{-5}$, gradient clip 1.0, batch 256, 24 epochs \\
-temperature & $t{=}1.0$, constant \\
-noise & logits normal, $\sigma_K{=}0.02$; features featvar, $\sigma_F{=}0.1$; input off \\
+temperature & $t{=}1.0$, constant (the naive port's setting, Appendix~\ref{sec:calib}) \\
+noise & logits normal, $\sigma_K{=}0.02$ (absolute, not relative to the logit scale); features featvar, $\sigma_F{=}0.1$; input off \\
 winner dropout & $p_{\mathrm{drop}}{=}0.1$ \\
 loss & MSE weighted by \texttt{gpt2\_l8.mse\_weights\_matched}; $s_{\mathrm{L1}}{=}10^{-9}$,
 $s_{\mathrm{cossim}_b}{=}10^{-5}$, $s_{\mathrm{cossim}_h}{=}10^{-6}$, $s_{\mathrm{KL}_m}{=}10^{-6}$ \\
