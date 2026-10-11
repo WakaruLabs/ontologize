@@ -71,7 +71,7 @@ CAVEAT, recorded here because it is easy to forget: training against a
 similarity operator makes "the dictionary's cells align with the slow modes
 of the discourse operator" true by construction. The crossref experiments
 this code was developed alongside (not in this repository, whose
-`writeup/findings.tex` is a different document) are evidence only because
+`latex/findings.tex` is a different document) are evidence only because
 nothing in training ever mentioned a kernel. Any run using this needs a
 different null -- score against an affinity the training never saw.
 """

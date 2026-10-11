@@ -36,7 +36,7 @@ every entry, the log reads 1862 against the 1895 measured here for the
 each, exactly `h * l * (k - 1) / (2 b ln 2)`. Arms with dead entries
 have a smaller floor: `ste_h76` reads 1694 against 1714, and
 `ste_l1_h380`, whose heads carry about 1.3 bits each, 483 against 484.
-Subtracting the all-live floor (as `writeup/figures/extract_curves.py`
+Subtracting the all-live floor (as `latex/figures/extract_curves.py`
 does) recovers the fixed-init arms to within a bit and over-corrects
 `ste_h76` by 14. The per-prefix FVU and the per-head distribution still
 need the forward pass.

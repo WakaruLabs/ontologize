@@ -40,7 +40,7 @@ noise. A single layer reads about 1.2 times its held-out error; a
 five-layer stack reads 2-3 times at moderate error and up to 74 times
 when the final error is small, since the early prefixes then dominate the
 average. Arms with different layer counts do not even order the same way. Use it only to compare checkpoints of one arm; for anything quoted,
-score the checkpoint (`writeup/figures/extract_curves.py`).
+score the checkpoint (`latex/figures/extract_curves.py`).
 """
 import sys
 from pathlib import Path

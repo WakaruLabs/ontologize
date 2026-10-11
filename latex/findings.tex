@@ -34,7 +34,7 @@
 
 % Frontispiece: decorative, deliberately not a numbered float.
 \noindent\plate{\includegraphics[width=\dimexpr\textwidth-0.8pt\relax]{figures/frontis-orbit.png}}\\[3pt]
-\mutedlabel{orbit \textperiodcentered{} seed 1024 \textperiodcentered{} floyd--steinberg error diffusion}
+\mutedlabel{orbit \textperiodcentered{} seed 1024 \textperiodcentered{} floyd\textendash{}steinberg error diffusion}
 \vspace{8pt}
 
 \begin{abstract}
@@ -325,7 +325,7 @@ to judge-written description texts as well as to geometry. Li et
 al.~\cite{li2024geometry} test whole co-occurrence clusterings of SAE
 latents against permuted labels.
 
-\input{sections/methods}
+\input{findings/sections/methods}
 
 \subsection{Data, models and evaluation}
 \label{sec:setup}
@@ -385,9 +385,9 @@ text and in embedding space (\texttt{steerfid.py}, \texttt{steerembed.py},
 \texttt{steergeom.py}); additivity of paired interventions
 (\texttt{compose.py}); and autointerp (\texttt{autointerp.py}).
 
-\input{sections/results}
+\input{findings/sections/results}
 
-\input{sections/discussion}
+\input{findings/sections/discussion}
 
 \section*{Reproducibility}
 
@@ -433,6 +433,6 @@ also printed the plates.
 \noindent\plate{\includegraphics[width=\dimexpr\textwidth-0.8pt\relax]{figures/end-ridge.png}}\\[3pt]
 \mutedlabel{ridge \textperiodcentered{} seed 32 \textperiodcentered{} the same pipeline, closing the file}
 
-\input{sections/appendix}
+\input{findings/sections/appendix}
 
 \end{document}

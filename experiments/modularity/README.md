@@ -82,4 +82,4 @@ Each run writes `groups.csv` (a trailing `modularity` column),
 modularity, null spread and z per layer or block) and `run.log` to its
 output directory, listed in `run.sh`. The writeup's `fig:modularity` is
 drawn from the `summary.json` files by
-`writeup/figures/extract_results.py modularity`.
+`latex/figures/extract_results.py modularity`.

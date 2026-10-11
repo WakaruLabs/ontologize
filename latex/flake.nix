@@ -1,5 +1,5 @@
 {
-  description = "LaTeX toolchain for writeup/ and description/";
+  description = "LaTeX toolchain for the findings, brief and proposal in latex/";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 

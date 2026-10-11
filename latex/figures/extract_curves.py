@@ -37,7 +37,7 @@ Resumable: rows already in an output CSV are skipped. Needs a GPU for the
 sharded restores; a small memory fraction leaves a training run alone.
 
   XLA_PYTHON_CLIENT_MEM_FRACTION=0.15 uv run python \\
-      writeup/figures/extract_curves.py [orthant|sweep|depth|bits|kcos ...]
+      latex/figures/extract_curves.py [orthant|sweep|depth|bits|kcos ...]
 """
 import os
 os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")

@@ -1,7 +1,7 @@
 """Per-head effective information (EI) of a trained Ontologizer: how much
 does forcing a head's entry change what the heads downstream of it choose?
 
-The writeup's formal reading (writeup/sections/discussion.tex) treats each
+The writeup's formal reading (latex/findings/sections/discussion.tex) treats each
 head as a categorical causal variable, `withArgs` set-interventions as the
 do-operator, and the residual stack as the causal graph, in which every
 earlier head is a parent of every later one. EI (Hoel, Albantakis &

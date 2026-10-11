@@ -28,13 +28,17 @@ which should be used for explaining code structure, usage, and rationale.
 
 ### Writeup
 
-The writeup is compiled using `make`. Compilation uses `pdflatex` and `biber` for citations,
-which are stored in `writeup/refs.bib`. The toolchain is provided by the root `flake.nix`;
-the Makefiles run `pdflatex`/`biber` through `nix develop` themselves (skipped when already
-inside a nix shell), so plain `make -C writeup` (or `make -C writeup brief`, `make -C description`) works.
+The findings writeup, its two-page brief and the project proposal live together in
+`latex/` and share one style, one set of macros, one bibliography (`latex/refs.bib`), and the
+same diagrams and figures; `latex/CLAUDE.md` covers all three. They are compiled with
+`make`, using `pdflatex` and `biber`. The toolchain is provided by `latex/flake.nix`; the
+Makefile runs `pdflatex`/`biber` through `nix develop` itself (skipped when already inside
+a nix shell), so plain `make -C latex` (the findings), `make -C latex brief` and
+`make -C latex proposal` work.
 
-Organize sections in `writeup/sections`.
-Reserve `results.tex` for headline results. Keep other results in `appendix.tex`.
+Organize the findings' sections in `latex/findings/sections` and the proposal's in
+`latex/proposal/sections`.
+Reserve the findings' `results.tex` for headline results. Keep other results in `appendix.tex`.
 
 ## Project Setup
 

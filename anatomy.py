@@ -59,7 +59,7 @@ The temperature defaults to the run's schedule at the restored step (its
 log.jsonl env_config), as in assignmap.py. Writes <out>/<name>.pdf and a
 PNG preview, plus <name>.npz with every block's inputs so the figure can be
 redrawn without the model (--replot). NOTE: Ontologizer checkpoints
-restore on GPU JAX only. With the default --out (writeup/figures) the PNG
+restore on GPU JAX only. With the default --out (latex/figures) the PNG
 goes to its preview/, as make_figs.py lays it out, and the npz (the
 layer's whole dictionary, tens of MB) to <ckpt>/anatomy/, so --replot
 then takes --ckpt to find it; any other --out holds all three.
@@ -78,13 +78,13 @@ from jaxtyping import Float, Int
 
 from assignmap import eff_entries, row_eff
 
-# house palette (writeup/figures/make_figs.py, whose module body runs
+# house palette (latex/figures/make_figs.py, whose module body runs
 # every figure on import, so it is restated rather than imported)
 PINE = "#0B5132"
 INK = "#232329"
 PINE50 = "#86A791"
 INKMUT = "#7B7B80"
-FIGDIR = Path(__file__).resolve().parent / "writeup" / "figures"
+FIGDIR = Path(__file__).resolve().parent / "latex" / "figures"
 
 
 def parse_args():

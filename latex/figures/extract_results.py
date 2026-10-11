@@ -37,7 +37,7 @@ data/out and keeps only what a figure plots:
   selection   selection.py's noise2self scores against the selection
               rule, with their unpartitioned and random baselines
 
-  uv run python writeup/figures/extract_results.py [pareto|ratefloor|...]
+  uv run python latex/figures/extract_results.py [pareto|ratefloor|...]
 """
 import csv
 import json
