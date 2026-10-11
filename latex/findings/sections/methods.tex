@@ -289,13 +289,13 @@ incorporating it into the loss speeds up convergence.
 
 \paragraph{Disjoint support}
 \label{sec:disjoint}
-Between heads, orthogonality of nonnegative features is not a rotation
+Between heads, orthogonality of non-negative features is not a rotation
 constraint but a support-partition constraint. Every $\mathbf{f}_{ni}$
-lies in the nonnegative orthant of
+lies in the non-negative orthant of
 $\mathbb{R}^e$: the dictionary contributes $\lvert \mathsf{D} \rvert \geq 0$ and
-the assignments $P \geq 0$. For nonnegative $\mathbf{v}, \mathbf{v}'$ the
+the assignments $P \geq 0$. For non-negative $\mathbf{v}, \mathbf{v}'$ the
 inner product $\langle \mathbf{v},\mathbf{v}'\rangle = \sum_q v_q v'_q$ is
-a sum of nonnegative terms, so it vanishes if and only if every term
+a sum of non-negative terms, so it vanishes if and only if every term
 does,
 
 \begin{equation}
@@ -305,9 +305,15 @@ does,
 	\label{eq:disjoint}
 \end{equation}
 
+Non-negative sparse PCA and orthogonal non-negative matrix factorization
+rest on the same fact: orthonormal non-negative components divide the
+coordinates among themselves~\cite{zass2006,asteris2015onmf}.
 Signed vectors admit no such conclusion: there orthogonality is
 cancellation, and two vectors with identical support can be orthogonal.
-The support overlap of Eq.~\eqref{eq:support} sidesteps this. It
+A penalty on the inner products between groups of signed atoms, such as
+the incoherence term Ramirez et al.\ place between per-class
+dictionaries~\cite{ramirez2010}, can therefore be met by atoms that share
+coordinates. The support overlap of Eq.~\eqref{eq:support} sidesteps this. It
 compares the absolute values of the atoms, which have disjoint supports
 exactly when they are orthogonal whatever the atoms' signs, so it
 measures disjointness under a signed dictionary too; and it is computed
@@ -346,7 +352,11 @@ alternatives spread apart inside that block
 (Figure~\ref{fig:head-simplex}). Section~\ref{sec:prelim-orth} measures
 the second. Neither is guaranteed at convergence: $\omega$ is a penalty,
 and the geometry is built to make a support partition the cheap solution
-rather than to force one. Measured on the trained models, the cheap
+rather than to force one. In non-negative factorization too, penalizing
+overlap reduces it without producing a partition; the methods that reach
+an exact one assign each coordinate to a single
+component~\cite{zass2006,pompili2014,asteris2015onmf,charikar2021}.
+Measured on the trained models, the cheap
 solution was not taken: the within-head orthogonality holds, and no model
 partitions its coordinates between heads (Appendix~\ref{sec:support}).
 Under $\mathtt{ConcatDictBlock}$ heads write disjoint slices by

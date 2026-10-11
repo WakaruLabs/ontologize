@@ -3002,6 +3002,24 @@ rows land within 7\% of their nulls, the trained and discovered SAE groups
 included. The comparison $\omega$ was built for exists only in the
 dictionary space, which the SAE variants do not have.
 
+Nothing in the objective asks for the partition. The reconstruction is
+unchanged when the dictionary's coordinates are mixed by an invertible $T$
+that keeps every atom non-negative and the decoder becomes
+$W_{\mathrm{dec}}T^{-1}$, so a partitioned dictionary is one of many with
+the same error. What selects a partition between the variables of a
+non-negative code is a quadratic energy cost on its activity, together
+with a cost or bound on the weights' scale~\cite{whittington2023,dorrell2025}.
+These models carry neither: every configuration trains with Adam and no
+weight decay (Appendix~\ref{app:configs}), and apart from $\omega$ and the
+predecessor penalty above, no term compares two heads. The feature
+$\mathrm{L1}$ is additive over heads whose features are non-negative, and
+under an $\mathrm{L1}$ cost a mixed code costs the same as a modular
+one~\cite{dorrell2025}; $\mathrm{cossim}_b$ compares each head only with
+itself (Eq.~\eqref{eq:cossim_b}). Even under a quadratic cost, two
+variables partition only when their joint range is spread enough, roughly
+when every combination of their extreme values occurs~\cite{dorrell2025};
+whether every pair of two heads' entries co-occurs has not been measured.
+
 \paragraph{Training with $\omega$.} Penalizing $\omega$ does produce the
 partition, but only where reconstruction cannot see it. On GPT-2 with a
 signed dictionary ($e{=}1536$; three epochs, one seed per weight), it

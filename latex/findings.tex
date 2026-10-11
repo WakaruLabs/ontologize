@@ -139,6 +139,11 @@ their atoms summed --- is a soft additive quantizer~\cite{babenko2014}, the
 generalization of product quantization~\cite{jegou2011} in which every
 codebook spans the whole space rather than its own block of coordinates
 (\texttt{ConcatDictBlock} is a product quantizer in the dictionary space).
+Composite quantization~\cite{zhang2014composite} lies between the two: it
+holds the summed inner products between different codebooks' codewords at
+a constant, which product quantization's disjoint blocks fix at zero, and
+optimized product quantization~\cite{ge2014} learns the rotation that sets
+the blocks.
 In dictionary-learning terms a hard head is vector quantization, one atom
 at unit coefficient, and a sum of heads lies between vector quantization
 and free sparse coding, with exactly one unit-coefficient atom per

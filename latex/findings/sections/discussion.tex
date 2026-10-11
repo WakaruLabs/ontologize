@@ -393,9 +393,11 @@ space, or a near-null one when the decoder is square
 (Appendix~\ref{sec:support}). The penalty has to act on decoded atoms, or
 on direct atoms, which have no decoder. The $k{=}128$ direct runs trained
 only at $s_\omega{=}10^{-6}$, too weak to move $\omega$, where on GPT-2 it
-takes hold from $10^{-5}$. Output coordinates are not privileged axes, so
-a disjoint-coordinate partition there is a strong and somewhat arbitrary
-constraint, but it cannot be faked. Concatenated heads remain the only
+takes hold from $10^{-5}$. Output coordinates are not privileged axes (a
+product quantizer does better on a learned rotation of a space's
+coordinates than on the raw ones~\cite{ge2014}), so a disjoint-coordinate
+partition there is a strong and somewhat arbitrary constraint, but it
+cannot be faked. Concatenated heads remain the only
 route to disjoint support.
 \item \textbf{Logit-scale control for straight-through training.}
 Normalize logits per head, or control $t$ against a spread$/t$ setpoint,
