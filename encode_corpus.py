@@ -1,14 +1,17 @@
 # Precompute SONAR embeddings for the interleaved mC4 corpus and store them
 # as a .npy cache that sonar.py can train from directly (see `cache` there).
-# Uses the exact same stream order, tokenization, encoder dtype, and pooling
-# as sonar.py's on-the-fly path, so cached embeddings are bit-identical to
-# what training would have computed.
+# Uses the exact same stream order, tokenization and encoder dtype as
+# sonar.py's on-the-fly path, but stores SONAR's own embedding, the masked
+# mean, without the L2 step that path applies: a cached row divided by its
+# norm is the on-the-fly vector, to float rounding. (mc4_4M predates this
+# and holds the unit vectors; `pooling` in a cache's meta.json says which.)
 #
 # Crash-safe and resumable: embeddings are written into <name>.npy.part with
 # a progress sidecar, flushed every `flush_each` batches, and renamed to
 # <name>.npy only when complete -- so a half-built cache can never be
 # mistaken for a finished one. Rerunning after a crash/reboot skips the
 # already-encoded samples (cheap: the stream is re-read but not re-encoded).
+# Each row's mC4 language goes in <name>.langs.npy.
 
 # disable preallocation so jax and torch can share VRAM
 import os
@@ -52,6 +55,7 @@ encoder_id = "cointegrated/SONAR_200_text_encoder"
 
 d = 1024 # SONAR embedding dimension
 maxlen = 512 # sequence length
+pooling = "masked mean" # SONAR's embedding; mc4_4M's was "masked mean + l2 norm"
 
 N = 4_000_000 # corpus size; at b=256 this is 15625 steps/epoch
 b = 256 # encoding batch size
@@ -99,13 +103,14 @@ def main():
     done = 0
     if prog.exists() and part.exists():
         meta = json.loads((outdir / f"{args.name}.meta.json").read_text())
-        if meta.get("src_tags") != "MC4_TO_SONAR":
-            # caches without the field were tagged by langs.MC4_4M_TAGS
-            print(f"error: {part} was encoded under different source "
-                  "tags (its meta.json has no src_tags: MC4_TO_SONAR), and "
-                  "resuming would mix two tag maps in one cache. Delete "
-                  "the .part, .progress.json and .meta.json files to "
-                  "start over.")
+        # caches without src_tags were tagged by langs.MC4_4M_TAGS
+        if (meta.get("src_tags"), meta.get("pooling")) != ("MC4_TO_SONAR", pooling):
+            print(f"error: {part} was encoded with src_tags "
+                  f"{meta.get('src_tags')!r} and pooling "
+                  f"{meta.get('pooling')!r}, not 'MC4_TO_SONAR' and "
+                  f"{pooling!r}, and resuming would mix two kinds of rows "
+                  "in one cache. Delete the .part, .progress.json and "
+                  ".meta.json files to start over.")
             return
         done = json.loads(prog.read_text())["count"]
         E = np.lib.format.open_memmap(part, mode="r+")
@@ -121,7 +126,7 @@ def main():
         (outdir / f"{args.name}.meta.json").write_text(json.dumps({
             "n": args.n, "d": d, "dtype": "float32",
             "encoder": encoder_id, "encoder_dtype": dtype_str,
-            "maxlen": maxlen, "pooling": "masked mean + l2 norm",
+            "maxlen": maxlen, "pooling": pooling,
             "source": "allenai/c4 train, interleaved over MC4_TO_SONAR",
             "src_tags": "MC4_TO_SONAR",
             }, indent=2))
@@ -153,7 +158,8 @@ def main():
             if len(buf) == min(args.b, args.n - n):
                 batch = {k: np.stack([s[k] for s in buf])
                          for k in ("input_ids", "attention_mask")}
-                E[n:n + len(buf)] = np.asarray(encode(model, batch, dev))
+                E[n:n + len(buf)] = np.asarray(
+                        encode(model, batch, dev, normalize=False))
                 L[n:n + len(buf)] = langs
                 n += len(buf)
                 pbar.update(len(buf))

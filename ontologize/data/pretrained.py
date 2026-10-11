@@ -51,11 +51,14 @@ def tokenize(tokenizer, batch, *args, **kwargs):
 
 def l2_pooling(
    E: Float[Array, "batch seq_len d_model"],
-   attention_mask: Int[Array, "batch seq_len"]
+   attention_mask: Int[Array, "batch seq_len"],
+   normalize: bool = True,
 ) -> Float[Array, "batch d_model"]:
    """
-   Performs masked mean pooling and L2 normalization to generate 
-   sentence-level embeddings.
+   Performs masked mean pooling, which is SONAR's sentence embedding, and
+   then L2 normalization unless `normalize` is False. SONAR itself never
+   normalizes: its embeddings' norms vary with language and length, so
+   `normalize=False` returns SONAR's own embedding.
    """
    # 1. Expand mask for element-wise multiplication [batch, seq, 1]
    mask = jnp.expand_dims(attention_mask, axis=-1).astype(E.dtype)
@@ -70,16 +73,20 @@ def l2_pooling(
    # 4. Mean Pooling
    E_mean = E_pooled / n_token 
    
-   # 5. L2 Normalization (SONAR vectors are unit-normed)
+   if not normalize:
+       return E_mean
+
+   # 5. L2 Normalization (this pipeline's step, not SONAR's)
    # Using a small epsilon for numerical stability
    norm = jnp.linalg.norm(E_mean, axis=-1, keepdims=True)
    E_seq = E_mean / jnp.clip(norm, min=1e-9)
-   
+
    return E_seq
 
-def encode(model, inputs, dev=t.device("cuda")):
+def encode(model, inputs, dev=t.device("cuda"), normalize=True):
     """Encode a tokenized batch from a data loader. Rund `model(**inputs)` and
-    pools a model's `last_hidden_state` with `l2_pooling`."""
+    pools a model's `last_hidden_state` with `l2_pooling` (`normalize` as
+    there)."""
     # Grain provides numpy arrays, but the encoder needs PyTorch tensors
     inputs = {k: t.as_tensor(v) for k, v in inputs.items()}
     if dev is not None:
@@ -90,7 +97,7 @@ def encode(model, inputs, dev=t.device("cuda")):
         mask_pt = inputs['attention_mask']
         E = jnp.from_dlpack(E_pt)
         mask = jnp.from_dlpack(mask_pt)
-        return l2_pooling(E, mask)
+        return l2_pooling(E, mask, normalize=normalize)
 
 def decode(model, outputs, E: Float[Array, "... b d"], *args, **kwargs):
     """Decode an `Ontologizer` output. Requires the model to have a `generate` method."""

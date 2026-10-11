@@ -1,0 +1,202 @@
+# sentence-split notes
+
+## 2026-10-10: SaT Capped on the replayed documents (`segtest.py`)
+
+**Setup.** `sat-3l-sm` (fp16, RTX 3090) at its default threshold 0.25, split
+also at input newlines, every segment over 200 characters broken at the
+fewest, most probable further boundaries. 200 documents of each of the 86
+mC4 configs from `retag.py texts` (cache rows 0–34,399's documents), each cut
+to its first 4,000 characters (31.6M characters in all), the last segment of
+a cut document dropped. `sat-12l-sm` on the first 25 per config for
+agreement. Outputs in `data/out/sonar/sentsplit/`.
+
+**Throughput.** 749k characters/s (407 documents/s); `sat-12l-sm` 218k/s,
+3.4× slower. At these rates segmenting 4,000-character prefixes of all
+3,974,400 documents takes about 2.7 h (3l) or 9.3 h (12l), on top of the
+stream replay (~3 h).
+
+**Segments.** 433,683, about 25 per document prefix. Median 57 characters
+and 21 SONAR tokens (with the tag and `</s>`); 99th percentile 91 tokens,
+maximum 201. A sentence cache can encode at a 256-token cap with batches
+padded to their longest row, where the document cache pads every row to 512.
+99.9% of documents have at least one segment of 20–200 characters (at
+worst 98%, zh).
+
+By group (median over configs):
+
+| | configs | segments / 1k chars | median chars | over 200 before cap | made by the cap | under 20 chars | mid-word cuts | end in sentence punctuation | boundary F1 vs 12l |
+|---|---|---|---|---|---|---|---|---|---|
+| in SaT's 85 languages | 70 | 13.3 | 59 | 6.0% | 13.7% | 15.0% | 0.7% | 49.6% | 0.897 |
+| not in them (ht lb lo mi ny sd sm sn so st su) | 11 | 13.8 | 53 | 5.5% | 14.9% | 16.7% | 0.8% | 33.4% | 0.820 |
+| romanized (`*-Latn`) | 5 | 14.4 | 46 | 5.3% | 16.8% | 22.4% | 1.4% | 18.1% | 0.824 |
+
+- **SaT under-splits Khmer, Burmese and Lao; the cap does the
+  segmenting there.** Before the cap 29% (km), 27% (my) and 19% (lo) of
+  segments exceed 200 characters, and half (km, my) or 39% (lo) of their
+  final segments are cap-made; next are Urdu (12.5%, 26%) and Thai (10%,
+  22%). In Khmer and Burmese the cap's splits mostly land on the full stops
+  (`។`, `။`) whose probabilities sat below 0.25, so a lower threshold for
+  these scripts might do the same job; untested.
+- **The uncovered and romanized configs segment like the rest** by length
+  and mid-word rate, but agree less with the 12-layer model (0.82 against
+  0.90). `ja-Latn` is lowest (0.56), and its sample is mostly lists of
+  romanized names and titles rather than prose. Agreement is not accuracy:
+  mC4 has no gold segmentation.
+- **Mid-word cuts are rare and mostly not SaT's errors.** The highest rates
+  (zu 10.5%, ja-Latn 7.3%, ru-Latn 6.1%, mt 5.2%, so 4.2%, gd 4.1%, mr 4.1%)
+  come from the cap breaking material with no boundaries (base64 in mt, DNA
+  sequences in so, JavaScript in gd) and from correct cuts in text whose
+  separators extraction removed (country and title lists glued together in
+  zu and ja-Latn).
+- Under 20 characters is not a fragment everywhere: zh (33%) and ja (31%)
+  pack a sentence into fewer characters (median 27 and 31 characters, but
+  24 and 20 tokens).
+
+**What the examples show about the data, not the segmenter.** Some
+documents are mojibake at the source (zh row 84: UTF-8 read as GBK), some
+Burmese is in the legacy Zawgyi encoding rather than Unicode, and mC4's
+language labels put Chinese and Thai spam pages in the Marathi config;
+those rows get the wrong SONAR tag whatever the segmentation. Per-segment
+language identification would catch the mislabeled ones and most of the
+junk the cap has to break.
+
+## 2026-10-10: 3 against 12 layers by SONAR round trip (`roundtrip.py`)
+
+**Question.** The SaT paper's plots put `sat-12l-sm` above `sat-3l-sm` on
+gold segmentations (read off Figures 1 and 4: Ersatz ~94.8 to ~97.5 F1,
+OPUS100 ~88.5 to ~91.8, UD ~97.1 to ~97.8, code-switching ~42 to ~54). mC4
+has no gold segmentation, so the two are compared by the LCM's criterion:
+encode a segment with SONAR (own tag, no L2 step), decode greedy into the
+same language, chrF2 against the segment.
+
+**Setup.** The first 25 documents of each config (2,150), first 4,000
+characters, both models at threshold 0.25 with the 200-character cap;
+64,707 distinct segments, each decoded once.
+
+| | `sat-3l-sm` | `sat-12l-sm` |
+|---|---|---|
+| segments | 53,751 | 50,536 |
+| median characters | 56 | 62 |
+| round-trip chrF2 per document (character-weighted) | 0.593 | 0.583 |
+
+Per document, 12 layers score 0.0095 ± 0.0011 lower (better on 33% of
+documents, worse on 50%): −0.008 ± 0.001 on SaT's languages, −0.018 ±
+0.005 on the eleven it lacks, −0.010 ± 0.005 on the romanized configs.
+That is mostly length: the 12-layer model splits less, and longer segments
+survive worse. Within length bins the two are level, with mixed signs:
+
+| characters | 3 layers | 12 layers |
+|---|---|---|
+| under 50 | 0.720 | 0.714 |
+| 50–99 | 0.624 | 0.625 |
+| 100–149 | 0.560 | 0.564 |
+| 150–200 | 0.458 | 0.451 |
+
+So the larger model's better boundaries on gold benchmarks do not make
+better SONAR inputs here: at matched length its segments round-trip no
+better, and it costs 3.4× the time. `sat-3l-sm` is the choice for the
+sentence cache. Round-trip quality itself is modest (0.72 for segments
+under 50 characters, 0.45 at 150–200), and falls steadily with length well
+inside the cap.
+
+## 2026-10-10: language identification and retagging (`lidtest.py`)
+
+**Setup.** NLLB's fastText identifier (labels in SONAR's FLORES-200 codes)
+and GlotLID over the 433,683 segments of `segtest.py`. A segment
+"matches" if the top label is its config's tag (`MC4_TO_SONAR`), is
+"other" if it names another language at probability ≥ 0.9, "unsure"
+otherwise.
+
+**Agreement.** NLLB matches 64.7% of segments (74.0% of characters), other
+10.7%, unsure 24.6%; GlotLID matches 61.1%. Agreement rises with length:
+NLLB matches 34% of segments under 20 characters, 58% at 20–49, 77% at
+50–99, 79% at 100–200. 32 of 86 configs match on at least 80% (median
+74%). Filtering to matching segments would leave an eligible segment
+(20–200 characters) in 75% of documents (12,920 of 17,187); GlotLID 73%.
+Much of the disagreement is not mislabeling:
+
+- **NLLB's `yue_Hant` is a catch-all for non-prose.** It is the top
+  "other" label in nearly every config, English included, on product codes,
+  dates, ISBNs, all-caps titles and single letters, at probability ≥ 0.9.
+  GlotLID instead has non-linguistic classes (`zxx_Zzzz`, `zxx_Latn`),
+  which take Maltese's base64 and much of `bg-Latn`.
+- **Codes differ for some languages.** GlotLID labels Chinese `cmn_Hani`
+  (SONAR `zho_Hans`), Hindi partly `anp_Deva`; NLLB has no romanized
+  classes, so the five `*-Latn` configs never match it. GlotLID reads
+  `hi-Latn` as romanized Hindi (`hin_Latn`, `hif_Latn`); the other four are
+  mostly English or junk.
+- **Related languages are confused,** by both identifiers alike, so the
+  mislabel cannot be told from the error: ky as Tatar, st as Tswana and
+  Northern Sotho, sn as Kinyarwanda, am as Tigrinya, gl as Spanish.
+
+**Real mislabels, where the script settles it.** Welsh is 70% Greek
+(both identifiers; examples are plain Greek prose). Marathi is 34% Thai
+and Chinese spam. Sindhi is 47% English and Arabic. Smaller: Arabic in
+Swedish, Korean and Tamil in Hindi, Spanish in Georgian. So the lang-tags
+probe's "Welsh read as Greek" and "Marathi as Thai" confusions
+(`experiments/lang-tags/notes.md`) are rows in those languages, not
+artifacts of the English tag; and under per-config tags a language probe
+can read the tag token itself, which labels those rows by their config.
+
+**The retag check does not measure retagging.** On 2,565 segments NLLB
+places in another language, encoding under the predicted tag rather than
+the config's raises round-trip chrF2 (decoding both into the predicted
+language) from 0.609 to 0.665, but all of that is the `yue_Hant`
+segments, decoded into Cantonese they are not in (+0.179, n = 930).
+Segments predicted English lose 0.018 ± 0.007 (n = 705); the rest lose
+0.011 ± 0.008 (n = 930), and where the scripts differ, the clearest
+mislabels, they lose 0.052 ± 0.014 (n = 334; Greek in Welsh −0.12, Thai in
+Marathi −0.18). By hand: under its own tag SONAR decodes a Greek segment
+as a fluent paraphrase ("Ωστόσο παραμένει το ερώτημα" → "Ωστόσο η ερώτηση
+παραμένει", chrF 0.55), and under the Welsh tag it copies the surface form
+back (1.0). Round-trip chrF rewards surface copying, so it can compare
+segmenters at equal tags but cannot say which tag is right.
+
+## 2026-10-10: the sentence cache (`encode_sentences.py`, `mc4_sent16`)
+
+**Choices.** Up to 16 consecutive usable sentences per `mc4_4M` document
+(all 3,974,400), from a random usable start, so a document's rows are a
+passage for next-sentence prediction as well as rows for dictionary
+learning. Usable: 20–200 characters after SaT Capped (`sat-3l-sm`, 0.25,
+200-character cap) on each document's first 8,000 characters, letters
+mostly in the config's script (romanized configs: Latin), and not called
+non-linguistic by GlotLID. Config tags kept (no retagging), GlotLID's label
+stored per row, SONAR's masked mean without the L2 step, float32.
+
+**How many sentences.** Whole documents (the test sample, up to 20,000
+characters): median 1,534 characters, 17 usable sentences (mean 30); 87%
+have at least 4, 53% at least 16, 29% at least 32. Long runs would favor
+long documents and starve some configs (16 or more in only 17% of jv and lb
+documents), which is why runs are "up to" 16 over every document rather
+than exactly 16 over the documents that have them.
+
+**Trial (first 5,120 documents).** 56,853 sentences, 11.1 per document; 49%
+of documents give the full 16, 3% none. Of 156,112 segments, 25,199 failed
+the length window and 10,631 the script check; GlotLID dropped 705 of those
+it saw. Every row's language matches `mc4_4M`'s for its document, and stored
+rows match a direct encode (cosine ≥ 0.9999999). Sentence embeddings have
+median norm 0.21 (documents ~0.30). The faster builder (GlotLID only on the
+chosen run, which is re-chosen if it holds a non-linguistic segment) gives
+the same run as filtering first for 5,101 of 5,120 documents; the rest start
+elsewhere because a non-linguistic segment outside the run no longer shifts
+the random start.
+
+**Throughput.** Split: ~310 documents/s steady with SaT on the GPU, a reader
+process and 6 workers (it was 91/s in one process, GlotLID alone at ~5,000
+calls/s), ~3.6 h for the corpus. Encode: grouping a batch by tag held
+batches to a few hundred sentences and the GPU to ~210 sentences/s at any
+batch size; batches mixed across tags (the tag is only the first token)
+and capped at 65,536 padded tokens run at ~530–565 sentences/s in float32
+(~16k tokens/s, the document cache's rate). TF32 matmuls run at ~930/s with
+cosine to float32 ≥ 0.999986 (median 0.9999999, relative error median 3e-4).
+Decoded (the decoder in float32, greedy, into each sentence's own language;
+24 trial sentences per config, 2,064), TF32 and float32 embeddings give
+identical text for 99.2%; where they differ the two decodes share chrF2
+0.70, in sentences the decoder already garbles, and round-trip chrF2
+against the original is 0.6292 against 0.6291 (paired +0.0001 ± 0.0002).
+
+**Run.** The split started 2026-10-10 13:37 as the systemd unit
+`sent-split` (restart on failure; log `mc4_sent16.split.log`), at ~265
+documents/s. The encode is queued as the unit `sent-encode`
+(`encode_after_split.sh`: waits for the split to complete, then
+`encode --tf32`; restart on failure; log `mc4_sent16.encode.log`).
