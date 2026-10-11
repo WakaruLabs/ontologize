@@ -1263,6 +1263,19 @@ labels = sorted({r["label"] for r in EC},
 # the data green at the enriched end stays apart from ink by lightness
 DOT_CMAP = matplotlib.colors.LinearSegmentedColormap.from_list(
     "inkleaf", [INK, "#FFFFFF", LEAF])
+Q_CAP = 50.0
+Q_SIG = -np.log10(0.05)
+
+
+def dot_area(q):
+    """Marker area in points^2 for -log10 FDR q, capped at Q_CAP."""
+    return 4 + 40 * min(q, Q_CAP) / Q_CAP
+
+
+def dot_style(q, c):
+    """Fill, edge colour and edge width: filled with c where FDR < 0.05,
+    open otherwise."""
+    return (c, INK, 0.3) if q > Q_SIG else ("white", INKMUT, 0.5)
 
 
 def top_label(e):
@@ -1275,12 +1288,11 @@ def top_label(e):
 entries = sorted({int(r["entry"]) for r in EC}, key=top_label)
 for r in EC:
     y, x = entries.index(int(r["entry"])), labels.index(r["label"])
-    q = min(float(r["neglog10_FDR"]), 50.0)
-    sig = q > -np.log10(0.05)
-    c = DOT_CMAP((np.clip(float(r["log2OR"]), -4, 4) + 4) / 8)
-    b.scatter([x], [y], s=4 + 40 * q / 50, color=c if sig else "white",
-              edgecolors=INK if sig else INKMUT,
-              linewidths=0.3 if sig else 0.5, zorder=3)
+    q = float(r["neglog10_FDR"])
+    fill, edge, lw = dot_style(
+        q, DOT_CMAP((np.clip(float(r["log2OR"]), -4, 4) + 4) / 8))
+    b.scatter([x], [y], s=dot_area(q), color=fill, edgecolors=edge,
+              linewidths=lw, zorder=3)
 b.set_xticks(range(len(labels)), labels, rotation=55, ha="right",
              fontsize=6.4)
 b.set_yticks(range(len(entries)), [f"e{e}" for e in entries], fontsize=5.6)
@@ -1292,9 +1304,25 @@ b.set_axisbelow(True)
 eyebrow(b, f"GPT-2 layer 0, head {EC[0]['head']}")
 sm = matplotlib.cm.ScalarMappable(cmap=DOT_CMAP,
                                   norm=matplotlib.colors.Normalize(-4, 4))
-cb = fig.colorbar(sm, ax=b, fraction=0.08, pad=0.04, extend="both")
+cb = fig.colorbar(sm, ax=b, fraction=0.08, pad=0.04, extend="both",
+                  shrink=0.5, anchor=(0.0, 1.0))
 cb.set_label(r"$\log_2$ odds ratio", fontsize=6.6)
 cb.ax.tick_params(labelsize=6.0)
+# dot-area key below the colour bar, each dot drawn as a cell with that
+# FDR is, in a neutral fill since fill colour is the odds ratio
+Q_KEY = np.linspace(0, Q_CAP, 6)
+key = []
+for q in Q_KEY:
+    fill, edge, lw = dot_style(q, INKMUT)
+    key.append(Line2D([], [], ls="none", marker="o", ms=np.sqrt(dot_area(q)),
+                      mfc=fill, mec=edge, mew=lw))
+fig.draw_without_rendering()
+p = cb.ax.get_position()
+fig.legend(key, [f"{q:.0f}" for q in Q_KEY[:-1]] + [rf"$\geq${Q_CAP:.0f}"],
+           title=r"$-\log_{10}$ FDR", title_fontsize=6.6, fontsize=6.0,
+           loc="upper left", bbox_to_anchor=(p.x0, p.y0 - 0.04),
+           borderaxespad=0, borderpad=0, handletextpad=0.6,
+           labelspacing=0.45, alignment="left")
 letters((a, b))
 save(fig, "fig-enrich")
 
