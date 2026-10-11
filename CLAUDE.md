@@ -159,7 +159,10 @@ uv run python refit.py -h      # shrinkage: refit LS coefficients on each frozen
 uv run python quantrate.py -h  # operational rate: quantize every continuous number
                                # a code sends (SAE coefficients, soft assignments,
                                # gains), entropy-code the symbols, sweep the step;
-                               # FVU vs total bits per code, one axis for all
+                               # FVU vs total bits per code, one axis for all.
+                               # Rates are means over rows; rowbits.csv and
+                               # rowbudget.csv give each SAE's per-row lengths
+                               # and its FVU held to a per-row budget
 uv run python assignmap.py -h  # per-layer heatmaps of held-out samples x
                                # (head, entry) assignment probabilities, rows
                                # sliced by lang / GPT-2 token class / pos / doc;
