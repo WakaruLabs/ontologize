@@ -295,21 +295,21 @@ code on one axis: each continuous number a code sends is quantized
 (uniform, deadzone half a step, each coefficient's step the shared step
 over the whitened norm of its direction; origin 0 for sparse codes, the
 training-row mean for dense ones), each slot's symbol is entropy-coded
-with its own distribution, and the step is swept, 0.125 to 6.1e-5 in
-sqrt(2) steps. Ontologizers run closed-loop. The hard code sends its
+with its own distribution, and the step is swept, 0.125 to 6.1e-5 at
+six steps per octave. Ontologizers run closed-loop. The hard code sends its
 entries (realized per-head entropy) and its four gains (steps from 2
 down to 1/32 of each gain's sd); `resid_nc` sends its assignments quantized around
 E[p]. Nothing is refit after quantization. Output in
-`data/out/sonar/quantrate_halfoctave` (CSV, readouts JSON, figure), run
-before `quantrate.py`'s default grid became six steps per octave as
+`data/out/sonar/quantrate` (CSV, readouts JSON, figure), run as
 
-    uv run python quantrate.py --steps <0.125 to 6.1e-5 in sqrt(2) steps>
-                                      # all 15 sae_conv SAEs + both Ontologizers
+    uv run python quantrate.py        # all 15 sae_conv SAEs + both Ontologizers
 
-The half-octave grid leaves gaps where a dense code's rate jumps between
-steps (`g160softmax` has no point between 860 and 2818 bits), so readouts
-interpolated across them are coarse; the sweep is being rerun on the
-finer default.
+(rerun 2026-10-10 on that grid. The first run's half-octave grid, kept
+in `data/out/sonar/quantrate_halfoctave`, left gaps where a dense code's
+rate jumps between steps -- `g160softmax` had no point between 860 and
+2818 bits -- and readouts interpolated across them were coarse: k5120
+read 0.231 at 1900 bits and `g160softmax` 0.332, against 0.243 and
+0.372 here, while every code's points at shared steps are identical.)
 
 The plug-in rates were checked against held-out cross-entropy (tables
 fit on 32,768 cache-head rows, KT smoothing, escape plus Elias-gamma for
@@ -321,14 +321,14 @@ within 0.5 bits (L1 3e-6 1393.0/1393.5 and 2040.9/2041.5; hard code
 | code | float FVU_w | FVU at 1900 bits, entropy-coded / subset | bits to reach 0.158, entropy-coded / subset |
 |---|---|---|---|
 | hard code, `ste_h76_init01` | 0.1536 | **0.155** / 0.158 | 1895 / 1900 |
-| L1 SAE 3e-6 | 0.0052 | **0.128** / 0.179 | **1655** / 2056 |
-| `resid_nc`, soft code (in-sample) | 0.0054 | 0.145 / 0.229 | 1783 / 2552 |
-| L1 SAE 1e-5 | 0.0475 | 0.173 / 0.179 | 2050 / 2100 |
-| top-k SAE k5120 | 0.0001 | 0.231 / - | 2240 / 8603 |
+| L1 SAE 3e-6 | 0.0052 | **0.129** / 0.182 | **1675** / 2082 |
+| `resid_nc`, soft code (in-sample) | 0.0054 | 0.145 / 0.239 | 1792 / 2564 |
+| L1 SAE 1e-5 | 0.0475 | 0.175 / 0.180 | 2063 / 2112 |
+| top-k SAE k5120 | 0.0001 | 0.243 / - | 2241 / 8598 |
 | L1 SAE 3e-5 | 0.2195 | 0.242 / 0.243 | never |
 | top-k SAE k160 | 0.2585 | 0.259 / 0.259 | never |
 | `g160top1` | 0.2741 | 0.274 / 0.274 | never |
-| `g160softmax` | 0.0044 | 0.332 / 0.326 | 3712 / 3657 |
+| `g160softmax` | 0.0044 | 0.372 / 0.364 | 3787 / 3732 |
 
 ("subset": the support named as a set at log2 C(slots, nonzeros), the
 convention of `pareto.py`'s index bits, with values still entropy-coded;
@@ -336,8 +336,9 @@ for the hard code, the nominal 1900. 0.158 is the hard code with its
 gains pinned, a pure 1900-bit code.)
 
 **At matched entropy-coded rate, a coarsely quantized L1 SAE beats the
-hard code.** The 3e-6 SAE reaches 0.128 at 1900 bits against 0.155 (18%
-lower), and the pinned hard code's 0.158 at 1655 bits (13% fewer). It
+hard code** on average over rows (but see "Per row, not on average"
+below). The 3e-6 SAE reaches 0.129 at 1900 bits against 0.155 (17%
+lower), and the pinned hard code's 0.158 at 1675 bits (12% fewer). It
 gets there by sending about 440 of its ~1600 coefficients at a few
 levels each, about 4.3 bits per coefficient with its support. The
 support is cheap because L1 latent usage is skewed: entropy coding
@@ -347,7 +348,8 @@ nominal bits) and has nothing to save. `resid_nc`'s soft code, quantized
 around E[p], also beats it (0.145), but trained on the eval tail.
 
 **Under the fixed-length convention the hard code still wins**: 0.158
-against 0.179 for the L1 SAE and 0.229 for `resid_nc` at 1900 bits. The
+against 0.180 for the best L1 SAE (1e-5; 3e-6 0.182) and 0.239 for
+`resid_nc` at 1900 bits. The
 earlier claim survives only in that form, and against top-k and grouped
 SAEs at any coding: k160 flattens at its float FVU from about 1900 bits
 on (0.275 already at 1121, so its values carry little beyond on/off),
@@ -374,11 +376,12 @@ origins and gain statistics still from mc4_4M's head:
         --fit-cache data/sonar_embeddings/mc4_4M.npy \
         --out data/out/sonar/quantrate_fresh
 
-Every readout moves by at most 0.0004. At 1900 entropy-coded bits the
-hard code is 0.1548 on both, the L1 SAE at 3e-6 0.1277 against 0.1276,
-and `resid_nc` 0.1451 against 0.1447; the subset readouts and the bits
-to reach the pinned hard code's FVU (0.1583 here) move as little (L1
-3e-6 1656 bits against 1655, `resid_nc` 1786 against 1783).
+Every readout moves by at most 0.0004 (rerun on the same grid as the
+tail's). At 1900 entropy-coded bits the hard code is 0.1548 on both, the
+L1 SAE at 3e-6 0.1291 against 0.1289, and `resid_nc` 0.1453 against
+0.1450; the subset readouts, the per-row budget readouts and the bits to
+reach the pinned hard code's FVU (0.1583 here) move as little (L1 3e-6
+1676 bits against 1675, `resid_nc` 1794 against 1792).
 `resid_nc`, the one model that trained on mc4_4M's tail, scores 0.00539
 unquantized on fresh rows against 0.00538 there, so having seen those
 rows is worth 0.2% of its error and none of the comparison.
@@ -388,9 +391,9 @@ rows, and an L1 SAE's rows differ: its support size varies, so it spends
 more bits on some rows than on others, which the hard code's fixed-length
 1900 bits cannot. Near 1900 bits on average the 3e-6 SAE's rows run from
 1406 to 2399 bits (5th-95th percentile, mean 1816; max 3303). Held to a
-budget on every row,
-each row at the least-error step that fits once log2(67) bits name the
-step (`quantrate.py`'s rate control, on a sixth-octave grid of 67 steps):
+budget on every row, each row at the least-error step that fits once
+log2(67) bits name the step (`quantrate.py`'s rate control over the 67
+steps of the sweep):
 
 | code | 1900 bits on average | 1900 bits on every row | bits to reach 0.1582, average / every row |
 |---|---|---|---|
@@ -405,24 +408,15 @@ step (`quantrate.py`'s rate control, on a sixth-octave grid of 67 steps):
 The hard code is 0.158 at exactly 1900 bits on every row (pinned,
 fixed-length), 0.155 with its gains at a 1900-bit mean. So held to the
 same budget on every row the L1 SAE is level with the hard code rather
-than 18% below it, and codes of fixed support (k160, g160top1) do not
+than 17% below it, and codes of fixed support (k160, g160top1) do not
 move. Which reading applies depends on the use: average rate is the
 standard measure for compression, a per-row budget the fairer one for a
 fixed set of variables per input. One step per row is a crude
 controller; the tables stay those fit on all rows, one set per step.
-(The average-rate readouts on this grid, 0.129 and 1675 bits, differ
-from the half-octave default's 0.128 and 1655 by interpolation alone.)
-
-    S=data/out/sonar/sae_conv
-    uv run python quantrate.py --onto --sae $S/m5120_l13e-06/params.npz \
-        $S/m5120_l11e-05/params.npz $S/m5120_l13e-05/params.npz \
-        $S/m11264_k5120/params.npz $S/m11264_k160/params.npz \
-        $S/m5120_g160top1/params.npz $S/m5120_g160softmax/params.npz \
-        --steps $(python3 -c "print(' '.join(repr(2**(e/6)) for e in range(-18,-85,-1)))") \
-        --target-fvu 0.15823655852240903 --out data/out/sonar/quantrate_rowbudget
-
-(`rowbits.csv`, `rowbudget.csv` and `quantrate.json`'s
-`row_budget_readouts` there.)
+On fresh rows the table's per-row readouts move by at most 0.0006 (L1
+3e-6 0.1517, 1853 bits). (`rowbits.csv`, `rowbudget.csv` and
+`quantrate.json`'s `row_budget_readouts` in `data/out/sonar/quantrate`
+and `quantrate_fresh`, from the runs above.)
 
 ## Downstream: textfid and steerfid
 

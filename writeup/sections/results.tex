@@ -498,12 +498,15 @@ selection but has one layer of linear classifiers and keeps a ReLU
 magnitude on each winner. An SAE whose sparsity is not fixed is another
 matter. With everything each code sends quantized and entropy-coded
 (Appendix~\ref{sec:quantrate}), an L1 SAE with a weak penalty
-($s_{\mathrm{L1}}{=}3\times10^{-6}$), quantized coarsely, reaches 0.128 at
-1900 bits, 18\% below the stack: its latents fire unevenly, so naming the
-active ones costs a fifth less than a fixed-length code would, while the
-stack uses its entries almost uniformly and has nothing to save. With
-every support charged its fixed-length cost the stack leads every SAE
-(0.158 against 0.179). For a hard model the capacity axis is $l\cdot h\log_2 k$ itself:
+($s_{\mathrm{L1}}{=}3\times10^{-6}$), quantized coarsely, reaches 0.129 at
+1900 bits averaged over rows, 17\% below the stack: its latents fire
+unevenly, so naming the active ones costs a fifth less than a
+fixed-length code would, while the stack uses its entries almost
+uniformly and has nothing to save. Its rows also vary in length, as the
+number of coefficients each sends varies, and the stack's do not: held to
+1900 bits on every row, the L1 SAE reaches 0.152, level with the stack.
+With every support charged its fixed-length cost the stack leads every
+SAE (0.158 against 0.180). For a hard model the capacity axis is $l\cdot h\log_2 k$ itself:
 truncating toward the origin only adds mass the
 model was never trained to decode (0.259 at $\nu{=}1$). The stack is less
 efficient per bit than a single layer, $3.08\times$ the Gaussian reference

@@ -647,6 +647,9 @@ QTOPK = {"m11264_k32": "32", "m11264_k160": "160", "m11264_k5120": "5120"}
 QL1 = {"m5120_l13e-06": r"3$\times$10$^{-6}$", "m5120_l11e-05": r"10$^{-5}$",
        "m5120_l13e-05": r"3$\times$10$^{-5}$"}
 QVAR = ["m5120_g160top1", "m5120_g160softmax"]
+# quantrate.py sweeps six steps per octave; markers on every third keep
+# them half an octave apart while the lines use every step
+QMARK = 3
 
 
 def qcurves(family, key, runs=None):
@@ -674,21 +677,25 @@ for ax, key in ((a, "bits"), (b, "bits_subset")):
             color=INKMUT, lw=0.9, ls=DASH, label="Gaussian reference", zorder=2)
     for i, (run, pts) in enumerate(qcurves("sae_topk", key, QTOPK).items()):
         ax.plot(*zip(*pts), color=INK, lw=0.9, marker="s", ms=2.4, **RING,
+                markevery=QMARK,
                 label=r"$\mathtt{TopK}$ SAE" if i == 0 else None, zorder=3)
         if ax is a and run != "m11264_k32":
             qtag(ax, pts, r"$k_{\mathrm{SAE}}{=}$" + QTOPK[run],
                  5000 if run == "m11264_k160" else 2400)
     for i, (run, pts) in enumerate(qcurves("sae_l1", key, QL1).items()):
         ax.plot(*zip(*pts), color=INK, lw=0.8, ls=DOT, marker="o", ms=2.4,
-                mfc="white", label="L1 SAE" if i == 0 else None, zorder=3)
+                mfc="white", markevery=QMARK,
+                label="L1 SAE" if i == 0 else None, zorder=3)
         if ax is a:
             qtag(ax, pts, QL1[run], 3600 if run == "m5120_l13e-05" else 2800)
     for i, pts in enumerate(qcurves("variant", key, QVAR).values()):
         ax.plot(*zip(*pts), color=INKMUT, lw=0.8, marker="v", ms=2.8, **RING,
+                markevery=QMARK,
                 label="single-layer variants" if i == 0 else None, zorder=3)
     for pts in qcurves("softmax", key).values():
         ax.plot(*zip(*pts), color=LEAF, lw=1.1, marker="o", ms=2.6,
-                mfc="white", label="softmax, soft code", zorder=4)
+                mfc="white", markevery=QMARK, label="softmax, soft code",
+                zorder=4)
     for pts in qcurves("ste", key).values():
         ax.plot(*zip(*pts), color=LEAF, lw=1.4, marker="D", ms=3.4, **RING,
                 label=r"straight-through, 5$\times$76", zorder=5)

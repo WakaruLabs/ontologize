@@ -2003,32 +2003,44 @@ quantized and entropy-coded (Eq.~\eqref{eq:quantrate}), every code becomes
 a curve on one rate axis (Figure~\ref{fig:quantrate}). At the stack's
 1900 bits:
 
-\begin{center}\small
-\begin{tabular}{@{}lrrr@{}}
+\begin{center}\small\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lrrrr@{}}
 \toprule
-code & \stackhead[r]{$\fvu$\\unquantized} & \stackhead[r]{at 1900 bits\\entropy-coded} & \stackhead[r]{at 1900 bits\\fixed-length supports} \\
+code & \stackhead[r]{$\fvu$\\unquantized} & \stackhead[r]{1900 bits,\\entropy-coded} & \stackhead[r]{1900 bits,\\fixed supports} & \stackhead[r]{1900 bits\\on every row} \\
 \midrule
-straight-through, $5\times76$ & 0.1536 & \textbf{0.155} & \textbf{0.158} \\
-L1 SAE, $s_{\mathrm{L1}}{=}3\times10^{-6}$ & 0.0052 & \textbf{0.128} & 0.179 \\
-softmax Ontologizer, soft code & 0.0054 & 0.145 & 0.229 \\
-L1 SAE, $s_{\mathrm{L1}}{=}10^{-5}$ & 0.048 & 0.173 & 0.179 \\
-$\topk$ SAE, $k_{\mathrm{SAE}}{=}5120$ & 0.0001 & 0.231 & --- \\
-L1 SAE, $s_{\mathrm{L1}}{=}3\times10^{-5}$ & 0.219 & 0.242 & 0.243 \\
-$\topk$ SAE, $k_{\mathrm{SAE}}{=}160$ & 0.258 & 0.259 & 0.259 \\
-\texttt{g160top1} & 0.274 & 0.274 & 0.274 \\
-\texttt{g160softmax} & 0.0044 & 0.332 & 0.326 \\
+straight-through, $5\times76$ & 0.1536 & \textbf{0.155} & \textbf{0.158} & 0.158 \\
+L1 SAE, $s_{\mathrm{L1}}{=}3\times10^{-6}$ & 0.0052 & \textbf{0.129} & 0.182 & \textbf{0.152} \\
+softmax Ontologizer & 0.0054 & 0.145 & 0.239 & --- \\
+L1 SAE, $s_{\mathrm{L1}}{=}10^{-5}$ & 0.048 & 0.175 & 0.180 & 0.200 \\
+L1 SAE, $s_{\mathrm{L1}}{=}3\times10^{-5}$ & 0.219 & 0.242 & 0.243 & 0.250 \\
+$\topk$ SAE, $k_{\mathrm{SAE}}{=}5120$ & 0.0001 & 0.243 & --- & 0.281 \\
+$\topk$ SAE, $k_{\mathrm{SAE}}{=}160$ & 0.258 & 0.259 & 0.259 & 0.258 \\
+\texttt{g160top1} & 0.274 & 0.274 & 0.274 & 0.274 \\
+\texttt{g160softmax} & 0.0044 & 0.372 & 0.364 & 0.454 \\
 \bottomrule
 \end{tabular}
 \end{center}
 
 Entropy-coded, a coarsely quantized L1 SAE beats the stack at the stack's
-own rate: 0.128 against 0.155, and the stack's pure-code 0.158 at 1655
-bits. It sends about 440 of its roughly 1600 coefficients, at about 4.3
-bits each with their support. L1 latents fire unevenly, so the support
-codes about 20\% below its fixed-length cost, while the stack uses its
-entries almost uniformly (1895 of 1900 bits; Table~\ref{tab:init}) and
-has nothing to save. With supports at their fixed-length cost the stack
-leads every SAE (0.158 against 0.179). The $\topk$ SAE flattens at its
+own rate averaged over rows: 0.129 against 0.155, and the stack's
+pure-code 0.158 at 1675 bits. It sends about 440 of its roughly 1600
+coefficients, at about 4.3 bits each with their support. L1 latents fire
+unevenly, so the support codes about 20\% below its fixed-length cost,
+while the stack uses its entries almost uniformly (1895 of 1900 bits;
+Table~\ref{tab:init}) and has nothing to save. Its rows also differ: the
+number of coefficients a row sends varies, so near 1900 bits on average
+its rows take 1406 to 2399 bits (5th to 95th percentile). The stack's
+pure code takes exactly 1900 on every row at fixed length, and
+entropy-coded its rows differ only by the few bits its entries'
+frequencies set. Held to the budget on every row, each row at the
+least-error step that fits once about 6 bits name the step, the L1 SAE
+reaches 0.152, level with the stack, and needs 1853 bits per row to
+reach the stack's 0.158; codes of fixed support do not move, and the
+other variable ones lose more (the dense $\topk$ SAE 0.243 to 0.281,
+\texttt{g160softmax} 0.372 to 0.454). Average rate is the usual measure
+for compression, and a per-row budget the fairer one for a fixed set of
+variables per input. With supports at their fixed-length cost the stack
+leads every SAE (0.158 against 0.180). The $\topk$ SAE flattens at its
 unquantized error from about 1900 bits on, consistent with its
 least-squares floor of 0.236, and is already at 0.275 at 1121 bits, so
 its coefficients carry little beyond which latents fire; the single-layer

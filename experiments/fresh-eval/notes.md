@@ -62,7 +62,8 @@ data/sonar_embeddings/mc4_4M.npy` scores the last 32,768 fresh rows with
 origins and gain statistics from the training cache
 (`data/out/sonar/quantrate_fresh`). Against the same sweep on mc4_4M's
 tail every readout moves by at most 0.0004
-(`experiments/ste-arm/notes.md`, "Operational rate").
+(`experiments/ste-arm/notes.md`, "Operational rate"; both rerun
+2026-10-10 on `quantrate.py`'s six-per-octave grid, with the same result).
 
 That includes the asymmetry this experiment was built to measure:
 `resid_nc`, which trained on mc4_4M's tail, scores 0.00539 unquantized

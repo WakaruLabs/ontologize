@@ -165,10 +165,12 @@ with $2.4\times$ the heads makes the discrete code the model: with its
 four per-layer gains pinned it is a pure 1900-bit code at $0.158$. At the
 same total rate the converged $\topk$ SAE and the single-layer hard
 variant cannot get below $0.236$--$0.273$ however their coefficients are
-coded, but a coarsely quantized L1 SAE, entropy-coded, reaches $0.128$;
-the hard code leads every SAE only when each support is charged its
-fixed-length cost (0.158 against 0.179), because its own entries are used
-almost uniformly and an L1 SAE's latents are not.
+coded, but a coarsely quantized L1 SAE, entropy-coded, reaches $0.129$
+averaged over rows and $0.152$, level with the hard code, held to 1900
+bits on every row; averaged over rows the hard code leads every SAE only
+when each support is charged its fixed-length cost (0.158 against 0.180),
+because its own entries are used almost uniformly and an L1 SAE's latents
+are not.
 It sits $3.1\times$ above the Gaussian reference for its rate, so at least
 that far from the data's distortion--rate function, a limit over long
 blocks of samples that a code describing each sample alone need not be
