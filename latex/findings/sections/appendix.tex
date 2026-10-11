@@ -3017,8 +3017,21 @@ under an $\mathrm{L1}$ cost a mixed code costs the same as a modular
 one~\cite{dorrell2025}; $\mathrm{cossim}_b$ compares each head only with
 itself (Eq.~\eqref{eq:cossim_b}). Even under a quadratic cost, two
 variables partition only when their joint range is spread enough, roughly
-when every combination of their extreme values occurs~\cite{dorrell2025};
-whether every pair of two heads' entries co-occurs has not been measured.
+when every combination of their extreme values occurs~\cite{dorrell2025}.
+For two heads that is every pair of their entries co-occurring, and on
+SONAR the data allow it (\texttt{headrange.py}; the models above, one seed
+each). Of the cells of two heads' winning-entry table that independence
+would fill at least ten times on the evaluation tail, at most 0.24\% are
+empty in any layer of a SONAR model (\texttt{sweep\_top2\_shm}'s layer 0),
+and most layers have none or a handful, against about $10^{-6}$ under a
+row-shuffle null. The exception is GPT-2's layer 0, where 2.6--3.4\% of
+tested cells are empty (0.9\% with concatenated heads). Its heads read
+token class and position (Figure~\ref{fig:enrich}), and two heads that
+both read a token's class can have entries that never co-occur. GPT-2's
+deeper layers cover their range as SONAR's do. Where many entry pairs
+exclude each other, their atoms overlap slightly less, not more, than those
+of co-occurring pairs at matched expected counts. So on SONAR the data's
+range is no obstacle to a partition; what is missing is the cost.
 
 \paragraph{Training with $\omega$.} Penalizing $\omega$ does produce the
 partition, but only where reconstruction cannot see it. On GPT-2 with a

@@ -69,6 +69,7 @@ does.
 | **dictionary geometry** | |
 | within-head row geometry from the weights | `dictgeom.py` |
 | whether heads occupy disjoint coordinates (support overlap) | `headsupport.py` |
+| whether every pair of two heads' entries co-occurs (range coverage), and whether excluded pairs share coordinates | `headrange.py` |
 | whether `ConcatDictBlock` changes the non-negative correlation floor | `concat_floor.py` |
 | whether entries in a layer contribute equally | `entryshare.py` |
 | how a layer's large atoms are spread across its heads | `bigatoms.py` |

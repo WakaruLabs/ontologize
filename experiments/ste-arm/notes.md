@@ -3980,6 +3980,83 @@ data/out/sonar/selection_jinv`, on CPU, 2026-10-09; `jinv.csv`,
 `jinv_isotropic.csv`. At tau = 0.01 the isotropic rows underflow in
 `pwak.affinity`'s float32 and are not read.)
 
+## Range coverage between heads (`headrange.py`): SONAR's heads cover their joint range
+
+2026-10-11. Dorrell et al. (ICLR 2025) show that a non-negative code with
+a quadratic activity cost gives each variable its own neurons, which is our
+head-disjointness, only if every combination of two variables' extreme
+values occurs. For categorical heads that means every pair of two heads'
+entries co-occurs. `headrange.py` builds, for each layer and pair of heads,
+the k x k table of winning-entry co-occurrences on the 32,768-row
+evaluation tail. It counts structural zeros: empty cells whose expected
+count under independence (the heads' own winner frequencies) is at least
+10. Chance leaves such a cell empty with probability under e^-10; the null
+shuffles one head's winners across rows. Soft models are read by their
+argmax. The same twelve models as the `headsupport.py` table, one seed each.
+
+| model | layer 0 | layers 1-4 |
+|---|---|---|
+| SONAR `resid_nc` | 4 of 268,942 empty; 99.2% of pairs fully covered | 3 empty in all (layer 4 tests only 5,857 cells) |
+| SONAR `resid_nc_hm` | 50 of 480,741; 97.0% | 117 in all; 94.0-100% of pairs |
+| SONAR `sweep_softmax_shm` | 1 of 507,904 | 3 in layers 1-3; layer 4: 224 of 163,648, 67.1% of pairs |
+| SONAR `sweep_top2_shm` | 637 of 270,915; 46.0% | 2 in all |
+| SONAR `ste_h76` | 159 of 316,525; 99.2% | 8 in all |
+| SONAR `ste_h76_init01` | 369 of 2,918,400; 97.1% | 0 |
+| SONAR `ste_l1_h380_i01_hm1e4` (one layer) | 2,524 of 73,730,366; 99.3% | — |
+| GPT-2 `ste_h76` | 16,340 of 618,383 (2.6%); 4.7% | 50 in all; 99.2%+ |
+| GPT-2 `ste_h76_e768` | 14,891 of 572,229 (2.6%); 4.9% | 32 in all |
+| GPT-2 `ste_h76_sgn` | 21,612 of 627,003 (3.4%); 1.4% | 71 in all |
+| GPT-2 `ste_h76_sgn768` | 20,378 of 617,224 (3.3%); 1.8% | 72 in all |
+| GPT-2 `ste_h76_cat32` | 2,822 of 305,789 (0.9%); 53.3% | 22 in all |
+
+The shuffle null and the chance rate both sit near 1e-6 of tested cells,
+so the empty cells are real exclusions, but outside GPT-2's layer 0 they
+are rare.
+
+- **SONAR's heads satisfy the range condition.** In every SONAR model,
+  almost every pair of heads covers all its testable entry pairs. Under a
+  quadratic activity cost and a scale anchor, the theory would then predict
+  a partition (inference: it covers linear codes that reconstruct their
+  sources exactly). So the measured absence of one (`sec:support`) is the
+  objective's doing, not the data's: the objective has neither ingredient.
+- **GPT-2's layer 0 does not.** In the four arms with a shared dictionary
+  space, 2.6-3.4% of testable cells are empty and only 1.4-4.9% of head
+  pairs cover their range; the median pair misses 2-3% of its cells. The
+  concatenated arm misses 0.9%, with 53.3% of pairs covered. These
+  layer-0 heads carry token class and position (`fig:enrich`), and two
+  heads that both read a token's class have entry pairs that cannot
+  co-occur (inference). Such pairs need not partition even under the
+  energy. Deeper layers cover their range as SONAR's do.
+- **Testable cells only.** A cell is tested only if both entries are common
+  enough to expect 10 co-occurrences. Where usage is concentrated, few
+  cells qualify (`resid_nc` layer 4 tests 5,857 of 507,904).
+
+Whether excluded entry pairs share coordinates more than co-occurring ones
+was also measured. Atom cosine between the absolute atoms was taken for
+empty cells, against co-occurring cells in the same doubling bin of
+expected count, as a z-score on the co-occurring cells' spread; this is
+skipped under `ConcatDictBlock`.
+- **Where exclusions are many, they overlap less.** Excess cosine was
+  -0.054 (z -48) on GPT-2 `ste_h76` layer 0, -0.043 for `ste_h76_e768`,
+  -0.009 and -0.003 for the signed arms, -0.032 for `sweep_top2_shm`
+  layer 0, -0.010 for `sweep_softmax_shm` layer 4, and -0.010, -0.031 and
+  -0.072 for the three SONAR straight-through models' layer 0.
+  This is the opposite of "free to share", which the theory derives from
+  the activity cost these models lack.
+- **The few exclusions in `resid_nc_hm` overlap more.** +0.024 to +0.066
+  (z +7 to +9) in layers 0-1, from 50-86 cells.
+
+```bash
+uv run python experiments/ste-arm/headrange.py \
+    --model data/out/sonar/multilingual/resid_nc ... \
+    --model data/out/gpt2_l8/ste_h76_cat32 --out data/out/headsupport/headrange.json
+```
+
+Results: `data/out/headsupport/headrange.json` and `headrange.log`. The
+first run's outputs were zeroed by a system crash on 2026-10-11 and
+regenerated; the rerun reproduced the printed numbers, with GPT-2 tested
+counts moving by a few cells from ties in the winners on the GPU.
+
 ## Run
 
 See [`README.md`](README.md) for training and scoring commands.
