@@ -189,6 +189,18 @@ $\mathrm{cossim}_b$), as are $H$ (entropy) and $L$ (the loss); and the realized-
 paragraph uses the information-theory convention of uppercase random variables
 ($A_{\ell i}$, $\mathbf{A}$, $\mathbf{X}$), which it says where it starts.
 
+**Averages and probabilities.** $\mathbb{E}$ is an average over what its subscript names:
+$\mathbb{E}_n$ the samples in context (a batch in a training statistic, the scored rows in
+an evaluation), $\mathbb{E}_i$ heads, $\mathbb{E}_{i\neq i'}$ pairs of distinct heads,
+$\mathbb{E}_{j\sim\bar{\mathbf{p}}_i}$ a distribution, $\mathbb{E}_{\mathcal{G}'}$ a null's
+random draws. Without a subscript it is over the data, so an average over anything else
+takes one. $\Pr$ is a fraction of samples; in display math write `\Pr\nolimits_n`, since
+amsmath's `\Pr` otherwise sets the subscript underneath, unlike $\mathbb{E}_n$'s. The
+indicator is `\mathbf{1}[\cdot]`, with square brackets, and `\mathrm{sd}` and `\mathrm{var}`
+take subscripts as $\mathbb{E}$ does. The data mean is $\bar{\mathbf{x}}$ and the mean
+assignment $\mathbf{o}$, not $\mathbb{E}[\mathbf{x}]$ and $\mathbb{E}[\mathbf{p}]$. The
+Notation appendix's Conventions paragraph says the same for the reader.
+
 **Indices and counts.** Sample $n$, layer $\ell$ (0-indexed, $\ell = 0,\dots,l-1$, matching
 "layer 0" in prose, tables and code), head $i$ and $i'$, entry $j$ and $j'$, coordinate
 $q$.
@@ -297,7 +309,9 @@ Code identifiers keep their names (`tags()`, `decode_tags.py`, `forward="labels"
 ## Conventions
 
 - Run and script names are `\texttt{}` with escaped underscores
-  (`\texttt{ste\_h76\_init01}`).
+  (`\texttt{ste\_h76\_init01}`). Command-line flags are typed as they are
+  (`\texttt{--trained-groups}`): `flockpaper.sty` turns off the `--` ligature in
+  typewriter text, which Plex Mono would otherwise set as an en dash.
 - Every comparison states its null or control; a result without a null of the same shape
   is not reported as a result.
 - One seed per cell is said explicitly where it applies.

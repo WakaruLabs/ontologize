@@ -38,7 +38,15 @@ cosine of the angle between them,
 $\cos\angle(\mathbf{a}, \mathbf{b}) :=
 \langle\mathbf{a},\mathbf{b}\rangle / (\lVert\mathbf{a}\rVert\lVert\mathbf{b}\rVert)$,
 so that $\cos$ keeps one argument; $\lvert\cos\angle\rvert$ alone is its
-absolute value for the pair in context.
+absolute value for the pair in context. $\mathbb{E}$ is an average over
+what its subscript names: $\mathbb{E}_n$ over the samples in context (a
+batch in a training statistic, the scored rows in an evaluation),
+$\mathbb{E}_i$ over heads, $\mathbb{E}_{i \neq i'}$ over pairs of distinct
+heads, $\mathbb{E}_{j \sim \bar{\mathbf{p}}_i}$ under a distribution.
+Without a subscript it is over the data. $\Pr$ is likewise a fraction of
+samples, $\Pr_n(\cdot)$ the fraction on which its condition holds.
+$\mathbf{1}[\cdot]$ is the indicator, and $\mathrm{sd}$ and $\mathrm{var}$
+are the standard deviation and variance, subscripted as $\mathbb{E}$ is.
 
 \paragraph{Layers and states.}
 A layer is indexed by its position, $\ell = 0,\dots,l-1$, and a state of
@@ -185,7 +193,7 @@ the intended ones; the trained models' error rises by 4--12\% on the
 correctly tagged versions, the hard code and the SAEs alike. ``SONAR
 embeddings'' here means SONAR's embeddings under these tags, and the
 language results inherit the difference (Appendix~\ref{sec:langlocal}). The cloud is unit-normed
-but not centered: $\lVert\mathbb{E}[\mathbf{x}]\rVert = 0.564$, so it is a
+but not centered: $\lVert\bar{\mathbf{x}}\rVert = 0.564$, so it is a
 spherical cap and $0.318$ of every squared norm is one shared direction.
 It is dense without being isotropic --- effective dimension 108 of 1024
 (participation ratio 268 on the whitened eval tail), yet 943 principal
@@ -464,12 +472,12 @@ pin the rest to the origin distribution $\mathbf{o}$, renormalize,
 \end{equation}
 applied to every head, so the code transmits $\nu$ coefficients per head.
 The origin is the
-corpus-mean classification $\mathbb{E}[\mathbf{p}]$ --- measured, not
+corpus-mean classification $\mathbf{o}$ --- measured, not
 uniform: the model output is jointly \emph{linear} in the flattened
 classifications (zero residual seed, linear decoder), so
-$\mathrm{decode}(\mathbb{E}[\mathbf{p}]) = \mathbb{E}[\hat{\mathbf{x}}]$,
+$\mathrm{decode}(\mathbf{o}) = \mathbb{E}[\hat{\mathbf{x}}]$,
 which decodes to the corpus-mean generic text, while the uniform code lands
-off-manifold (cosine $0.067$ to $\mathbb{E}[\mathbf{x}]$).
+off-manifold (cosine $0.067$ to $\bar{\mathbf{x}}$).
 \texttt{resid\_nc} trains without $\mathrm{KL}_m$, the term meant to tie
 the uniform code to the generic one (Section~\ref{sec:labels}); this probe
 is what motivated the term, and whether it achieves that in the models
@@ -559,7 +567,7 @@ on the held-out half computes per-group exhaustiveness, exclusivity and
 the coefficient of variation of the group's summed activation,
 \begin{equation}
 	\begin{gathered}
-	\mathrm{exh}(\mathcal{G}) := \Pr_n\!\big(\textstyle\sum_{j \in \mathcal{G}} \mathbf{1}[z_{nj} > 0] \ge 1\big),
+	\mathrm{exh}(\mathcal{G}) := \Pr\nolimits_n\!\big(\textstyle\sum_{j \in \mathcal{G}} \mathbf{1}[z_{nj} > 0] \ge 1\big),
 	\\
 	\mathrm{exc}(\mathcal{G}) := \mathbb{E}_n\!\big[\textstyle\sum_{j \in \mathcal{G}} \mathbf{1}[z_{nj} > 0]
 	\;\big|\; \textstyle\sum_{j \in \mathcal{G}} \mathbf{1}[z_{nj} > 0] \ge 1\big],
@@ -746,14 +754,15 @@ share of embedding variance,
 	                       \lVert \bar{\mathbf{x}}_{\mathcal{C}_c} - \bar{\mathbf{x}}\rVert^2}
 	                  {\sum_n \lVert \mathbf{x}_n - \bar{\mathbf{x}}\rVert^2},
 	\qquad
-	\mathbb{E}\big[\eta^2_{\mathrm{random}}\big] \approx
+	\mathbb{E}_{\mathcal{C}'}\big[\eta^2(\mathcal{C}')\big] \approx
 	\frac{\lvert\mathcal{C}\rvert-1}{n_{\mathrm{rows}}-1},
 	\label{eq:eta}
 \end{equation}
 for a partition $\mathcal{C}$ of $n_{\mathrm{rows}}$ rows into cells
 $\mathcal{C}_c$, with $\bar{\mathbf{x}}_{\mathcal{C}_c}$ the mean of the
-rows in cell $\mathcal{C}_c$, and report it raw and against the baseline
-a random partition into $\lvert\mathcal{C}\rvert$ cells scores.
+rows in cell $\mathcal{C}_c$, and report it raw and against the baseline,
+its mean over random partitions $\mathcal{C}'$ into
+$\lvert\mathcal{C}\rvert$ cells.
 
 \paragraph{Shrinkage (\texttt{refit.py}).}
 The refinement of Gao et al.~\cite{gao2024} without its non-negativity
@@ -819,7 +828,7 @@ along $\mathbf{v}$ changes $\mathbf{x}^\top B\mathbf{x}$ by
 $2\alpha\lambda(\mathbf{x}\cdot\mathbf{v})$, a property of the sample. It
 can on SONAR because the embedding is anisotropic, so
 $\mathbf{x}\cdot\mathbf{v}$ is dominated by
-$\mathbb{E}[\mathbf{x}]\cdot\mathbf{v}$, which has a consistent sign; on
+$\bar{\mathbf{x}}\cdot\mathbf{v}$, which has a consistent sign; on
 isotropic Gaussian inputs a weight-only direction raises the logit on
 about half the samples. On the hard code the oriented eigendirection is
 below random at every strength.
@@ -877,7 +886,7 @@ feature selection, parameter-based decode embeddings), texts
 (deterministic mC4 stream replay recovers text by row index, verified
 against the language sidecar), describe, and score. Description modes:
 \texttt{params}, the M2M100 decode of a parameter-derived embedding (for
-entries, the $\mathbb{E}[\mathbf{p}]$-origin code with one head forced
+entries, the origin $\mathbf{o}$ with one head forced
 one-hot; for SAE latents, $\mathbf{b}_{\mathrm{dec}} +
 \alpha\,\mathbf{w}^{\mathrm{dec}}_j$); \texttt{pdev}, the same decode
 with the pure-origin decode subtracted; \texttt{eig}, the bilinear
@@ -1074,14 +1083,14 @@ explicitly selects for anti-correlated same-context pairs. And
 \texttt{g160softmax} never fires distinctly at all: no coefficient ever
 exceeds $2/32$ on any test row --- soft per-head codes converge to dense
 near-uniform mixtures, exactly as the Ontologizer's soft code does
-($\mathbb{E}[\mathbf{p}]$ sits $0.06$--$0.16$ bits from uniform in healthy layers;
+($\mathbf{o}$ sits $0.06$--$0.16$ bits from uniform in healthy layers;
 matching soft reconstruction requires $\sim$16 of 32 deviations per head).
 \textbf{Categorical structure exists precisely when trained in as hard
 selection, never emerges from softmax competition under a reconstruction
 objective, and costs $\sim$60$\times$ in $\fvu$ (0.274 vs.\ 0.0044)
 at the SAE's 160 heads.} For steering this means the \emph{soft}
 architectures' classifier reading must be cashed out in deviations around
-$\mathbb{E}[\mathbf{p}]$, not in discrete winners --- or the selection must be
+$\mathbf{o}$, not in discrete winners --- or the selection must be
 made hard during training, which Section~\ref{sec:ste} does at a far
 smaller cost once the head count is raised.
 Figure~\ref{fig:anatomy-softmax} shows one such soft head of
@@ -2594,7 +2603,7 @@ decoder before it reaches the output.
 
 An entry writes only where it wins its head, and then writes its layer's
 gain times its decoded atom, so its energy over the data is
-$\mathbb{E}[\mathbf{1}\{\text{selected}\}\,\mathrm{gain}^2]\,
+$\mathbb{E}\big[\mathbf{1}[\text{selected}]\,\mathrm{gain}^2\big]\,
 \lVert\text{atom}\rVert^2$. Per layer, over 32{,}768 held-out rows
 (\texttt{entryshare.py}):
 

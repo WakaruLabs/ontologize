@@ -41,7 +41,7 @@
 		$\mathbf{c}_{ni} \leftarrow \beta \tanh(A_i \mathbf{u}_n / \beta)$
 			\tcp*{fiber coordinates, Eq.~\eqref{eq:fiber}}
 		$F', \mathsf{P}, (\mathrm{L1}, H, \mathrm{cossim}_b,
-			\mathbb{E}\kappa, \max\kappa, \mathrm{KL}_m, \omega)
+			\mathbb{E}_i\kappa_i, \max_i \kappa_i, \mathrm{KL}_m, \omega)
 			\leftarrow \dictblock(\mathsf{K}, \Gamma, \mathsf{C})$\;
 		$\mathrm{KL}_{\mathrm{pwak}}, \mathrm{L2}_{\mathrm{pwak}}
 			\leftarrow \mathrm{pwak}(\mathsf{P}, \mathbf{u}_{1:b})$
@@ -50,7 +50,7 @@
 			\tcp*{row $n$ of $R$: the contribution, at the input's gain}
 		\Return{$R$, $\mathsf{P}$,
 			$\boldsymbol{\psi} = (\mathrm{L1}_K, \mathrm{L1}, H, \mathrm{cossim}_b,
-			\mathbb{E}\kappa, \max\kappa, \mathrm{KL}_m,
+			\mathbb{E}_i\kappa_i, \max_i \kappa_i, \mathrm{KL}_m,
 			\mathrm{KL}_{\mathrm{pwak}}, \mathrm{L2}_{\mathrm{pwak}},
 			\mathrm{L1}_S, \omega)$}\;
 	}
