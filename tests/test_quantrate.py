@@ -131,3 +131,35 @@ def test_curve_drops_unquantized_rows():
     rows = [{"bits": float("nan"), "fvu_w": 0.1},
             {"bits": 50.0, "fvu_w": 0.3}, {"bits": 20.0, "fvu_w": 0.5}]
     assert qr.curve(rows) == [(20.0, 0.5), (50.0, 0.3)]
+
+
+def test_row_bits_average_to_the_slot_entropies():
+    S = sparse_symbols()
+    S[:, 0] = np.where(S[:, 0] == 0, 1, S[:, 0])    # a slot that is never 0
+    sc = qr.SymbolCounts(S.shape[1])
+    for i in range(0, len(S), 50):
+        sc.add_dense(S[i:i + 50])
+    L = sc.row_bits(np.broadcast_to(np.arange(S.shape[1]), S.shape), S)
+    want = sum(brute_entropy(S[:, j]) for j in range(S.shape[1]))
+    assert L.mean() == pytest.approx(want, abs=1e-9)
+    # a row's length is the sum of its symbols' surprisals, zeros included
+    j0 = [-math.log2((S[:, j] == S[3, j]).mean()) for j in range(S.shape[1])]
+    assert L[3] == pytest.approx(sum(j0), abs=1e-9)
+    # the same rows given as a sparse slice of their nonzero slots
+    idx = np.argsort(S == 0, axis=1, kind="stable")[:, :4]
+    sparse = np.take_along_axis(S, idx, 1)
+    keep = (S != 0).sum(1) <= 4                  # rows the slice holds whole
+    np.testing.assert_allclose(sc.row_bits(idx, sparse)[keep], L[keep])
+    with pytest.raises(ValueError):
+        sc.row_bits(np.zeros((1, 1), np.int64), np.full((1, 1), 99))
+
+
+def test_rate_control_takes_the_best_step_that_fits():
+    lengths = np.array([[100., 300., 500.],     # coarse step: short codes
+                        [200., 600., 900.]])    # fine step: long codes
+    errs = np.array([[5., 5., 5.],
+                     [1., 1., 1.]])
+    pick = qr.rate_control(lengths, errs, budget=610, side=1)
+    assert pick.tolist() == [1, 1, 0]            # row 2's fine code is too long
+    # a row nothing fits takes its shortest code
+    assert qr.rate_control(lengths, errs, budget=50, side=1).tolist() == [0, 0, 0]

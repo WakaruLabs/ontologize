@@ -300,9 +300,16 @@ sqrt(2) steps. Ontologizers run closed-loop. The hard code sends its
 entries (realized per-head entropy) and its four gains (steps from 2
 down to 1/32 of each gain's sd); `resid_nc` sends its assignments quantized around
 E[p]. Nothing is refit after quantization. Output in
-`data/out/sonar/quantrate` (CSV, readouts JSON, figure), run as
+`data/out/sonar/quantrate_halfoctave` (CSV, readouts JSON, figure), run
+before `quantrate.py`'s default grid became six steps per octave as
 
-    uv run python quantrate.py        # all 15 sae_conv SAEs + both Ontologizers
+    uv run python quantrate.py --steps <0.125 to 6.1e-5 in sqrt(2) steps>
+                                      # all 15 sae_conv SAEs + both Ontologizers
+
+The half-octave grid leaves gaps where a dense code's rate jumps between
+steps (`g160softmax` has no point between 860 and 2818 bits), so readouts
+interpolated across them are coarse; the sweep is being rerun on the
+finer default.
 
 The plug-in rates were checked against held-out cross-entropy (tables
 fit on 32,768 cache-head rows, KT smoothing, escape plus Elias-gamma for
@@ -375,6 +382,47 @@ to reach the pinned hard code's FVU (0.1583 here) move as little (L1
 `resid_nc`, the one model that trained on mc4_4M's tail, scores 0.00539
 unquantized on fresh rows against 0.00538 there, so having seen those
 rows is worth 0.2% of its error and none of the comparison.
+
+**Per row, not on average** (2026-10-10). Every rate above is a mean over
+rows, and an L1 SAE's rows differ: its support size varies, so it spends
+more bits on some rows than on others, which the hard code's fixed-length
+1900 bits cannot. Near 1900 bits on average the 3e-6 SAE's rows run from
+1406 to 2399 bits (5th-95th percentile, mean 1816; max 3303). Held to a
+budget on every row,
+each row at the least-error step that fits once log2(67) bits name the
+step (`quantrate.py`'s rate control, on a sixth-octave grid of 67 steps):
+
+| code | 1900 bits on average | 1900 bits on every row | bits to reach 0.1582, average / every row |
+|---|---|---|---|
+| L1 SAE 3e-6 | 0.129 | 0.152 | 1675 / 1853 |
+| L1 SAE 1e-5 | 0.175 | 0.200 | 2063 / 2292 |
+| L1 SAE 3e-5 | 0.242 | 0.250 | - / - |
+| k5120 | 0.243 | 0.281 | 2241 / 2401 |
+| k160 | 0.259 | 0.258 | - / - |
+| g160top1 | 0.274 | 0.274 | - / - |
+| g160softmax | 0.372 | 0.454 | 3787 / 4246 |
+
+The hard code is 0.158 at exactly 1900 bits on every row (pinned,
+fixed-length), 0.155 with its gains at a 1900-bit mean. So held to the
+same budget on every row the L1 SAE is level with the hard code rather
+than 18% below it, and codes of fixed support (k160, g160top1) do not
+move. Which reading applies depends on the use: average rate is the
+standard measure for compression, a per-row budget the fairer one for a
+fixed set of variables per input. One step per row is a crude
+controller; the tables stay those fit on all rows, one set per step.
+(The average-rate readouts on this grid, 0.129 and 1675 bits, differ
+from the half-octave default's 0.128 and 1655 by interpolation alone.)
+
+    S=data/out/sonar/sae_conv
+    uv run python quantrate.py --onto --sae $S/m5120_l13e-06/params.npz \
+        $S/m5120_l11e-05/params.npz $S/m5120_l13e-05/params.npz \
+        $S/m11264_k5120/params.npz $S/m11264_k160/params.npz \
+        $S/m5120_g160top1/params.npz $S/m5120_g160softmax/params.npz \
+        --steps $(python3 -c "print(' '.join(repr(2**(e/6)) for e in range(-18,-85,-1)))") \
+        --target-fvu 0.15823655852240903 --out data/out/sonar/quantrate_rowbudget
+
+(`rowbits.csv`, `rowbudget.csv` and `quantrate.json`'s
+`row_budget_readouts` there.)
 
 ## Downstream: textfid and steerfid
 

@@ -49,6 +49,15 @@ buy), no rate-distortion-optimized choice of support. Each curve is what
 the trained code achieves under this codec, not the best it could; the
 rates leave out the cost of sending the coders' tables.
 
+A code's rate is a mean over rows. A sparse code whose support size varies
+spends more bits on some rows than others, which a fixed-length code
+cannot, so an SAE is also held to a per-row budget: each row's length is
+read off the step's tables (`SymbolCounts.row_bits`), and each row takes
+the least-error step whose code fits the budget once log2(steps) bits name
+the step (`rate_control`), a row no step fits taking its shortest code.
+That is one crude rate controller over the --steps grid, so a finer grid
+fits rows more closely; the tables stay those fit on every row.
+
   uv run python quantrate.py                  # sae_conv SAEs + both Ontologizers
   uv run python quantrate.py --sae P.npz ... --onto CKPT@TEMPERATURE ...
   uv run python quantrate.py --cache data/sonar_embeddings/mc4_fresh.npy \\
@@ -58,9 +67,11 @@ rates leave out the cost of sending the coders' tables.
 
 Writes <out>/quantrate.csv (label, kind, setting, nonzero, bits,
 bits_subset, fvu_w; one row per code and step, "float" rows unquantized),
-quantrate.json (the settings and each code's readouts at --target-bits and
-at the pinned hard code's FVU) and quantrate.png. Ontologizer checkpoints
-restore on GPU JAX only.
+rowbits.csv (each SAE step's per-row length percentiles), rowbudget.csv
+(each SAE held to each --row-budgets value: FVU, mean bits used, share of
+rows over), quantrate.json (the settings and each code's readouts at
+--target-bits and at the pinned hard code's FVU, averaged and, for SAEs,
+per row) and quantrate.png.
 """
 # disable preallocation so this can share the GPU (same as sonar.py)
 import os
@@ -97,10 +108,12 @@ def parse_args(argv=None):
     p.add_argument("--onto", nargs="*", default=DEFAULT_ONTO,
                    help="Ontologizer checkpoint dirs as PATH@TEMPERATURE")
     p.add_argument("--steps", type=float, nargs="+",
-                   default=[2.0 ** (e / 2) for e in range(-6, -29, -1)],
+                   default=[2.0 ** (e / 6) for e in range(-18, -85, -1)],
                    help="quantizer steps in whitened units, coarse to fine "
                         "(the MSE weights have mean 1, so one coefficient's "
-                        "whitened contribution is of order 0.001-0.1)")
+                        "whitened contribution is of order 0.001-0.1); six "
+                        "per octave, since a dense code's rate jumps "
+                        "between steps and readouts interpolate across them")
     p.add_argument("--gain-steps", type=float, nargs="+",
                    default=[2.0 ** -e for e in range(-1, 6)],
                    help="gain steps in units of each layer's gain sd")
@@ -120,6 +133,10 @@ def parse_args(argv=None):
                         "statistics are measured on")
     p.add_argument("--b", type=int, default=1024)
     p.add_argument("--target-bits", type=float, default=1900.0)
+    p.add_argument("--row-budgets", type=float, nargs="+",
+                   default=[2.0 ** (e / 4) for e in range(24, 61)],
+                   help="per-row bit budgets an SAE code is held to, each "
+                        "row at the least-error step that fits")
     p.add_argument("--target-fvu", type=float, default=None,
                    help="default: the first hard code's pinned-gain FVU")
     p.add_argument("--out", default="data/out/sonar/quantrate")
@@ -171,6 +188,50 @@ class SymbolCounts:
     def nonzeros(self) -> Int[np.ndarray, "n"]:
         return (np.concatenate(self.nnz) if self.nnz
                 else np.zeros(0, np.int64))
+
+    def row_bits(self, slot: Int[np.ndarray, "b K"], sym: Int[np.ndarray, "b K"]
+                 ) -> Float[np.ndarray, "b"]:
+        """Each row's code length in bits under the slots' plug-in
+        distributions accumulated so far (no Miller-Madow term), for rows
+        given as `add` takes them: every slot's -log2 P(symbol), zeros
+        included, so the mean over the added rows is the plug-in rate."""
+        if getattr(self, "_table", (None,))[0] != len(self.parts):
+            u, cnt = self.merged_keys()
+            zero = self.n - np.bincount(u // SPAN, weights=cnt,
+                                        minlength=self.slots)
+            with np.errstate(divide="ignore"):
+                cost0 = np.where(zero > 0, -np.log2(zero / self.n), 0.0)
+            self._table = (len(self.parts), u, cnt, cost0)
+        _, u, cnt, cost0 = self._table
+        keep = sym != 0
+        keys = slot.astype(np.int64) * SPAN + sym.astype(np.int64) + SPAN // 2
+        pos = np.clip(np.searchsorted(u, keys), 0, max(len(u) - 1, 0))
+        if keep.any() and not np.array_equal(u[pos[keep]], keys[keep]):
+            raise ValueError("row_bits: a symbol the tables have not seen")
+        c = np.where(keep, cnt[pos] if len(u) else 1, 1)
+        extra = np.where(keep, -np.log2(c / self.n) - cost0[slot], 0.0)
+        return cost0.sum() + extra.sum(1)
+
+    def merged_keys(self) -> tuple:
+        """(key, count) of every distinct nonzero (slot, symbol) pair, keys
+        sorted, key = slot * SPAN + symbol + SPAN // 2."""
+        if not self.parts:
+            return np.zeros(0, np.int64), np.zeros(0, np.float64)
+        keys = np.concatenate([u for u, _ in self.parts])
+        cnts = np.concatenate([c for _, c in self.parts])
+        u, inv = np.unique(keys, return_inverse=True)
+        return u, np.bincount(inv, weights=cnts)
+
+
+def rate_control(lengths: Float[np.ndarray, "s n"],
+                 errs: Float[np.ndarray, "s n"], budget: float,
+                 side: float) -> Int[np.ndarray, "n"]:
+    """Per row, the setting with the least error whose code, plus `side`
+    bits naming the setting, fits `budget`; a row that no setting fits
+    takes its shortest code."""
+    fits = lengths + side <= budget
+    best = np.where(fits, errs, np.inf).argmin(0)
+    return np.where(fits.any(0), best, lengths.argmin(0))
 
 
 def plugin_bits(counts: Int[np.ndarray, "s"], n: int) -> float:
@@ -351,30 +412,37 @@ def sae_rows(path, cfg, fit_batches, X, w, base_w) -> list:
                  bits=float("nan"), bits_subset=float("nan"),
                  fvu_w=fvu_of(err, n, w, base_w))]
 
+    wj = jnp.asarray(w, jnp.float32)
+
     @jax.jit
     def batch(p, x, step):
         z = sae.encode(p, x, topk, groups, gfn)
         q = jnp.round((z - o) / step)
-        e = ((sae.decode(p, o + q * step) - x) ** 2).sum(0)
+        r = (sae.decode(p, o + q * step) - x) ** 2
+        e, ew = r.sum(0), (r * wj).sum(-1)
         qi = q.astype(jnp.int32)
         if kind == "sae_dense":
-            return e, qi, qi
+            return e, ew, qi, qi
         if kind == "sae_group":
             g = qi.reshape(qi.shape[0], groups, -1)
             win = jnp.argmax(g, -1)
-            return e, win, jnp.take_along_axis(g, win[..., None], -1)[..., 0]
+            return (e, ew, win,
+                    jnp.take_along_axis(g, win[..., None], -1)[..., 0])
         _, idx = jax.lax.top_k(jnp.abs(z), K)
-        return e, idx, jnp.take_along_axis(qi, idx, -1)
+        return e, ew, idx, jnp.take_along_axis(qi, idx, -1)
 
     span = m // groups if groups else 0
+    starts = range(0, len(X) - cfg.b + 1, cfg.b)
+    lengths, errs = [], []
     for s in cfg.steps:
         step = jnp.asarray((s / norms).astype(np.float32))
         sc = SymbolCounts(m)
         sg = SymbolCounts(groups) if kind == "sae_group" else None
-        err = np.zeros(X.shape[1])
-        for i in range(0, len(X) - cfg.b + 1, cfg.b):
-            e, a, v = batch(params, jnp.asarray(X[i:i + cfg.b]), step)
+        err, row_err = np.zeros(X.shape[1]), []
+        for i in starts:
+            e, ew, a, v = batch(params, jnp.asarray(X[i:i + cfg.b]), step)
             err += np.asarray(e)
+            row_err.append(np.asarray(ew, np.float64))
             a, v = np.asarray(a), np.asarray(v)
             if kind == "sae_dense":
                 sc.add_dense(v)
@@ -383,6 +451,22 @@ def sae_rows(path, cfg, fit_batches, X, w, base_w) -> list:
                 sg.add_dense(group_symbols(a, v))
             else:
                 sc.add(a, v)
+        # second pass: each row's length under the tables just completed
+        row_len = []
+        for i in starts:
+            _, _, a, v = batch(params, jnp.asarray(X[i:i + cfg.b]), step)
+            a, v = np.asarray(a), np.asarray(v)
+            if kind == "sae_dense":
+                row_len.append(sc.row_bits(
+                    np.broadcast_to(np.arange(m), v.shape), v))
+            elif kind == "sae_group":
+                g = group_symbols(a, v)
+                row_len.append(sg.row_bits(
+                    np.broadcast_to(np.arange(groups), g.shape), g))
+            else:
+                row_len.append(sc.row_bits(a, v))
+        lengths.append(np.concatenate(row_len))
+        errs.append(np.concatenate(row_err))
         H, Hb = slot_bits(sc)
         values = float((H - Hb).sum())
         if kind == "sae_group":
@@ -399,7 +483,11 @@ def sae_rows(path, cfg, fit_batches, X, w, base_w) -> list:
         print(f"  {label} step {s:.4g}: {nonzero:.1f} nonzero, "
               f"{bits:.0f} bits ({subset:.0f} subset), "
               f"FVU {rows[-1]['fvu_w']:.4f}", flush=True)
-    return rows
+    perrow = dict(label=label, kind=kind,
+                  settings=[f"{s:.6g}" for s in cfg.steps],
+                  lengths=np.array(lengths), errs=np.array(errs),
+                  dims=X.shape[1], base_w=base_w)
+    return rows, perrow
 
 
 def onto_forward(module, X, T, origin, pstep, gmean, gstep, quant_p: bool,
@@ -586,11 +674,64 @@ def readouts(rows: Sequence[dict], target_bits: float,
     return out
 
 
-def write_csv(path, rows):
+def write_csv(path, rows, fields=FIELDS):
     with open(path, "w", newline="") as f:
-        wr = csv.DictWriter(f, fieldnames=FIELDS)
+        wr = csv.DictWriter(f, fieldnames=fields)
         wr.writeheader()
         wr.writerows(rows)
+
+
+ROW_FIELDS = ["label", "setting", "bits_mean", "bits_p05", "bits_p50",
+              "bits_p95", "bits_p99", "bits_max"]
+BUDGET_FIELDS = ["label", "budget", "fvu_w", "bits_mean", "over_share"]
+
+
+def row_length_rows(perrow: dict) -> list:
+    """rowbits.csv rows: the spread of one code's per-row lengths at each
+    step."""
+    out = []
+    for setting, L in zip(perrow["settings"], perrow["lengths"]):
+        q = np.percentile(L, [5, 50, 95, 99])
+        out.append(dict(label=perrow["label"], setting=setting,
+                        bits_mean=float(L.mean()), bits_p05=q[0],
+                        bits_p50=q[1], bits_p95=q[2], bits_p99=q[3],
+                        bits_max=float(L.max())))
+    return out
+
+
+def row_budget_rows(perrow: dict, budgets: Sequence[float]) -> list:
+    """rowbudget.csv rows: the code held to each per-row budget, every row
+    at the least-error step that fits (`rate_control`), the step named in
+    log2(steps) bits. FVU is whitened, as quantrate.csv's."""
+    L, E = perrow["lengths"], perrow["errs"]
+    side = math.log2(len(L))
+    rows = np.arange(L.shape[1])
+    out = []
+    for budget in budgets:
+        pick = rate_control(L, E, budget, side)
+        used = L[pick, rows] + side
+        out.append(dict(
+            label=perrow["label"], budget=float(budget),
+            fvu_w=float(E[pick, rows].mean() / perrow["dims"]
+                        / perrow["base_w"]),
+            bits_mean=float(used.mean()),
+            over_share=float((used > budget).mean())))
+    return out
+
+
+def budget_readouts(rows: Sequence[dict], target_bits: float,
+                    target_fvu: Optional[float]) -> dict:
+    """Per code held to a per-row budget: its FVU at `target_bits` per row
+    and the per-row budget at which it reaches `target_fvu`."""
+    out = {}
+    for label in dict.fromkeys(r["label"] for r in rows):
+        pts = sorted((r["budget"], r["fvu_w"]) for r in rows
+                     if r["label"] == label)
+        out[label] = {
+            "fvu_at_target_row_budget": fvu_at_bits(pts, target_bits),
+            "row_budget_at_target_fvu": (bits_at_fvu(pts, target_fvu)
+                                         if target_fvu else None)}
+    return out
 
 
 def read_csv(path) -> list:
@@ -672,13 +813,18 @@ def main():
     paths = cfg.sae
     if paths is None:
         paths = sorted(Path("data/out/sonar/sae_conv").glob("*/params.npz"))
-    rows = []
+    rows, length_rows, budget_rows = [], [], []
     for spec in cfg.onto:
         rows += onto_rows(spec, cfg, fit_batches, X, w, base_w)
     for path in paths:
         print(f"sae: {path}", flush=True)
-        rows += sae_rows(path, cfg, fit_batches, X, w, base_w)
+        r, perrow = sae_rows(path, cfg, fit_batches, X, w, base_w)
+        rows += r
+        length_rows += row_length_rows(perrow)
+        budget_rows += row_budget_rows(perrow, cfg.row_budgets)
     write_csv(out / "quantrate.csv", rows)
+    write_csv(out / "rowbits.csv", length_rows, ROW_FIELDS)
+    write_csv(out / "rowbudget.csv", budget_rows, BUDGET_FIELDS)
 
     target_fvu = cfg.target_fvu
     if target_fvu is None:
@@ -689,11 +835,13 @@ def main():
     ref_fvu = pareto.gaussian_reference(pareto.whitened_spectrum(X, w),
                                         ref_bits)
     res = readouts(rows, cfg.target_bits, target_fvu)
+    held = budget_readouts(budget_rows, cfg.target_bits, target_fvu)
     (out / "quantrate.json").write_text(json.dumps({
         "settings": {k: v for k, v in vars(cfg).items() if k != "replot"},
         "target_bits": cfg.target_bits, "target_fvu": target_fvu,
         "reference": {"bits": ref_bits.tolist(), "fvu": ref_fvu.tolist()},
-        "readouts": res}, indent=2, default=str))
+        "readouts": res, "row_budget_readouts": held}, indent=2,
+        default=str))
     plot(rows, (ref_bits, ref_fvu), cfg.target_bits, out / "quantrate.png")
 
     print(f"\n{'code':<28} {'float':>8} {'@' + str(int(cfg.target_bits)):>8} "
@@ -705,6 +853,11 @@ def main():
               f"{fmt(r['fvu_at_target_bits_subset'], '9.4f'):>9} "
               f"{fmt(r['bits_at_target_fvu'], '9.0f'):>9} "
               f"{fmt(r['bits_subset_at_target_fvu'], '9.0f'):>9}")
+    print(f"\nheld to a per-row budget: {'code':<22} "
+          f"{'@' + str(int(cfg.target_bits)) + '/row':>10} {'budget@FVU':>11}")
+    for label, r in held.items():
+        print(f"  {label:<40} {fmt(r['fvu_at_target_row_budget'], '10.4f'):>10} "
+              f"{fmt(r['row_budget_at_target_fvu'], '11.0f'):>11}")
     print(f"\n(target FVU {target_fvu}) -> {out}")
 
 
