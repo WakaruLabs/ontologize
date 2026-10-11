@@ -25,6 +25,9 @@ a copy of the code that trained it. Results are in `notes.md`.
   `data/out/sonar/mse_weights.npy`, the files `resid_nc` trained on, and
   writes the run's checkpoints and logs plus a `provenance.json`. This
   repository's scripts load the checkpoints as they load `resid_nc`'s.
+  It resumes a run as this repository's training does, not as the copy
+  would (see Run). That is its one change to how the copy trains, made by
+  subclassing the copy's `TrainingEnv` rather than editing the copy.
 - `ontologize/` is the earlier codebase's training path at commit
   `4d32e33`, the "PWAK integration" merge of 2026-09-11. It holds the 17
   files that training imports (15 modules and two empty subpackage
@@ -72,9 +75,17 @@ uv run python experiments/coherence-sign/train_old.py --run resid_nc_shm1e-6 \
 
 `resid_nc_ctl` is the control, with no setting changed. Each run is 24
 epochs over the 3,974,400-row cache, 372,600 steps at batch 256, which
-took `resid_nc` about 6.5 hours. Rerunning a command resumes the run from
-its latest checkpoint. Memory is allocated on demand, so on a shared GPU
-another process can push a run out of memory; rerun it.
+took `resid_nc` about 6.5 hours. Memory is allocated on demand, so on a
+shared GPU another process can push a run out of memory; rerun it.
+
+Rerunning a command resumes the run from its latest checkpoint, as this
+repository's training resumes. `--epochs` is the length of the whole run.
+A resumed run trains only the batches after the checkpoint's step, in
+the order an uninterrupted run would have seen them, and stops at the
+run's final step, 372,600 for 24 epochs. Its random draws start again
+from the seed. The copy on its own
+would train `--epochs` more epochs from the checkpoint, with the batch
+order started over.
 
 ## Score
 
