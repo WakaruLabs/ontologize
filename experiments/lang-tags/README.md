@@ -26,7 +26,7 @@ output under `--out`, default `data/out/sonar/langtags`):
 ```bash
 uv run python experiments/lang-tags/retag.py texts     # ~10 min, network
 uv run python experiments/lang-tags/retag.py encode    # ~12 min, GPU
-uv run python experiments/lang-tags/retag.py compare   # a few min, GPU JAX
+uv run python experiments/lang-tags/retag.py compare   # a few min on a GPU
 uv run python experiments/lang-tags/retag.py english   # ~2 min, CPU
 ```
 

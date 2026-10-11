@@ -69,7 +69,7 @@ on the onto points is the size of the train/eval-tail asymmetry.
   **~20–60 min on a single GPU** (SONAR encoder ~2.4 GB VRAM); not
   practical on CPU.
 - **Stage 2:** same cost as pareto.py — **~5–15 min GPU** for all SAE
-  runs + the onto sweep (checkpoint restore requires GPU JAX).
+  runs + the onto sweep.
 
 ## Assumptions / caveats
 

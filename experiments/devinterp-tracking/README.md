@@ -19,7 +19,7 @@ Per retained checkpoint it computes:
 - the matching loss.csv block means (`train_loss`, `train_MSE`,
   `train_KL_m`) so training-time and eval-time curves line up per step.
 
-## Run (from the repository root; GPU JAX required for checkpoint restore)
+## Run (from the repository root)
 
 ```bash
 # fixed eval temperature (post-hoc convention, T = 0.03)
@@ -77,9 +77,8 @@ codes, ~4 activation batches of 4096 rows, and the numpy nulls
 (5 pools x 200 draws). The dominant cost is jit recompilation of the acts
 probe per checkpoint (a fresh closure per restore), a few seconds each.
 Expect roughly 20-40 s/checkpoint on the training GPU; a run with ~40
-retained checkpoints finishes in ~15-30 min. Not CPU-feasible: Ontologizer
-checkpoints restore on GPU JAX only (same constraint pareto.py/textfid.py
-note). `--stride`/`--min-step` cut the sweep; `--n-null 500` matches
+retained checkpoints finishes in ~15-30 min on a GPU; checkpoints also
+restore on CPU (`pareto.load_onto`). `--stride`/`--min-step` cut the sweep; `--n-null 500` matches
 headcoh.py's default resolution at ~2x null cost.
 
 ## Assumptions

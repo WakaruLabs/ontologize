@@ -33,8 +33,9 @@ is the one wanted, and need no GPU:
 Logged values are averaged over a trailing window and sampled every
 `every` steps.
 
-Resumable: rows already in an output CSV are skipped. Needs a GPU for the
-sharded restores; a small memory fraction leaves a training run alone.
+Resumable: rows already in an output CSV are skipped. Checkpoints restore
+on CPU or GPU (pareto.load_onto); on a GPU a small memory fraction leaves
+a training run alone.
 
   XLA_PYTHON_CLIENT_MEM_FRACTION=0.15 uv run python \\
       latex/figures/extract_curves.py [orthant|sweep|depth|bits|kcos ...]

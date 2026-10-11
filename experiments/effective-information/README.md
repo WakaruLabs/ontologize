@@ -1,6 +1,6 @@
 # effective-information: how much does each head's value matter downstream?
 
-The writeup's formal reading (`writeup/sections/discussion.tex`, "heads
+The writeup's formal reading (`latex/findings/sections/discussion.tex`, "heads
 as causal variables") treats each head as a categorical causal variable,
 `withArgs` set-interventions as the do-operator, and the residual stack
 as the causal graph, in which every earlier head is a parent of every

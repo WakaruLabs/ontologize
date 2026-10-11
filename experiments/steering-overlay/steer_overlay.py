@@ -38,8 +38,7 @@ M2M100 (forced eng_Latn, steerfid's convention), and are scored on:
           readout: decode WITHOUT forcing eng_Latn and count how often
           the decoder's own first language token is L's SONAR code.
 
-NOTE: Ontologizer checkpoints restore on GPU JAX only; M2M100 runs on
---device. The cycle re-encodes forced-English decodes, so language
+M2M100 runs on --device. The cycle re-encodes forced-English decodes, so language
 signal must survive translation to be seen by eff_* -- that attenuation
 hits every arm identically (it is the shared task), and --langid is the
 readout that does not route through forced English.

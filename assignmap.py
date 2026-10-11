@@ -63,8 +63,7 @@ log.jsonl env_config). Writes <out>/assign_l<L>_p<j>.png per layer and
 page, and assign.npz (the probabilities, labels and row indices, and the
 SAE's codes) so the figure can be redrawn without the models (--replot,
 which takes --out or --ckpt to find it, and honours --heads/--max-heads/
---vmax/--sae-cols/--sae-vmax). NOTE: Ontologizer checkpoints restore on
-GPU JAX only.
+--vmax/--sae-cols/--sae-vmax).
 """
 # disable preallocation so this can share the GPU (same as sonar.py)
 import os

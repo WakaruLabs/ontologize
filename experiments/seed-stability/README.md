@@ -86,7 +86,7 @@ would say the partition itself is seed-noise.
   depending on hardware; it checkpoints every 100 steps and resumes).
   There is no cheap substitute; `--epochs 2` gives a pilot whose
   stability numbers are not directly comparable (less annealing).
-- `match_heads.py`: checkpoint restores need GPU JAX; G extraction is one
+- `match_heads.py`: G extraction is one
   `decodeEntries`-style pass (seconds). The Hungarian stage is ≈ h²
   assignments of size k per layer (+ nulls) — **seconds with scipy, ~1–2
   min with the pure-python fallback**. The activation cross-check at the

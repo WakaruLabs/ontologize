@@ -33,7 +33,7 @@ matched collateral (read `rl_log.csv` against the `paired_steering` row of
 
 | piece | status |
 |---|---|
-| `train --reward embed` (differentiable in-embed reward, gradient ascent) | **runnable** on GPU JAX alone; the debug/ceiling tier, minutes |
+| `train --reward embed` (differentiable in-embed reward, gradient ascent) | **runnable** with JAX alone (no decoder); the debug/ceiling tier, minutes |
 | `train --reward cycle` (REINFORCE, decode+re-encode reward) | **runnable but expensive**; implemented end to end, not yet validated on a real run (no checkpoints in this tree), and REINFORCE at b=32, sigma=0.3 is a first guess, expect hyperparameter iteration |
 | `eval` (policy vs paired steering vs random) | **runnable** once a policy exists |
 | `--direction low` | runnable only with `--rows-file` (rows where the entry fires, e.g. harvested top rows); random corpus rows give a zero-gradient floor |
@@ -45,7 +45,7 @@ matched collateral (read `rl_log.csv` against the `paired_steering` row of
 ```bash
 # pick a live entry first (autointerp harvest freq, or steerfid fire rates)
 
-# 1. sanity tier: differentiable in-embed reward (GPU jax, ~minutes)
+# 1. sanity tier: differentiable in-embed reward (JAX only, ~minutes)
 uv run python experiments/rl-classifications/rl_reinforce.py train \
     --ckpt data/out/sonar/multilingual/resid_nc \
     --layer 0 --head 3 --entry 5 --reward embed --steps 500
@@ -67,7 +67,6 @@ uv run python experiments/rl-classifications/rl_reinforce.py eval \
 - `--ckpt`: frozen Ontologizer run dir; default
   `data/out/sonar/multilingual/resid_nc`
   (`data/out/sonar/multilingual/resid_nc_hm` is the other live run).
-  Restores on GPU JAX only.
 - `--cache`: `data/sonar_embeddings/mc4_4M.npy`. Training rows come from
   the cache head; the eval stage uses the tail rows sae.py holds out.
 - The M2M100 decoder / SONAR encoder pair (`raxtemur/SONAR_200_text_decoder`,

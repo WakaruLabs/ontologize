@@ -22,8 +22,7 @@ Each model runs at its schedule's temperature at the restored step.
       --runs data/out/sonar/multilingual/ste_h76 \\
              data/out/sonar/multilingual/sweep_softmax_shm
 
-Writes <out>/summary.json and rows.jsonl (each row's decode). NOTE:
-Ontologizer checkpoints restore on GPU JAX only.
+Writes <out>/summary.json and rows.jsonl (each row's decode).
 """
 import os
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"

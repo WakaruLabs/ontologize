@@ -27,7 +27,7 @@ the run and still unscored.
 
 Outputs: `out/resid_nc_hm_4380000/` (`naturalness.csv`, `rating.csv`,
 `key.csv`, `summary.json`); `summary.json` is copied to
-`writeup/figures/data/naturalness-summary.json` for the figure.
+`latex/figures/data/naturalness-summary.json` for the figure.
 
 ```bash
 uv run python experiments/task-naturalness/naturalness.py \

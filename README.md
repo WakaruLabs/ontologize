@@ -48,7 +48,7 @@ The main target is the [SONAR](https://github.com/facebookresearch/SONAR) multil
 
 ## Findings so far
 
-The working write-up is [`writeup/findings.tex`](writeup/findings.tex) (compiled: `writeup/findings.pdf`); the straight-through arm's full lab notebook, including superseded readings, is [`experiments/ste-arm/notes.md`](experiments/ste-arm/notes.md), condensed in [`experiments/ste-arm/findings.md`](experiments/ste-arm/findings.md). In brief, and preliminary:
+The working write-up is [`latex/findings.tex`](latex/findings.tex) (compiled: `latex/findings.pdf`); the straight-through arm's full lab notebook, including superseded readings, is [`experiments/ste-arm/notes.md`](experiments/ste-arm/notes.md), condensed in [`experiments/ste-arm/findings.md`](experiments/ste-arm/findings.md). In brief, and preliminary:
 
 - **Trained heads are contrast sets.** Within a softmax head, entries' decode directions *repel* (96% of heads below a random-group null) — well-separated alternatives rather than a semantic cluster.
 - **A soft code's argmax is not its code.** The softmax model reconstructs well, but its discrete reading is orders of magnitude worse. Training with hard, straight-through selection (`select="ste"`) makes the discrete code the model: on SONAR, 1900 index bits reach whitened FVU 0.154, and 0.158 with the four per-layer gains (its only continuous numbers) pinned to their means. A top-k SAE held to the same 1900 bits cannot get below 0.236 however its coefficients are coded, but with every code's coefficients quantized and entropy-coded (`quantrate.py`) an L1 SAE reaches 0.128: its latents fire unevenly and are cheap to name, while the hard code's entries are used almost uniformly. On GPT-2, an 800-bit hard code with signed entries in activation space recovers 97.6% of GPT-2's loss, against 96.2% for a k=32 SAE at nearly the same FVU.
@@ -203,7 +203,7 @@ The `Ontologizer` stacks `l` of these on a shared residual, with a shared linear
 - **Fibers** (`fiber_rank`): each entry carries a local basis, and the head reads `r` coordinates from its input to move the output within it — a discrete base point plus a continuous correction. Unconstrained, the correction can take over, so the base is kept meaningful by fiber dropout, a norm cap, a base-only loss term (`base_aux`), or by training the fibers after freezing the base.
 - **Head dropout** (`p_head_drop`): in training, a head's classification is replaced by its batch mean, so heads cannot co-adapt and ablating a head to its mean stays in distribution.
 
-`writeup/tikz/` has diagrams of the stack (`ontologizer.tex`), one layer (`dictenc.tex`, and `dictenc_full.tex` with the router and fibers) and a head's geometry (`dict.tex`, `fiber.tex`).
+`latex/tikz/` has diagrams of the stack (`ontologizer.tex`), one layer (`dictenc.tex`, and `dictenc_full.tex` with the router and fibers) and a head's geometry (`dict.tex`, `fiber.tex`).
 
 All string-valued config (`activation`, `noise`, `select`, dtypes) resolves through lookup tables in `fns/keys.py`, so model specs are JSON-serializable dataclasses.
 
@@ -313,7 +313,7 @@ Each protocol is a standalone script scoring on the cache's held-out tail; most 
 | `compose.py` | whether two interventions compose additively |
 | `autointerp.py` | blinded auto-interpretability of tags and SAE latents |
 
-`experiments/ste-arm/` adds diagnostics for the straight-through arm and for head-level analysis — among them `steerembed.py` (steering scored in embedding space), `partition.py` and `headcontrib.py` (seed reproducibility of head partitions and contributions), `entryshare.py` and `bigatoms.py` (how entries share a layer), `headlang.py` (language per head) and `dictgeom.py` (dictionary geometry). The results are in `writeup/`.
+`experiments/ste-arm/` adds diagnostics for the straight-through arm and for head-level analysis — among them `steerembed.py` (steering scored in embedding space), `partition.py` and `headcontrib.py` (seed reproducibility of head partitions and contributions), `entryshare.py` and `bigatoms.py` (how entries share a layer), `headlang.py` (language per head) and `dictgeom.py` (dictionary geometry). The results are in `latex/`.
 
 ## Interventions on `Ontologized` model
 

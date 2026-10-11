@@ -60,7 +60,6 @@ Writes <out>/drift_p<j>.png per page and drift.npz (every metric for all
 l*h*k entries, the column labels, steps and temperatures, the Hungarian
 permutations) so the figure can be redrawn without the model (--replot,
 which honours --layers/--heads/--max-heads/--metrics/--vmax/--mark-*).
-NOTE: Ontologizer checkpoints restore on GPU JAX only.
 """
 # disable preallocation so this can share the GPU (same as sonar.py)
 import os

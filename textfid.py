@@ -22,7 +22,7 @@ errors -- norm fidelity is already covered by FVU.
 Works on sae.py runs (reconstruction = decode(encode(x))) and Ontologizer
 checkpoints (full soft forward at --temperature). Rows come from the
 cache tail (the sae.py eval split). Per-row decodes go to <out>/rows.jsonl
-for inspection. NOTE: Ontologizer checkpoints restore on GPU JAX only.
+for inspection.
 
   uv run python textfid.py --model data/out/sonar/sae/m5120_k32/params.npz
   uv run python textfid.py --model data/out/sonar/multilingual/resid_nc \\

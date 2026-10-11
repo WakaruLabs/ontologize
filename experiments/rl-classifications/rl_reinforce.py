@@ -43,7 +43,7 @@ queries the policy needs to REACH the paired-steering effect at matched
 collateral, and (b) whether it EXCEEDS it with more. compare.csv +
 rl_log.csv contain both curves.
 
-  # sanity tier (GPU jax only, minutes)
+  # sanity tier (JAX only, no decoder; minutes)
   uv run python experiments/rl-classifications/rl_reinforce.py train \\
       --ckpt data/out/sonar/multilingual/resid_nc --layer 0 --head 3 \\
       --entry 5 --reward embed --steps 500
@@ -89,7 +89,7 @@ def parse_args():
     p.add_argument("stage", choices=["train", "eval"])
     p.add_argument("--ckpt", default="data/out/sonar/multilingual/resid_nc",
                    help="frozen Ontologizer checkpoint dir (resid_nc_hm is "
-                        "the other live run); restores on GPU JAX only")
+                        "the other live run)")
     p.add_argument("--step", type=int, default=0)
     p.add_argument("--temperature", type=float, default=0.03)
     p.add_argument("--cache", default="data/sonar_embeddings/mc4_4M.npy")

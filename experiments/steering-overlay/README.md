@@ -66,8 +66,8 @@ the collateral floor with no intended effect.
 
 ## Cost
 
-- Ontologizer checkpoint restore requires GPU JAX (orbax sharding
-  metadata); SAE `.npz` models work on CPU JAX.
+- Ontologizer checkpoints (through `pareto.load_onto`) and SAE `.npz`
+  models both load on CPU or GPU JAX.
 - Activation/statistics passes: one pass over `--train-rows` (65k) — ~1–2
   min on GPU. Probe fits: seconds.
 - Generation dominates: ≈ (n_langs × arms + n_random) × mags × n_samples

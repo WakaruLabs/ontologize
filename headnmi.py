@@ -62,8 +62,7 @@ log.jsonl env_config); with a residual forward it changes what later
 layers classify. Writes <out>/headnmi_<order>.png and headnmi.npz (the
 argmax labels, the NMI, null and adjusted matrices), so the figure can be
 redrawn without the model (--replot, which takes --out or --ckpt to find
-it, and honours --order/--stat/--scale/--vmin/--vmax/--ei). NOTE: Ontologizer
-checkpoints restore on GPU JAX only.
+it, and honours --order/--stat/--scale/--vmin/--vmax/--ei).
 """
 # disable preallocation so this can share the GPU (same as sonar.py)
 import os

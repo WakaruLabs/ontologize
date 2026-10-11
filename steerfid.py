@@ -27,8 +27,8 @@ architectures compare at equal intervention budget:
                      (collateral without intended effect)
 
 Per-steer decodes go to <out>/steers.jsonl for qualitative inspection;
-per-(mode, feature, magnitude) means to <out>/steer.csv. NOTE: Ontologizer
-checkpoints restore on GPU JAX only; M2M100 runs on --device.
+per-(mode, feature, magnitude) means to <out>/steer.csv. M2M100 runs on
+--device.
 
   uv run python steerfid.py --model data/out/sonar/sae/m5120_k32/params.npz
   uv run python steerfid.py --model data/out/sonar/sae/m5120_k32_bl/params.npz --mode eig

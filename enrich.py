@@ -78,7 +78,6 @@ which stay finite where p underflows to 0), <out>/nmi.csv and
 redraws everything without the model (statistics are recomputed, so
 --tail/--min-count/--soft/--alpha may change). The temperature defaults to
 the run's schedule at the restored step and matters only for --soft.
-NOTE: Ontologizer checkpoints restore on GPU JAX only.
 """
 # disable preallocation so this can share the GPU (same as sonar.py)
 import os

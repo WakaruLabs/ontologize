@@ -23,7 +23,7 @@ not the individual feature vector. This script measures that:
 
 A shuffled null (entries randomly regrouped into heads within each
 layer of run B, --nulls draws) gives the chance level of the head-sim
-statistic. NOTE: Ontologizer checkpoints restore on GPU JAX only.
+statistic.
 
   uv run python experiments/seed-stability/match_heads.py \\
       --a data/out/sonar/multilingual/resid_nc_hm \\

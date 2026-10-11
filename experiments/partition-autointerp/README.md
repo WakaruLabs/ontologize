@@ -20,7 +20,7 @@ reimplemented.
 
 ```bash
 # 1. harvest: per-entry top rows + entry decodes for a stratified head
-#    sample (GPU JAX; restores the checkpoint)
+#    sample (restores the checkpoint)
 uv run python experiments/partition-autointerp/headinterp.py harvest \
     --ckpt data/out/sonar/multilingual/resid_nc \
     --cache data/sonar_embeddings/mc4_4M.npy
@@ -52,8 +52,7 @@ uv run python experiments/partition-autointerp/headinterp.py compare \
 - `--ckpt`: Ontologizer checkpoint dir. Default
   `data/out/sonar/multilingual/resid_nc` (matches the existing autointerp
   campaign); `data/out/sonar/multilingual/resid_nc_hm` is the other live
-  run. Checkpoints restore on GPU JAX only (same constraint as
-  pareto/textfid).
+  run.
 - `--cache`: embedding cache from `encode_corpus.py`
   (default `data/sonar_embeddings/mc4_4M.npy`; the `.langs.npy` sidecar is
   used by the texts stage's drift check).

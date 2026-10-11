@@ -31,8 +31,8 @@ Pipeline (stages resumable, artifacts in --out):
 
   1. harvest   activations over a cache slice -> per-entry top rows for a
                stratified sample of heads, per-head entry usage, distractor
-               rows, and the entry decode embeddings. Needs the checkpoint;
-               GPU JAX.
+               rows, and the entry decode embeddings. Needs the
+               checkpoint.
   2. texts     NOT reimplemented: point the existing autointerp.py texts
                stage at this harvest's heads.npz (it only reads top_i and
                neg_i, which this file provides):
