@@ -87,6 +87,20 @@ notes): chrF rewards the surface copying a foreign tag produces.
 The identifiers' licenses differ: NLLB's is CC-BY-NC-4.0; GlotLID's model
 card says "other".
 
+## The cache itself
+
+The tests here chose the settings of the root `encode_sentences.py`, which
+builds the sentence cache (`mc4_sent16`), and `encode_after_split.sh`
+chained its two stages as systemd units. `backfill_marks.py` adds the
+line/sentence marks and the version record to a cache whose split predates
+them, from a re-split under another name that it checks chose the same
+sentences; `marks_backfill.sh` chains the two:
+
+```bash
+uv run --with wtpsplit --with fasttext==0.9.3 python encode_sentences.py split --name mc4_sent16_marks
+uv run python experiments/sentence-split/backfill_marks.py
+```
+
 ## Caveats
 
 - SaT was trained on 85 languages. Eleven of the 86 mC4 configs are not

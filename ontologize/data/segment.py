@@ -1,6 +1,8 @@
 """Sentence segmentation for SONAR: SaT's boundaries, the LCM's length cap,
-a script check and run selection, as pure functions over a document's text
-and SaT's per-character boundary probabilities.
+what bounds each segment, a script check and run selection, as pure
+functions over a document's text and SaT's boundary probabilities. SaT
+predicts per XLM-R subword; wtpsplit returns an array over characters that
+holds each token's probability at its last character and zero elsewhere.
 
 `encode_sentences.py` builds the sentence cache with these, and
 `experiments/sentence-split` tested them (its notes have the numbers). SaT
@@ -88,17 +90,68 @@ def capped_spans(text: str, probs: Float[np.ndarray, " chars"], threshold: float
                  max_len: int) -> list[tuple[int, int, bool]]:
     """SaT Capped: `threshold_spans`, with every span over `max_len` broken
     by `cap_spans`; each span carries whether the cap made it."""
+    return [(a, b, "c" in ends) for a, b, ends in bounded_spans(text, probs, threshold, max_len)]
+
+
+def bounded_spans(text: str, probs: Float[np.ndarray, " chars"], threshold: float,
+                  max_len: int) -> list[tuple[int, int, str]]:
+    """`capped_spans` with what bounds each span at its start and at its end,
+    as a two-letter code: `n` an input newline or the text's edge, `s` a
+    SaT boundary, `c` a cut the cap made. SaT's probabilities are nonzero
+    only at token ends, so `s` and `c` both fall there."""
+    spans = threshold_spans(text, probs, threshold)
+
+    def between(b: int, a: int) -> str:
+        return "n" if "\n" in text[b:a] else "s"
+
     out = []
-    for a, b in threshold_spans(text, probs, threshold):
+    for i, (a, b) in enumerate(spans):
+        first = "n" if i == 0 else between(spans[i - 1][1], a)
+        last = "n" if i == len(spans) - 1 else between(b, spans[i + 1][0])
         if b - a <= max_len:
-            out.append((a, b, False))
+            out.append((a, b, first + last))
             continue
         edges = [a] + [a + c for c in cap_spans(probs[a:b], max_len)] + [b]
+        pieces = []
         for s, e in zip(edges[:-1], edges[1:]):
             s, e = trim(text, s, e)
             if e > s:
-                out.append((s, e, True))
+                pieces.append([s, e, "c", "c"])
+        pieces[0][2], pieces[-1][3] = first, last
+        out += [(s, e, x + y) for s, e, x, y in pieces]
     return out
+
+
+SENTENCE_FINAL = set(".!?。！？؟۔।॥။።፧…។៕։")
+# closing quotes and brackets that may follow a sentence's final mark
+# (German closes with the left-hand quotes “ and ‘)
+CLOSERS = set("\"')]}»›”’“‘」』〉》】")
+
+
+def kind(segment: str, ends: str) -> str:
+    """`piece` if the cap made either end; `line` if input newlines (or the
+    text's edges) bound it on both sides and it does not end in sentence
+    punctuation: a title, label or list entry; else `sentence`. A whole line
+    that ends in sentence punctuation is a one-sentence paragraph. Scripts
+    without sentence-final punctuation (Thai, Lao) mark every whole line a
+    `line`; `ends` keeps the raw boundaries for a finer rule."""
+    if "c" in ends:
+        return "piece"
+    if ends == "nn":
+        tail = segment.rstrip("".join(CLOSERS) + " ")
+        return "sentence" if tail and tail[-1] in SENTENCE_FINAL else "line"
+    return "sentence"
+
+
+def default_threshold(model: str) -> float:
+    """SaT's boundary threshold for a model, as wtpsplit chooses it and as
+    the paper uses them: 0.25 for the supervised-mixture (`-sm`) models,
+    0.01 without limited lookahead, 0.025 otherwise."""
+    if "sm" in model:
+        return 0.25
+    if "no-limited-lookahead" in model:
+        return 0.01
+    return 0.025
 
 
 # The first word of the Unicode names of each FLORES-200 script's letters.

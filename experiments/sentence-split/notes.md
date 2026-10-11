@@ -200,3 +200,64 @@ against the original is 0.6292 against 0.6291 (paired +0.0001 ± 0.0002).
 documents/s. The encode is queued as the unit `sent-encode`
 (`encode_after_split.sh`: waits for the split to complete, then
 `encode --tf32`; restart on failure; log `mc4_sent16.encode.log`).
+
+## 2026-10-11: checks from the SaT reading (`scratch/literature/segment-any-text.md`)
+
+On 30 documents per config (2,580; first 8,000 characters), `sat-3l-sm`:
+
+- **Probabilities sit only at token ends.** SaT predicts per XLM-R subword;
+  wtpsplit's per-character array puts each token's probability on its last
+  character and exactly 0 elsewhere (78,991 positions above 1e-4, all at
+  token ends). The cap's search therefore cuts only at token ends: 24 of
+  its 7,151 cuts were not, all fixed-width fallbacks in stretches with no
+  boundary probability at all.
+- **fp16 is fp32's segmentation.** Identical for 2,556 of 2,580 documents,
+  boundary F1 0.9997 (lowest 0.80).
+- **A third of usable segments are whole lines.** SaT was trained to
+  predict newlines stripped from its input, not to read them, and the split
+  cuts at every input newline, as `SaT.split` does by default. Of 60,475
+  usable segments, 29.8% have a newline at both ends and no SaT boundary,
+  and only 24% of those end in sentence punctuation (64–67% of the rest):
+  titles, labels, list entries and product names ("Schatzmeisterin: Frau
+  Margit Kalus", "Referencia: 85612-Alice"). Without the newline cut these
+  would mostly run into the next line rather than stand as sentences, so
+  `mc4_sent16`'s rows are SONAR-sized units of text, a third of them lines,
+  not only sentences. The sentences file stores spans but not documents, so
+  which rows are lines cannot be read off the cache; a rule that keeps only
+  sentences needs a new split, or a filter on final punctuation, which
+  would also drop the scripts that do not use it (th, lo).
+
+The paper's OPUS100 scores for Khmer (86.6 F1) and Burmese (89.4) at three
+layers suggest their under-splitting here is mC4's (Burmese partly Zawgyi,
+not Unicode) more than SaT's.
+
+## 2026-10-11: marks, the threshold default and versions
+
+`mc4_sent16` finished 2026-10-11: 44,113,823 rows from 3,974,400 documents
+(11.1 per document), TF32, at ~960 sentences/s.
+
+The builder now marks each chosen segment (`segment.kind`) by what bounds
+it (`segment.bounded_spans`: `n` an input newline or the text's edge, `s` a
+SaT boundary, `c` a cut the cap made): `piece` if the cap made either end;
+`line` if newlines bound both ends and it does not end in sentence
+punctuation (closing quotes allowed after the mark); else `sentence`, which
+includes whole lines that are one-sentence paragraphs. The threshold
+defaults by model as wtpsplit's does (0.25 for `-sm`, 0.025 otherwise), and
+a split records `wtpsplit`, fastText, torch and transformers versions and
+the SaT and GlotLID revisions in its settings, so a resume cannot mix two.
+
+On the first 2,560 documents the marking builder chose the same sentences
+as `mc4_sent16` for every document. Among chosen rows: 58.7% sentences,
+22.3% lines, 19.0% pieces; boundary codes `nn` 29.7%, `ss` 21.4%, `sn` 15.1%,
+`ns` 14.8%, cap-made 19.0%. Lines are commonest in `bg-Latn` and cy (58%), mt
+(55%), zu (52%), lb (47%), and rarest in ml, kn, ta (8%) and en (1%): C4's
+`en` config was filtered to lines ending in terminal punctuation, the mC4
+configs (`en-multi` included) were not.
+
+`mc4_sent16`'s split predates the marks, so they are backfilled from a
+re-split (`marks_backfill.sh`, the systemd unit `sent-marks`, started
+2026-10-11 08:02; log `mc4_sent16_marks.log`): `backfill_marks.py` checks the
+re-split chose the same sentences for every document, then writes
+`mc4_sent16.kind.npy`, swaps in the marked sentences file and adds the
+versions to the metadata. The embeddings are not touched. Tested on the
+5,120-document trial: every document matched.

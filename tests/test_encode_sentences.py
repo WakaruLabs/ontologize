@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from encode_sentences import choose, token_batches, usable
+from encode_sentences import choose, entry, token_batches, usable
 from ontologize.data.langs import MC4_TO_SONAR
 
 CFG = SimpleNamespace(threshold=0.25, max_chars=200, min_chars=20, k=16)
@@ -59,6 +59,16 @@ def test_choose_filters_then_keeps_the_rest_in_order():
     assert all(text[s[1]:s[2]] == s[3] for s in sents)    # spans index the text
     assert why == {"script": 1, "nonlinguistic": 1, "length": 1}
     assert len(lid.calls) == 3          # only length- and script-passing segments
+    # each line is its own segment here, so both are whole lines; the first
+    # ends in a full stop (a sentence), the second too
+    assert [(s[6], s[7]) for s in sents] == [("sentence", "nn"), ("sentence", "nn")]
+
+
+def test_entries_from_before_the_marks_read_with_empty_kind():
+    old = [3, 10, 52, "Brawddeg sy'n ddigon hir i'w chadw.", "cym_Latn", 0.95]
+    new = old + ["line", "nn"]
+    assert entry(old) == (*old, "", "")
+    assert entry(new) == tuple(new)
 
 
 def test_cut_document_drops_its_last_segment():

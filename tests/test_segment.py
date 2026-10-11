@@ -5,8 +5,9 @@ import numpy as np
 import pytest
 
 from ontologize.data.langs import MC4_TO_SONAR
-from ontologize.data.segment import (capped_spans, cap_spans, dominant_script,
-                                     expected_scripts, letter_script, run,
+from ontologize.data.segment import (bounded_spans, capped_spans, cap_spans,
+                                     default_threshold, dominant_script,
+                                     expected_scripts, kind, letter_script, run,
                                      threshold_spans, trim)
 
 TEXT = "One two three. Four five six?\nSeven eight nine ten eleven twelve thirteen fourteen fifteen"
@@ -34,6 +35,35 @@ def test_cap_breaks_only_long_segments_at_the_best_boundaries():
         ("Seven eight nine ten", True), ("eleven twelve", True),
         ("thirteen fourteen fifteen", True)]
     assert all(b - a <= 30 for a, b, _ in spans)
+
+
+def test_bounds_say_what_cut_each_end():
+    spans = bounded_spans(TEXT, probs(), 0.25, 30)
+    assert [(TEXT[a:b], e) for a, b, e in spans] == [
+        ("One two three.", "ns"), ("Four five six?", "sn"),
+        ("Seven eight nine ten", "nc"), ("eleven twelve", "cc"),
+        ("thirteen fourteen fifteen", "cn")]
+    assert [(a, b, "c" in e) for a, b, e in spans] == capped_spans(TEXT, probs(), 0.25, 30)
+
+
+@pytest.mark.parametrize("segment,ends,expected", [
+    ("Vorstand seit Mai 2013:", "nn", "line"),
+    ("Eine ganze Zeile als Satz.", "nn", "sentence"),     # a one-sentence paragraph
+    ('Er sagte: „Ja.“', "nn", "sentence"),                # final mark before a closer
+    ("Noch einer ohne Punkt", "sn", "sentence"),          # SaT cut one end
+    ("Ein Satz.", "ns", "sentence"),
+    ("thirteen fourteen fifteen", "cn", "piece"),
+    ("แล้วรถอยู่แถวไหนครับ", "nn", "line"),               # no final mark in Thai
+])
+def test_kind(segment, ends, expected):
+    assert kind(segment, ends) == expected
+
+
+def test_default_threshold_follows_the_model():
+    assert default_threshold("sat-3l-sm") == 0.25
+    assert default_threshold("sat-12l-sm") == 0.25
+    assert default_threshold("sat-3l") == 0.025
+    assert default_threshold("sat-12l-no-limited-lookahead") == 0.01
 
 
 def test_cap_makes_the_fewest_cuts():

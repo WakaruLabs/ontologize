@@ -14,9 +14,11 @@ sentences re-encoded without replaying the stream:
   split   replay the stream in `mc4_4M`'s order (a reader process),
           checking each document's language against `mc4_4M.langs.npy`;
           segment each document's first --chars characters with SaT Capped
-          (`sat-3l-sm` on the GPU, threshold 0.25, then every segment over
-          200 characters broken at its most probable boundaries,
-          `ontologize.data.segment`); keep segments of 20-200 characters
+          (`sat-3l-sm` on the GPU, at the model's threshold, 0.25 for the
+          `-sm` models; then every segment over 200 characters broken at its
+          most probable boundaries, `ontologize.data.segment`), marking each
+          a sentence, a whole line, or a piece the cap made (`segment.kind`);
+          keep segments of 20-200 characters
           whose letters are mostly in the config's script; choose each
           document's run (`segment.run`), dropping any segment of it GlotLID
           calls non-linguistic (`zxx_*`) and choosing again (worker
@@ -40,14 +42,20 @@ Sidecars keyed by cache row, all written by `encode`:
   <name>.langs.npy        (n,) mC4 config
   <name>.lid.npy          (n,) GlotLID's top label, <name>.lid_p.npy its
                           probability
+  <name>.kind.npy         (n,) sentence, line (a whole line without
+                          sentence-final punctuation: a title, label or list
+                          entry) or piece (made by the cap)
   <name>.mse_weights.npy  per-dimension inverse variance over the train rows
-  <name>.meta.json
+  <name>.meta.json        with the split's settings, including the package
+                          versions and model revisions it ran under
 
 `split` writes <name>.sentences.jsonl: per document its config, segment
-counts and chosen sentences as [segment, start, end, text, label, p], with
-start and end character offsets in the NFC-normalized text. Its counts of
-segments dropped as non-linguistic cover only the segments GlotLID saw,
-those in or tried for a run.
+counts and chosen sentences as [segment, start, end, text, label, p, kind,
+ends], with start and end character offsets in the NFC-normalized text and
+`ends` the boundary at each end (`n` newline or edge, `s` SaT, `c` the cap).
+A split from before the marks has six fields, read with empty kind and ends.
+Its counts of segments dropped as non-linguistic cover only the segments
+GlotLID saw, those in or tried for a run.
 
 Both stages are crash-safe and resumable on `encode_acts.py`'s pattern: the
 JSONL is cut back to the byte count of the last checkpoint, and arrays grow
@@ -78,7 +86,8 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from ontologize.data.segment import capped_spans, dominant_script, expected_scripts, run
+from ontologize.data.segment import (bounded_spans, default_threshold, dominant_script,
+                                     expected_scripts, kind, run)
 
 ENCODER_ID = "cointegrated/SONAR_200_text_encoder"
 OUT = Path("data") / "sonar_embeddings"
@@ -112,13 +121,15 @@ def lid_top(model, text: str) -> tuple[str, float]:
 
 def choose(text: str, probs, config: str, tag: str, cut: bool, cfg, lid,
            seed) -> tuple[list, Counter, int]:
-    """One document's run: [[segment, start, end, text, label, p], ...], the
-    reasons segments were not usable, and the number of segments.
+    """One document's run: [[segment, start, end, text, label, p, kind,
+    ends], ...], the reasons segments were not usable, and the number of
+    segments. `kind` is `segment.kind`'s sentence, line or piece and `ends`
+    its two-letter boundary code (`segment.bounded_spans`).
 
     The language identifier sees only the chosen run; a segment it calls
     non-linguistic is dropped and the run chosen again from the same seed,
     so the result is that of filtering first, at a fraction of the calls."""
-    spans = capped_spans(text, probs, cfg.threshold, cfg.max_chars)
+    spans = bounded_spans(text, probs, cfg.threshold, cfg.max_chars)
     if cut and spans:
         spans = spans[:-1]  # the last segment of a cut document is a fragment
     why, ok = Counter(), []
@@ -139,9 +150,49 @@ def choose(text: str, probs, config: str, tag: str, cut: bool, cfg, lid,
         for i in bad:
             ok[i] = False
         why["nonlinguistic"] += len(bad)
-    sents = [[i, spans[i][0], spans[i][1], text[spans[i][0]:spans[i][1]],
-              labels[i][0], round(labels[i][1], 4)] for i in chosen]
+    sents = []
+    for i in chosen:
+        a, b, ends = spans[i]
+        sents.append([i, a, b, text[a:b], labels[i][0], round(labels[i][1], 4),
+                      kind(text[a:b], ends), ends])
     return sents, why, len(spans)
+
+
+def entry(e: list) -> tuple:
+    """A sentences-file entry as (segment, start, end, text, label, p, kind,
+    ends); a split from before the line marks has no kind or ends, read as
+    empty strings."""
+    seg, a, b, text, label, p, *rest = e
+    return (seg, a, b, text, label, p, *(rest + ["", ""])[:2])
+
+
+def versions(model: str, lid: str) -> dict:
+    """The packages and model revisions a split depends on, for its
+    settings: wtpsplit, fastText, SaT's and the identifier's Hugging Face
+    revisions (read from the local cache, so after both are loaded)."""
+    from importlib import metadata
+    from huggingface_hub import hf_hub_download, try_to_load_from_cache
+    out = {}
+    for pkg in ("wtpsplit", "fasttext", "torch", "transformers"):
+        try:
+            out[pkg] = metadata.version(pkg)
+        except metadata.PackageNotFoundError:
+            out[pkg] = None
+    sat = try_to_load_from_cache(model if "/" in model else f"segment-any-text/{model}",
+                                 "config.json")
+    out["sat_revision"] = Path(sat).parent.name if isinstance(sat, str) else None
+    out["lid_revision"] = Path(hf_hub_download(lid, "model.bin")).parent.name
+    return out
+
+
+def encode_versions() -> dict:
+    """The packages and SONAR encoder revision an encode depends on."""
+    from importlib import metadata
+    from huggingface_hub import try_to_load_from_cache
+    out = {pkg: metadata.version(pkg) for pkg in ("torch", "transformers", "jax")}
+    p = try_to_load_from_cache(ENCODER_ID, "config.json")
+    out["encoder_revision"] = Path(p).parent.name if isinstance(p, str) else None
+    return out
 
 
 def token_batches(lengths: np.ndarray, max_tokens: int, max_n: int) -> list[list[int]]:
@@ -222,8 +273,13 @@ def split(cfg: argparse.Namespace) -> None:
     prog = outdir / f"{cfg.name}.split.json"
     ref = np.load(cfg.ref, mmap_mode="r")
     n_docs = min(cfg.n_docs or len(ref), len(ref))
+    if cfg.threshold is None:
+        cfg.threshold = default_threshold(cfg.model)
+    sat = SaT(cfg.model)
+    sat.half().to("cuda")
     settings = {k: getattr(cfg, k) for k in SPLIT_SETTINGS}
-    settings.update(ref=str(cfg.ref), n_docs=n_docs)
+    # a resume must match the versions too, or one file mixes two segmenters
+    settings.update(ref=str(cfg.ref), n_docs=n_docs, versions=versions(cfg.model, cfg.lid))
 
     st = {"docs": 0, "bytes": 0, "sentences": 0, "segments": 0, "why": {}}
     if prog.exists():
@@ -243,8 +299,6 @@ def split(cfg: argparse.Namespace) -> None:
     st["settings"] = settings
     why = Counter(st["why"])
 
-    sat = SaT(cfg.model)
-    sat.half().to("cuda")
     ctx = mp.get_context("spawn")
     q = ctx.Queue(maxsize=8)
     reader = ctx.Process(target=_reader, args=(q, st["docs"], n_docs, cfg.b), daemon=True)
@@ -333,19 +387,24 @@ def encode_stage(cfg: argparse.Namespace) -> None:
     if final.exists():
         print(f"error: {final} already exists. exiting.")
         return
-    paths = {k: outdir / f"{name}{suffix}" for k, suffix in
-             (("E", ".npy.part"), ("I", ".index.npy.part"), ("S", ".docstart.npy.part"),
-              ("L", ".langs.npy.part"), ("G", ".lid.npy.part"), ("P", ".lid_p.npy.part"))}
+    suffixes = {"E": ".npy", "I": ".index.npy", "S": ".docstart.npy", "L": ".langs.npy",
+                "G": ".lid.npy", "P": ".lid_p.npy", "K": ".kind.npy"}
+    paths = {k: outdir / f"{name}{s}.part" for k, s in suffixes.items()}
     prog = outdir / f"{name}.encode.json"
     shapes = {"E": ((n, D), np.float32), "I": ((n, 3), np.int32), "S": ((n_docs,), np.int64),
-              "L": ((n,), "U8"), "G": ((n,), "U16"), "P": ((n,), np.float32)}
+              "L": ((n,), "U8"), "G": ((n,), "U16"), "P": ((n,), np.float32),
+              "K": ((n,), "U8")}
     st = {"rows": 0, "docs": 0, "bytes": 0, "tf32": cfg.tf32, "maxlen": cfg.maxlen}
     if prog.exists() and paths["E"].exists():
         st = json.loads(prog.read_text())
         if (st["tf32"], st["maxlen"]) != (cfg.tf32, cfg.maxlen):
             print(f"error: {name} was begun with tf32={st['tf32']}, maxlen={st['maxlen']}")
             return
-        A = {k: np.lib.format.open_memmap(p, mode="r+") for k, p in paths.items()}
+        # an encode begun before the kind sidecar existed gets one, empty
+        # for the rows it had already written
+        A = {k: np.lib.format.open_memmap(p, mode="r+") if p.exists() else
+             np.lib.format.open_memmap(p, mode="w+", dtype=shapes[k][1], shape=shapes[k][0])
+             for k, p in paths.items()}
         assert A["E"].shape == (n, D), f"{paths['E']} has shape {A['E'].shape}, expected {(n, D)}"
         print(f"Resuming {name} encode from row {st['rows']}/{n} ({st['docs']} documents)")
     else:
@@ -399,9 +458,11 @@ def encode_stage(cfg: argparse.Namespace) -> None:
                 r = json.loads(line)
                 assert r["doc"] == docs, f"{jpath} line {docs} is document {r['doc']}"
                 A["S"][docs] = rows
-                for pos, (seg, _a, _b, text, label, p) in enumerate(r["sents"]):
+                for pos, e in enumerate(r["sents"]):
+                    seg, _a, _b, text, label, p, k, _ends = entry(e)
                     A["I"][rows] = (r["doc"], pos, seg)
                     A["L"][rows], A["G"][rows], A["P"][rows] = r["lang"], label, p
+                    A["K"][rows] = k
                     window.append((rows, r["lang"], text))
                     rows += 1
                 docs += 1
@@ -443,13 +504,15 @@ def encode_stage(cfg: argparse.Namespace) -> None:
         "not_usable": sp["why"],
         "not_usable_note": "nonlinguistic counts only segments GlotLID saw (in or tried for a run)",
         "index": f"{name}.index.npy (doc, pos, segment)", "docstart": f"{name}.docstart.npy",
+        "kind": f"{name}.kind.npy: sentence, line (a whole line without sentence-final "
+                "punctuation) or piece (made by the cap); empty where the split predates the marks",
         "sentences": f"{name}.sentences.jsonl",
         "mse_weights": f"{name}.mse_weights.npy", "mse_weights_train_rows": train,
         "holdout": cfg.holdout, "norm_median_head": float(np.median(norms)),
+        "encode_versions": encode_versions(),
     }, indent=2))
-    for k, suffix in (("E", ".npy"), ("I", ".index.npy"), ("S", ".docstart.npy"),
-                      ("L", ".langs.npy"), ("G", ".lid.npy"), ("P", ".lid_p.npy")):
-        os.replace(paths[k], outdir / f"{name}{suffix}")
+    for k, s in suffixes.items():
+        os.replace(paths[k], outdir / f"{name}{s}")
     st["complete"] = True
     prog.write_text(json.dumps(st))
     lo, hi = doc_boundaries(np.load(outdir / f"{name}.docstart.npy"), n, cfg.holdout)
@@ -472,7 +535,8 @@ def parse_args() -> argparse.Namespace:
     s.add_argument("--k", type=int, default=16, help="sentences per document, at most")
     s.add_argument("--min-chars", type=int, default=20)
     s.add_argument("--max-chars", type=int, default=200, help="the cap")
-    s.add_argument("--threshold", type=float, default=0.25, help="SaT's default for the -sm models")
+    s.add_argument("--threshold", type=float, default=None,
+                   help="SaT's boundary threshold; default by --model (0.25 for the -sm models)")
     s.add_argument("--model", default="sat-3l-sm")
     s.add_argument("--lid", default="cis-lmu/glotlid", help="fastText language identifier (HF repo)")
     s.add_argument("--seed", type=int, default=0)
