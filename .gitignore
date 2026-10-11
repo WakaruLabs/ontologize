@@ -4,6 +4,7 @@
 **/.\#*
 **/*.swp
 **/*.db.lock
+**/.claude
 
 # LaTeX artifacts
 **/*.aux
