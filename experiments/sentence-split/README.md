@@ -101,6 +101,39 @@ uv run --with wtpsplit --with fasttext==0.9.3 python encode_sentences.py split -
 uv run python experiments/sentence-split/backfill_marks.py
 ```
 
+## `cachestats.py`: what the cache looks like
+
+```bash
+uv run python experiments/sentence-split/cachestats.py scan
+uv run python experiments/sentence-split/cachestats.py report
+```
+
+Describes a built sentence cache against the document cache it was split
+from (`--name`, `--docs-cache`; outputs under `--out`, default
+`data/out/sonar/sentcache`).
+
+- `scan` reads every row once: norms, rows with a non-finite entry, and
+  per-coordinate moments. It reads in chunks with `pread` and drops each
+  from the page cache afterwards, so the 180 GB pass (a few minutes at
+  disk speed) does not evict other users' files. In parallel it reads the
+  sentences file for each row's characters and a hash of its config and
+  text, then fetches the texts of the most repeated hashes. Writes
+  `scan.npz` and `repeats.csv`.
+- `report` writes `summary.json`:
+  - norms and lengths, by kind and config;
+  - repeated texts, overall and per config;
+  - on uniform rows of both caches: the mean cosine between rows, the
+    covariance spectrum of unit rows and of each cache's own whitened
+    rows, the language's and the kinds' share of variance, and a shrunk
+    LDA's held-out language accuracy;
+  - on uniform documents: whether the mean of a document's sentence rows
+    picks out its document row, split by whether the document cache
+    tagged that config with its own code, and the cosine of sentence
+    pairs within and across documents and languages;
+  - the MSE weights: their spread and the whitened loss scale they set,
+    the same without the largest weight, and the near-constant coordinates
+    behind it.
+
 ## Caveats
 
 - SaT was trained on 85 languages. Eleven of the 86 mC4 configs are not

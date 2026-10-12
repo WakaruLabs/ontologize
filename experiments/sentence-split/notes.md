@@ -261,3 +261,106 @@ re-split chose the same sentences for every document, then writes
 `mc4_sent16.kind.npy`, swaps in the marked sentences file and adds the
 versions to the metadata. The embeddings are not touched. Tested on the
 5,120-document trial: every document matched.
+
+## 2026-10-12: what the cache looks like (`cachestats.py`)
+
+The marks backfill finished 2026-10-12 00:47. Outputs of `cachestats.py
+scan` and `report` are in `data/out/sonar/sentcache/`.
+
+**Rows.**
+- 44,113,823 rows from 3,974,400 documents: 11.1 per document, and 2.7%
+  of documents give none.
+- No row is zero or has a non-finite entry.
+- Norms: median 0.208, 1%–99% 0.131–0.330, range 0.090–0.439. Norm rises
+  with length (rank correlation 0.49). Medians by kind: sentences 0.208,
+  lines 0.197, pieces 0.226.
+- Lowest median norm: km 0.161, my 0.167, te 0.168. Highest: ru-Latn 0.272,
+  eo 0.247, ja-Latn 0.246.
+- Characters: median 77, 10%–90% 28–170. Medians by kind: sentences 75,
+  lines 45, pieces 147.
+- Kinds over the whole cache: 59.1% sentences, 21.6% lines, 19.4% pieces.
+
+**Repeated texts.**
+- There are 42,754,793 distinct (config, text) pairs, so 3.1% of rows copy
+  an earlier row. 4.4% of rows have a text that occurs more than once, and
+  0.54% one that occurs 100 times or more.
+- Copies are concentrated in a few configs: mt 17%, gd 13%, hi-Latn 9.9%,
+  ja-Latn 9.1%, ru-Latn 8.5%, sd 7.8%.
+- The most repeated texts (`repeats.csv`) passed both the script check and
+  GlotLID's non-linguistic classes:
+  - minified JavaScript (gl, 3,645 copies of one line; gd);
+  - lists of Indian cities and phone numbers (hi-Latn, about 2,000 copies
+    each);
+  - lists of spam URLs (mt, about 1,000 each);
+  - "AAAA…" (so) and porn tag lists (el-Latn);
+  - templated hotel blurbs (ca) and WikiTrans boilerplate (eo).
+
+**Against `mc4_4M`.** 262,144 uniform rows of each cache. "Unit" puts the
+sentence rows on the sphere, where `mc4_4M`'s already are; "whitened" uses
+each cache's own MSE weights.
+
+| | `mc4_sent16` | `mc4_4M` |
+|---|---|---|
+| mean cosine between rows | 0.069 | 0.318 |
+| participation ratio, unit | 243 | 109 |
+| participation ratio, whitened | 411 | 270 |
+| components for 50% / 90% of variance, unit | 177 / 695 | 161 / 660 |
+| language's share of variance, raw | 4.7% | 6.5% |
+| language's share of variance, unit | 5.1% | 6.5% |
+| language's share of variance, whitened | 4.4% | 5.4% |
+| held-out language accuracy, LDA on unit rows | 80.8% | 75.4% |
+
+The kind explains 0.7% of the whitened variance. The language explains
+6.2% within lines, 5.6% within pieces and 4.0% within sentences.
+
+**The same documents.** 19,441 documents with rows, out of 20,000 drawn.
+- The mean of a document's sentence rows ranks the document's own
+  `mc4_4M` row first:
+  - for 89.6% of the 1,382 documents in configs `mc4_4M` tagged with
+    their own code, and 81.0% of the rest;
+  - among documents of the same language only, 94.4% and 88.7%.
+- Median centered cosine between the two: 0.47 and 0.42.
+
+Mean cosine of sentence pairs, centered, and in parentheses with each
+language's mean removed:
+
+| pair | cosine |
+|---|---|
+| adjacent | 0.255 (0.216) |
+| one document, two or more apart | 0.203 (0.162) |
+| one language, two documents | 0.051 (−0.001) |
+| two languages | about 0 (about 0) |
+
+**The MSE weights** (inverse variance, mean 1, as `encode_sentences.py`
+writes them).
+- Coordinate 837 is nearly constant: mean 0.00495, standard deviation
+  9.2e-5, so |mean|/sd is 54.
+  - What variation it has tracks length: rank correlation −0.84 with
+    characters and −0.77 with norm. Language explains 7% of it.
+  - It takes weight 837, which is 82% of the weights' sum.
+- The next largest weight is coordinate 652's at 13 (mean −0.0120, sd
+  7.4e-4; rank correlation 0.90 with norm).
+- The median weight is 0.17, and max/min is 92,317.
+- `mc4_4M`'s two largest weights are on the same coordinates, but at 27
+  and 3.2 (median 0.99, max/min 1,682). Its L2 step turns coordinate 837
+  into a readout of 1/norm: on sentence rows put on the sphere, the rank
+  correlation is 0.999. Its relative spread (sd/|mean|) goes from 0.019 to
+  0.22.
+- The two caches' log weights correlate 0.72.
+
+What the weights do:
+- **Whitened FVU is unaffected.** Inverse-variance weights give every
+  coordinate the same whitened variance, so coordinate 837 is 1/1024 of
+  it, like any other.
+- **Vectors not shaped like the data are measured mostly on coordinate
+  837.** It carries 82% of an isotropic direction's expected whitened
+  squared norm (`mc4_4M`: 2.7%). This reaches random-direction nulls,
+  whitened cosines between decoder atoms, and steering budgets in the
+  whitened norm.
+- **The whitened MSE's scale is smaller.** Whitened variance per row is
+  0.0072, against `mc4_4M`'s 0.61, 84× smaller. Raw variance per row is
+  0.044 against 0.68: 15× of the ratio is the missing L2 step. Loss
+  weights tuned against `mc4_4M`'s MSE do not carry over unchanged.
+- **Without coordinate 837**, the remaining weights renormalized to mean
+  1 have max 71 (coordinate 652), median 0.95 and max/min 1,437. Whitened
+  variance per row is then 0.040.
