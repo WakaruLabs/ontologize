@@ -139,14 +139,19 @@ each run's recorded configuration (`log.jsonl`'s last `env_config`, the checkpoi
 
 `findings/sections/introduction.tex` holds three sections. The **Introduction** tells
 the proposal's Background (`proposal/sections/background.tex`) for the findings:
-- supervised against unsupervised steering;
-- the SAE problems, one paragraph each;
-- the MoEfication conjecture;
-- the architecture in plain terms;
-- what the document compares, closing on the teaser figure.
+- an unheaded opening on supervised against unsupervised steering;
+- *Problems with SAE features*, one paragraph each;
+- *Contrastive classifiers*: the MoEfication conjecture and the architecture in plain
+  terms, closing on the teaser figure, where entry swaps are first called steering
+  moves;
+- *Disjoint support*: how concatenated heads bear on each of those problems, in theory
+  and as measured;
+- *This document*: what the document compares and where each part is.
 
 When one of the two documents changes this argument, check whether the other should
-follow. **Background** is the related work, and the Introduction leaves its details
+follow. *Disjoint support* restates results from the methods' disjoint-support
+paragraph and the appendix's support and concatenated-heads sections (`sec:support`,
+`sec:concatgeom`, `tab:orthant`), so when those numbers change, change it too. **Background** is the related work, and the Introduction leaves its details
 (Matryoshka and Tree SAEs, Switch and Scale SAEs) to it. **Evaluation frame** states the
 questions (a)–(d) that the results answer.
 

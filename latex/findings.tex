@@ -9,6 +9,8 @@
 % a third line-breaking pass for paragraphs that would otherwise be overfull;
 % paragraphs that already set within tolerance are unaffected
 \setlength{\emergencystretch}{1.5em}
+% keep each footnote on one page rather than splitting it across a page break
+\interfootnotelinepenalty=10000
 \usepackage[backend=biber,style=numeric,sorting=none]{biblatex}
 \addbibresource{refs.bib}
 \input{vars}

@@ -30,6 +30,8 @@ Ideally interpretability would give guarantees about the computational
 process a model uses, with features that are causal, composable and
 closed-form. SAE features can fail all three, and are expensive besides.
 
+\subsection{Problems with SAE features}
+
 \paragraph{Features are not composable.}
 A persistent problem with SAEs is feature absorption~\cite{chanin2025}:
 when one feature implies another, sparsity is better served by folding
@@ -64,7 +66,8 @@ sample~\cite{gao2024,mudide2025}. Mixture-of-experts (MoE) SAE variants
 cut that cost by dividing the feature space between smaller submodules
 (Section~\ref{sec:background}).
 
-\medskip
+\subsection{Contrastive classifiers}
+
 Less explored is the effect of the structure an MoE architecture imposes
 on the interpretability of feature space. A common approach to interpreting
 features at scale is to have an LLM explain each feature from its
@@ -101,16 +104,7 @@ Interpretability value is then expected from \emph{MoEfication}, in an
 extended sense of the term~\cite{zhang2022}: a decomposition of the space
 into small classification tasks, one per head, each nameable in
 isolation, whose within-head entry swaps are steering moves.
-
-This document is the working record of that program. It compares a
-softmax (soft-code) Ontologizer and a straight-through (hard-code) arm
-against $\topk$ SAEs on SONAR sentence embeddings under the same whitened
-objective, and the hard code on GPT-2 small residuals.
-Figure~\ref{fig:teaser} shows the soft code's steering primitive,
-measured. Section~\ref{sec:background} places the architecture among its
-nearest neighbors and Section~\ref{sec:frame} states what the evaluation
-asks; the architecture follows in Section~\ref{sec:methods} and the
-results in Sections~\ref{sec:results}--\ref{sec:geom}.
+Figure~\ref{fig:teaser} shows the soft code's steering primitive, measured.
 
 \begin{figure}[tp]\centering
 \includegraphics[width=\linewidth]{figures/fig-teaser.pdf}
@@ -127,6 +121,102 @@ code keeps it (0.55); the dense \texttt{k5120} keeps more but is not a
 sparse code (Appendix~\ref{sec:textfid}).}
 \label{fig:teaser}
 \end{figure}
+
+\subsection{Disjoint support}
+\label{sec:intro-disjoint}
+
+Concatenated heads (\texttt{ConcatDictBlock}) give each head its own block
+of the dictionary's coordinates, so the atoms of different heads have
+disjoint supports by construction. Disjoint support is the strong form of
+orthogonality: for non-negative atoms the two coincide
+(Eq.~\eqref{eq:disjoint}), while signed vectors can be orthogonal by
+cancellation and share every coordinate. Summed heads can only be asked
+for it, and they do not deliver it: no trained summed model partitions its
+coordinates between heads, and penalizing the overlap on GPT-2 produced a
+partition only by moving atom energy into directions the decoder discards
+or shrinks, where reconstruction cannot see it (Section~\ref{sec:disjoint},
+Appendix~\ref{sec:support}). Disjoint support bears on each of the four
+problems above, though unequally. In each case the guarantee holds between
+the heads of one layer and in the dictionary; what reaches the output
+passes through a shared decoder, which in general maps the heads' blocks
+onto overlapping subspaces.
+
+\paragraph{Composability.}
+Absorption needs two things: a general latent that switches off where a
+specific one fires, and a specific latent whose direction takes over the
+general one's. The head structure removes the first, since every head
+writes on every input, choosing among its entries, and so cannot fall
+silent where its feature applies. Disjoint support removes the second: no entry of one
+head can carry a component of another head's block. Composition is
+discouraged rather than excluded. Heads already make the code factorial,
+$k^h$ codes from $hk$ atoms, so concepts that vary independently can take
+separate heads, and theory says when an efficient code would put them
+there. Under a quadratic cost on activity and a bound on the
+weights~\cite{whittington2023,dorrell2025}, a non-negative code gives two
+variables disjoint supports when their joint range is spread enough,
+roughly when every combination of their extreme values
+occurs~\cite{dorrell2025}. On SONAR the data meet that condition: of the
+entry pairs of two heads that independence predicts at least ten times,
+at most 0.24\% never occur in any layer of a SONAR model. The summed
+models carry no such cost and do not partition
+(Appendix~\ref{sec:support}); concatenation imposes the partition by
+construction. Nothing yet forces a head to hold one concept rather than a
+conjunction of two.
+
+\paragraph{Causality.}
+An SAE's steering is unclean partly because its decoder directions crowd
+one another~\cite{duan2026}. Between heads, nothing crowds in the
+dictionary. Forcing a head's entry rewrites only that head's block of the
+layer's output, orthogonal to everything the other heads of the layer
+write, so interventions on different heads move the output along
+orthogonal directions and each head's contribution can be read off its
+own block. Summed heads also compose additively, by linearity, but their
+writes overlap, so one head's contribution cannot be read apart from the
+others'. What disjoint support does not govern is how the other heads
+read a stepped input. Measured on the summed models by re-encoding, an
+input-space step moves as many other heads as a random step of its
+length, because the heads sit almost on their decision boundaries and
+downstream layers reclassify a changed residual
+(Section~\ref{sec:entangle}). A disjoint write removes neither cause.
+
+\paragraph{Closed form.}
+A static reading of the dictionary, which interprets a head from its
+atoms without data, needs heads that own disjoint coordinates as a
+property of the weights, for every input rather than on the data measured
+(Section~\ref{sec:disjoint}). In the summed models that premise fails:
+each head's usage covers 52--98\% of the coordinates. Concatenated heads
+supply it, and when each head's decoder block has full column rank, every
+part of a head's atoms reaches the output, unlike the partitions the
+overlap penalty produced (Appendices~\ref{sec:support}
+and~\ref{sec:concatgeom}). It is a premise, not yet a reading:
+decoding atoms through the paired decoder has not described what an entry
+does in the models scored so far, none of them with concatenated heads
+(Section~\ref{sec:autointerp}).
+
+\paragraph{Cost.}
+Disjoint support does least here. Concatenation divides the dictionary
+among the heads, so at matched width $e$ each head stores $k$ atoms of
+$e/h$ coordinates rather than $e$, $h$ times fewer dictionary parameters,
+and a hard code's dictionary step is $h$ lookups that together write one
+$e$-vector. But the classifier still scores all $hk$ entries for every
+input, as an SAE scores all of its latents, so the forward pass is no
+cheaper on the encoder side. Narrow blocks also cost reconstruction. At
+$d_{\mathrm{head}}{=}k$, where each head's block is just wide enough for
+its atoms, concatenated heads had the worst held-out error of the GPT-2
+orthant arms ($\fvu$ $0.416$ against $0.154$--$0.293$;
+Table~\ref{tab:orthant}); orthogonal atoms within a head need one
+coordinate each there (Appendix~\ref{sec:concatgeom}).
+
+\subsection{This document}
+
+This document is the working record of that program. It compares a
+softmax (soft-code) Ontologizer and a straight-through (hard-code) arm
+against $\topk$ SAEs on SONAR sentence embeddings under the same whitened
+objective, and the hard code on GPT-2 small residuals.
+Section~\ref{sec:background} places the architecture among its nearest
+neighbors and Section~\ref{sec:frame} states what the evaluation asks;
+the architecture follows in Section~\ref{sec:methods} and the results in
+Sections~\ref{sec:results}--\ref{sec:geom}.
 
 \section{Background}
 \label{sec:background}
