@@ -132,7 +132,13 @@ from (`--name`, `--docs-cache`; outputs under `--out`, default
     pairs within and across documents and languages;
   - the MSE weights: their spread and the whitened loss scale they set,
     the same without the largest weight, and the near-constant coordinates
-    behind it.
+    behind it;
+  - the hyperplane the SONAR encoder's final LayerNorm puts every row on:
+    how well the rows satisfy it, how its normal lines up with the
+    smallest-variance direction and the coordinate of smallest gain, and
+    how exactly that coordinate follows from the others. The norm's
+    weights are read from the encoder revision recorded in the cache's
+    metadata, so this applies to rows without an L2 step.
 
 ## Caveats
 

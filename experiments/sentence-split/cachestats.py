@@ -22,7 +22,9 @@ Stages (outputs under --out):
           config with its own code; and the cosine of sentence pairs
           (adjacent, one document, one language, two languages). The MSE
           weights: their spread, the whitened loss scale, the same without
-          the largest weight, and the near-constant coordinates behind it
+          the largest weight, and the near-constant coordinates behind it;
+          and the hyperplane the encoder's final LayerNorm puts every row
+          on (`plane`), against the norm's weights
           -> summary.json
 
   uv run python experiments/sentence-split/cachestats.py scan
@@ -362,6 +364,47 @@ def weight_spread(w: Float[np.ndarray, "d"], var: Float[np.ndarray, "d"]) -> Dic
             "raw_var_per_row": float(var.sum()), "whitened_var_per_row": float((w * var).sum())}
 
 
+def final_norm(model_id: str, revision: str
+               ) -> Tuple[Float[np.ndarray, "d"], Float[np.ndarray, "d"]]:
+    """The gain and bias of the encoder's final LayerNorm, the last
+    operation before the masked mean."""
+    from huggingface_hub import hf_hub_download
+    from safetensors.numpy import load_file
+
+    t = load_file(hf_hub_download(model_id, "model.safetensors", revision=revision))
+    return t["layer_norm.weight"].astype(np.float64), t["layer_norm.bias"].astype(np.float64)
+
+
+def plane(X: Float[np.ndarray, "n d"], gamma: Float[np.ndarray, "d"],
+          beta: Float[np.ndarray, "d"]) -> Dict:
+    """Where a final LayerNorm puts the masked means of its outputs (rows
+    without an L2 step). The normalized vector sums to zero over
+    coordinates, so every token, and so every mean of tokens, satisfies
+    sum_d (x_d - beta_d) / gamma_d = 0: a hyperplane whose normal is
+    proportional to 1 / gamma. Reports, for the coordinate of smallest
+    |gamma|: how well the rows satisfy the constraint (median |sum| over
+    the sum of |terms|), the normal's share of squared length on that
+    coordinate, the covariance's two smallest eigenvalues against its
+    median, the smallest eigenvector's |cosine| with the normal and its
+    share on the coordinate, and the largest error of the coordinate
+    solved from the constraint and the other coordinates, against its
+    standard deviation."""
+    T = (X - beta) / gamma
+    c = int(np.argmin(np.abs(gamma)))
+    normal = (1 / gamma) / np.linalg.norm(1 / gamma)
+    Xc = X - X.mean(0)
+    lam, V = np.linalg.eigh(Xc.T @ Xc / len(X))
+    solved = beta[c] - gamma[c] * (T.sum(1) - T[:, c])
+    return {"coord": c, "gamma": float(gamma[c]), "median_abs_gamma": float(np.median(np.abs(gamma))),
+            "residual_relative_median": float(np.median(np.abs(T.sum(1)) / np.abs(T).sum(1))),
+            "normal_share_on_coord": float(normal[c] ** 2),
+            "eig_smallest": lam[:2].tolist(), "eig_median": float(np.median(lam)),
+            "eigvec_cos_normal": float(abs(V[:, 0] @ normal)),
+            "eigvec_share_on_coord": float(V[c, 0] ** 2),
+            "solved_max_abs_error": float(np.abs(solved - X[:, c]).max()),
+            "coord_sd": float(X[:, c].std())}
+
+
 def geometry(X: Float[np.ndarray, "n d"], g: Int[np.ndarray, "n"], w: Float[np.ndarray, "d"],
              shrink: float, rng: np.random.Generator) -> Dict:
     U = unit(X)
@@ -435,6 +478,9 @@ def report(cfg: argparse.Namespace) -> None:
                     f"{cfg.name}_without_max": weight_spread(w2, var[keep]),
                     "log_weights_pearson": float(np.corrcoef(np.log(ws), np.log(wd))[0, 1]),
                     "weights_match_inverse_variance": float(np.corrcoef(ws, 1 / var)[0, 1])}
+    meta = json.loads((d / f"{cfg.name}.meta.json").read_text())
+    gamma, beta = final_norm(meta["encoder"], meta["encode_versions"]["encoder_revision"])
+    s["plane"] = plane(Xs, gamma, beta)
     Us = unit(Xs)
     s["coords"] = {}
     for c in np.argsort(-np.abs(mean) / np.sqrt(var))[:cfg.coords]:
@@ -443,6 +489,7 @@ def report(cfg: argparse.Namespace) -> None:
             "mean": float(mean[c]), "sd": float(np.sqrt(var[c])),
             "abs_mean_over_sd": float(abs(mean[c]) / np.sqrt(var[c])),
             "weight": float(ws[c]), "docs_cache_weight": float(wd[c]),
+            "norm_gamma": float(gamma[c]), "norm_beta": float(beta[c]),
             "lang_eta2": eta2(x[:, None], gs, np.ones(1)),
             "spearman_chars": float(spearmanr(x, chars[ri])[0]),
             "spearman_norm": float(spearmanr(x, norms[ri])[0]),

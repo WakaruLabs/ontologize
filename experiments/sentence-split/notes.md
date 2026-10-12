@@ -348,6 +348,25 @@ writes them).
   0.22.
 - The two caches' log weights correlate 0.72.
 
+**Why coordinate 837 is nearly constant** (`plane`, on the same 262,144
+rows). SONAR's encoder ends in a LayerNorm, whose normalized vector sums
+to zero over coordinates. Every token therefore satisfies
+Σ_d (x_d − β_d)/γ_d = 0, and so does every masked mean of tokens. The rows
+lie on a 1023-dimensional hyperplane whose normal is proportional to 1/γ.
+- The rows satisfy the constraint to a median relative error of 1.5e-8.
+- The norm's gain on coordinate 837 is −0.00012, against a median |γ| of
+  0.080; coordinate 652's is next at −0.00076. So the normal puts 97% of
+  its squared length on coordinate 837.
+- The covariance's smallest eigenvalue is 1.2e-19, against a median of
+  3.0e-5. Its eigenvector is the normal (|cosine| 1.0000).
+- Coordinate 837 solved from the constraint and the other 1023
+  coordinates matches it to within 1.9e-9, against its sd of 9.2e-5.
+
+So coordinate 837 carries nothing the other coordinates do not fix. Its
+small variance is that of a direction with none, lying nearly on its
+axis. In `mc4_4M` the L2 step divides the constraint by each row's norm,
+which is why there the coordinate reads out 1/norm.
+
 What the weights do:
 - **Whitened FVU is unaffected.** Inverse-variance weights give every
   coordinate the same whitened variance, so coordinate 837 is 1/1024 of
@@ -356,11 +375,15 @@ What the weights do:
   837.** It carries 82% of an isotropic direction's expected whitened
   squared norm (`mc4_4M`: 2.7%). This reaches random-direction nulls,
   whitened cosines between decoder atoms, and steering budgets in the
-  whitened norm.
+  whitened norm. Because coordinate 837 is nearly the plane's normal,
+  its weight mostly penalizes leaving the LayerNorm plane, not getting
+  content wrong.
 - **The whitened MSE's scale is smaller.** Whitened variance per row is
   0.0072, against `mc4_4M`'s 0.61, 84× smaller. Raw variance per row is
   0.044 against 0.68: 15× of the ratio is the missing L2 step. Loss
   weights tuned against `mc4_4M`'s MSE do not carry over unchanged.
 - **Without coordinate 837**, the remaining weights renormalized to mean
   1 have max 71 (coordinate 652), median 0.95 and max/min 1,437. Whitened
-  variance per row is then 0.040.
+  variance per row is then 0.040. Coordinate 837 can be solved from the
+  constraint before decoding, so leaving it out of the loss puts a
+  reconstruction back on the plane without losing anything.

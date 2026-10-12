@@ -134,6 +134,25 @@ def test_pairs_respect_documents_and_groups():
     assert (g[i] != g[j]).all() and len(i) > 0
 
 
+def test_plane_finds_a_final_layernorm():
+    rng = np.random.default_rng(5)
+    d = 12
+    gamma = rng.uniform(0.5, 1.5, d) * rng.choice([-1, 1], d)
+    gamma[3] = 1e-3
+    beta = 0.1 * rng.normal(size=d)
+    H = rng.normal(size=(6000, d)) + rng.normal(size=d)
+    N = (H - H.mean(1, keepdims=True)) / H.std(1, keepdims=True)
+    X = (N * gamma + beta).reshape(1000, 6, d).mean(1)  # means of 6 tokens
+    r = cs.plane(X, gamma, beta)
+    assert r["coord"] == 3 and r["residual_relative_median"] < 1e-12
+    assert r["normal_share_on_coord"] > 0.999 and r["eigvec_cos_normal"] > 1 - 1e-9
+    assert r["eig_smallest"][0] < 1e-12 * r["eig_median"]
+    assert r["solved_max_abs_error"] < 1e-12 < r["coord_sd"]
+    # rows that never went through the norm are off the plane
+    off = cs.plane(rng.normal(size=(1000, d)), gamma, beta)
+    assert off["residual_relative_median"] > 0.01 and off["solved_max_abs_error"] > 1e-4
+
+
 def test_group_means_and_weight_spread():
     X = np.array([[1.0, 0], [3, 0], [0, 4]])
     np.testing.assert_allclose(cs.group_means(X, np.array([0, 0, 1])), [[2, 0], [2, 0], [0, 4]])
