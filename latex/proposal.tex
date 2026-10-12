@@ -44,31 +44,37 @@
 \vspace{16pt}
 
 \begin{abstract}
-Ideally, mechanistic interpretability would provide guarantees about the
-computational process used by a model: features should be causal,
-composable, and closed-form. Most existing techniques, such as sparse
-autoencoders, can perform arbitrarily badly on all three. Arguably the
-simplest interpretability technique is a linear probe, and the simplest
-control technique is a steering vector. On current benchmarks both beat
-features from unsupervised techniques such as SAEs, but they require
-contrastive data built around a concept someone has already named. In
-the spirit of MoEfication, we propose a
-technique that decomposes a representation space into a set of
-contrastive classifiers. Each class corresponds to a representative
-vector; inputs are encoded as classifications and reconstructed from the
-vectors they select. Steering effectively comes for free, outputs are
-bounded, the representative vectors admit static interpretation in
-principle, and feature space is structured. Preliminary results on SONAR
-sentence embeddings and GPT-2 residuals: trained heads are contrast
-sets; a pure 1900-bit hard code reconstructs at least 33\% better than a
-$\topk$ SAE held to the same total bits, however its coefficients are
-coded, though an entropy-coded L1 SAE does better still, and on
-GPT-2 an 800-bit code recovers more of the model's loss than a
-$k_{\mathrm{SAE}}{=}32$ SAE. Entries are realized by steps in embedding space, and interventions
-set on heads compose additively. But an input-space step disturbs other
-heads as much as a random step of its length, past the first layer no
-head reproduces across seeds, and parameter-space decodes do not
-describe what an entry does.
+% flockpaper sets the abstract in an unbreakable minipage, so it must fit
+% on the page it starts on or it moves to the next one whole
+\small
+Behavioral evaluation cannot settle what a model is trying to do, since a
+model can behave differently when it believes it is being trained or
+evaluated. Settling it means identifying the model's variables, including
+ones no one has named: the ontology identification problem. Supervised
+probes and difference-of-means vectors now beat sparse autoencoder (SAE)
+features at detection and steering, but supervision only confirms concepts
+someone already suspects. We argue that unsupervised methods lose partly
+because of what they return: an SAE latent fires or stays silent, and
+absorption makes its silence uninformative, while the methods that win
+contrast the values of a variable. We propose learning variables
+directly, as competitive classifier heads that give every input one of $k$
+entries whose atoms reconstruct it. Forcing a head to another entry is
+then a label-free difference of means, and steering tests whether a
+discovered variable is causal. Preliminary results on SONAR sentence
+embeddings and GPT-2 residuals: trained heads are contrast sets; a pure
+1900-bit hard code reconstructs at least 33\% better than a $\topk$ SAE
+held to the same bits, though an entropy-coded L1 SAE does better still;
+on GPT-2 an 800-bit code recovers more of the model's loss than a
+$k_{\mathrm{SAE}}{=}32$ SAE; in the soft code, forced entries steer along
+the supervised difference-of-means direction $0.64\times$ as far as
+supervised steering and $4\times$ as far as probe directions; and
+interventions set on heads compose nearly additively. But the variables are not yet
+identifiable: seeds agree on the error to four digits but share no head
+past the first layer, input-space steps disturb other heads as much as
+random steps of the same length, and weight-only decodes do not describe
+entries. Identifiability, not fidelity, is the binding constraint, for
+auditing and for any goal that must keep pointing at one concept as a
+model is retrained, and it is where the proposed work begins.
 \end{abstract}
 
 \input{proposal/sections/introduction.tex}
