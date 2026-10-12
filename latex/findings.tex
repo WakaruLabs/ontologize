@@ -43,34 +43,32 @@
 % flockpaper sets the abstract in an unbreakable minipage, so it must fit
 % on the page it starts on or it moves to the next one whole
 \small
-The Ontologizer is a multihead, multilayer dictionary-learning
-architecture whose design goal is \emph{unsupervised steering-vector
-generation}: a stack of competitive classifier ``heads'' reconstructing an
-embedding space should discover the space's natural contrastive clusters,
-MoEfying the representation into small, nameable classification tasks
-whose within-head entry swaps are steering moves. We compare a softmax
-(soft-code) Ontologizer and a straight-through (hard-code) arm against
-$\topk$ sparse autoencoders (SAEs) on SONAR sentence embeddings under the
-same whitened objective, and the hard code on GPT-2 small residuals.
-Soft heads are contrast sets --- within-head decode directions repel ---
-but their argmax is not the model's code, and the plain-SAE frontier
-dominates them in reconstruction. The straight-through arm makes the
-discrete code the model: at 1900 index bits it reaches $\fvu$ $0.154$,
-and $0.158$ with its four per-layer gains, its only continuous numbers,
-pinned to their means. A $\topk$ SAE held to the same 1900 bits cannot
-get below $0.236$ however its coefficients are coded, but an L1 SAE with
-its coefficients quantized and entropy-coded reaches $0.129$ averaged
-over rows, spending its bits unevenly across latents and rows, and
-$0.152$, level with the hard code, held to 1900 bits on every row. At fixed capacity
-the residual cascade is worth $1.79\times$ over a flat layer, but doubles
-the collateral of a single-head intervention (66\% of other heads
-against 33\%), and two
-seeds reach identical error while no head past the first layer
-reproduces. The strongest head encodes topic and genre rather than
-language, as a language-agnostic embedding should be organized. On GPT-2,
-an 800-bit hard code of signed activation-space directions recovers
-97.6\% of the model's loss, more than a $k_{\mathrm{SAE}}{=}32$ SAE at nearly the same
-$\fvu$.
+Auditing a model for a hidden objective, or for a concept no one thought
+to name, needs interpretability that finds variables without labels.
+Supervised probes and difference-of-means vectors now beat sparse
+autoencoder (SAE) features at detection and steering, but supervision only
+confirms concepts someone already suspects. We argue that unsupervised
+methods lose partly because of what they return: an SAE latent fires or
+stays silent, and absorption makes its silence uninformative, while the
+methods that win contrast the values of a variable. The Ontologizer learns
+variables directly: stacked layers of competitive classifier heads, each
+giving every input one of $k$ entries whose atoms reconstruct it. Forcing
+a head to another entry is a label-free difference of means, so steering
+tests whether a discovered variable is causal. On SONAR sentence
+embeddings and GPT-2 small residuals, structure costs little once the code
+is discrete: a pure 1900-bit hard code reaches $\fvu$ $0.158$, where a
+$\topk$ SAE at the same bits cannot beat $0.236$ (an entropy-coded L1 SAE
+does better), and on GPT-2 an 800-bit code recovers 97.6\% of the model's
+loss, more than a $k_{\mathrm{SAE}}{=}32$ SAE at nearly the same $\fvu$.
+In the soft code, forced entries steer along the supervised
+difference-of-means direction, $0.64\times$ as far as supervised steering
+and $4\times$ as far as probes, and compose nearly additively. But the
+variables are not yet identifiable: seeds agree on the error to four
+digits but share no head past the first layer, input-space steps disturb
+other heads as much as random steps of the same length, and weight-only
+decodes do not describe entries. Identifiability, not fidelity, is the
+binding constraint, for auditing and for any goal that must keep pointing at one
+concept as a model is retrained, and reconstruction cannot see it fail.
 \end{abstract}
 
 \input{findings/sections/introduction}
