@@ -768,7 +768,7 @@ Unlike the HSIC penalty, the setpoint holds:
 | 200,000 | 0.804 | 0.494 | 0 |
 | 377,300 | 0.774 | 0.473 | 0 |
 
-The controller acts once (`writeup/figures/fig-kcos.pdf`): the
+The controller acts once (`latex/figures/fig-kcos.pdf`): the
 multiplier rises to 4.9e-3 near step 35k and pulls the max row cosine
 from 0.82 to the setpoint by 50k, and from about 60k on `dual_apply`
 projects it to zero while the constraint is satisfied. No drift ever
@@ -950,7 +950,7 @@ is the one to compare on reconstruction; the steering and language
 numbers have not been remeasured on it.
 
 Neither arm has converged. Held out at every 10k checkpoint
-(`writeup/figures/fig-depth-curves.pdf`), the stack leads throughout: the
+(`latex/figures/fig-depth-curves.pdf`), the stack leads throughout: the
 ratio to the compared flat arm is 1.59x at step 10k, peaks at 1.83x near
 200k and ends at 1.79x. Over the last quarter the stack improves 0.86% and
 the flat arms 2.3-2.75%, so the gap is narrowing slowly; where it ends
@@ -1382,7 +1382,7 @@ does not approach zero. Signed draws give `0.0000`, minimum `-0.1314`.
 
 The effect on the dictionary is large. Converged, geometry with
 `dictgeom.py`, FVU_w held out and scored from each checkpoint
-(`writeup/figures/extract_curves.py`):
+(`latex/figures/extract_curves.py`):
 
 | arm | `c` | eff rank | FVU_w |
 |---|---|---|---|
@@ -1477,7 +1477,7 @@ e_dec=2048) at 369,500 steps with only `select` varying.
 | softmax | +0.2056 | 13.90 | 31.8 | 0.0023 | | +0.3592 | 9.05 | 0.0007 |
 
 FVU_w is the final output's on the cache tail, scored from the checkpoint
-(`writeup/figures/extract_curves.py`); these runs trained on the tail, so
+(`latex/figures/extract_curves.py`); these runs trained on the tail, so
 it is in-sample. `dictgeom.py`'s own FVU_w column is the training log,
 which under deep supervision averages all five prefixes' error and reads
 1.3 to 74 times higher across these arms, most where the final error is
@@ -1552,7 +1552,7 @@ its error keeps falling, and the hard arms keep paying collinearity down
 to 0.14 while their error barely moves. From 150k to 369.5k, held out:
 `softmax` cuts FVU_w 85% and `c` 3%; `top8` cuts FVU_w 3% and `c` 45%;
 `top16`'s FVU_w does not improve while `c` falls 29%; `top2` cuts both,
-12% and 34% (`writeup/figures/fig-sweep-curves.pdf`). Collinearity costs
+12% and 34% (`latex/figures/fig-sweep-curves.pdf`). Collinearity costs
 a hard code information directly, so it keeps working on it; a soft code
 has no such pressure and stops. At convergence a softer code therefore
 gives the *more* collinear dictionary, inverting the naive expectation.

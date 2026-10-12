@@ -4,7 +4,7 @@ A straight-through (hard-code) Ontologizer arm, and the instruments built to
 measure it. The results, condensed, are in [`findings.md`](findings.md);
 the full lab notebook, with every measurement, superseded reading and
 command, is [`notes.md`](notes.md). The writeup's account is
-`writeup/sections/results.tex` and its appendix.
+`latex/findings/sections/results.tex` and its appendix.
 
 ## Motivation
 
