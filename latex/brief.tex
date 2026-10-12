@@ -14,19 +14,28 @@
 
 \title{Unsupervised Steering Vectors from Learned Classifiers:\\
 A Summary}
-%\author{%
-%  \begin{tabular}[t]{@{}l@{\hspace{2em}}l@{}}
-%    Keira Wiechecki & Lamb Wakefield \\[2pt]
-%    \mutedlabel{Wakaru \textperiodcentered{} kaw504@nyu.edu} &
-%    \mutedlabel{Flock Capital \textperiodcentered{} lamb@flock.holdings} \\[9pt]
-%    Jade Zaslavsky & vmfunc \\[2pt]
-%    \mutedlabel{Wakaru \textperiodcentered{} jadeofnameless@gmail} &
-%    \mutedlabel{Flock Capital \textperiodcentered{} celeste@linux.com}
-%  \end{tabular}}
+\author{%
+  \begin{tabular}[t]{@{}l@{\hspace{2em}}l@{}}
+    Keira Wiechecki & Lamb Wakefield \\[2pt]
+    \mutedlabel{Wakaru \textperiodcentered{} kaw504@nyu.edu} &
+    \mutedlabel{Flock Capital \textperiodcentered{} lamb@flock.holdings} \\[9pt]
+    Jade Zaslavsky & vmfunc \\[2pt]
+    \mutedlabel{Wakaru \textperiodcentered{} jadeofnameless@gmail} &
+    \mutedlabel{Flock Capital \textperiodcentered{} celeste@linux.com}
+  \end{tabular}}
 \date{\today}
 
 \begin{document}
 \maketitle
+
+Checking a model for a hidden goal, or for a concept no one thought to
+name, means finding the model's internal variables without anyone
+labeling them first. This summary describes a method built for that and
+says plainly where it stands: it describes a network's internal state
+compactly enough for the network to run on, and editing that description
+moves the network's output specifically, but past the first round the
+variables it finds are not the same from one training run to the next,
+and until they are, they cannot be named or relied on.
 
 \section*{What the method does}
 
@@ -59,6 +68,11 @@ back into a short paraphrase, which makes a steered embedding readable.
 
 \section*{What it is for}
 
+Watching what a model does cannot settle what it is trying to do: a model
+can behave differently when it believes it is being
+trained~\cite{greenblatt2024}. Settling it means reading the model's
+internal state, including concepts no one has named.
+
 To steer a model is to change its internal state so that it behaves
 differently in a chosen way. A standard method is a
 \emph{steering vector}: average the representations of examples with a
@@ -66,19 +80,30 @@ property, subtract the average of examples without it, and add the
 difference to new inputs~\cite{rimsky2024}; a single contrasting pair of
 prompts can be enough~\cite{turner2024}. This often works, though not for
 every property, and someone who already suspects the property exists
-must supply contrasting examples of it.
+must supply contrasting examples of it. Supervised steering, and the
+linear probe that detects a property the same way, can therefore confirm
+a concept someone suspects but cannot find one nobody does.
 
 Sparse autoencoders (SAEs) find features without labels: each input is
 described by a few active features out of thousands~\cite{bricken2023,
-gao2024}. But each feature is an isolated direction with no stated
-alternatives, features split as the dictionary grows~\cite{bussmann2025},
-and adding a feature direction can push the representation anywhere; on a
-recent steering benchmark, prompting, fine-tuning and the averaged
-difference each beat them~\cite{wu2025axbenchsteeringllmssimple}.
+gao2024}. But each feature is an isolated direction that is either on or
+off, with no stated alternatives. A feature can stay off on inputs that
+have it, because a more specific feature has taken over its
+direction~\cite{chanin2025}, so its silence says little; features split
+as the dictionary grows~\cite{bussmann2025}; and adding a feature
+direction can push the representation anywhere. On a recent steering
+benchmark, prompting, fine-tuning and the averaged difference each beat
+them~\cite{wu2025axbenchsteeringllmssimple}.
 
-The goal is steering vectors that need no labels but keep the useful shape
-of the supervised kind: each one a move between named alternatives, found
-together with the contrast it moves along.
+The methods that win are contrasts between alternatives: a property
+against its absence, one value of a \emph{variable} --- a property with
+several possible values, such as a text's topic --- against another. The
+goal is steering vectors that need no labels but keep that shape: each
+one a move between named alternatives, found together with the contrast
+it moves along. Steering then doubles as a test of the method: a swap
+that moves the model's behavior the way the categories predict is
+evidence that the variable matters to the model and not only to the
+rebuilt representation.
 
 \section*{What it assumes, and why that is acceptable}
 
@@ -228,8 +253,12 @@ concepts a user cares about, is not established.
 
 \begin{itemize}
 \item \textbf{The classifiers past the first round are not reproducible.}
-Two runs agree on almost none of them, on both representations. A
-classifier that differs on every run cannot be named.
+This is the main open problem, not a detail. Two runs reconstruct equally
+well but agree on almost none of these classifiers, on both
+representations, so reconstruction quality cannot reveal the failure. A
+classifier that differs on every run cannot be named, an audit could not
+rely on it, and a goal defined in terms of it would not keep pointing at
+the same thing once the model is retrained.
 \item \textbf{Categories are named from their extremes.} Descriptions fit a
 category's most typical members, not its ordinary ones, the failure
 automated description shows when it sees only the strongest
@@ -244,16 +273,20 @@ Swaps made on the description itself do not have this problem.
 
 \section*{Next}
 
-The test the method needs is AxBench-style steering toward externally
-defined concepts~\cite{wu2025axbenchsteeringllmssimple}:
+Reproducibility comes first: making the classifiers reproducible, or
+identifying the ones that are. One first-round classifier on sentence
+embeddings already recurs in every run, and what lets it recur when the
+others do not is the first question. Alongside it comes testing whether
+combinations of categories --- rather than single ones --- are the right
+unit for naming the deeper rounds.
+
+The test the method then needs is AxBench-style steering toward
+externally defined concepts~\cite{wu2025axbenchsteeringllmssimple}:
 difference-of-means vectors from labeled examples, SAE features and the
 method's swaps, each at its best tuned strength, scored by a judge for
 the concept, for staying on task and for fluency, plus detection against
-a linear probe.
-That benchmark targets Gemma 2, which would mean moving off GPT-2. In
-parallel: making the classifiers reproducible, or identifying the ones
-that are, and testing whether combinations of categories --- rather than
-single ones --- are the right unit for naming the deeper rounds.
+a linear probe. That benchmark targets Gemma 2, which would mean moving
+off GPT-2.
 
 \printbibliography
 

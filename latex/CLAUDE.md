@@ -44,6 +44,17 @@ numbers come from the `headline` branch's held-out diagnostics as summarized in 
 change them at their source first. It does not use "label" for a classifier's choice,
 since `docs/OVERVIEW.md` does and the writeup reserves the word for ground truth.
 
+All three documents share one framing:
+- the alignment stakes: finding a model's variables without labels, for audits;
+- why supervision only confirms suspected concepts;
+- why a lone SAE feature is not a variable;
+- steering as the test that a discovered variable is causal;
+- run-to-run reproducibility as the binding constraint.
+
+The findings and the proposal state it in their abstracts. The brief carries it in a
+short unheaded lead, in "What it is for", and in its closing sections, which put
+reproducibility first. Keep the three in step.
+
 ## Build
 
 ```bash
