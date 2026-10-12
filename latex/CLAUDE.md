@@ -106,12 +106,12 @@ width is 390pt, and `\plate`'s hairline frame adds 0.8pt, so a full-width plate 
 
 ## Document structure: the findings
 
-`findings.tex` holds the preamble, title, abstract, the evaluation frame and related work
-inline, then inputs the rest:
+`findings.tex` holds the preamble, title and abstract inline, then inputs the rest:
 
 ```
 findings.tex
-├── (inline) abstract, Evaluation frame, Related work
+├── (inline) abstract
+├── findings/sections/introduction.tex Introduction (+ teaser figure), Background, Evaluation frame
 ├── findings/sections/methods.tex      architecture, router and fibers; inputs every tikz/ diagram
 ├── (inline) Data, models and evaluation: a short overview pointing into the appendix
 ├── findings/sections/results.tex      headline results only
@@ -137,9 +137,18 @@ argument needs it and points to the table for hyperparameters. The tables are bu
 each run's recorded configuration (`log.jsonl`'s last `env_config`, the checkpoint spec,
 `config.json`/`meta.json`), never from defaults, and flag values that changed at a resume.
 
-`findings/sections/introduction.tex` is a restructured draft of the inline evaluation
-frame and related work under a single Introduction heading. It is not `\input` yet, so
-`findings.tex`'s inline copy is the live one; edit both or switch over.
+`findings/sections/introduction.tex` holds three sections. The **Introduction** tells
+the proposal's Background (`proposal/sections/background.tex`) for the findings:
+- supervised against unsupervised steering;
+- the SAE problems, one paragraph each;
+- the MoEfication conjecture;
+- the architecture in plain terms;
+- what the document compares, closing on the teaser figure.
+
+When one of the two documents changes this argument, check whether the other should
+follow. **Background** is the related work, and the Introduction leaves its details
+(Matryoshka and Tree SAEs, Switch and Scale SAEs) to it. **Evaluation frame** states the
+questions (a)–(d) that the results answer.
 
 **Results versus appendix.** `results.tex` carries the headline result of each line of
 work: its main table and the conclusion. Eliminations, per-measure detail, ablations and

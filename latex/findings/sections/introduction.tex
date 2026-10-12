@@ -1,49 +1,138 @@
 \section{Introduction}
+\label{sec:intro}
 
-\subsection{Evaluation frame}
+Mechanistic interpretability can currently do supervised steering well
+or unsupervised steering poorly. The Google DeepMind mechanistic
+interpretability team has pivoted from ambitious reverse-engineering to
+pragmatic interpretability judged on proxy tasks, and has deprioritized
+SAE research: SAE probes did not generalize better out of distribution,
+and SAEs did not beat a steering vector built from one contrastive pair
+of prompts at suppressing a model's awareness of being
+evaluated~\cite{gdmprogress2025}. On current benchmarks the supervised
+difference of means steers better than SAE latents, though worse than
+prompting~\cite{wu2025axbenchsteeringllmssimple}. But a supervised
+method finds only the concepts an experimenter already has labels for,
+and a direction that changes outputs as intended need not be one the
+model computes with: a subspace intervention optimized for its effect
+can instead activate a dormant pathway~\cite{makelov2023}.
 
-The comparisons below were largely built on SAE-native terms ---
-per-feature monosemanticity, sparse probing, reconstruction at matched
-sparsity --- and we report them unchanged. But the Ontologizer's goal is
-not a monosemantic dictionary. It is an \emph{unsupervised generator of
-steering vectors}: each head is a $k$-way classifier over its input,
-trained only by reconstruction pressure, and the hope is that a series of
-such classifiers finds the most natural contrastive clusters in the
-embedding space. Interpretability value is then expected from
-\emph{MoEfication}, in an extended sense of the term~\cite{zhang2022}:
-decomposing the space into small classification tasks
---- one per head --- each nameable in isolation, with within-head entry
-swaps as the steering primitive (forcing head $i$ from its argmax entry to
-entry $j'$ moves the decode along exactly the dimension head $i$
-classifies).
+The dominant unsupervised paradigm is the sparse autoencoder (SAE), which
+approximates a model's hidden state by a few discrete features drawn
+from an overcomplete dictionary, first with a $\relu$ activation and a
+sparsity loss~\cite{cunningham2023,bricken2023} and more recently with a
+$\topk$ activation and no sparsity loss~\cite{gao2024}. The motivation is
+to decompile a model to a finite state machine, and such a machine is
+only as interpretable as an enumeration of its states: even a mixture of
+two structureless processes, one constant and one a fair coin, needs
+infinitely many states to track which component is generating, so the
+structure lives in how the components overlap~\cite{crutchfield2026}.
+Ideally interpretability would give guarantees about the computational
+process a model uses, with features that are causal, composable and
+closed-form. SAE features can fail all three, and are expensive besides.
 
-Under this frame the evaluation questions are: (a)~what does contrast-set
-structure cost in reconstruction (the Pareto and ladder); (b)~do trained
-heads actually behave as contrastive classifiers (categorical form,
-semantic anti-coherence); (c)~are the learned tasks \emph{natural} ---
-nameable, stable across runs, aligned with generative factors of the data
-(seed reproducibility, language and topic alignment); and (d)~is the
-steering primitive good --- consistent effect, low collateral, at least
-matching supervised diff-of-means vectors and SAE decoder-row addition
-(steering fidelity). Metrics that ask whether \emph{individual latents}
-are concept-aligned remain informative about the SAE side but are the
-wrong lens for classifier codes, and we flag them as such where they
-appear.
+\paragraph{Features are not composable.}
+A persistent problem with SAEs is feature absorption~\cite{chanin2025}:
+when one feature implies another, sparsity is better served by folding
+the general feature's direction into the specific feature's latent and
+switching the general latent off there, so a latent that looks
+monosemantic silently fails to fire on some inputs that have its feature
+(a ``starts with S'' latent that is silent on ``short''). A related
+failure, composition, learns co-occurring concepts as one latent. Nested
+and hierarchical SAEs reduce both (Section~\ref{sec:background}).
 
-Question (c) has a prerequisite that the original battery took for
-granted: a head can only be named if it is the same head on every run.
-Section~\ref{sec:seeds} tests that directly and finds it holds only
-partly, and only in the first layer, which conditions every per-head
-result in this document.
+\paragraph{Features are not cleanly causal.}
+Sparsity trades off against reconstruction fidelity~\cite{gao2024}, and
+steering with an SAE feature is rarely clean: adding its decoder
+direction moves the logits differently in different contexts and
+disturbs unrelated downstream features. How much varies by feature and is
+partly predictable before intervening, from the crowding of its decoder
+direction and its direct effect on the logits, though which predictor
+works differs between models and dictionaries~\cite{duan2026}.
 
+\paragraph{Features are not closed-form.}
+A major concern is how well an interpretability technique generalizes out
+of distribution, and ideally behavior could be inferred from the model's
+weights alone. Bilinear MLPs make this partly possible: the interaction
+matrix of any output direction can be eigendecomposed without data,
+although in deep models the output directions to decompose still come
+from data-dependent SAEs~\cite{pearce2025}.
 
-\subsection{Related work}
+\paragraph{Forward passes are expensive.}
+Although only a handful of features are active for a given input, the
+entire feature space is computed for each
+sample~\cite{gao2024,mudide2025}. Mixture-of-experts (MoE) SAE variants
+cut that cost by dividing the feature space between smaller submodules
+(Section~\ref{sec:background}).
 
-No single line of prior work covers this combination; each commitment has
-a nearest neighbor.\footnote{Gene Ontology terms were a source of
+\medskip
+Less explored is the effect of the structure an MoE architecture imposes
+on the interpretability of feature space. A common approach to interpreting
+features at scale is to have an LLM explain each feature from its
+activating examples and score the explanation by how well an LLM judge,
+given only the explanation, separates activating from non-activating
+contexts~\cite{paulo2025}. With an unstructured feature space it quickly
+becomes intractable to interpret every combination of features this way,
+but the same technique applies to expert routings. The ReLU feed-forward
+layers of a trained transformer can themselves be split into experts of
+co-activating neurons, keeping over 95\% of performance with 10--30\% of
+the parameters~\cite{zhang2022}. Language models appear to represent a
+categorical concept as a simplex whose vertices are the vectors of its
+values, with hierarchically related concepts in orthogonal subspaces, so
+that a hierarchy is a direct sum of simplices; differences between value
+vectors are the steering vectors of binary contrasts~\cite{park2025}.
+
+We conjecture that MoEfying a representation into classifiers can reveal
+such latent contrastive steering vectors, since swapping a classifier's
+choice writes exactly such a difference. Existing MoE SAEs route similar
+inputs to the same expert~\cite{mudide2025} and score an expert as
+specialized when its features resemble each other and not other
+experts'~\cite{xu2025redundancydiversespecializedmultiexpert}.
+Contrastive learning wants the opposite: inputs at opposite ends of a
+shared axis. The Ontologizer\footnote{Gene Ontology terms were a source of
 inspiration for the name, which this work shares with Ontologizer, a tool
 for Gene Ontology term enrichment analysis~\cite{bauer2008}; the two are
-separate projects.}
+separate projects.} decomposes a representation space into a set of such
+contrastive classifiers. Each \emph{head} is a $k$-way classifier over
+its input, and each of its \emph{entries} writes a representative vector,
+its \emph{atom}. An input is encoded as one \emph{assignment} per head and
+reconstructed from the atoms its assignments select, by a stack of layers
+each of which reads what the layers before it left unexplained.
+Interpretability value is then expected from \emph{MoEfication}, in an
+extended sense of the term~\cite{zhang2022}: a decomposition of the space
+into small classification tasks, one per head, each nameable in
+isolation, whose within-head entry swaps are steering moves.
+
+This document is the working record of that program. It compares a
+softmax (soft-code) Ontologizer and a straight-through (hard-code) arm
+against $\topk$ SAEs on SONAR sentence embeddings under the same whitened
+objective, and the hard code on GPT-2 small residuals.
+Figure~\ref{fig:teaser} shows the soft code's steering primitive,
+measured. Section~\ref{sec:background} places the architecture among its
+nearest neighbors and Section~\ref{sec:frame} states what the evaluation
+asks; the architecture follows in Section~\ref{sec:methods} and the
+results in Sections~\ref{sec:results}--\ref{sec:geom}.
+
+\begin{figure}[tp]\centering
+\includegraphics[width=\linewidth]{figures/fig-teaser.pdf}
+\caption[The steering primitive, measured]{The softmax Ontologizer's
+steering primitive, measured. (a) Forcing an entry moves decodes along
+the supervised difference-of-means direction $0.64\times$ as far as
+supervised steering itself and $4\times$ as far as probe directions
+(\texttt{resid\_nc\_hm}; Table~\ref{tab:steer-overlay}). (b) Joint
+two-head interventions point where the summed single interventions point,
+exactly in the final layer (\texttt{resid\_nc}; Section~\ref{sec:formal}).
+(c) The sparse SAEs' codes lose most text before any intervention
+(round-trip chrF 0.23--0.28 against a 0.18 corpus floor) while the soft
+code keeps it (0.55); the dense \texttt{k5120} keeps more but is not a
+sparse code (Appendix~\ref{sec:textfid}).}
+\label{fig:teaser}
+\end{figure}
+
+\section{Background}
+\label{sec:background}
+
+No single line of prior work covers this combination; each commitment has
+a nearest neighbor.
 
 \paragraph{Quantizers and discrete latents.}
 A \texttt{DictBlock} layer --- $h$ heads, each a softmax over $k$ entries,
@@ -102,11 +191,10 @@ hard stack's heads partition near-independently
 (Figure~\ref{fig:headnmi}), while in the reference softmax model a head's
 decode directions repel (Section~\ref{sec:prelim-orth}): a head there is a
 contrast set rather than the coherent cluster that MoE work counts as a
-specialized expert. MoEfication~\cite{zhang2022} supplies the frame's name
-but decomposes already-trained ReLU feed-forward layers post hoc into
-experts of co-activating neurons, several active per input; a head's
-entries instead exclude one another, and the partition is the training
-objective's own discovery.
+specialized expert. MoEfication~\cite{zhang2022} supplies the frame's name,
+but its experts are found post hoc in already-trained layers and several
+are active per input; a head's entries instead exclude one another, and
+the partition is the training objective's own discovery.
 
 \paragraph{Deep clustering.}
 Each head is a $k$-way classifier trained without labels, the setting of
@@ -242,3 +330,37 @@ to judge-written description texts as well as to geometry. Li et
 al.~\cite{li2024geometry} test whole co-occurrence clusterings of SAE
 latents against permuted labels.
 
+\section{Evaluation frame}
+\label{sec:frame}
+
+The comparisons below were largely built on SAE-native terms ---
+per-feature monosemanticity, sparse probing, reconstruction at matched
+sparsity --- and we report them unchanged. But the Ontologizer's goal is
+not a monosemantic dictionary. It is an \emph{unsupervised generator of
+steering vectors}: each head is trained only by reconstruction pressure,
+the hope is that a series of such classifiers finds the most natural
+contrastive clusters in the embedding space, and within-head entry swaps
+are the steering primitive (forcing head $i$ from its argmax entry to
+entry $j'$ moves the decode along exactly the dimension head $i$
+classifies).
+
+Under this frame the evaluation questions are: (a)~what does contrast-set
+structure cost in reconstruction (the Pareto and ladder); (b)~do trained
+heads actually behave as contrastive classifiers (categorical form,
+semantic anti-coherence); (c)~are the learned tasks \emph{natural} ---
+nameable, stable across runs, aligned with generative factors of the data
+(seed reproducibility, language and topic alignment); and (d)~is the
+steering primitive good --- consistent effect, low collateral, at least
+matching supervised diff-of-means vectors and SAE decoder-direction addition
+(steering fidelity). Metrics that ask whether \emph{individual latents}
+are concept-aligned remain informative about the SAE side but are the
+wrong lens for classifier codes, and we flag them as such where they
+appear. Figure~\ref{fig:teaser} shows the softmax Ontologizer on three
+of question (d)'s criteria; the hard code steers less reliably than the
+soft one (Section~\ref{sec:steer}).
+
+Question (c) has a prerequisite that the original battery took for
+granted: a head can only be named if it is the same head on every run.
+Section~\ref{sec:seeds} tests that directly and finds it holds only
+partly, and only in the first layer, which conditions every per-head
+result in this document.
