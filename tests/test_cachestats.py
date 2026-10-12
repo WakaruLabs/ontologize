@@ -153,6 +153,14 @@ def test_plane_finds_a_final_layernorm():
     assert off["residual_relative_median"] > 0.01 and off["solved_max_abs_error"] > 1e-4
 
 
+def test_masked_zeroes_only_the_named_coordinates():
+    w = np.array([0.5, 2.0, 837.0, 1.0], np.float32)
+    m = cs.masked(w, [2])
+    assert m.dtype == w.dtype and m[2] == 0
+    np.testing.assert_array_equal(np.delete(m, 2), np.delete(w, 2))
+    assert w[2] == 837.0  # the source is untouched
+
+
 def test_group_means_and_weight_spread():
     X = np.array([[1.0, 0], [3, 0], [0, 4]])
     np.testing.assert_allclose(cs.group_means(X, np.array([0, 0, 1])), [[2, 0], [2, 0], [0, 4]])

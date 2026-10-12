@@ -33,7 +33,8 @@ def make_cfg(tmp_path, **overrides):
                enc="linear",
                epochs=200, max_steps=0, lr=2e-3,
                b=B, cache=str(cache), mse_weights=str(weights),
-               eval_rows=512, aux_k=8, resample_every=0, dead_steps=50,
+               eval_rows=512, train_rows=0, aux_k=8, resample_every=0,
+               dead_steps=50,
                save_each=10**6,
                seed=0, out=str(tmp_path / "out"), overwrite=False)
     cfg.update(overrides)
@@ -61,6 +62,19 @@ def test_resume_from_snapshot(tmp_path):
     sae.train(cfg2)
     state = np.load(tmp_path / "out" / "state.npz")
     assert int(state["step"]) == 40
+
+
+def test_train_rows_takes_the_head_and_keeps_the_tail():
+    assert sae.splits(100, 10, 0) == (90, 90)
+    assert sae.splits(100, 10, 30) == (30, 90)
+    assert sae.splits(100, 10, 500) == (90, 90)
+
+
+def test_train_rows_run_scores_the_same_tail(tmp_path):
+    # training on the first 1024 rows still learns, and its eval rows are
+    # the cache's last eval_rows whatever train_rows is
+    fvu, l0, _ = sae.train(make_cfg(tmp_path, train_rows=1024, epochs=400))
+    assert fvu < 0.3 and l0 <= TOPK + 0.01
 
 
 def test_l1_mode_is_sparse(tmp_path):

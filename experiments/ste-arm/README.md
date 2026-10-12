@@ -64,6 +64,7 @@ does.
 | what the residual cascade contributes (blend toward unpaired references) | `blendablate.py` |
 | how concentrated each classifier's input is | `inputgeom.py` |
 | what the final layer contributes | `lastlayer.py` |
+| each model's error per coordinate, on the coordinates the MSE weights most against the median coordinate, and how far each moves between checkpoints; SAEs and Ontologizers | `coordfvu.py` |
 | which auxiliary losses do anything, at what weight | `auxpull.py` |
 | the layer-0 logit scale against the temperature and the training noise, at initialization and over training | `logitscale.py` |
 | **dictionary geometry** | |
@@ -129,6 +130,10 @@ uv run python experiments/ste-arm/reconseeds.py \
     --a data/out/sonar/multilingual/ste_h76_init01 --step-a 369500 \
     --b data/out/sonar/multilingual/ste_h76_i01_s43 --step-b 369500 \
     --ctrl-step 350000
+
+# per-coordinate error on the coordinates the MSE weights most (default:
+# the shipped SAEs and checkpoints; --models P.npz CKPT@T for others)
+uv run python experiments/ste-arm/coordfvu.py
 
 # language per head, with completeness rows around the top 32
 uv run python experiments/ste-arm/headlang.py --temperature 0.00015 \

@@ -387,3 +387,9 @@ What the weights do:
   variance per row is then 0.040. Coordinate 837 can be solved from the
   constraint before decoding, so leaving it out of the loss puts a
   reconstruction back on the plane without losing anything.
+- **On `mc4_4M`'s trained models**, the error on this coordinate depends on
+  the architecture. The k = 32 SAEs have 0.25× a typical coordinate's FVU
+  on it, the hard stack 3.8–4.4× and `resid_nc` 14×. There it holds at most
+  0.41% of any model's whitened error, apart from the k = 5120 SAE.
+  Details, and what it suggests for this cache, are in
+  `experiments/ste-arm/notes.md` ("The coordinate the MSE weights most").

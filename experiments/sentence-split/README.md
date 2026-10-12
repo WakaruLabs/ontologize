@@ -106,6 +106,7 @@ uv run python experiments/sentence-split/backfill_marks.py
 ```bash
 uv run python experiments/sentence-split/cachestats.py scan
 uv run python experiments/sentence-split/cachestats.py report
+uv run python experiments/sentence-split/cachestats.py mask
 ```
 
 Describes a built sentence cache against the document cache it was split
@@ -139,6 +140,32 @@ from (`--name`, `--docs-cache`; outputs under `--out`, default
     how exactly that coordinate follows from the others. The norm's
     weights are read from the encoder revision recorded in the cache's
     metadata, so this applies to rows without an L2 step.
+- `mask` writes `mse_weights_no<c>.npy`: the cache's MSE weights with that
+  coordinate's weight set to 0 and every other weight unchanged, so a run
+  given it with `--mse-weights` differs from one under the cache's weights
+  only in that term. `mask.json` records the coordinate, its old weight and
+  the source file. The cache and its own weights are not touched.
+
+`mask_runs.sh` trains the paired runs that measure what that weight does.
+Three architectures each train under the cache's weights (`_w837`) and
+under the masked copy (`_no837`), on the cache's first 12.8M rows, with the
+shipped recipes:
+- the k32 SAE (`sae.py --train-rows`);
+- the hard stack;
+- the direct k = 128 stack.
+
+It runs as a systemd unit, which resumes after a crash:
+
+```bash
+systemd-run --user --unit sent16-mask -p Restart=on-failure -p RestartSec=120 \
+    --working-directory=$PWD \
+    -p StandardOutput=append:$PWD/experiments/logs/sent16_mask_runs.log \
+    -p StandardError=append:$PWD/experiments/logs/sent16_mask_runs.log \
+    /usr/bin/bash experiments/sentence-split/mask_runs.sh
+```
+
+`experiments/ste-arm/coordfvu.py --coord 837` scores the runs under both
+weight files.
 
 ## Caveats
 

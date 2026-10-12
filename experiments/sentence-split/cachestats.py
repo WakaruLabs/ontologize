@@ -26,9 +26,15 @@ Stages (outputs under --out):
           and the hyperplane the encoder's final LayerNorm puts every row
           on (`plane`), against the norm's weights
           -> summary.json
+  mask    the cache's MSE weights with the coordinate that hyperplane fixes
+          (the norm's smallest |gain|) set to 0 and every other weight
+          unchanged, for a cache without an L2 step: a loss mask any
+          --mse-weights reader takes
+          -> mse_weights_no<coordinate>.npy, mask.json
 
   uv run python experiments/sentence-split/cachestats.py scan
   uv run python experiments/sentence-split/cachestats.py report
+  uv run python experiments/sentence-split/cachestats.py mask
 
 Each cache is described in its own representation: the sentence cache's
 rows are SONAR's masked mean, the document cache's are unit vectors, and
@@ -62,7 +68,7 @@ KINDS = ["sentence", "line", "piece"]
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("stage", choices=["scan", "report"])
+    p.add_argument("stage", choices=["scan", "report", "mask"])
     p.add_argument("--name", default="mc4_sent16", help="the sentence cache")
     p.add_argument("--docs-cache", default="mc4_4M",
                    help="the document cache it was split from")
@@ -530,9 +536,40 @@ def report(cfg: argparse.Namespace) -> None:
     print(f"-> {out / 'summary.json'}")
 
 
+# ---------- stage: mask ----------
+
+def masked(w: Float[np.ndarray, "d"], coords: List[int]) -> Float[np.ndarray, "d"]:
+    """`w` with the weights of `coords` set to 0 and every other weight
+    unchanged (not renormalized, so a run under it differs from one under
+    `w` only in those terms)."""
+    out = np.array(w, copy=True)
+    out[coords] = 0
+    return out
+
+
+def mask(cfg: argparse.Namespace) -> None:
+    d, out = Path(cfg.dir), Path(cfg.out)
+    out.mkdir(parents=True, exist_ok=True)
+    meta = json.loads((d / f"{cfg.name}.meta.json").read_text())
+    if meta.get("pooling") != "masked mean":
+        sys.exit(f"{cfg.name} is pooled {meta.get('pooling')!r}: the final norm's "
+                 "hyperplane holds only for SONAR's masked mean without an L2 step")
+    gamma, _ = final_norm(meta["encoder"], meta["encode_versions"]["encoder_revision"])
+    c = int(np.argmin(np.abs(gamma)))
+    src = d / f"{cfg.name}.mse_weights.npy"
+    w = np.load(src)
+    dst = out / f"mse_weights_no{c}.npy"
+    np.save(dst, masked(w, [c]))
+    record = {"source": str(src), "coord": c, "weight": float(w[c]),
+              "norm_gamma": float(gamma[c]), "out": str(dst),
+              "why": "fixed by the other coordinates through the encoder's final LayerNorm"}
+    (out / "mask.json").write_text(json.dumps(record, indent=1))
+    print(json.dumps(record, indent=1))
+
+
 def main() -> None:
     cfg = parse_args()
-    {"scan": scan, "report": report}[cfg.stage](cfg)
+    {"scan": scan, "report": report, "mask": mask}[cfg.stage](cfg)
 
 
 if __name__ == "__main__":

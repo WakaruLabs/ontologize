@@ -117,6 +117,7 @@ import jax
 import jax.numpy as jnp
 import optax
 from pathlib import Path
+from typing import Tuple
 from tqdm import tqdm
 
 from ontologize.sae import (AUX_COEF, SAE, BilinearSAE, from_legacy,
@@ -155,6 +156,9 @@ def parse_args():
     p.add_argument("--mse-weights", default="data/out/sonar/mse_weights.npy")
     p.add_argument("--eval-rows", type=int, default=32768,
                    help="held-out tail rows of the cache (excluded from training)")
+    p.add_argument("--train-rows", type=int, default=0,
+                   help="train on only the first N rows of the cache (0 = every "
+                        "row before the held-out tail); the tail is unchanged")
     p.add_argument("--aux-k", type=int, default=512,
                    help="dead latents used to reconstruct the residual (0 = off)")
     p.add_argument("--resample-every", type=int, default=0,
@@ -394,6 +398,14 @@ def load_state(path, params, opt_state):
     return params, opt_state, int(dat["step"]), dat["last_fired"]
 
 
+def splits(n: int, eval_rows: int, train_rows: int) -> Tuple[int, int]:
+    """The number of training rows and the first row of the held-out tail.
+    The tail is the last `eval_rows` rows; training takes the rows before
+    it, only the first `train_rows` of them when that is set."""
+    head = n - eval_rows
+    return (min(head, train_rows) if train_rows else head), head
+
+
 def train(cfg):
     if cfg.groups:
         assert not cfg.topk, "--groups needs --topk 0 (mutually exclusive)"
@@ -428,9 +440,9 @@ def train(cfg):
          "enc": cfg.enc, "resample_every": cfg.resample_every}))
 
     mm = np.load(cfg.cache, mmap_mode="r")
-    n_train = mm.shape[0] - cfg.eval_rows
+    n_train, n_head = splits(mm.shape[0], cfg.eval_rows, cfg.train_rows)
     d = mm.shape[1]
-    X_eval = np.asarray(mm[n_train:], dtype=np.float32)
+    X_eval = np.asarray(mm[n_head:], dtype=np.float32)
 
     w = np.load(cfg.mse_weights) if cfg.mse_weights else np.ones(d)
     w_sqrt = jnp.asarray(np.sqrt(w), jnp.float32)

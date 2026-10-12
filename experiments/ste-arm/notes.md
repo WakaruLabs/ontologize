@@ -4057,6 +4057,105 @@ first run's outputs were zeroed by a system crash on 2026-10-11 and
 regenerated; the rerun reproduced the printed numbers, with GPT-2 tested
 counts moving by a few cells from ties in the winners on the GPU.
 
+## The coordinate the MSE weights most (`coordfvu.py`)
+
+2026-10-12. `mc4_sent16`'s inverse-variance weights put 82% of their sum on
+coordinate 837, which SONAR's final LayerNorm fixes
+(`experiments/sentence-split/notes.md`). The same coordinate takes
+`mc4_4M`'s largest weight, 27.25. On the tail its standard deviation is
+0.0027, which is 0.109 of the median coordinate's 0.0246. `coordfvu.py`
+scores every shipped model's error on that coordinate against a typical
+coordinate's, on the 32,768 tail rows at full float32 precision. Outputs
+are in `data/out/sonar/coordfvu/`.
+
+Column definitions:
+- "FVU on 837" is the coordinate's own error over its own variance.
+- "× median" divides that by the median coordinate's FVU.
+- "Raw" is its root-mean-square error over the median coordinate's. It
+  equals 0.109 when a model's error scales with each coordinate's spread.
+
+| model | FVU | FVU on 837, × median | raw | share of whitened error |
+|---|---|---|---|---|
+| SAE k32 (m5120, its s43, m11264) | 0.494–0.499 | 0.24–0.25 | 0.054 | 0.01% |
+| SAE k160 | 0.258 | 0.25 | 0.054 | 0.01% |
+| SAE k5120 | 8.5e-5 | 260 | 1.74 | 5.5% |
+| SAE L1 3e-6 | 0.0052 | 1.50 | 0.133 | 0.05% |
+| SAE L1 1e-5 | 0.0475 | 0.59 | 0.083 | 0.02% |
+| SAE g160top1 | 0.274 | 0.64 | 0.087 | 0.02% |
+| SAE g160softmax | 0.0043 | 21.3 | 0.49 | 0.30% |
+| hard stack (two seeds) | 0.1535 | 3.8, 4.4 | 0.21, 0.23 | 0.12%, 0.14% |
+| flat arm (two seeds) | 0.287 | 3.1, 3.0 | 0.19 | 0.10% |
+| k = 128, decoded | 0.321 | 1.32 | 0.125 | 0.04% |
+| k = 128, direct (two seeds) | 0.312, 0.315 | 0.79, 0.74 | 0.097, 0.094 | 0.03%, 0.02% |
+| `resid_nc` (soft, T = 0.03) | 0.0054 | 14.3 | 0.41 | 0.41% |
+
+Movement between each run's last two kept checkpoints: 100 steps apart, 250
+for the k = 128 runs. "Parameters" are the decoder kernel's row for the
+coordinate, or a direct run's atoms.
+
+| model | drift on 837, of its variance | × median | raw | parameters' change, × median | their spread, × median |
+|---|---|---|---|---|---|
+| hard stack | 1.02, 1.13 | 8.3, 9.2 | 0.31, 0.33 | 0.31, 0.33 | 0.77, 0.78 |
+| flat arm | 1.40, 1.41 | 36, 37 | 0.66 | 0.36, 0.33 | 0.66 |
+| k = 128, decoded | 0.64 | 3.8 | 0.21 | 0.48 | 0.66 |
+| k = 128, direct | 0.25, 0.26 | 1.6 | 0.14 | 0.82 | 0.35, 0.55 |
+| `resid_nc` | 0.16 | 29 | 0.58 | 1.04 | 0.28 |
+
+- **No reported comparison on `mc4_4M` moves.** Coordinate 837 holds at
+  most 0.41% of a model's whitened error. The one exception is the k = 5120
+  SAE, at 5.5% of an FVU of 8.5e-5.
+- **How a model treats the coordinate depends on the architecture.**
+  - The k = 32 and k = 160 SAEs fit it better than a typical coordinate
+    (0.25×). Their raw error there shrinks below the coordinate's share of
+    the spread (0.054 against 0.109).
+  - The hard decoded stack and the flat arm have 3.0–4.4× a typical
+    coordinate's FVU on it.
+  - In the models with almost no error, the coordinate's error stays far
+    above the rest: 14× for `resid_nc`, 21× for g160softmax, 260× for
+    k5120.
+  - The decoder-free k = 128 runs show no excess (0.74–0.79×), less than
+    the decoded k = 128 run (1.32×).
+- **The error there is movement that does not shrink with the
+  coordinate's scale.**
+  - In the checkpointed runs, the output on coordinate 837 moves between
+    the two checkpoints by 0.16–1.41 of the coordinate's variance. That is
+    1.6–37× a typical coordinate's movement on its own scale.
+  - In raw units the movement is 0.14–0.66 of the median coordinate's,
+    against the coordinate's 0.109 scale.
+  - If the two checkpoints fluctuated independently around a fixed
+    output, half the drift would be the fluctuation's variance. For the
+    stack and the flat arm that is 77–86% of their FVU on the coordinate.
+- **The parameters that write the coordinate are not scaled to it.**
+  - Their spread on coordinate 837 is 0.28–0.78 of the median
+    coordinate's, against the data's 0.109.
+  - In 250 steps, a direct run's atoms change on it by 0.82 of the median
+    coordinate's raw change. A per-parameter step that ignores the
+    coordinate's scale, as Adam's does, would give about 1.
+  - The decoder's rows for 837 change less than the others (0.31–0.48 in
+    the hard runs). So in the decoded runs, the movement reaches the
+    coordinate from the latent side.
+- **What it suggests for `mc4_sent16`.**
+  - There, coordinate 837's standard deviation is 0.0144 of the median
+    coordinate's, not 0.109. This follows from its weight, 837.38, against
+    the median weight of 0.173.
+  - Its weights are the cache's exact inverse variance. `mc4_4M`'s shipped
+    weights, computed on an earlier corpus, give the coordinate 27.7× the
+    median weight, where the tail's inverse variance would give 84×.
+  - Suppose each model's raw ratio carried over. Its FVU on the coordinate
+    would then be q = (raw / 0.0144)² times the median coordinate's, and
+    the coordinate would hold about q / (q + 1023) of the whitened error:
+    - 1.4% for the k = 32 and k = 160 SAEs;
+    - 4% for the direct k = 128 runs and 7% for the decoded one;
+    - 15% for the flat arm and 18–20% for the hard stack;
+    - 44% for `resid_nc`, 54% for g160softmax and 93% for k5120.
+  - The larger weight pushes harder on the coordinate, so these figures
+    give the effect's scale; they are not a measurement. Training on
+    `mc4_sent16` with and without the weight would measure it.
+
+```bash
+uv run python experiments/ste-arm/coordfvu.py
+```
+
 ## Run
 
 See [`README.md`](README.md) for training and scoring commands.
