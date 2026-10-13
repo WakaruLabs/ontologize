@@ -396,11 +396,18 @@ def train(state: OntoState, dat, lossfn: Callable,
     with tqdm(dat, desc=f"Training {epochs} epochs", initial=step_0,
               total=None if left is None else step_0 + left) as pbar:
         for batch in pbar:
-            # Assuming autoencoder where target Y_0 is exactly input X
-            X = batch
+            # a batch is the input alone, whose target is itself (an
+            # autoencoder), or a dict carrying the input under "x" and a
+            # different target under "y" (e.g. the next sentence). Text
+            # batches are dicts of token arrays too, hence the "y" test
+            if isinstance(batch, dict) and "y" in batch:
+                X, Y = batch["x"], batch["y"]
+            else:
+                X, Y = batch, None
             if encoder is not None:
                 X = encode(encoder, X, dev)
-            Y = X
+            if Y is None:
+                Y = X
             if decoder is not None:
                 Y = decoder(Y)
             T, pd, sk, ps = schedules(int(state.step), anneal_steps,

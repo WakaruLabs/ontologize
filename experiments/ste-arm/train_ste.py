@@ -89,6 +89,12 @@ def _needs_encoder(biased_enc: bool, encoded: bool) -> bool:
 
 
 def parse_args():
+    return finish(parser().parse_args())
+
+
+def parser() -> argparse.ArgumentParser:
+    """The arm's flags, so another trainer can add its own and reuse
+    `finish` and `setup` (experiments/next-sentence/train_next.py)."""
     p = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -253,10 +259,10 @@ def parse_args():
                         "a dictionary component in its null space changes "
                         "nothing and takes no gradient, and Adam turns the "
                         "noise there into full-size steps. On ste_h76 that "
-                        "left 97.7% of the dictionary's movement, and all "
-                        "but 2.4% of its final energy, invisible "
+                        "left 97.7%% of the dictionary's movement, and all "
+                        "but 2.4%% of its final energy, invisible "
                         "downstream. L1_F is aimed at the right quantity "
-                        "but lands 92.5% of its pressure on the atoms doing "
+                        "but lands 92.5%% of its pressure on the atoms doing "
                         "the work; see dictwd.py")
     p.add_argument("--init-from", default=None, metavar="CKPT",
                    help="take starting parameters from this checkpoint "
@@ -367,7 +373,11 @@ def parse_args():
     p.add_argument("--out", default=None,
                    help="checkpoint dir (default "
                         "<sonar out dir>/../<select>_h<h>)")
-    cfg = p.parse_args()
+    return p
+
+
+def finish(cfg: argparse.Namespace) -> argparse.Namespace:
+    """Adjustments that depend on more than one flag."""
     if cfg.kcos_target > 0 and not cfg.s_kcossim:
         # two reasons this cannot start at zero: `s_loss` gates the
         # penalty's gradient on a nonzero weight, and the controller's
@@ -377,8 +387,16 @@ def parse_args():
 
 
 def main() -> None:
+    train(*setup(parse_args()))
+
+
+def setup(cfg: argparse.Namespace, src=None):
+    """Everything a run needs before training: the hyperparameters, the
+    model, the checkpoint metadata, the output directory and the data
+    source. `src` replaces the cache's own rows as the training data (it
+    needs a length); `--steps`, which counts cache rows, is then refused
+    in favour of `--epochs`."""
     global base
-    cfg = parse_args()
     if cfg.base != base.__name__:
         base = importlib.import_module(cfg.base)
     h = cfg.h
@@ -452,13 +470,17 @@ def main() -> None:
     # everything past it -- the eval tail included.
     holdout = base.holdout
     epochs = cfg.epochs or base.epochs
-    if cfg.steps:
-        rows = cfg.steps * b
-        total = NpyDataSource(cache).__len__()
-        assert rows < total - base.holdout, \
-            f"--steps {cfg.steps} needs {rows} rows, more than the cache has"
-        holdout, epochs = total - rows, 1
-    src = NpyDataSource(cache, holdout=holdout)
+    if src is not None:
+        assert not cfg.steps, \
+            "--steps counts cache rows; with a custom source pass --epochs"
+    else:
+        if cfg.steps:
+            rows = cfg.steps * b
+            total = NpyDataSource(cache).__len__()
+            assert rows < total - base.holdout, \
+                f"--steps {cfg.steps} needs {rows} rows, more than the cache has"
+            holdout, epochs = total - rows, 1
+        src = NpyDataSource(cache, holdout=holdout)
 
     HP, extra = Hyperparams, {}
     # --init-from is what loads the starting parameters, so it must take
@@ -559,7 +581,10 @@ def main() -> None:
     meta = Metadata(
         "embedding", base.encoder, out_path=out, threads=base.threads,
         save_each=base.save_each, checkpoint_each=base.checkpoint_each)
+    return hyper, model, meta, out, src
 
+
+def train(hyper, model, meta, out: Path, src) -> None:
     env = TrainingEnv(model, hyper, meta,
                       kwargs_loader={"d": base.d, "shuffle": base.shuffle})
     env.train(src, encoder=None)
