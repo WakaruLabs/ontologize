@@ -121,3 +121,9 @@ uv run python experiments/next-sentence/transitions.py \
   `lang` isolates what adjacency carries beyond the language.
 - **`d1_sent`.** This keeps adjacent pairs where both rows are full sentences, dropping lines and the
   pieces the length cap cuts from one long sentence.
+
+`pair_objective.md` sketches the objective these measurements point to, but nothing in it is
+implemented yet:
+- every sentence of a same-document pair reconstructs itself;
+- a designated set of slow heads pays for each switch between the two sentences;
+- arms, evaluation and extensions are laid out there.
