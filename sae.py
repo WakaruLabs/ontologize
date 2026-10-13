@@ -116,8 +116,9 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 import optax
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Tuple
+from typing import Callable, Iterator, Tuple
 from tqdm import tqdm
 
 from ontologize.sae import (AUX_COEF, SAE, BilinearSAE, from_legacy,
@@ -159,6 +160,16 @@ def parse_args():
     p.add_argument("--train-rows", type=int, default=0,
                    help="train on only the first N rows of the cache (0 = every "
                         "row before the held-out tail); the tail is unchanged")
+    p.add_argument("--block-rows", type=int, default=0,
+                   help="block-shuffled batches: split the training rows into "
+                        "contiguous blocks of N rows, take them in random order "
+                        "--buffer-blocks at a time into memory, and draw batches "
+                        "from a shuffle of each buffer, so a cache larger than "
+                        "memory is read sequentially (0 = a uniform permutation; "
+                        "N a multiple of --b; rows past the last whole block are "
+                        "not trained on)")
+    p.add_argument("--buffer-blocks", type=int, default=16,
+                   help="blocks per shuffle buffer (with --block-rows)")
     p.add_argument("--aux-k", type=int, default=512,
                    help="dead latents used to reconstruct the residual (0 = off)")
     p.add_argument("--resample-every", type=int, default=0,
@@ -406,6 +417,111 @@ def splits(n: int, eval_rows: int, train_rows: int) -> Tuple[int, int]:
     return (min(head, train_rows) if train_rows else head), head
 
 
+def uniform_batches(mm, n_train: int, b: int, epochs: int, rng, step: int,
+                    total: int) -> Iterator[np.ndarray]:
+    """Batches from a fresh uniform permutation of the training rows each
+    epoch, from batch `step` (a resumed run skips those already consumed;
+    the permutations are seed-deterministic, so this replays the schedule)
+    up to batch `total`."""
+    if step >= total:
+        return
+    per_epoch = n_train // b
+    for epoch in range(epochs):
+        if epoch * per_epoch >= total:
+            return
+        perm = rng.permutation(n_train)
+        for i in range(0, n_train - b + 1, b):
+            j = epoch * per_epoch + i // b
+            if j >= total:
+                return
+            if j < step:
+                continue
+            idx = np.sort(perm[i:i + b])  # sorted for memmap locality
+            yield np.asarray(mm[idx], dtype=np.float32)
+
+
+def block_schedule(rng, n: int, block_rows: int, buffer_blocks: int
+                   ) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
+    """One epoch of block-shuffled sampling over the first n rows: the
+    starts of the whole blocks of `block_rows` rows in random order, taken
+    `buffer_blocks` at a time, each group with a permutation of positions in
+    its buffer (which holds the group's blocks end to end). Rows past the
+    last whole block are left out."""
+    order = rng.permutation(n // block_rows) * block_rows
+    for g in range(0, len(order), buffer_blocks):
+        starts = order[g:g + buffer_blocks]
+        yield starts, rng.permutation(len(starts) * block_rows)
+
+
+def block_groups(rng, n_train: int, b: int, block_rows: int, buffer_blocks: int,
+                 epochs: int, step: int, total: int
+                 ) -> Iterator[Tuple[int, np.ndarray, np.ndarray]]:
+    """The block-shuffled schedule between batches `step` and `total`: for
+    each buffer with a batch left to run, the index of its first batch, the
+    starts of its blocks and the permutation of its rows. Every epoch's
+    groups are drawn, so a resumed run replays the same schedule."""
+    per_epoch = (n_train // block_rows) * (block_rows // b)
+    for epoch in range(epochs):
+        j = epoch * per_epoch
+        if j >= total:
+            return
+        for starts, perm in block_schedule(rng, n_train, block_rows, buffer_blocks):
+            if j >= total:
+                return
+            nb = len(perm) // b
+            if j + nb > step:
+                yield j, starts, perm
+            j += nb
+
+
+def block_reader(path: str, block_rows: int) -> Callable[[np.ndarray], np.ndarray]:
+    """Reads a buffer of whole blocks of a float32 .npy into memory with
+    pread, dropping each block from the page cache once read, since a pass
+    over a cache larger than memory would otherwise evict other files."""
+    X = np.load(path, mmap_mode="r")
+    if X.dtype != np.float32 or X.ndim != 2 or not X.flags.c_contiguous:
+        raise ValueError(f"{path}: expected a C-ordered 2-d float32 array")
+    d, off = X.shape[1], X.offset
+    del X
+
+    def read(starts: np.ndarray) -> np.ndarray:
+        buf = np.empty((len(starts) * block_rows, d), np.float32)
+        nb = block_rows * d * 4
+        fd = os.open(path, os.O_RDONLY)
+        try:
+            for i, s in enumerate(starts):
+                at = off + int(s) * d * 4
+                view = memoryview(buf[i * block_rows:(i + 1) * block_rows]).cast("B")
+                if os.preadv(fd, [view], at) != nb:
+                    raise IOError(f"{path}: short read at row {int(s)}")
+                os.posix_fadvise(fd, at, nb, os.POSIX_FADV_DONTNEED)
+        finally:
+            os.close(fd)
+        return buf
+    return read
+
+
+def block_batches(groups: Iterator[Tuple[int, np.ndarray, np.ndarray]],
+                  read: Callable[[np.ndarray], np.ndarray], b: int, step: int,
+                  total: int) -> Iterator[np.ndarray]:
+    """The batches of `groups` from batch `step` up to batch `total`, each
+    buffer read in a background thread while the one before it trains."""
+    with ThreadPoolExecutor(1) as pool:
+        it = iter(groups)
+        nxt = next(it, None)
+        fut = pool.submit(read, nxt[1]) if nxt is not None else None
+        while nxt is not None:
+            (j, _, perm), cur = nxt, fut
+            nxt = next(it, None)
+            fut = pool.submit(read, nxt[1]) if nxt is not None else None
+            buf = cur.result()
+            for k in range(len(perm) // b):
+                if j + k >= total:
+                    return
+                if j + k >= step:
+                    yield buf[perm[k * b:(k + 1) * b]]
+
+
 def train(cfg):
     if cfg.groups:
         assert not cfg.topk, "--groups needs --topk 0 (mutually exclusive)"
@@ -473,62 +589,64 @@ def train(cfg):
     loss_path = out / "loss.csv"
     prev_dead = step - last_fired > cfg.dead_steps
     rng = np.random.default_rng(cfg.seed)
-    total = cfg.epochs * (n_train // cfg.b)
+    if cfg.block_rows:
+        assert cfg.block_rows % cfg.b == 0, "--block-rows must be a multiple of --b"
+        assert cfg.block_rows <= n_train, "--block-rows exceeds the training rows"
+        per_epoch = (n_train // cfg.block_rows) * (cfg.block_rows // cfg.b)
+    else:
+        per_epoch = n_train // cfg.b
+    total = cfg.epochs * per_epoch
     if cfg.max_steps:
         total = min(total, cfg.max_steps)
+    if cfg.block_rows:
+        batches = block_batches(
+            block_groups(rng, n_train, cfg.b, cfg.block_rows, cfg.buffer_blocks,
+                         cfg.epochs, step, total),
+            block_reader(cfg.cache, cfg.block_rows), cfg.b, step, total)
+    else:
+        batches = uniform_batches(mm, n_train, cfg.b, cfg.epochs, rng, step, total)
 
     with tqdm(total=total, initial=step, desc=run_name(cfg)) as pbar:
-        for epoch in range(cfg.epochs):
-            if step >= total:
-                break
-            perm = rng.permutation(n_train)
-            for i in range(0, n_train - cfg.b + 1, cfg.b):
-                if step >= total:
-                    break
-                # skip batches already consumed by a resumed run (the perm
-                # stream is seed-deterministic, so this replays the schedule)
-                if step > epoch * (n_train // cfg.b) + i // cfg.b:
-                    continue
-                idx = np.sort(perm[i:i + cfg.b])  # sorted for memmap locality
-                X = jnp.asarray(np.asarray(mm[idx], dtype=np.float32))
-                dead = jnp.asarray(step - last_fired > cfg.dead_steps)
-                params, opt_state, L, mse, fired = step_fn(
-                    params, opt_state, X, w_sqrt, dead)
-                last_fired[np.asarray(fired)] = step
-                step += 1
-                pbar.update(1)
-                pbar.set_postfix(loss=float(L), mse_w=float(mse))
+        for batch in batches:
+            X = jnp.asarray(batch)
+            dead = jnp.asarray(step - last_fired > cfg.dead_steps)
+            params, opt_state, L, mse, fired = step_fn(
+                params, opt_state, X, w_sqrt, dead)
+            last_fired[np.asarray(fired)] = step
+            step += 1
+            pbar.update(1)
+            pbar.set_postfix(loss=float(L), mse_w=float(mse))
 
-                if step % cfg.save_each == 0:
-                    fvu, l0, l1, freq = evaluate(eval_fn, params, X_eval,
-                                                 w_sqrt, base_w, cfg.b)
-                    fvu_tr = evaluate(eval_fn, params, X_tr, w_sqrt,
-                                      base_tr, cfg.b)[0]
-                    dead_now = step - last_fired > cfg.dead_steps
-                    revived = int((prev_dead & ~dead_now).sum())
-                    new_dead = int((~prev_dead & dead_now).sum())
-                    prev_dead = dead_now
-                    use_ent, hifreq = usage_stats(freq)
-                    maxcos, meancos = wdec_cos(params)
-                    with open(loss_path, "a", newline="") as f:
-                        csv.writer(f).writerow(
-                            [step, float(L), float(mse), fvu, l0, l1,
-                             int(dead_now.sum()), revived, new_dead,
-                             use_ent, hifreq, maxcos, meancos, fvu_tr])
-                    save_state(state_path, params, opt_state, step, last_fired)
+            if step % cfg.save_each == 0:
+                fvu, l0, l1, freq = evaluate(eval_fn, params, X_eval,
+                                             w_sqrt, base_w, cfg.b)
+                fvu_tr = evaluate(eval_fn, params, X_tr, w_sqrt,
+                                  base_tr, cfg.b)[0]
+                dead_now = step - last_fired > cfg.dead_steps
+                revived = int((prev_dead & ~dead_now).sum())
+                new_dead = int((~prev_dead & dead_now).sum())
+                prev_dead = dead_now
+                use_ent, hifreq = usage_stats(freq)
+                maxcos, meancos = wdec_cos(params)
+                with open(loss_path, "a", newline="") as f:
+                    csv.writer(f).writerow(
+                        [step, float(L), float(mse), fvu, l0, l1,
+                         int(dead_now.sum()), revived, new_dead,
+                         use_ent, hifreq, maxcos, meancos, fvu_tr])
+                save_state(state_path, params, opt_state, step, last_fired)
 
-                # after the eval/save block, so logged numbers never show
-                # freshly reset latents; never on the final step, which
-                # would send untrained directions into the final eval
-                if (cfg.resample_every and step % cfg.resample_every == 0
-                        and step < total):
-                    dead_now = step - last_fired > cfg.dead_steps
-                    if dead_now.any():
-                        params, opt_state = resample_dead(
-                            params, opt_state, X, w_sqrt, dead_now,
-                            np.random.default_rng(cfg.seed + step),
-                            cfg.topk, cfg.groups, cfg.group_fn)
-                        last_fired[dead_now] = step
+            # after the eval/save block, so logged numbers never show
+            # freshly reset latents; never on the final step, which
+            # would send untrained directions into the final eval
+            if (cfg.resample_every and step % cfg.resample_every == 0
+                    and step < total):
+                dead_now = step - last_fired > cfg.dead_steps
+                if dead_now.any():
+                    params, opt_state = resample_dead(
+                        params, opt_state, X, w_sqrt, dead_now,
+                        np.random.default_rng(cfg.seed + step),
+                        cfg.topk, cfg.groups, cfg.group_fn)
+                    last_fired[dead_now] = step
 
     fvu, l0, l1, _ = evaluate(eval_fn, params, X_eval, w_sqrt, base_w, cfg.b)
     n_dead = int((step - last_fired > cfg.dead_steps).sum())

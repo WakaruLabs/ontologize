@@ -167,6 +167,21 @@ systemd-run --user --unit sent16-mask -p Restart=on-failure -p RestartSec=120 \
 `experiments/ste-arm/coordfvu.py --coord 837` scores the runs under both
 weight files.
 
+The full-length runs under the masked weights train over the whole cache,
+each as its own systemd unit:
+- **`full_runs.sh`** (unit `sent16-full`): the direct k = 128 stack, then
+  the hard stack, each for 2 epochs. That is 344,383 steps of 256, about
+  the shipped `mc4_4M` runs' 369,528.
+- **`sae_whole_run.sh`** (unit `sent16-sae`): the k32 SAE for `sae_conv`'s
+  144,000 steps of 4,096. It waits until `sent16-full` has finished.
+
+The SAE uses `sae.py --block-rows 65536 --buffer-blocks 16`. Drawing its
+4,096-row batches at random from the 180 GB cache would be bound by the
+disk. Instead it reads whole blocks of rows in random order into a shuffle
+buffer, which keeps the reads sequential. The Ontologizer runs read single
+rows at random, which keeps up at their batch size. Launch either unit as
+`mask_runs.sh` is launched above, with its own unit name and log.
+
 ## Caveats
 
 - SaT was trained on 85 languages. Eleven of the 86 mC4 configs are not

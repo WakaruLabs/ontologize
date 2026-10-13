@@ -33,8 +33,8 @@ def make_cfg(tmp_path, **overrides):
                enc="linear",
                epochs=200, max_steps=0, lr=2e-3,
                b=B, cache=str(cache), mse_weights=str(weights),
-               eval_rows=512, train_rows=0, aux_k=8, resample_every=0,
-               dead_steps=50,
+               eval_rows=512, train_rows=0, block_rows=0, buffer_blocks=16,
+               aux_k=8, resample_every=0, dead_steps=50,
                save_each=10**6,
                seed=0, out=str(tmp_path / "out"), overwrite=False)
     cfg.update(overrides)
@@ -68,6 +68,40 @@ def test_train_rows_takes_the_head_and_keeps_the_tail():
     assert sae.splits(100, 10, 0) == (90, 90)
     assert sae.splits(100, 10, 30) == (30, 90)
     assert sae.splits(100, 10, 500) == (90, 90)
+
+
+def test_block_schedule_covers_whole_blocks_once():
+    rng = np.random.default_rng(0)
+    groups = list(sae.block_schedule(rng, 10 * 8 + 5, 8, 3))
+    assert [len(s) for s, _ in groups] == [3, 3, 3, 1]
+    starts = np.concatenate([s for s, _ in groups])
+    # every whole block exactly once; the 5 rows past the last are left out
+    assert sorted(starts.tolist()) == list(range(0, 80, 8))
+    for s, perm in groups:
+        assert sorted(perm.tolist()) == list(range(len(s) * 8))
+
+
+@pytest.mark.parametrize("block_rows", [0, 512])
+def test_resume_replays_the_schedule(tmp_path, block_rows):
+    # 40 steps straight and 20 + 20 with a resume between give the same
+    # parameters: the resumed run skips exactly the batches already used
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    straight = make_cfg(tmp_path / "a", max_steps=40, block_rows=block_rows,
+                        buffer_blocks=2, save_each=20)
+    sae.train(straight)
+    for steps in (20, 40):
+        sae.train(make_cfg(tmp_path / "b", max_steps=steps, block_rows=block_rows,
+                           buffer_blocks=2, save_each=20))
+    a = np.load(tmp_path / "a" / "out" / "params.npz")
+    b = np.load(tmp_path / "b" / "out" / "params.npz")
+    for k in a.files:
+        np.testing.assert_array_equal(a[k], b[k])
+
+
+def test_block_shuffled_sae_learns_planted_dictionary(tmp_path):
+    fvu, l0, dead = sae.train(make_cfg(tmp_path, block_rows=512, buffer_blocks=2))
+    assert fvu < 0.15 and l0 <= TOPK + 0.01 and dead < M // 4
 
 
 def test_train_rows_run_scores_the_same_tail(tmp_path):
