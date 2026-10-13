@@ -17,7 +17,8 @@ coordinate. On the cache tail (the held-out split), per model:
   drift_d   for a checkpoint directory, mean (xhat_d - xhat'_d)^2 / var_d
             with xhat' the previous kept checkpoint's reconstruction: how
             far the output on the coordinate still moves, on the
-            coordinate's own scale
+            coordinate's own scale; and fvu_prev, that checkpoint's
+            whitened FVU, for how far the whole error still moves
   raw       the error and drift in raw units (root mean square), each over
             its median across coordinates, beside the coordinate's standard
             deviation over the median one: when a model's error scales with
@@ -110,18 +111,25 @@ def kept_steps(ckpt: str) -> List[int]:
 
 def coord_sums(recon: Callable, X: Float[np.ndarray, "n d"], batch: int,
                prev: Optional[Callable] = None
-               ) -> Tuple[Float[np.ndarray, "d"], Optional[Float[np.ndarray, "d"]]]:
-    """Mean squared error per coordinate of the final reconstruction, and the
-    mean squared change per coordinate against `prev`'s when given."""
+               ) -> Tuple[Float[np.ndarray, "d"], Optional[Float[np.ndarray, "d"]],
+                          Optional[Float[np.ndarray, "d"]]]:
+    """Mean squared error per coordinate of the final reconstruction and,
+    when `prev` is given, the mean squared change per coordinate against
+    its reconstruction and its own mean squared error."""
     err = np.zeros(X.shape[1])
     drift = np.zeros(X.shape[1]) if prev is not None else None
+    err_prev = np.zeros(X.shape[1]) if prev is not None else None
     for s in range(0, len(X), batch):
         xb = X[s:s + batch]
         Y = np.asarray(recon(xb)[0][-1], np.float64)
         err += ((Y - xb) ** 2).sum(0)
         if prev is not None:
-            drift += ((Y - np.asarray(prev(xb)[0][-1], np.float64)) ** 2).sum(0)
-    return err / len(X), (drift / len(X) if drift is not None else None)
+            Yp = np.asarray(prev(xb)[0][-1], np.float64)
+            drift += ((Y - Yp) ** 2).sum(0)
+            err_prev += ((Yp - xb) ** 2).sum(0)
+    if prev is None:
+        return err / len(X), None, None
+    return err / len(X), drift / len(X), err_prev / len(X)
 
 
 def coord_stats(err: Float[np.ndarray, "d"], var: Float[np.ndarray, "d"],
@@ -217,8 +225,10 @@ def main() -> None:
         wr.writerow(["model", "coord", "weight", "sd", "fvu", "drift"])
         for spec in cfg.models:
             recon, prev, name, info = load(spec, cfg.temperature)
-            err, drift = coord_sums(recon, X.astype(np.float32), cfg.batch, prev)
+            err, drift, err_prev = coord_sums(recon, X.astype(np.float32), cfg.batch, prev)
             s = {**info, **coord_stats(err, var, w, coords, drift)}
+            if err_prev is not None:
+                s["fvu_prev"] = float((err_prev * w).mean() / (var * w).mean())
             if info.get("prev_step") is not None:
                 A = output_params(load_onto(info["path"], info["prev_step"])[1], len(w))
                 B = output_params(load_onto(info["path"], info["step"])[1], len(w))

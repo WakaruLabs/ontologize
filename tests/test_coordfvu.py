@@ -44,10 +44,11 @@ def test_coord_sums_takes_the_last_prefix():
     def prev(x):
         return (x + 0.5)[None], None
 
-    err, drift = coord_sums(recon, X, 32, prev)
+    err, drift, err_prev = coord_sums(recon, X, 32, prev)
     np.testing.assert_allclose(err, 1.0, rtol=1e-6)
     np.testing.assert_allclose(drift, 0.25, rtol=1e-6)
-    assert coord_sums(recon, X, 32)[1] is None
+    np.testing.assert_allclose(err_prev, 0.25, rtol=1e-6)
+    assert coord_sums(recon, X, 32)[1:] == (None, None)
 
 
 def test_raw_ratios_match_the_spread_when_error_scales_with_it():

@@ -393,3 +393,100 @@ What the weights do:
   0.41% of any model's whitened error, apart from the k = 5120 SAE.
   Details, and what it suggests for this cache, are in
   `experiments/ste-arm/notes.md` ("The coordinate the MSE weights most").
+
+## 2026-10-13: coordinate 837's weight in training (`mask_runs.sh`)
+
+Three architectures trained on `mc4_sent16` in pairs, one run under each
+weights file:
+- `_w837`: the cache's MSE weights.
+- `_no837`: `cachestats.py mask`'s copy, with coordinate 837 at 0 and every
+  other weight unchanged.
+
+All six runs used the cache's first 12.8M rows and the shipped recipes:
+- **k32 SAE:** `sae.py --m 5120 --topk 32 --train-rows 12800000`, 144,000
+  steps of 4,096.
+- **Hard stack:** `train_ste.py` with `ste_h76_init01`'s flags, 50,000
+  steps of 256.
+- **Direct k = 128:** the same, plus `--h 54 --k 128 --signed --direct`.
+
+The runs are in `data/out/sonar/sae_sent16/m5120_k32_*` and
+`data/out/sonar/sent16/ste_{h76_init01,k128_h54_direct}_*`. They trained as
+the unit `sent16-mask` from 2026-10-12 18:54 to 2026-10-13 02:08. The
+direct `_w837` run ran out of GPU memory at step 47,634 and resumed from
+its checkpoint at 47,500. Every other run finished in one attempt.
+
+`coordfvu.py --coord 837` scored them on the last 32,765 rows, the
+whole-document tail inside both trainers' holdouts, once under each
+weights file. The results are in `data/out/sonar/coordfvu_sent16_{w837,no837}/`.
+The SAE scores match `sae.py`'s own, 0.6705 and 0.6682. Coordinate 837's
+standard deviation is 9.1e-5, which is 0.014 of the median coordinate's.
+
+| architecture | trained | FVU, 1023 free coordinates | FVU, full weights | 837's FVU (× median coordinate's) | 837's share of the error, full weights |
+|---|---|---|---|---|---|
+| k32 SAE | with the weight | 0.6710 | 0.6705 | 0.19 (0.28×) | 0.03% |
+| | without | 0.6682 | 2.02 | 1,396 (2,044×) | 67% |
+| hard stack | with | 0.8702 | 0.8873 | 18.6 (21×) | 2.0% |
+| | without | 0.9075 | 2.84 | 1,998 (2,175×) | 68% |
+| direct k = 128 | with | 0.5817 | 0.6014 | 20.9 (36×) | 3.4% |
+| | without | 0.5813 | 21.0 | 21,046 (36,162×) | 97% |
+
+The SAE trained with the weight ends with 265 of its 5,120 latents dead;
+trained without it, none.
+
+Movement between the Ontologizer runs' last two kept checkpoints, 250
+steps apart. "Parameters" are the decoder's row for the coordinate, or the
+direct run's atoms.
+
+| run | FVU 250 steps earlier, 1023 coordinates | 837's drift, of its variance (× median) | parameters' change on 837, × median | their spread, × median |
+|---|---|---|---|---|
+| hard stack, with | 0.8704 | 9.7 (910×) | 1.97 | 0.24 |
+| hard stack, without | 0.9076 | 34 (6,088×) | 0 | 0.99 |
+| direct k = 128, with | 0.5813 | 17 (373×) | 7.1 | 0.25 |
+| direct k = 128, without | 0.5808 | 1,780 (39,300×) | 0.41 | 3.5 |
+
+- **For the SAE, the weight costs latents, not fit.**
+  - Trained with it, the SAE fits coordinate 837 better than a typical
+    coordinate (0.28×).
+  - But 265 of its latents die, and none die without the weight.
+  - Its FVU on the free coordinates is 0.0028 worse with the weight.
+- **The hard-code models do not fit the coordinate.**
+  - Trained with the weight, their FVU on it is 21× (stack) and 36×
+    (direct) a typical coordinate's.
+  - Their output there moves by 9.7× and 17× its variance in 250 steps.
+    That is 910× and 373× a typical coordinate's movement on its own
+    scale.
+  - The parameters that write it move 2.0× (decoder rows) and 7.1×
+    (atoms) as much as a typical coordinate's. Their spread is a quarter
+    of the median coordinate's, against the data's 0.014.
+- **So the full weights bias the comparison against them.**
+  - Under the full weights, coordinate 837 holds 2.0% of the stack's
+    whitened error and 3.4% of the direct run's, against 0.03% of the
+    SAE's.
+  - Their full-weight FVUs therefore exceed their free-coordinate FVUs by
+    0.017 and 0.020, while the SAE's do not differ.
+  - These runs are far from converged (the stack is at 0.87), and the
+    share grows as the rest of the error falls.
+  - The extrapolation from `mc4_4M` (ste-arm notes) put coordinate 837's
+    FVU at about 220× a typical coordinate's for the stack, 45× for the
+    direct run and 14× for the SAE. Measured, it is 21×, 36× and 0.28×.
+- **The effect on the free coordinates has no consistent sign.**
+  - Training with the weight leaves the SAE 0.0028 worse, the direct run
+    0.0004 worse, and the stack 0.037 better (0.8702 against 0.9075).
+  - Each run's FVU moves by at most 0.0005 over its last 250 steps, so
+    the stack's gap is not end-of-run jitter.
+  - One pair cannot separate an effect of the weight from two
+    trajectories diverging. A second seed pair of the stack would.
+- **Without the weight, nothing ties the output on coordinate 837 to the
+  data.**
+  - Every masked model's FVU on it is 1,396 to 21,046.
+  - In raw units its error there is 0.65–2.7× the median coordinate's,
+    off the LayerNorm plane. The stack's decoder row for it never moves
+    from its initialization.
+  - So a masked model's reconstruction needs coordinate 837 solved from
+    the plane before it is decoded or compared in raw space.
+- **Side result, with mc4_4M's recipes untuned:** on this cache and at
+  these lengths, the direct k = 128 stack fits best (0.58), then the k32
+  SAE (0.67), then the hard stack (0.87–0.91). On `mc4_4M` the hard stack
+  converged far ahead of both. `mc4_sent16`'s typical coordinate is about
+  4× smaller than `mc4_4M`'s, so the same learning rates are relatively
+  hotter here.
