@@ -56,6 +56,7 @@ reasoning.
 | `pairs.py` | `adjacent`, `pair_rows`, and `PairSource`, a grain source of `(x_t, target)` pairs |
 | `train_next.py` | the trainer: `experiments/ste-arm/train_ste.py`'s flags, checks and setup (`parser`, `finish`, `setup`), with this experiment's defaults and a pair source |
 | `eval_next.py` | held-out FVU_w of each checkpoint against the next sentence and against the input, beside three baselines: the training mean, copying x_t, and ridge regression from x_t |
+| `transitions.py` | two checks a pair objective depends on, on the held-out tail. (1) How often each head of a trained model keeps its entry between two sentences: adjacent, d segments apart in one document, same language in another document, or random (Cohen's kappa, with each head's NMI with language). (2) How much closer adjacent sentences are than other pairs, with no model: whitened distance, cosine, AUC, and retrieval of the successor among negatives |
 
 `ontostate.train` accepts `(input, target)` tuple batches; any other batch is its own target. The
 tests are in `tests/test_next_sentence.py`.
@@ -90,3 +91,33 @@ uv run python experiments/ste-arm/partition.py --cache data/sonar_embeddings/mc4
 reports the result against shuffled nulls. The prediction is that the `next` pair matches better than
 the `self` pair, which should land near the flat arm's 0.018 on mC4 documents. Language labels (`mc4_sent16.langs.npy`) allow a head × language check of which factors
 each objective's heads carry.
+
+## Transitions and pair concentration
+
+The identifiability results this experiment leans on cover particular pair designs:
+- each sentence reconstructs itself, under a prior or constraint tying the pair's codes (SlowVAE,
+  Ada-GVAE, iVAE);
+- a contrastive task (PCL, InfoNCE).
+
+None of them covers next-sentence prediction. Two quantities decide whether such a design could work
+here, and `transitions.py` measures both before one is built:
+- **Do heads change sparsely between adjacent sentences?** SlowVAE measured this on natural video
+  before assuming it.
+- **Are adjacent sentences much closer than random ones?** Contrastive identification fails once
+  positive pairs are no more concentrated than the data.
+
+```bash
+uv run python experiments/next-sentence/transitions.py \
+    --ckpt data/out/sonar/sent16/ste_h76_init01_no837 \
+           data/out/sonar/sent16/ste_k128_h54_direct_no837_e2 \
+    --out data/out/sonar/next-sentence/transitions
+```
+
+- **Distances.** These use the weights the `no837` models trained with, which zero coordinate 837. The
+  cache's own weights give the same numbers. Whitening gives that coordinate unit variance like every
+  other one, so it is about 1/1024 of a distance between two sentences. Its problem is in model
+  outputs, not in the data.
+- **`lang` partners.** These come from other documents in the same mC4 language, so `d1` against
+  `lang` isolates what adjacency carries beyond the language.
+- **`d1_sent`.** This keeps adjacent pairs where both rows are full sentences, dropping lines and the
+  pieces the length cap cuts from one long sentence.

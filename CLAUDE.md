@@ -86,10 +86,14 @@ uv run python experiments/ste-arm/train_ste.py --base gpt2_l8 --dict-init-scale 
 # objective's code reproduces across seeds. train_ste.py's flags, defaulting
 # to one layer of 380 heads, through its parser/finish/setup/train split,
 # which takes any data source. eval_next.py scores held-out FVU_w against
-# both targets beside mean, copy and ridge baselines
+# both targets beside mean, copy and ridge baselines. transitions.py measures,
+# on the held-out tail, how often each head keeps its entry between sentences
+# (adjacent, d apart, same language, random; Cohen's kappa) and how much closer
+# adjacent sentences are than other pairs, with no model
 # (experiments/next-sentence)
 uv run python experiments/next-sentence/train_next.py --objective next
 uv run python experiments/next-sentence/eval_next.py --ckpt <run dirs>
+uv run python experiments/next-sentence/transitions.py --ckpt <run dirs> --out <dir>
 
 # Train on SONAR multilingual sentence embeddings (mC4 data)
 uv run python sonar.py

@@ -100,6 +100,57 @@ def test_train_takes_the_target_from_the_pair(cache, tmp_path, monkeypatch,
         assert np.array_equal(y, x + step)
 
 
+def test_same_doc_pairs_count_segments_not_rows():
+    import transitions as tr
+    # doc 0: segments 0 1 3 4 (2 skipped); doc 1: segments 0 2
+    index = np.array([[0, 0, 0], [0, 1, 1], [0, 2, 3], [0, 3, 4],
+                      [1, 0, 0], [1, 1, 2]], np.int32)
+    i, j = tr.same_doc_pairs(index, 1)
+    assert list(zip(i, j)) == [(0, 1), (2, 3)]
+    assert np.array_equal(i, adjacent(index, 0, len(index)))
+    i, j = tr.same_doc_pairs(index, 2)
+    assert list(zip(i, j)) == [(1, 2), (4, 5)]
+    assert not len(tr.same_doc_pairs(index, 9)[0])
+
+
+def test_other_doc_partners_share_the_group_but_not_the_document():
+    import transitions as tr
+    rng = np.random.default_rng(0)
+    doc = np.repeat(np.arange(6), 4)
+    group = np.repeat([0, 0, 1, 1, 1, 2], 4)       # group 2 has one document
+    anchors = np.arange(len(doc))
+    j = tr.other_doc_partners(anchors, doc, group, rng)
+    single = group[anchors] == 2
+    assert (j[single] == -1).all()
+    assert (doc[j[~single]] != doc[anchors[~single]]).all()
+    assert (group[j[~single]] == group[anchors[~single]]).all()
+
+
+def test_kappa_auc_and_retrieval():
+    import transitions as tr
+    rng = np.random.default_rng(0)
+    A = rng.integers(8, size=(3, 20000))
+    A[2] = 5                                        # one entry everywhere
+    same = tr.kappa(A, A, 8)
+    assert np.allclose(same[:2], 1.0) and np.isnan(same[2])
+    indep = tr.kappa(A, rng.integers(8, size=A.shape), 8)
+    assert np.abs(indep[:2]).max() < 0.02
+    assert tr.auc(np.array([2.0, 3.0]), np.array([0.0, 1.0])) == 1.0
+    assert tr.auc(np.ones(5), np.ones(7)) == 0.5
+    # a successor identical to its anchor is always the nearest
+    Z = rng.normal(size=(40, 6)).astype(np.float32)
+    Z[1::2] = Z[0::2]
+    i, j = np.arange(0, 40, 2), np.arange(1, 40, 2)
+    negs = np.stack([rng.permutation(np.arange(0, 40, 2))[:20]
+                     for _ in range(5)])
+    negs = np.where(negs == i, (negs + 2) % 40, negs)
+    for metric in ("dist", "cos"):
+        Zm = Z / np.linalg.norm(Z, axis=1, keepdims=True) \
+            if metric == "cos" else Z
+        top1, rank = tr.retrieval(Zm, i, j, negs, metric)
+        assert top1 == 1.0 and rank == 1.0
+
+
 def test_next_with_residual_layers_is_refused():
     import train_next
     cfg = train_next.parser().parse_args([])
