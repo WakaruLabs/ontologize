@@ -28,14 +28,16 @@ processes, one constant and one a fair coin, needs infinitely many
 states to track which component is generating, so the structure lives
 in how the components overlap~\cite{crutchfield2026}.
 
-\subsubsection{Features are not composable}
-A persistent problem with SAEs is feature absorption~\cite{chanin2025}:
+\subsubsection{Features are not disentangled}
+A representation is disentangled when a change in one factor of variation
+changes one factor of the representation~\cite{locatello2019}. A
+persistent problem with SAEs is feature absorption~\cite{chanin2025}:
 when one feature implies another, sparsity is better served by folding
 the general feature's direction into the specific feature's latent and
 switching the general latent off there, so a latent that looks
 monosemantic silently fails to fire on some inputs that have its feature
 (a ``starts with S'' latent that is silent on ``short''). A related
-failure, composition, learns co-occurring concepts as one latent.
+failure, feature composition, learns co-occurring concepts as one latent.
 Matryoshka SAEs~\cite{bussmann2025} reduce both by training nested
 prefixes of a single dictionary to reconstruct the input on their own,
 so early latents learn general features and later ones specific

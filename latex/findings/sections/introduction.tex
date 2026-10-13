@@ -27,19 +27,22 @@ two structureless processes, one constant and one a fair coin, needs
 infinitely many states to track which component is generating, so the
 structure lives in how the components overlap~\cite{crutchfield2026}.
 Ideally interpretability would give guarantees about the computational
-process a model uses, with features that are causal, composable and
+process a model uses, with features that are causal, disentangled and
 closed-form. SAE features can fail all three, and are expensive besides.
 
 \subsection{Problems with SAE features}
 
-\paragraph{Features are not composable.}
-A persistent problem with SAEs is feature absorption~\cite{chanin2025}:
+\paragraph{Features are not disentangled.}
+A representation is disentangled when a change in one factor of variation
+changes one factor of the representation~\cite{locatello2019}. A
+persistent problem with SAEs is feature absorption~\cite{chanin2025}:
 when one feature implies another, sparsity is better served by folding
 the general feature's direction into the specific feature's latent and
 switching the general latent off there, so a latent that looks
 monosemantic silently fails to fire on some inputs that have its feature
 (a ``starts with S'' latent that is silent on ``short''). A related
-failure, composition, learns co-occurring concepts as one latent. Nested
+failure, feature composition~\cite{bussmann2025}, merges concepts that
+co-occur into one latent, so neither can be set without the other. Nested
 and hierarchical SAEs reduce both (Section~\ref{sec:background}).
 
 \paragraph{Features are not cleanly causal.}
@@ -141,14 +144,14 @@ the heads of one layer and in the dictionary; what reaches the output
 passes through a shared decoder, which in general maps the heads' blocks
 onto overlapping subspaces.
 
-\paragraph{Composability.}
+\paragraph{Disentanglement.}
 Absorption needs two things: a general latent that switches off where a
 specific one fires, and a specific latent whose direction takes over the
 general one's. The head structure removes the first, since every head
 writes on every input, choosing among its entries, and so cannot fall
 silent where its feature applies. Disjoint support removes the second: no entry of one
-head can carry a component of another head's block. Composition is
-discouraged rather than excluded. Heads already make the code factorial,
+head can carry a component of another head's block. Feature composition
+is discouraged rather than excluded. Heads already make the code factorial,
 $k^h$ codes from $hk$ atoms, so concepts that vary independently can take
 separate heads, and theory says when an efficient code would put them
 there. Under a quadratic cost on activity and a bound on the
@@ -161,7 +164,10 @@ at most 0.24\% never occur in any layer of a SONAR model. The summed
 models carry no such cost and do not partition
 (Appendix~\ref{sec:support}); concatenation imposes the partition by
 construction. Nothing yet forces a head to hold one concept rather than a
-conjunction of two.
+conjunction of two. Nor can any method that sees only the data recover its
+factors without inductive biases, on the model and on the data, that
+match~\cite{locatello2019}. The heads are such a bias, and
+Section~\ref{sec:seeds} measures how far it reaches.
 
 \paragraph{Causality.}
 An SAE's steering is unclean partly because its decoder directions crowd

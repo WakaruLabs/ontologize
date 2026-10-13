@@ -5,7 +5,7 @@ about the computational process used by a model. We would like features
 to be
 \begin{enumerate}
 	\item causal
-	\item composable
+	\item disentangled
 	\item closed-form
 \end{enumerate}
 However most existing techniques, such as sparse autoencoders (SAEs),
@@ -13,7 +13,7 @@ produce features that can perform arbitrarily badly on these desiderata.
 As a dictionary grows, features split into narrower
 ones~\cite{bricken2023}, and a narrow feature can absorb a broader one,
 which then fails to fire where it applies~\cite{chanin2025}, so the code
-is not compositional. SAE features can't usually be
+is not disentangled. SAE features can't usually be
 statically analyzed (though bilinear SAE variants can be). Sparsity
 trades off against reconstruction fidelity, limiting the extent to which
 features can be used for steering.
@@ -102,7 +102,9 @@ SAEs held to the same total bits, though not every sparse linear code
 A head can only be named if it is the same head on every run. Past the
 first layer, no head is: two seeds reach identical error while their
 heads agree barely above chance (Section~\ref{sec:prelim-seed}). This is
-currently the binding constraint on the proposal.
+currently the binding constraint on the proposal, and an expected one: no
+method that sees only the data can recover its factors without inductive
+biases, on the model and on the data, that match~\cite{locatello2019}.
 
 \paragraph{Steering could push it too far off manifold}
 This is an open problem for activation steering. In robot control, a
