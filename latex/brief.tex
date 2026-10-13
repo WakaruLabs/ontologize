@@ -32,10 +32,11 @@ Checking a model for a hidden goal, or for a concept no one thought to
 name, means finding the model's internal variables without anyone
 labeling them first. This summary describes a method built for that and
 says plainly where it stands: it describes a network's internal state
-compactly enough for the network to run on, and editing that description
-moves the network's output specifically, but past the first round the
-variables it finds are not the same from one training run to the next,
-and until they are, they cannot be named or relied on.
+compactly enough for the network to run on, but editing that description
+steers the network no more specifically than editing arbitrary categories
+of the same state would, and past the first round the variables it finds
+are not the same from one training run to the next. Until both change,
+they cannot be named or relied on.
 
 \section*{What the method does}
 
@@ -100,10 +101,11 @@ against its absence, one value of a \emph{variable} --- a property with
 several possible values, such as a text's topic --- against another. The
 goal is steering vectors that need no labels but keep that shape: each
 one a move between named alternatives, found together with the contrast
-it moves along. Steering then doubles as a test of the method: a swap
-that moves the model's behavior the way the categories predict is
-evidence that the variable matters to the model and not only to the
-rebuilt representation.
+it moves along. Steering can then test the method, but only against a
+baseline: a swap that moves the model's behavior the way the categories
+predict shows that the variable matters to the model only if it does
+better than swaps between arbitrary categories of the same state. On
+GPT-2 it does not yet do better (see below).
 
 \section*{What it assumes, and why that is acceptable}
 
@@ -124,11 +126,13 @@ each choice.
 \item \textbf{The network tolerates running on the description.} If it did
 not, editing the description would mean nothing. Beyond the 97.5\%
 recovery, swapping one classifier's choice changes GPT-2's next-token
-distribution by only 0.01--0.06 nats.
+distribution by only 0.001--0.06 nats.
 \item \textbf{The categories can be named.} Partly true. On GPT-2, a judge
-model shown a description of a first-round category picks out its most
-typical members from distractors 85--100\% of the time --- but only 55--69\%
-for randomly chosen members, and at chance in the fourth and fifth rounds.
+model shown a description of a first-round category tells its most
+typical members from distractors with a score of 0.91, where 0.5 is
+chance --- but 0.65 for randomly chosen members and 0.55 for members near
+the category's edge, and it is at or near chance in the fourth and fifth
+rounds even on the most typical members.
 On sentence embeddings, the strongest classifier sorts by topic and genre
 (crime news, legislation, encyclopedic description, and so on).
 \item \textbf{The categories are a property of the data, not of the
@@ -165,11 +169,16 @@ them~\cite{lcmteam2024largeconceptmodelslanguage}.
 \textbf{Against supervised steering --- the comparison that matters.}
 Three tests so far, none of them yet the decisive one.
 \begin{itemize}
-\item \emph{Swaps are specific (GPT-2).} Swapping a token's category from
-$j$ to $j'$ moves the model's output toward $j'$'s typical output: among 31
-alternatives, $j'$ ranks 1.4--4 on average, and still 2--6 at four times
-the step, where a random step of the same size ranks 10--16. That is
-specificity against an internal control, not success at a named concept.
+\item \emph{Swaps are specific, but so are arbitrary categories (GPT-2).}
+Swapping a token's category from $j$ to $j'$ moves the model's output
+toward $j'$'s typical output: among 31 alternatives, $j'$ ranks 3.5--6 on
+average, and still 5--8 at four times the step, where a random step of the
+same size ranks 14--18 (one classifier each in the first, third and fifth
+rounds). But categories made by sorting each state by which of 32 random
+directions it points along most, with nothing learned, steer just as
+specifically in every round. Specificity shows that the state can be
+steered along any way of dividing it, not that the method's categories
+mean anything.
 \item \emph{Language (sentence embeddings).} Forcing one of the method's
 categories moved decoded text toward a target language 0.64 times as far
 as the supervised difference-of-means vector did, and 4 times as far as
@@ -237,15 +246,16 @@ On both representations the method describes the network's state with a
 small set of discrete choices about as accurately as a sparse autoencoder
 that also sends continuous numbers (more accurately than the standard
 kind at the same number of bits, though not than every kind), and on
-GPT-2 the model runs on that description with little loss. Swapping one choice moves the
-model's output
-specifically toward the new category. Some categories can be named: on
-GPT-2 a first-round category's most typical members, and --- more
-promisingly --- combinations of two first-round categories, which a judge
-tells apart from the rest of the category 77--96\% of the time, against
-48--50\% for random splits of the same size; on sentence embeddings, a
-topic-and-genre classifier that recurs in every run. Whether the
-categories are in general easier to interpret than SAE features, and
+GPT-2 the model runs on that description with little loss. Swapping
+one choice moves the model's output specifically toward the new
+category, though swapping between arbitrary categories does too. Some
+categories can be named: on GPT-2, a first-round category from its most
+typical members (0.91, where 0.5 is chance), though combining two
+first-round categories adds little (0.70--0.73, against 0.69--0.71 for
+single categories and 0.48--0.50 for random splits of the same size); on
+sentence embeddings, a topic-and-genre classifier that recurs in every
+run. Whether the categories are in general easier to interpret than SAE
+features, whether they steer better than arbitrary categories, and
 whether swapping them steers better than supervised vectors toward
 concepts a user cares about, is not established.
 
@@ -263,8 +273,12 @@ the same thing once the model is retrained.
 category's most typical members, not its ordinary ones, the failure
 automated description shows when it sees only the strongest
 examples~\cite{paulo2025}, and the deeper
-rounds cannot yet be named at all --- though they are causal and steer
-specifically.
+rounds cannot yet be named at all, though changing them does change the
+model's output.
+\item \textbf{Swaps do not yet beat arbitrary categories.} On GPT-2,
+categories made from random directions steer as specifically as the
+learned ones in every round, so the case for the deeper rounds rests on
+reconstruction alone.
 \item \textbf{Steering through the input is not targeted.} On sentence
 embeddings, pushing an input toward one category changes other
 classifiers' choices about as much as a random push of the same size.
@@ -276,9 +290,9 @@ Swaps made on the description itself do not have this problem.
 Reproducibility comes first: making the classifiers reproducible, or
 identifying the ones that are. One first-round classifier on sentence
 embeddings already recurs in every run, and what lets it recur when the
-others do not is the first question. Alongside it comes testing whether
-combinations of categories --- rather than single ones --- are the right
-unit for naming the deeper rounds.
+others do not is the first question. Alongside it, every steering result
+needs arbitrary categories of the same state as its baseline, since on
+GPT-2 they steer as specifically as the learned ones.
 
 The test the method then needs is AxBench-style steering toward
 externally defined concepts~\cite{wu2025axbenchsteeringllmssimple}:

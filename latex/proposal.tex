@@ -59,8 +59,9 @@ absorption makes its silence uninformative, while the methods that win
 contrast the values of a variable. We propose learning variables
 directly, as competitive classifier heads that give every input one of $k$
 entries whose atoms reconstruct it. Forcing a head to another entry is
-then a label-free difference of means, and steering tests whether a
-discovered variable is causal. Preliminary results on SONAR sentence
+then a label-free difference of means, and steering can test a
+discovered variable, though only against arbitrary partitions of the
+same space, a baseline not yet run here. Preliminary results on SONAR sentence
 embeddings and GPT-2 residuals: trained heads are contrast sets; a pure
 1900-bit hard code reconstructs at least 33\% better than a $\topk$ SAE
 held to the same bits, though an entropy-coded L1 SAE does better still;

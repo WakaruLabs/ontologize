@@ -41,14 +41,25 @@ the problem, its assumptions, how it works, how it compares with existing steeri
 methods, and what does not work. It covers both substrates and leads with GPT-2: GPT-2
 numbers come from the `headline` branch's held-out diagnostics as summarized in its
 `docs/OVERVIEW.md` (and `docs/COMPOSITIONAL_CELLS.md`), SONAR numbers from `findings.tex`;
-change them at their source first. It does not use "label" for a classifier's choice,
+change them at their source first. Its judge figures are that page's clean re-runs; the
+earlier figures came from judges that could read the answer keys. Three things are not
+on `headline`:
+- the steering ranks;
+- the swap cost;
+- the steering null with arbitrary (random-projection) categories.
+
+Its `OVERVIEW.md` still gives the 10M-token models' ranks, which the earlier codebase's
+claims audit (commit `c58b804`) corrected. These three come from the earlier codebase's
+GPT-2 report of 2026-10-08, §3.6. It does not use "label" for a classifier's choice,
 since `docs/OVERVIEW.md` does and the writeup reserves the word for ground truth.
 
 All three documents share one framing:
 - the alignment stakes: finding a model's variables without labels, for audits;
 - why supervision only confirms suspected concepts;
 - why a lone SAE feature is not a variable;
-- steering as the test that a discovered variable is causal;
+- steering as a test of a discovered variable, but only against arbitrary partitions of
+  the same space (on GPT-2, random-projection categories steer as specifically as
+  learned ones);
 - run-to-run reproducibility as the binding constraint.
 
 The findings and the proposal state it in their abstracts. The brief carries it in a
