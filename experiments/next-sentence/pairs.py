@@ -7,8 +7,8 @@ the second is the next segment of that document's text. The sentence
 builder skips unusable segments inside a run, so two neighbouring rows of a
 document are not always neighbouring sentences, and such pairs are dropped.
 
-`PairSource` serves `{"x": sentence, "y": target}` for `train()`: the target
-is the next sentence (objective "next") or the sentence itself ("self"), over
+`PairSource` serves `(sentence, target)` pairs for `train()`: the target is
+the next sentence (objective "next") or the sentence itself ("self"), over
 the same input rows, so the two objectives see identical inputs.
 """
 from pathlib import Path
@@ -46,9 +46,9 @@ def pair_rows(cache, train_rows: int, holdout: int
 
 
 class PairSource(gp.RandomAccessDataSource):
-    """Grain source of `{"x": x_t, "y": target}` cache rows for the pairs
-    starting at `rows`. Memory-maps lazily, like `NpyDataSource`, so it
-    pickles cleanly into grain workers."""
+    """Grain source of `(x_t, target)` cache rows for the pairs starting at
+    `rows`. Memory-maps lazily, like `NpyDataSource`, so it pickles cleanly
+    into grain workers."""
 
     def __init__(self, cache, rows: Int[np.ndarray, "p"],
                  objective: str = "next"):
@@ -62,14 +62,15 @@ class PairSource(gp.RandomAccessDataSource):
     def __len__(self) -> int:
         return len(self.rows)
 
-    def __getitem__(self, j) -> dict:
+    def __getitem__(self, j
+                    ) -> Tuple[Float[np.ndarray, "d"], Float[np.ndarray, "d"]]:
         if self._arr is None:
             self._arr = np.load(self.cache, mmap_mode="r")
         i = int(self.rows[int(j)])
-        x: Float[np.ndarray, "d"] = np.array(self._arr[i], np.float32)
+        x = np.array(self._arr[i], np.float32)
         y = (np.array(self._arr[i + 1], np.float32)
              if self.objective == "next" else x)
-        return {"x": x, "y": y}
+        return x, y
 
     def __getstate__(self) -> dict:
         return {"cache": self.cache, "rows": self.rows,

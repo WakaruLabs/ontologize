@@ -397,11 +397,10 @@ def train(state: OntoState, dat, lossfn: Callable,
               total=None if left is None else step_0 + left) as pbar:
         for batch in pbar:
             # a batch is the input alone, whose target is itself (an
-            # autoencoder), or a dict carrying the input under "x" and a
-            # different target under "y" (e.g. the next sentence). Text
-            # batches are dicts of token arrays too, hence the "y" test
-            if isinstance(batch, dict) and "y" in batch:
-                X, Y = batch["x"], batch["y"]
+            # autoencoder), or an (input, target) tuple whose target is
+            # something else, e.g. the next sentence
+            if isinstance(batch, tuple):
+                X, Y = batch
             else:
                 X, Y = batch, None
             if encoder is not None:

@@ -53,11 +53,11 @@ reasoning.
 
 | File | What it does |
 |---|---|
-| `pairs.py` | `adjacent`, `pair_rows`, and `PairSource`, a grain source of `{"x": x_t, "y": target}` |
+| `pairs.py` | `adjacent`, `pair_rows`, and `PairSource`, a grain source of `(x_t, target)` pairs |
 | `train_next.py` | the trainer: `experiments/ste-arm/train_ste.py`'s flags, checks and setup (`parser`, `finish`, `setup`), with this experiment's defaults and a pair source |
 | `eval_next.py` | held-out FVU_w of each checkpoint against the next sentence and against the input, beside three baselines: the training mean, copying x_t, and ridge regression from x_t |
 
-`ontostate.train` accepts `{"x", "y"}` batches; any other batch is its own target, as before. The
+`ontostate.train` accepts `(input, target)` tuple batches; any other batch is its own target. The
 tests are in `tests/test_next_sentence.py`.
 
 ## Run

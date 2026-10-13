@@ -1,6 +1,6 @@
 # experiments/next-sentence: adjacent sentence pairs from a document-ordered
 # cache, the split that keeps every held-out document out of training, the
-# pair source, and train()'s {"x", "y"} batches, whose target is "y".
+# pair source, and train()'s (input, target) batches.
 import pickle
 import sys
 from pathlib import Path
@@ -62,17 +62,18 @@ def test_pair_source_serves_the_next_row_or_the_same_one(cache):
     slf = PairSource(cache, rows, "self")
     for j in (0, 5, len(rows) - 1):
         i = rows[j]
-        assert nxt[j]["x"][0] == i and nxt[j]["y"][0] == i + 1
-        assert slf[j]["x"][0] == i and slf[j]["y"][0] == i
+        (x, y), (x_s, y_s) = nxt[j], slf[j]
+        assert x[0] == i and y[0] == i + 1
+        assert x_s[0] == i and y_s[0] == i
     # pickles without its memmap, as grain workers need
-    assert pickle.loads(pickle.dumps(nxt))[3]["y"][0] == rows[3] + 1
+    assert pickle.loads(pickle.dumps(nxt))[3][1][0] == rows[3] + 1
     with pytest.raises(ValueError):
         PairSource(cache, rows, "previous")
 
 
 @pytest.mark.parametrize("objective", ["next", "self"])
-def test_train_takes_the_target_from_y(cache, tmp_path, monkeypatch,
-                                       objective):
+def test_train_takes_the_target_from_the_pair(cache, tmp_path, monkeypatch,
+                                              objective):
     seen = []
     update = ontostate.update
 

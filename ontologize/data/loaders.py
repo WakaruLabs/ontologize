@@ -238,6 +238,18 @@ class OffsetSampler:
                                  rng=m.rng)
 
 
+def collate(batch: List[Any]) -> Any:
+    """Stacks records into a batch the way `gp.Batch` does for a random-access
+    source: a dict of arrays per key, a tuple of arrays per position (an
+    `(input, target)` pair for `train`), or one array. A tuple must not
+    reach `np.stack`, which would stack its members into one array."""
+    if isinstance(batch[0], dict):
+        return {k: np.stack([b_i[k] for b_i in batch]) for k in batch[0]}
+    if isinstance(batch[0], tuple):
+        return tuple(np.stack(col) for col in zip(*batch))
+    return np.stack(batch)
+
+
 class SampleLoader:
     """Generic data loader class that does not apply additional transformations
     to a batch. Used when `Metadata.srctype="embedding"`.
@@ -309,17 +321,10 @@ class SampleLoader:
                     for item in it:
                         batch.append(item)
                         if len(batch) == b:
-                            # Collate dictionaries of arrays/scalars
-                            if isinstance(batch[0], dict):
-                                yield {k: np.stack([b_i[k] for b_i in batch]) for k in batch[0]}
-                            else:
-                                yield np.stack(batch)
+                            yield collate(batch)
                             batch = []
                     if not drop and batch:
-                        if isinstance(batch[0], dict):
-                            yield {k: np.stack([b_i[k] for b_i in batch]) for k in batch[0]}
-                        else:
-                            yield np.stack(batch)
+                        yield collate(batch)
                 iterator = _batch(iterator, op.batch_size, op.drop_remainder)
         return iterator
 
