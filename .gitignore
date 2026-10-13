@@ -4,6 +4,7 @@
 **/.\#*
 **/*.swp
 **/*.db.lock
+**/.agents
 **/.claude
 
 # LaTeX artifacts
