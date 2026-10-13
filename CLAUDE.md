@@ -94,6 +94,16 @@ uv run python experiments/ste-arm/train_ste.py --base gpt2_l8 --dict-init-scale 
 uv run python experiments/next-sentence/train_next.py --objective next
 uv run python experiments/next-sentence/eval_next.py --ckpt <run dirs>
 uv run python experiments/next-sentence/transitions.py --ckpt <run dirs> --out <dir>
+# The pair objective (experiments/next-sentence/pair_objective.md). Each
+# record is two sentences of one document, and each reconstructs itself. The
+# first --pair-heads heads per layer pay --s-pair per switch between the two
+# (pairloss.PairHyperparams, the HSIC experiment's ghost-slot pattern; the
+# switch share is logged in loss.csv column 2). train_ste.setup takes the
+# Hyperparams class through hp=, which must subclass the class its flags
+# chose. --calibrate N prints the stock and pair gradient norms at init.
+# pilot.sh sweeps s_pair
+uv run python experiments/next-sentence/train_pair.py --s-pair <s>
+experiments/next-sentence/pilot.sh
 
 # Train on SONAR multilingual sentence embeddings (mC4 data)
 uv run python sonar.py

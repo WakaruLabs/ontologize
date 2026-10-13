@@ -151,10 +151,104 @@ def test_kappa_auc_and_retrieval():
         assert top1 == 1.0 and rank == 1.0
 
 
+def test_doc_partners_stay_in_the_document_at_distance():
+    from pairs import doc_partners
+    # doc 0: segments 0 1 3 4; doc 1: 0 1 (nothing 2 apart); doc 2: 0 5
+    index = np.array([[0, 0, 0], [0, 1, 1], [0, 2, 3], [0, 3, 4],
+                      [1, 0, 0], [1, 1, 1], [2, 0, 0], [2, 1, 5]], np.int32)
+    valid = {0: {2, 3}, 1: {2, 3}, 2: {0, 1}, 3: {0, 1}, 6: {7}, 7: {6}}
+    seen = {r: set() for r in valid}
+    for s in range(50):
+        # a chunk of 3 rows cuts across documents
+        rows, partners = doc_partners(index, 0, len(index), 2,
+                                      np.random.default_rng(s), chunk=3)
+        assert set(rows.tolist()) == set(valid)
+        for r, j in zip(rows.tolist(), partners.tolist()):
+            assert j in valid[r]
+            seen[r].add(j)
+    assert seen == valid                 # every allowed partner turns up
+    rows, partners = doc_partners(index, 4, 8, 2, np.random.default_rng(0))
+    assert sorted(zip(rows.tolist(), partners.tolist())) == [(6, 7), (7, 6)]
+
+
+def test_stacked_records_unstack_to_paired_rows(cache):
+    import jax.numpy as jnp
+    from pairloss import unstack
+    from pairs import StackedPairSource
+    d = KW["d_in"]
+    src = StackedPairSource(cache, np.array([0, 5, 10]),
+                            np.array([2, 8, 12]))
+    assert src[1].shape == (2 * d,)
+    assert (src[1][0], src[1][d]) == (5, 8)
+    assert pickle.loads(pickle.dumps(src))[2][d] == 12
+    B = np.stack([src[m] for m in range(3)])      # (b, 2d), as grain batches
+    U = np.asarray(unstack(jnp.asarray(B)))
+    assert U.shape == (6, d)
+    assert U[:, 0].tolist() == [0, 5, 10, 2, 8, 12]   # row r pairs r + b
+
+
+def test_switch_share_counts_the_slow_heads_that_change():
+    import jax.numpy as jnp
+    from pairloss import switch_share
+    rng = np.random.default_rng(0)
+    l, b, h, k = 2, 4000, 6, 8
+
+    def onehot(A):
+        return jnp.asarray(np.eye(k, dtype=np.float32)[A].reshape(
+            l, 2 * b, h * k))
+
+    a = rng.integers(k, size=(l, b, h))
+    assert float(switch_share(onehot(np.concatenate([a, a], 1)), h, 0)) == 0
+    other = np.concatenate([a, rng.integers(k, size=(l, b, h))], 1)
+    assert abs(float(switch_share(onehot(other), h, 0)) - (1 - 1 / k)) < 0.01
+    # only the first `heads` heads of each layer count
+    other[:, b:, :2] = other[:, :b, :2]
+    assert float(switch_share(onehot(other), h, 2)) == 0
+    assert float(switch_share(onehot(other), h, 0)) > 0.5
+
+
+@pytest.mark.parametrize("s_pair", [0.0, 1.0])
+def test_pair_training_logs_the_switch_share(cache, tmp_path, s_pair):
+    from pairloss import PairHyperparams
+    from pairs import StackedPairSource, doc_partners
+    d = KW["d_in"]
+    index = np.load(cache.with_name("c.index.npy"))
+    rows, partners = doc_partners(index, 0, 200, 2, np.random.default_rng(0))
+    hyper = PairHyperparams(d, d, 8, 1, 5e-5, 0.0, 1.0,
+                            "none", "normal", "featvar", 0.0, 0.0, 0.0,
+                            ghost=False, s_pair=s_pair, pair_h=KW["h"],
+                            pair_heads=2)
+    model = hyper.ontologizer(d, d, KW["e_dec"], KW["k"], KW["h"], 1, n=2,
+                              gate="none", forward="resid", select="ste",
+                              dtype_str="float32", dtype_p_str="float32")
+    meta = Metadata("embedding", out_path=tmp_path / "run", save_each=2,
+                    checkpoint_each=2)
+    TrainingEnv(model, hyper, meta, kwargs_loader={"d": d, "shuffle": True}
+                ).train(StackedPairSource(cache, rows, partners))
+    loss = np.genfromtxt(tmp_path / "run" / "loss.csv", delimiter=",")
+    share = loss[:, 2]
+    assert len(loss) and np.isfinite(loss[:, 0]).all()
+    assert ((share >= 0) & (share <= 1)).all()
+
+
+def test_setup_takes_a_hyperparams_subclass_only(cache, tmp_path):
+    import train_pair
+    from ontologize.training.config import Hyperparams
+    cfg = train_pair.parser().parse_args(
+        ["--cache", str(cache), "--out", str(tmp_path / "run")])
+    assert (cfg.pair_heads, cfg.min_d, cfg.s_pair) == (38, 2, 0)
+    # the recipe's --dict-init-scale picks DictWDHyperparams, which plain
+    # Hyperparams does not subclass
+    with pytest.raises(AssertionError, match="must subclass"):
+        train_pair.train_ste.setup(train_pair.train_ste.finish(cfg),
+                                   src=list(range(4)), hp=Hyperparams)
+
+
 def test_next_with_residual_layers_is_refused():
     import train_next
     cfg = train_next.parser().parse_args([])
-    assert (cfg.l, cfg.h, cfg.dict_init_scale, cfg.s_hm) == (1, 380, 0.1, 1e-4)
+    assert all(getattr(cfg, k) == v for k, v in train_next.RECIPE.items())
+    assert (cfg.l, cfg.h, cfg.temperature, cfg.sd_k) == (1, 380, 0.00015, 0.3)
     train_next.check(cfg)
     for argv in (["--l", "2"], ["--l", "2", "--forward", "resid"]):
         with pytest.raises(SystemExit):

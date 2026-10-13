@@ -38,6 +38,7 @@ from jaxtyping import Float  # noqa: E402
 from pairs import pair_rows  # noqa: E402
 
 CACHE = ROOT / "data" / "sonar_embeddings" / "mc4_sent16.npy"
+WEIGHTS = ROOT / "data" / "out" / "sonar" / "sentcache" / "mse_weights_no837.npy"
 
 
 def fvu(pred: Float[np.ndarray, "n d"], target: Float[np.ndarray, "n d"],
@@ -81,8 +82,10 @@ def main() -> None:
     p.add_argument("--step", type=int, default=0,
                    help="checkpoint step (0 = latest)")
     p.add_argument("--cache", default=str(CACHE))
-    p.add_argument("--mse-weights", default=None,
-                   help="default: the cache's <name>.mse_weights.npy")
+    p.add_argument("--mse-weights", default=str(WEIGHTS),
+                   help="the masked weights this experiment's trainers use "
+                        "(coordinate 837 at 0); 'cache' for the cache's own "
+                        "<name>.mse_weights.npy")
     p.add_argument("--holdout", type=int, default=32768,
                    help="held-out tail rows, snapped to whole documents")
     p.add_argument("--rows", type=int, default=4_000_000,
@@ -101,8 +104,9 @@ def main() -> None:
 
     cache = Path(cfg.cache)
     arr = np.load(cache, mmap_mode="r")
-    w = np.load(cfg.mse_weights or cache.with_name(
-        cache.stem + ".mse_weights.npy")).astype(np.float64)
+    w = np.load(cache.with_name(cache.stem + ".mse_weights.npy")
+                if cfg.mse_weights == "cache"
+                else cfg.mse_weights).astype(np.float64)
     train, held = pair_rows(cache, cfg.rows, cfg.holdout)
     X = np.asarray(arr[held], np.float64)
     Y = np.asarray(arr[held + 1], np.float64)

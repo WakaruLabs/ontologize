@@ -12,10 +12,14 @@ literature points to. Does a next-sentence code reproduce across seeds
 better than a reconstruction code? See README.md.
 
 Every flag of `experiments/ste-arm/train_ste.py` applies, with this
-experiment's defaults:
-- one layer of 380 heads, k from sonar.py (32): 1900 bits;
-- `--dict-init-scale 0.1 --s-hm 1e-4`, the best flat arm in the ste-arm notes;
-- the `mc4_sent16` cache and its own MSE weights.
+experiment's defaults (`RECIPE`):
+- one layer of 380 heads, k from sonar.py (32): 1900 bits, the flat arm's
+  shape;
+- the shipped STE recipe that arm trained with: `--temperature 0.00015
+  --lr 1e-5 --noise-k batchnorm --sd-k 0.3 --s-hm 1e-4 --dict-init-scale
+  0.1`, as `experiments/sentence-split/full_runs.sh` passes it;
+- the `mc4_sent16` cache, under the masked MSE weights (coordinate 837 at
+  0) that the full sentence runs use.
 
 Training pairs come from the cache's first `--rows` rows (4M by default,
 about 16 GB, which stays in the page cache). The cache tail, snapped to whole
@@ -38,7 +42,13 @@ import train_ste  # noqa: E402
 from pairs import PairSource, pair_rows  # noqa: E402
 
 CACHE = ROOT / "data" / "sonar_embeddings" / "mc4_sent16.npy"
+WEIGHTS = ROOT / "data" / "out" / "sonar" / "sentcache" / "mse_weights_no837.npy"
 OUT = ROOT / "data" / "out" / "sonar" / "next-sentence"
+
+#: train_ste.py defaults for this experiment's trainers; see the docstring
+RECIPE = dict(l=1, h=380, temperature=0.00015, lr=1e-5, noise_k="batchnorm",
+              sd_k=0.3, s_hm=1e-4, dict_init_scale=0.1, cache=str(CACHE),
+              mse_weights=str(WEIGHTS))
 
 
 def parser():
@@ -50,9 +60,7 @@ def parser():
     p.add_argument("--rows", type=int, default=4_000_000,
                    help="train on the pairs within the cache's first ROWS "
                         "rows")
-    p.set_defaults(l=1, h=380, dict_init_scale=0.1, s_hm=1e-4,
-                   cache=str(CACHE),
-                   mse_weights=str(CACHE.with_name("mc4_sent16.mse_weights.npy")))
+    p.set_defaults(**RECIPE)
     return p
 
 

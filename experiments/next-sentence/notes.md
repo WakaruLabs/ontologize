@@ -148,3 +148,65 @@ chance and 1 is always the same entry. The last columns give the share of heads 
     heads.
   - Half the adjacent pairs involve a line or a cap piece. `d1_sent` is the cleaner set, and it is
     less concentrated (cosine 0.264 against 0.303).
+
+## 2026-10-13: pilot sweep of the pair objective (`pilot.sh`): the slow heads collapse
+
+**Setup.**
+- Model: the flat model (1 × 380 heads, k = 32) with the shipped STE recipe, under the masked
+  weights.
+- Slow heads: the first 38.
+- Pairs: same-document pairs at segment distance ≥ 2, from the first 1.3M rows (1.28M pairs).
+- Training: one epoch, 5,011 steps of 256 pairs, one seed.
+- Evaluation: on the held-out tail, with `eval_next.py` (FVU_w of each sentence's reconstruction)
+  and `transitions.py --slow-heads 38`.
+
+**Run history.**
+- The first launch died at step 553 of the control: another job on the shared card took memory
+  mid-step. `pilot.sh` now reserves a pool (BFC allocator, 35% of the card).
+- The 1e-5 arm was interrupted at step 3,250 when the session ended. It resumed from that checkpoint.
+
+**Calibration** (`train_pair.py --calibrate 8`, at initialization). The pair term's gradient norm is
+1.05, all of it on the classifier. The stock loss's is 1.7e-4 on the classifier (5.6e-4 overall). So
+the two pull equally at s_pair ≈ 1.6e-4, and the grid brackets that.
+
+| s_pair | FVU_w (self) | κ `d1` | κ `d2` | κ `d8` | κ `d12` | κ `lang` | Entry entropy (bits) | NMI(lang) | Training switch share |
+|---|---|---|---|---|---|---|---|---|---|
+| 0 (control) | 0.6618 | 0.072 | 0.068 | 0.049 | 0.050 | 0.008 | 5.00 | 0.047 | 0.924 |
+| 1e-5 | 0.6617 | 0.077 | 0.073 | 0.053 | 0.054 | 0.010 | 5.00 | 0.051 | 0.920 |
+| 3e-5 | 0.6614 | 0.086 | 0.082 | 0.060 | 0.061 | 0.013 | 4.99 | 0.059 | 0.913 |
+| 1e-4 | 0.6684 | 0.056 | 0.047 | 0.049 | 0.048 | 0.006 | **0.09** | 0.007 | 0.201 |
+| 3e-4 | 0.6674 | 0.067 | 0.051 | 0.066 | 0.061 | 0.003 | **0.04** | 0.004 | 0.194 |
+| 1e-3 | 0.6672 | 0.065 | 0.052 | 0.064 | 0.063 | 0.003 | **0.04** | 0.004 | 0.194 |
+| 3e-3 | 0.6672 | 0.066 | 0.054 | 0.065 | 0.064 | 0.003 | **0.04** | 0.003 | 0.194 |
+
+- **Columns.**
+  - The κ, entropy and NMI columns are means over the 38 slow heads, on held-out pairs.
+  - The training switch share is the last 250 steps of `loss.csv` column 2.
+- **The other 342 heads** read κ `d1` 0.070, κ `d12` 0.049 and 5.00 bits in every arm.
+- **Unrelated to the pair term:** FVU_w is high (0.66) because 5,000 steps is short. The shipped flat
+  arm reaches 0.275 after 369,500 steps.
+
+**Readings.**
+- **At s_pair ≥ 1e-4 the slow heads collapse.**
+  - Each one settles on a single entry: 0.04–0.09 bits held out, out of 5.
+  - That satisfies the agreement term trivially. The training switch share falls to the floor that
+    winner dropout sets (about 0.18), with no document structure at all: κ stays at the control's
+    level, and NMI with language falls to 0.004.
+  - The collapse is gradual. At 1e-4 the training share falls 0.82 → 0.64 → 0.39 → 0.20 at steps
+    0, 800, 1,600 and 5,000.
+  - The batch usage statistic `KL_m` rises tenfold over the control's (0.45 against 0.047), but
+    `s_Hm` (1e-4) is far too weak to resist.
+  - The losing heads cost 1% of FVU_w (0.668 against 0.662).
+  - The equal-pull weight from calibration (1.6e-4) lies above the collapse threshold.
+- **Below the threshold, the slow heads slow a little and evenly.**
+  - At 3e-5, κ `d1` rises from 0.072 to 0.086 and κ `d12` from 0.050 to 0.061, at no cost in FVU_w.
+  - No slow head passes κ 0.5 in any arm, so nothing like a document-level head forms.
+- **The agreement term alone is the wrong objective.** "Same entry for both sentences" has a
+  solution that ignores the input, and it is the one gradient descent finds. The sketch flagged this
+  risk. Every arm fails the sketch's selection criterion (slow-head κ on `d2` and beyond above 0.5,
+  with FVU_w within a few percent of the control).
+- **Next.** The term has to reward agreement *given* uniform usage of the slow heads.
+  - Either: agreement minus each slow head's batch marginal entropy, a per-head lower bound on the
+    temporal mutual information. With 512 rows over 32 entries its plug-in bias is about 0.03 nats.
+  - Or: the mutual-information term of `pair_objective.md`, with its larger estimation bias.
+  - Both make the constant head score worst rather than best.

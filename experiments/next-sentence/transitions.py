@@ -170,9 +170,12 @@ def pair_sets(index: Int[np.ndarray, "n 3"], kind: np.ndarray,
 
 def transitions(A: Int[np.ndarray, "heads n"], layer: Int[np.ndarray, "heads"],
                 k: int, pairs: Dict[str, Tuple[np.ndarray, np.ndarray]],
-                lang: Int[np.ndarray, "n"]) -> Tuple[Dict, List[Dict]]:
+                lang: Int[np.ndarray, "n"], slow: int = 0
+                ) -> Tuple[Dict, List[Dict]]:
     """Per-head kappa and switch rates for every pair type, with each
-    head's entropy and NMI with the language label."""
+    head's entropy and NMI with the language label. With `slow`, the same
+    summaries for the first `slow` heads of each layer (the slow heads of
+    `train_pair.py`) and for the rest."""
     kap = {t: kappa(A[:, i], A[:, j], k) for t, (i, j) in pairs.items()}
     switch = {t: (A[:, i] != A[:, j]).mean(1) for t, (i, j) in pairs.items()}
     nmi = nmi_matrix(A, k, lang[None, :].astype(np.int64),
@@ -208,6 +211,19 @@ def transitions(A: Int[np.ndarray, "heads n"], layer: Int[np.ndarray, "heads"],
         "spearman_kappa_d1_minus_lang_nmi_lang": float(
             spearmanr((kap["d1"] - kap["lang"])[ok], nmi[ok])[0]),
     }
+    if slow:
+        within = np.arange(len(layer)) % h
+        summary["groups"] = {
+            g: {"heads": int(m.sum()),
+                "kappa_mean": {t: float(np.nanmean(v[m]))
+                               for t, v in kap.items()},
+                "switch_mean": {t: float(v[m].mean())
+                                for t, v in switch.items()},
+                "kappa_d1_above_0.5": int((kap["d1"][m] > 0.5).sum()),
+                "entropy_bits_mean": float(ent[m].mean()),
+                "nmi_lang_mean": float(nmi[m].mean())}
+            for g, m in (("slow", within < slow), ("rest", within >= slow))
+            if m.any()}
     # how many heads change per pair: the transition's sparsity
     for t in ("d1", "d1_sent", "lang", "random"):
         i, j = pairs[t]
@@ -277,6 +293,11 @@ def main() -> None:
     p.add_argument("--holdout", type=int, default=32768,
                    help="the held-out tail rows, as the models trained")
     p.add_argument("--negatives", type=int, default=255)
+    p.add_argument("--slow-heads", type=int, default=0,
+                   help="also summarize the first N heads of each layer "
+                        "(train_pair.py's slow heads) apart from the rest")
+    p.add_argument("--no-concentration", action="store_true",
+                   help="skip the model-free pair concentration")
     p.add_argument("--temperature", type=float, default=0.00015)
     p.add_argument("--batch", type=int, default=1024)
     p.add_argument("--seed", type=int, default=0)
@@ -305,25 +326,27 @@ def main() -> None:
     if out:
         out.mkdir(parents=True, exist_ok=True)
 
-    conc = concentration(X, np.load(cfg.mse_weights).astype(np.float32),
-                         pairs, doc, lang, cfg.negatives, cfg.seed)
-    print("\npair concentration (no model)")
-    for t, v in conc["mean_dist_over_random"].items():
-        print(f"  {t:>8}: whitened squared distance {v:.3f} x random, "
-              f"cosine {conc['mean_cos'][t]:.3f}, "
-              f"log-norm correlation {conc['log_norm_corr'][t]:.3f}")
-    for name, v in conc["auc"].items():
-        print(f"  AUC {name}: {v:.3f}")
-    for name, v in conc["retrieval"].items():
-        print(f"  {name}: top-1 {v['top1']:.3f} (chance {v['chance_top1']:.4f}),"
-              f" median rank {v['median_rank']:.0f}, {v['anchors']} anchors")
-    if out:
-        (out / "concentration.json").write_text(json.dumps(conc, indent=1))
+    if not cfg.no_concentration:
+        conc = concentration(X, np.load(cfg.mse_weights).astype(np.float32),
+                             pairs, doc, lang, cfg.negatives, cfg.seed)
+        print("\npair concentration (no model)")
+        for t, v in conc["mean_dist_over_random"].items():
+            print(f"  {t:>8}: whitened squared distance {v:.3f} x random, "
+                  f"cosine {conc['mean_cos'][t]:.3f}, "
+                  f"log-norm correlation {conc['log_norm_corr'][t]:.3f}")
+        for name, v in conc["auc"].items():
+            print(f"  AUC {name}: {v:.3f}")
+        for name, v in conc["retrieval"].items():
+            print(f"  {name}: top-1 {v['top1']:.3f} "
+                  f"(chance {v['chance_top1']:.4f}), median rank "
+                  f"{v['median_rank']:.0f}, {v['anchors']} anchors")
+        if out:
+            (out / "concentration.json").write_text(json.dumps(conc, indent=1))
 
     for ckpt in cfg.ckpt:
         A, layer, k, step = codes(ckpt, cfg.step, cfg.temperature, X,
                                   cfg.batch)
-        summary, heads = transitions(A, layer, k, pairs, lang)
+        summary, heads = transitions(A, layer, k, pairs, lang, cfg.slow_heads)
         summary.update({"ckpt": ckpt, "step": step})
         name = Path(ckpt).name
         print(f"\n{name} (step {step}; {summary['layers']} layers x "
@@ -344,6 +367,15 @@ def main() -> None:
         print("  heads switched per pair (quantiles 5/25/50/75/95%):")
         for t, v in summary["heads_switched_frac"].items():
             print(f"    {t:>8}: " + "  ".join(f"{x:.3f}" for x in v.values()))
+        for g, s in summary.get("groups", {}).items():
+            print(f"  {g} heads ({s['heads']}; kappa_d1 above 0.5: "
+                  f"{s['kappa_d1_above_0.5']}; entropy "
+                  f"{s['entropy_bits_mean']:.2f} bits; NMI(lang) "
+                  f"{s['nmi_lang_mean']:.3f}):")
+            print("    kappa:  " + "  ".join(
+                f"{t} {v:.3f}" for t, v in s["kappa_mean"].items()))
+            print("    switch: " + "  ".join(
+                f"{t} {v:.3f}" for t, v in s["switch_mean"].items()))
         print(f"  Spearman over heads: kappa_d1 vs NMI(lang) "
               f"{summary['spearman_kappa_d1_nmi_lang']:.3f}; "
               f"kappa_d1 - kappa_lang vs NMI(lang) "

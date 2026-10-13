@@ -390,12 +390,14 @@ def main() -> None:
     train(*setup(parse_args()))
 
 
-def setup(cfg: argparse.Namespace, src=None):
+def setup(cfg: argparse.Namespace, src=None, hp=None, hp_extra=None):
     """Everything a run needs before training: the hyperparameters, the
     model, the checkpoint metadata, the output directory and the data
     source. `src` replaces the cache's own rows as the training data (it
     needs a length); `--steps`, which counts cache rows, is then refused
-    in favour of `--epochs`."""
+    in favour of `--epochs`. `hp` replaces the `Hyperparams` class the
+    flags choose, and must subclass it so their settings still apply;
+    `hp_extra` adds its own fields (experiments/next-sentence/train_pair.py)."""
     global base
     if cfg.base != base.__name__:
         base = importlib.import_module(cfg.base)
@@ -521,6 +523,11 @@ def setup(cfg: argparse.Namespace, src=None):
         extra = dict(s_hsic_heads=cfg.s_hsic_heads, hsic_h=h,
                      hsic_sigma2=cfg.hsic_sigma2,
                      hsic_estimator=cfg.hsic_estimator)
+    if hp is not None:
+        assert issubclass(hp, HP), \
+            f"{hp.__name__} must subclass {HP.__name__}, the class the " \
+            f"flags chose, or their settings would be dropped"
+        HP, extra = hp, {**extra, **(hp_extra or {})}
     hyper = HP(
         base.d, base.d, b, epochs, cfg.lr or base.lr,
         base.wd, cfg.temperature if not cfg.anneal else base.temperature,

@@ -150,8 +150,11 @@ L = Σ_rows L_stock(x) + s_pair · (1 / (b·|S|)) Σ_pairs Σ_{(ℓ,h) ∈ S} (1
 
 ## Risks
 
-- **Collapse.** A slow head that settles on one entry satisfies the pair term. `s_Hm` guards against
-  it; watch the per-head usage entropy (`transitions.py` reports it).
+- **Collapse.** A slow head that settles on one entry satisfies the pair term. `s_Hm` was meant to
+  guard against it; watch the per-head usage entropy (`transitions.py` reports it).
+  - The pilot (`notes.md`, 2026-10-13) found that `s_Hm` at 1e-4 does not guard against it: every
+    s_pair from 1e-4 up collapses the slow heads.
+  - The term needs the slow heads' usage entropy inside it, as the mutual-information form has.
 - **Batches drawn from b documents.** Batch statistics (`s_Hm`, mean entropy) see half as many
   documents as an i.i.d. batch of the same row count. The control arm shares the batches, so the
   comparison stays fair, but absolute numbers aren't comparable to the i.i.d. runs.
