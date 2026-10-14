@@ -287,11 +287,58 @@ between the entries it gives the two sentences, as a fraction of log k:
   - If it is too slow, a learning-rate multiplier for the slow heads' classifier rows, which the
     pair term reaches alone.
 
-## 2026-10-14: the long run (`long.sh`), in progress
+## 2026-10-14: the long run (`long.sh`): the slow heads keep slowing, faster
 
 `long.sh` trains the control and the Fano arm at s_pair 1e-3 for one epoch over all 3,947,664 pairs
-of the first 4M rows (15,420 steps), keeping a checkpoint every 2,500 steps. Results will go below.
-These are the control's interruptions, since its numbers depend on them.
+of the first 4M rows (15,420 steps), keeping a checkpoint every 2,500 steps. Both finished at step
+15,420; the last checkpoint is 15,250.
+
+Slow-head means (38 heads), held out, at each kept checkpoint. The control's slow heads read κ `d1`
+0.071–0.072 throughout, κ `d12` 0.049–0.050 and NMI(lang) 0.046–0.047. The other 342 heads of both
+runs read κ `d1` 0.069–0.071 throughout.
+
+| Step | κ `d1` | κ `d2` | κ `d8` | κ `d12` | κ `lang` | Largest κ `d1` | Entry entropy (bits) | NMI(lang) | Training bound |
+|---|---|---|---|---|---|---|---|---|---|
+| 2,500 | 0.081 | 0.076 | 0.056 | 0.057 | 0.011 | 0.089 | 5.00 | 0.055 | −0.0004 |
+| 5,000 | 0.094 | 0.089 | 0.067 | 0.068 | 0.016 | 0.111 | 5.00 | 0.067 | 0.0028 |
+| 7,500 | 0.113 | 0.108 | 0.084 | 0.083 | 0.025 | 0.142 | 4.99 | 0.083 | 0.0076 |
+| 10,000 | 0.140 | 0.134 | 0.107 | 0.106 | 0.038 | 0.183 | 4.99 | 0.105 | 0.0147 |
+| 12,500 | 0.171 | 0.164 | 0.134 | 0.133 | 0.054 | 0.222 | 4.98 | 0.129 | 0.0248 |
+| 15,000 | 0.204 | 0.195 | 0.165 | 0.162 | 0.072 | 0.259 | 4.97 | 0.152 | 0.0368 |
+
+The training bound is column 2 of `loss.csv`, a mean over the 250 steps before each checkpoint.
+
+Held-out FVU_w at step 15,250 (`eval_e1.json`): 0.5202 for the control, 0.5232 for the Fano arm.
+
+**Readings.**
+- **The rise doesn't level off; it speeds up.**
+  - Slow-head κ `d1` gains +0.013, +0.019, +0.027, +0.031 and +0.033 per 2,500 steps. At the
+    epoch's end it is about three times the control's (0.204 against 0.071).
+  - The training bound accelerates with it.
+  - Entry usage stays near 5 bits, so this is not collapse.
+  - The pilot's 5,000 steps had seen only the start.
+- **It is document-level.**
+  - κ `d12` follows κ `d1` (0.162 against 0.204 at step 15,000), so what the slow heads keep
+    persists across a document rather than between neighbours.
+  - Part of it is language: κ on same-language sentences of other documents rises from 0.008 to
+    0.072, and NMI with the language label from 0.047 to 0.152.
+  - The rest, κ `d12` minus κ `lang` (about 0.09 at 15,000), is shared within documents beyond their
+    language.
+- **Not there yet.**
+  - No slow head reaches κ 0.5. The slowest is at 0.26, and the mean at 0.20.
+  - At the last interval's rate (+0.033 per 2,500 steps), the mean would reach 0.5 after about 22,000
+    more steps, about 1.4 epochs. That assumes the rate holds, which it hasn't so far: it has risen
+    every interval.
+- **Cost.** 0.6% of FVU_w (0.5232 against 0.5202).
+- **Next.**
+  - Continue both runs for more epochs, keeping checkpoints.
+  - Once the slow heads are substantially slow, train a second seed of each arm. The block-level
+    question (do seed A's slow heads carry what seed B's do?) then has something to measure.
+  - If the time is too long, raise the learning rate on the slow heads' classifier rows.
+
+**Interruptions.** These are the control's, since its numbers depend on them. The Fano arm ran
+uninterrupted, from about 16:25 to 16:47 (last checkpoint 16:46:40), and the evaluations ran
+16:47–16:49.
 
 - **Held.** It was stopped at step 6,750 on 2026-10-13 so `sent16-full` could finish, and held until
   that run and `sent16-sae` had both completed (09:13 and 11:23 on 2026-10-14).
@@ -307,6 +354,6 @@ These are the control's interruptions, since its numbers depend on them.
     moved to `long/doc2_sp0_ph38.discarded_8750_9000/`.
   - The run resumed from 8,500, written before the second instance started. The resume truncated
     `loss.csv` to 8,500 rows.
-- **Running since 16:14.** One instance, under the BFC allocator without preallocation, capped at 35%
-  of the card (9.1 GB with CUDA's own). The launch retries up to six times, five minutes apart,
-  resuming each time.
+- **From 16:14, one instance to the end.** It ran under the BFC allocator without preallocation,
+  capped at 35% of the card (9.1 GB with CUDA's own). The launch allowed up to six retries, but the
+  first attempt finished both runs. The control's last checkpoint is at 16:24.
