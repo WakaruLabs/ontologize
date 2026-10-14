@@ -162,8 +162,16 @@ chance and 1 is always the same entry. The last columns give the share of heads 
 
 **Run history.**
 - The first launch died at step 553 of the control: another job on the shared card took memory
-  mid-step. `pilot.sh` now reserves a pool (BFC allocator, 35% of the card).
+  mid-step. The sweep was then rerun with a reserved pool (BFC allocator, 35% of the card).
 - The 1e-5 arm was interrupted at step 3,250 when the session ended. It resumed from that checkpoint.
+- **The reserved pool was a mistake on a shared card.** The Fano sweep's pools, its evaluations, and
+  then `long.sh` (which held 12.3 GB) ended the `sent16-full` training run (the hard stack on
+  `mc4_sent16`) 12 times from 20:04, mostly on a refused allocation of about 970 MiB. The other
+  session running it reported this.
+  - `long.sh` was stopped at control step 6,750 to let that run finish.
+  - Neither script reserves a pool any more.
+  - `eval_next.py` now sets `XLA_PYTHON_CLIENT_PREALLOCATE=false` before importing jax; otherwise
+    JAX reserves 75% of the card at its first touch.
 
 **Calibration** (`train_pair.py --calibrate 8`, at initialization). The pair term's gradient norm is
 1.05, all of it on the classifier. The stock loss's is 1.7e-4 on the classifier (5.6e-4 overall). So
@@ -278,3 +286,27 @@ between the entries it gives the two sentences, as a fraction of log k:
     about 15,400 steps), with κ at several checkpoints to see whether the rise continues or levels.
   - If it is too slow, a learning-rate multiplier for the slow heads' classifier rows, which the
     pair term reaches alone.
+
+## 2026-10-14: the long run (`long.sh`), in progress
+
+`long.sh` trains the control and the Fano arm at s_pair 1e-3 for one epoch over all 3,947,664 pairs
+of the first 4M rows (15,420 steps), keeping a checkpoint every 2,500 steps. Results will go below.
+These are the control's interruptions, since its numbers depend on them.
+
+- **Held.** It was stopped at step 6,750 on 2026-10-13 so `sent16-full` could finish, and held until
+  that run and `sent16-sae` had both completed (09:13 and 11:23 on 2026-10-14).
+- **Restarted at 16:04 on demand, with no cap.** It grew to 9.1 GB beside another user's training
+  benchmark, which reached 12.4 GB and left about 1.5 GB of the card free. That job ended at about
+  16:06. Whether it ran out of memory is unknown; it restarted a minute later with a shorter
+  sequence length.
+- **Two instances for about 40 seconds.** An attempt to stop the run for a capped restart missed its
+  process group, so a second instance started beside the first.
+  - Both wrote checkpoints and `loss.csv` rows: the file reached 9,250 rows against a latest
+    checkpoint of 9,000.
+  - Both were stopped. Checkpoints 8,750 and 9,000, either of which the two could have written, were
+    moved to `long/doc2_sp0_ph38.discarded_8750_9000/`.
+  - The run resumed from 8,500, written before the second instance started. The resume truncated
+    `loss.csv` to 8,500 rows.
+- **Running since 16:14.** One instance, under the BFC allocator without preallocation, capped at 35%
+  of the card (9.1 GB with CUDA's own). The launch retries up to six times, five minutes apart,
+  resuming each time.

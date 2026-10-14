@@ -12,13 +12,19 @@
 #   experiments/next-sentence/pilot.sh agree
 set -eu
 cd "$(dirname "$0")/../.."
-# The card is shared with other users' jobs. train_ste.py's default
-# allocator (`platform`, on demand) lets another process take the memory a
-# step needs mid-run, which ends the run; reserve a pool up front instead.
-# An exported value still wins.
-export XLA_PYTHON_CLIENT_ALLOCATOR=${XLA_PYTHON_CLIENT_ALLOCATOR:-bfc}
-export XLA_PYTHON_CLIENT_PREALLOCATE=${XLA_PYTHON_CLIENT_PREALLOCATE:-true}
-export XLA_PYTHON_CLIENT_MEM_FRACTION=${XLA_PYTHON_CLIENT_MEM_FRACTION:-0.35}
+# Allocator: train_ste.py's defaults (`platform`, on demand), which share
+# the card. On demand, another process can take the memory a step needs
+# mid-run and end it; a rerun resumes from the last checkpoint. On a card
+# nothing else needs, a reserved pool avoids that:
+#   XLA_PYTHON_CLIENT_ALLOCATOR=bfc XLA_PYTHON_CLIENT_PREALLOCATE=true \
+#   XLA_PYTHON_CLIENT_MEM_FRACTION=0.35 experiments/next-sentence/pilot.sh
+# but the pool is then closed to everyone else, which ends other runs
+# sharing the card the same way. Don't reserve one on a shared card. There,
+# BFC without preallocation, capped at the same fraction, grows only to
+# what a step needs and never past the cap (about 9 GB with CUDA's own;
+# these runs fit in it):
+#   XLA_PYTHON_CLIENT_ALLOCATOR=bfc XLA_PYTHON_CLIENT_PREALLOCATE=false \
+#   XLA_PYTHON_CLIENT_MEM_FRACTION=0.35 experiments/next-sentence/pilot.sh
 term=${1:-fano}
 case $term in
     agree) tag=""; grid="1e-5 3e-5 1e-4 3e-4 1e-3 3e-3" ;;

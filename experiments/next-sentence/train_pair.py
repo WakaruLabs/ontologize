@@ -77,6 +77,10 @@ def parser() -> argparse.ArgumentParser:
                    help="slow heads per layer, the first that many (0 = all)")
     p.add_argument("--rows", type=int, default=4_000_000,
                    help="draw pairs from the cache's first ROWS rows")
+    p.add_argument("--keep-every", type=int, default=0, metavar="STEPS",
+                   help="keep every checkpoint at a multiple of STEPS (a "
+                        "multiple of the save cadence, 250), beside the "
+                        "latest ten; 0 keeps the base config's period")
     p.add_argument("--calibrate", type=int, default=0, metavar="N",
                    help="print the two gradient norms over N batches at "
                         "initialization, and train nothing")
@@ -181,6 +185,12 @@ def main() -> None:
     if cfg.calibrate:
         calibrate(run[0], run[1], src, cfg.calibrate, seed)
         return
+    if cfg.keep_every:
+        meta = run[2]
+        assert cfg.keep_every % meta.save_each == 0, \
+            f"--keep-every {cfg.keep_every} is not a multiple of the save " \
+            f"cadence {meta.save_each}, so no save would land on it"
+        meta.checkpoint_each = cfg.keep_every
     train_ste.train(*run)
 
 

@@ -17,10 +17,17 @@ Baselines for the next sentence:
 Seed agreement is `experiments/ste-arm/partition.py --cache` on the
 `mc4_sent16` cache (README.md).
 """
-import argparse
-import json
-import sys
-from pathlib import Path
+import os
+
+# before jax is imported: JAX otherwise reserves 75% of the card at its
+# first touch, which ends whatever else is training there. setdefault, so
+# an exported choice wins
+os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
+
+import argparse  # noqa: E402
+import json  # noqa: E402
+import sys  # noqa: E402
+from pathlib import Path  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
