@@ -1,11 +1,17 @@
 """Train a code on pairs of sentences from one document, with slow heads
-that pay for every switch between the two (`pair_objective.md`).
+rewarded for keeping their entry between the two (`pair_objective.md`).
 
 Each record is two sentences of one document, and both are reconstructed
 from their own codes. The first `--pair-heads` heads of each layer are the
-slow heads: `--s-pair` times the share of them whose entry differs between
-the two sentences is added to the loss (`pairloss.py`). `--s-pair 0` is the
-control, trained on the same pairs, which are drawn with the run's seed.
+slow heads, and `--s-pair` weighs a term over them (`pairloss.py`):
+- `--pair-term fano` (default): a lower bound on each slow head's mutual
+  information between the two sentences' entries, subtracted. A head scores
+  only by using its entries evenly and keeping them across the pair.
+- `--pair-term agree`: the share of slow heads whose entry differs between
+  the two, added. It collapses the slow heads onto one entry each
+  (notes.md).
+`--s-pair 0` is the control, trained on the same pairs, which are drawn
+with the run's seed.
 
 Pairs:
 - `--pairs doc` (default): every row of the training prefix that has one,
@@ -61,8 +67,12 @@ def parser() -> argparse.ArgumentParser:
                    help="keep pairs whose two rows are both full sentences, "
                         "not lines or pieces the length cap cut")
     p.add_argument("--s-pair", type=float, default=0.0,
-                   help="weight of the slow heads' switch share (0: the "
-                        "control)")
+                   help="weight of the pair term (0: the control)")
+    p.add_argument("--pair-term", choices=("fano", "agree"), default="fano",
+                   help="fano: reward the slow heads' bound on mutual "
+                        "information between the two sentences' entries; "
+                        "agree: penalize their switch share (collapses "
+                        "them: notes.md)")
     p.add_argument("--pair-heads", type=int, default=38,
                    help="slow heads per layer, the first that many (0 = all)")
     p.add_argument("--rows", type=int, default=4_000_000,
@@ -82,7 +92,7 @@ def calibrate(hyper: PairHyperparams, model, src: StackedPairSource,
     the step's own noise, dropout and temperature."""
     import jax
     from ontologize.training.config import Hyperparams
-    from pairloss import switch_share, unstack
+    from pairloss import unstack
 
     state = hyper.init(model)
     kw = dict(temperature=hyper.temperature, p_drop=hyper.p_drop,
@@ -95,7 +105,7 @@ def calibrate(hyper: PairHyperparams, model, src: StackedPairSource,
             Y, P_all, stats, _ = state.apply_fn(params, X, rng=rng, **kw)
             if which == 0:
                 return Hyperparams.loss(hyper, Y, unstack(X), None, stats)[0]
-            return switch_share(P_all, hyper.pair_h, hyper.pair_heads)
+            return hyper.pair_loss(P_all)[0]
         return jax.jit(jax.grad(f))
 
     def norms(g) -> Tuple[float, float]:
@@ -150,7 +160,8 @@ def tag(cfg: argparse.Namespace) -> str:
     """The run's name: pair type, slow-head weight and count, shape, seed."""
     pairs = f"doc{cfg.min_d}" if cfg.pairs == "doc" else "adj"
     sent = "_sent" if cfg.sentences_only else ""
-    return (f"{pairs}{sent}_sp{cfg.s_pair:g}_ph{cfg.pair_heads}"
+    term = "" if cfg.pair_term == "agree" else f"_{cfg.pair_term}"
+    return (f"{pairs}{sent}{term}_sp{cfg.s_pair:g}_ph{cfg.pair_heads}"
             f"_h{cfg.h}_l{cfg.l}_s{cfg.seed or 42}")
 
 
@@ -165,8 +176,8 @@ def main() -> None:
           f"{cfg.h} per layer")
     run = train_ste.setup(
         cfg, src=src, hp=PairHyperparams,
-        hp_extra=dict(s_pair=cfg.s_pair, pair_h=cfg.h,
-                      pair_heads=cfg.pair_heads))
+        hp_extra=dict(s_pair=cfg.s_pair, pair_term=cfg.pair_term,
+                      pair_h=cfg.h, pair_heads=cfg.pair_heads))
     if cfg.calibrate:
         calibrate(run[0], run[1], src, cfg.calibrate, seed)
         return

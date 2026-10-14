@@ -155,6 +155,9 @@ L = Σ_rows L_stock(x) + s_pair · (1 / (b·|S|)) Σ_pairs Σ_{(ℓ,h) ∈ S} (1
   - The pilot (`notes.md`, 2026-10-13) found that `s_Hm` at 1e-4 does not guard against it: every
     s_pair from 1e-4 up collapses the slow heads.
   - The term needs the slow heads' usage entropy inside it, as the mutual-information form has.
+  - `pair_term="fano"` puts it there without the plug-in MI estimate's bias. It uses Fano's lower
+    bound I(a; a′) ≥ H(a) − H_b(s) − s·log(k−1), which needs only each head's batch usage entropy and
+    its switch share.
 - **Batches drawn from b documents.** Batch statistics (`s_Hm`, mean entropy) see half as many
   documents as an i.i.d. batch of the same row count. The control arm shares the batches, so the
   comparison stays fair, but absolute numbers aren't comparable to the i.i.d. runs.

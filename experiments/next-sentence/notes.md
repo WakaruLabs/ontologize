@@ -210,3 +210,71 @@ the two pull equally at s_pair ≈ 1.6e-4, and the grid brackets that.
     temporal mutual information. With 512 rows over 32 entries its plug-in bias is about 0.03 nats.
   - Or: the mutual-information term of `pair_objective.md`, with its larger estimation bias.
   - Both make the constant head score worst rather than best.
+
+## 2026-10-13: the same sweep with the Fano term (`pilot.sh fano`): no collapse, slow progress
+
+**The term.** `pair_term="fano"` subtracts each slow head's lower bound on the mutual information
+between the entries it gives the two sentences, as a fraction of log k:
+
+  H(a) − H_b(s) − s·log(k−1)
+
+- H(a) is the head's batch usage entropy, and s is its switch share. Fano's inequality bounds
+  H(a | a′) by the last two terms.
+- A collapsed head scores 0, and so does one whose entries are independent across the pair.
+- With winner dropout, a perfectly slow head that uses every entry evenly caps at about 0.69.
+
+**Setup.**
+- Calibration: the term's classifier gradient is 0.91 at initialization, so it pulls level with the
+  stock loss at s_pair ≈ 1.9e-4.
+- Everything else is as in the agreement sweep. The control is the same run.
+
+| s_pair | FVU_w (self) | κ `d1` | κ `d2` | κ `d8` | κ `d12` | κ `lang` | Largest κ `d1` | Entry entropy (bits) | NMI(lang) | Training bound |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 0 (control) | 0.6618 | 0.072 | 0.068 | 0.049 | 0.050 | 0.008 | 0.077 | 5.00 | 0.047 | — |
+| 1e-5 | 0.6618 | 0.073 | 0.069 | 0.050 | 0.051 | 0.009 | 0.079 | 5.00 | 0.048 | −0.002 |
+| 3e-5 | 0.6619 | 0.076 | 0.072 | 0.052 | 0.053 | 0.010 | 0.081 | 5.00 | 0.050 | −0.001 |
+| 1e-4 | 0.6619 | 0.082 | 0.077 | 0.057 | 0.058 | 0.012 | 0.088 | 5.00 | 0.056 | 0.000 |
+| 3e-4 | 0.6619 | 0.088 | 0.084 | 0.062 | 0.063 | 0.014 | 0.098 | 5.00 | 0.062 | 0.002 |
+| 1e-3 | 0.6619 | 0.094 | 0.089 | 0.067 | 0.067 | 0.016 | 0.108 | 5.00 | 0.067 | 0.003 |
+| 3e-3 | 0.6619 | 0.096 | 0.091 | 0.069 | 0.069 | 0.017 | 0.111 | 5.00 | 0.069 | 0.003 |
+| 1e-2 | 0.6620 | 0.097 | 0.092 | 0.069 | 0.070 | 0.017 | 0.113 | 5.00 | 0.069 | 0.003 |
+
+- **Columns.**
+  - Means are over the 38 slow heads, held out, at step 5,000.
+  - "Largest κ `d1`" is the slowest single slow head.
+  - The training bound is the last 250 steps of column 2.
+- **The other 342 heads** read κ `d1` 0.070, κ `d12` 0.049 and 5.00 bits in every arm.
+
+**The trajectory** (`transitions.py --step 2750`, in `transitions_fano_step2750/`). Slow-head κ
+`d1` at steps 2,750 and 5,000:
+
+| Arm | Step 2,750 | Step 5,000 |
+|---|---|---|
+| control | 0.072 | 0.072 |
+| s_pair 1e-3 | 0.082 | 0.094 |
+| s_pair 1e-2 | 0.083 | 0.097 |
+
+κ `d12` for the 1e-3 arm went from 0.058 to 0.067.
+
+**Readings.**
+- **The term does what the agreement term didn't.** No slow head collapses: 5.00 bits at every
+  weight. Reconstruction is unaffected (FVU_w within 0.0002 of the control), and the slow heads become
+  steadily slower at every distance.
+  - The gain is document-level, not local: κ `d12` rises about as much as κ `d1` (+0.020 against
+    +0.025 at 1e-2).
+  - Slow heads also share more with same-language sentences of other documents (κ `lang` 0.008 →
+    0.017) and carry more language information (NMI 0.047 → 0.069).
+- **The effect is small, and the step size limits it, not the weight.**
+  - At 5,000 steps the slowest head reaches κ 0.11, far from the 0.5 the sketch asks for. The
+    training bound is about 0.003 of its 0.69 ceiling.
+  - Above 1e-3 the weight hardly matters (κ `d1` 0.094, 0.096, 0.097), and the 1e-3 and 1e-2 arms
+    match at both checkpoints. Once the pair term dominates a classifier parameter's gradient, Adam
+    sets the step by the learning rate (1e-5), not the weight.
+  - κ is still rising roughly linearly, by about +0.005 per 1,000 steps at 1e-3. Collapse took about
+    3,000 steps under the agreement term: an easy direction. Reorganizing a head's partition around
+    the document is a slow one.
+- **Next.**
+  - A longer arm at s_pair 1e-3 against the control, over the full 4M-row pair set (one epoch is
+    about 15,400 steps), with κ at several checkpoints to see whether the rise continues or levels.
+  - If it is too slow, a learning-rate multiplier for the slow heads' classifier rows, which the
+    pair term reaches alone.

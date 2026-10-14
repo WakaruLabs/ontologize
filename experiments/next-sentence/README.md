@@ -54,9 +54,9 @@ reasoning.
 | File | What it does |
 |---|---|
 | `pairs.py` | `adjacent`, `pair_rows`, and `PairSource`, a grain source of `(x_t, target)` pairs; for the pair objective, `doc_partners` (a random same-document partner at a minimum segment distance) and `StackedPairSource` (both sentences as one (2d,) record) |
-| `pairloss.py` | the pair objective: `pair_probe` splits a (b, 2d) batch into (2b, d) and keeps each layer's codes; `PairHyperparams` (a `DictWDHyperparams`) adds `s_pair` times `switch_share`, the share of slow heads whose entry differs between a pair's sentences, and logs it in column 2 |
-| `train_pair.py` | the pair trainer: `train_next.py`'s recipe (`RECIPE`) plus `--pairs doc\|adjacent`, `--min-d`, `--sentences-only`, `--s-pair`, `--pair-heads`; `--calibrate N` prints the stock and pair gradient norms at initialization |
-| `pilot.sh` | the pilot sweep over `s_pair`, then `eval_next.py` and `transitions.py --slow-heads` on every run |
+| `pairloss.py` | the pair objective: `pair_probe` splits a (b, 2d) batch into (2b, d) and keeps each layer's codes; `PairHyperparams` (a `DictWDHyperparams`) adds `s_pair` times a term over the slow heads (`fano_bound`, the mutual-information bound, subtracted; or `switch_share`, the share that switch, added) and logs it in column 2 |
+| `train_pair.py` | the pair trainer: `train_next.py`'s recipe (`RECIPE`) plus `--pairs doc\|adjacent`, `--min-d`, `--sentences-only`, `--s-pair`, `--pair-term fano\|agree`, `--pair-heads`; `--calibrate N` prints the stock and pair gradient norms at initialization |
+| `pilot.sh` | the pilot sweep over `s_pair` for one term, then `eval_next.py` and `transitions.py --slow-heads` on every run |
 | `train_next.py` | the trainer: `experiments/ste-arm/train_ste.py`'s flags, checks and setup (`parser`, `finish`, `setup`), with this experiment's defaults and a pair source |
 | `eval_next.py` | held-out FVU_w of each checkpoint against the next sentence and against the input, beside three baselines: the training mean, copying x_t, and ridge regression from x_t |
 | `transitions.py` | two checks a pair objective depends on, on the held-out tail. (1) How often each head of a trained model keeps its entry between two sentences: adjacent, d segments apart in one document, same language in another document, or random (Cohen's kappa, with each head's NMI with language). (2) How much closer adjacent sentences are than other pairs, with no model: whitened distance, cosine, AUC, and retrieval of the successor among negatives |
@@ -137,8 +137,13 @@ change to `ontologize/`:
 - **Records.** Each one is two sentences of one document, concatenated.
 - **Probe.** `pairloss.pair_probe` splits the batch back into its sentences and returns each layer's
   codes in the step's ghost slot, which is free with `ghost=False`.
-- **Loss.** `PairHyperparams.loss` adds `s_pair` times the slow heads' switch share to the stock
-  loss over all the sentences.
+- **Loss.** `PairHyperparams.loss` adds `s_pair` times a term over the slow heads to the stock loss
+  over all the sentences. `--pair-term` chooses the term:
+  - `fano` (default) subtracts a lower bound on each slow head's mutual information between the two
+    sentences' entries: H(a) − H_b(s) − s·log(k−1), as a fraction of log k. Here H(a) is the head's
+    batch usage entropy and s its switch share.
+  - `agree` adds the switch share alone. A head on one entry satisfies it, and the pilot's slow
+    heads all ended up that way (`notes.md`).
 - **Slow heads.** These are the first `--pair-heads` heads of each layer (38 of 380 by default).
 
 `--s-pair 0` is the control, on the same pairs. `train_ste.setup` takes the `Hyperparams` class
@@ -147,12 +152,15 @@ through `hp=`, which must subclass the class the flags chose. That is how the pa
 
 ```bash
 uv run python experiments/next-sentence/train_pair.py --calibrate 8   # gradient norms at init
-experiments/next-sentence/pilot.sh                                    # the s_pair sweep
+experiments/next-sentence/pilot.sh fano                               # the s_pair sweep (or agree)
 uv run python experiments/next-sentence/train_pair.py --s-pair <s>    # a full run
 ```
 
-- **Logging.** The switch share is logged in `loss.csv` column 2, otherwise `MSE_ghost`.
-- **Codes.** It is taken on the codes each layer decoded with, after logit noise and winner dropout
-  (`p_drop` 0.1). Dropout hands the winner's place to the runner-up, so a perfectly slow head still
-  reads about 0.18 (2 × 0.1 × 0.9: dropout hits exactly one of the two sentences).
+- **Logging.** The term's raw value is logged in `loss.csv` column 2, otherwise `MSE_ghost`: the
+  bound under `fano`, the switch share under `agree`.
+- **Codes.** Both are taken on the codes each layer decoded with, after logit noise and winner
+  dropout (`p_drop` 0.1).
+  - Dropout hands the winner's place to the runner-up, so a perfectly slow head still switches about
+    0.18 of the time (2 × 0.1 × 0.9: dropout hits exactly one of the two sentences).
+  - Under `fano`, that caps a perfectly slow head that uses every entry at about 0.69, not 1.
 - **Held out.** Its held-out counterpart is `transitions.py --slow-heads 38`.

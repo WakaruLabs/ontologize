@@ -207,8 +207,35 @@ def test_switch_share_counts_the_slow_heads_that_change():
     assert float(switch_share(onehot(other), h, 0)) > 0.5
 
 
-@pytest.mark.parametrize("s_pair", [0.0, 1.0])
-def test_pair_training_logs_the_switch_share(cache, tmp_path, s_pair):
+def test_fano_bound_rewards_kept_entries_not_collapse():
+    import jax
+    import jax.numpy as jnp
+    from pairloss import fano_bound
+    rng = np.random.default_rng(0)
+    l, b, h, k = 1, 20000, 4, 8
+
+    def onehot(A):
+        return jnp.asarray(np.eye(k, dtype=np.float32)[A].reshape(
+            l, 2 * b, h * k))
+
+    a = rng.integers(k, size=(l, b, h))
+    other = rng.integers(k, size=(l, b, h))
+    kept = float(fano_bound(onehot(np.concatenate([a, a], 1)), h, 0))
+    indep = float(fano_bound(onehot(np.concatenate([a, other], 1)), h, 0))
+    collapsed = onehot(np.zeros((l, 2 * b, h), int))
+    assert abs(kept - 1) < 0.01 and abs(indep) < 0.01
+    assert abs(float(fano_bound(collapsed, h, 0))) < 1e-3
+    half = np.where(rng.random((l, b, h)) < 0.5, a, other)
+    assert 0.05 < float(fano_bound(onehot(np.concatenate([a, half], 1)),
+                                   h, 0)) < 0.95
+    # finite at a collapsed head, where the plain entropy's gradient is not
+    g = jax.grad(lambda P: fano_bound(P, h, 0))(collapsed)
+    assert np.isfinite(np.asarray(g)).all()
+
+
+@pytest.mark.parametrize("s_pair,term", [(0.0, "agree"), (1.0, "agree"),
+                                         (1.0, "fano")])
+def test_pair_training_logs_the_pair_term(cache, tmp_path, s_pair, term):
     from pairloss import PairHyperparams
     from pairs import StackedPairSource, doc_partners
     d = KW["d_in"]
@@ -216,8 +243,8 @@ def test_pair_training_logs_the_switch_share(cache, tmp_path, s_pair):
     rows, partners = doc_partners(index, 0, 200, 2, np.random.default_rng(0))
     hyper = PairHyperparams(d, d, 8, 1, 5e-5, 0.0, 1.0,
                             "none", "normal", "featvar", 0.0, 0.0, 0.0,
-                            ghost=False, s_pair=s_pair, pair_h=KW["h"],
-                            pair_heads=2)
+                            ghost=False, s_pair=s_pair, pair_term=term,
+                            pair_h=KW["h"], pair_heads=2)
     model = hyper.ontologizer(d, d, KW["e_dec"], KW["k"], KW["h"], 1, n=2,
                               gate="none", forward="resid", select="ste",
                               dtype_str="float32", dtype_p_str="float32")
@@ -226,9 +253,11 @@ def test_pair_training_logs_the_switch_share(cache, tmp_path, s_pair):
     TrainingEnv(model, hyper, meta, kwargs_loader={"d": d, "shuffle": True}
                 ).train(StackedPairSource(cache, rows, partners))
     loss = np.genfromtxt(tmp_path / "run" / "loss.csv", delimiter=",")
-    share = loss[:, 2]
+    raw = loss[:, 2]          # switch share, or the bound as a fraction
     assert len(loss) and np.isfinite(loss[:, 0]).all()
-    assert ((share >= 0) & (share <= 1)).all()
+    assert np.isfinite(raw).all() and (raw <= 1).all()
+    if term == "agree":
+        assert (raw >= 0).all()
 
 
 def test_setup_takes_a_hyperparams_subclass_only(cache, tmp_path):
