@@ -304,7 +304,7 @@ runs read κ `d1` 0.069–0.071 throughout.
 | 7,500 | 0.113 | 0.108 | 0.084 | 0.083 | 0.025 | 0.142 | 4.99 | 0.083 | 0.0076 |
 | 10,000 | 0.140 | 0.134 | 0.107 | 0.106 | 0.038 | 0.183 | 4.99 | 0.105 | 0.0147 |
 | 12,500 | 0.171 | 0.164 | 0.134 | 0.133 | 0.054 | 0.222 | 4.98 | 0.129 | 0.0248 |
-| 15,000 | 0.204 | 0.195 | 0.165 | 0.162 | 0.072 | 0.259 | 4.97 | 0.152 | 0.0368 |
+| 15,000 | 0.204 | 0.195 | 0.165 | 0.162 | 0.072 | 0.259 | 4.97 | 0.152 | 0.0353 |
 
 The training bound is column 2 of `loss.csv`, a mean over the 250 steps before each checkpoint.
 
@@ -357,3 +357,156 @@ uninterrupted, from about 16:25 to 16:47 (last checkpoint 16:46:40), and the eva
 - **From 16:14, one instance to the end.** It ran under the BFC allocator without preallocation,
   capped at 35% of the card (9.1 GB with CUDA's own). The launch allowed up to six retries, but the
   first attempt finished both runs. The control's last checkpoint is at 16:24.
+
+## 2026-10-14: three epochs (`long.sh 3`): the slow heads reach κ 0.46, but the rise is slowing
+
+`long.sh 3` continued both runs from their epoch-one checkpoints (15,250) to three epochs, step
+46,261. The last checkpoint is 46,250.
+- **Runs.** Both ran uninterrupted, one at a time: the control 17:48–18:31, then the Fano arm
+  18:31–19:15.
+- **Allocator.** As in epoch one's last stretch: BFC without preallocation, capped at 35% of the card.
+
+Slow-head means (38 heads), held out, at every kept checkpoint of the Fano arm:
+
+| Step | κ `d1` | κ `d2` | κ `d8` | κ `d12` | κ `lang` | Largest κ `d1` | Entry entropy (bits) | NMI(lang) | Training bound |
+|---|---|---|---|---|---|---|---|---|---|
+| 2,500 | 0.081 | 0.076 | 0.056 | 0.057 | 0.011 | 0.089 | 5.00 | 0.055 | −0.0004 |
+| 5,000 | 0.094 | 0.089 | 0.067 | 0.068 | 0.016 | 0.111 | 5.00 | 0.067 | 0.0028 |
+| 7,500 | 0.113 | 0.108 | 0.084 | 0.083 | 0.025 | 0.142 | 4.99 | 0.083 | 0.0076 |
+| 10,000 | 0.140 | 0.134 | 0.107 | 0.106 | 0.038 | 0.183 | 4.99 | 0.105 | 0.0147 |
+| 12,500 | 0.171 | 0.164 | 0.134 | 0.133 | 0.054 | 0.222 | 4.98 | 0.129 | 0.0248 |
+| 15,000 | 0.204 | 0.195 | 0.165 | 0.162 | 0.072 | 0.259 | 4.97 | 0.152 | 0.0353 |
+| 17,500 | 0.236 | 0.228 | 0.195 | 0.191 | 0.091 | 0.290 | 4.95 | 0.174 | 0.0480 |
+| 20,000 | 0.268 | 0.258 | 0.224 | 0.220 | 0.109 | 0.321 | 4.94 | 0.195 | 0.0616 |
+| 22,500 | 0.297 | 0.287 | 0.252 | 0.248 | 0.126 | 0.349 | 4.93 | 0.214 | 0.0736 |
+| 25,000 | 0.323 | 0.313 | 0.278 | 0.273 | 0.142 | 0.371 | 4.91 | 0.230 | 0.0861 |
+| 27,500 | 0.347 | 0.337 | 0.301 | 0.296 | 0.156 | 0.396 | 4.90 | 0.246 | 0.0973 |
+| 30,000 | 0.369 | 0.358 | 0.322 | 0.316 | 0.169 | 0.413 | 4.89 | 0.260 | 0.1093 |
+| 32,500 | 0.388 | 0.378 | 0.342 | 0.335 | 0.182 | 0.429 | 4.88 | 0.272 | 0.1206 |
+| 35,000 | 0.406 | 0.395 | 0.359 | 0.351 | 0.193 | 0.443 | 4.88 | 0.284 | 0.1298 |
+| 37,500 | 0.422 | 0.411 | 0.375 | 0.368 | 0.204 | 0.455 | 4.87 | 0.295 | 0.1380 |
+| 40,000 | 0.437 | 0.425 | 0.389 | 0.382 | 0.214 | 0.466 | 4.86 | 0.304 | 0.1480 |
+| 42,500 | 0.450 | 0.438 | 0.402 | 0.394 | 0.223 | 0.473 | 4.86 | 0.313 | 0.1538 |
+| 45,000 | 0.463 | 0.451 | 0.415 | 0.407 | 0.231 | 0.487 | 4.85 | 0.322 | 0.1617 |
+
+- **Columns.** As in the epoch-one table. The training bound averages the 250 steps before each
+  checkpoint.
+- **The control** is unchanged. Its slow heads read throughout:
+  - κ `d1` 0.067–0.072;
+  - κ `d12` 0.047–0.050;
+  - NMI(lang) 0.044–0.047;
+  - 4.99–5.00 bits.
+- **The other 342 heads** of both runs read κ `d1` 0.066–0.071 throughout. None exceeds 0.08.
+
+Held-out FVU_w at step 46,250 (`eval_e3.json`, 26,335 pairs):
+
+| Run | Against the input | Against the next sentence |
+|---|---|---|
+| control | 0.4593 | 1.2136 |
+| Fano arm | 0.4679 | 1.1951 |
+
+The next-sentence baselines are unchanged: the training mean 1.0001, copying x_t 1.5327, ridge 0.8967.
+
+**Readings.**
+- **The rise peaked around the turn of the first epoch and is slowing.**
+  - Slow-head κ `d1` gained +0.029 to +0.033 per 2,500 steps from 10,000 to 22,500. After that it
+    gained less each interval, down to +0.013 by 45,000.
+  - At step 45,000 the mean is 0.463. The slow heads are bunched: from 0.423 to 0.487, where at
+    15,000 they spread from 0.163 to 0.259.
+  - No head has reached 0.5. If the increments keep shrinking by about 0.0015 per interval, the mean
+    crosses 0.5 in about four more intervals (10,000 steps). It may instead level off just below.
+- **It is still document-level, and language is about half of it.**
+  - κ `d12` is 0.407 against κ `d1`'s 0.463, so what the slow heads keep persists across a document.
+  - κ `lang` (same-language sentences of other documents) is 0.231, half of κ `d1`. NMI with the
+    language label is 0.322, against the control's 0.047.
+  - The rest, κ `d12` minus κ `lang`, is shared within a document beyond its language. It is about
+    0.18, twice its value at epoch one (0.09).
+- **No collapse.** Entry usage drifts from 5.00 to 4.85 bits.
+- **The cost grows.**
+  - FVU_w against the input is 0.4679, against the control's 0.4593: 1.9% worse, up from 0.6% at
+    epoch one.
+  - Both runs improved by about 0.06 over the two added epochs.
+  - The Fano arm's reconstructions are slightly closer to the next sentence (1.195 against 1.214).
+    Both stay above the training mean's 1.000, since they reconstruct the current sentence.
+- **The training bound** is 0.162, against the 0.69 a perfectly slow head reaches under winner
+  dropout.
+- **Next.**
+  - The slow heads are now substantially slow (κ 0.46 against the control's 0.07). Train a second
+    seed of each arm, and measure whether seed B's slow heads carry what seed A's do: the
+    block-level reproducibility question.
+  - One more epoch would show whether κ levels off below 0.5.
+
+## 2026-10-15: seed 43: the slow heads reproduce across seeds
+
+`long.sh 1 43` then `long.sh 3 43` trained a second seed of both arms. That is seed 42's history: one
+epoch, then continued to three, with checkpoints every 2,500 steps.
+- **What the seed changes:** the initialization and the draw of each row's same-document partner.
+- **What it doesn't:** the rows themselves (the same 3,947,664) and their order, since the loader's
+  shuffle seed is fixed at 42.
+- **Runs.** Uninterrupted, 05:21–07:33.
+
+**The trajectory replicates.** Slow-head means, held out (`transitions_s43_*`):
+
+| Step | κ `d1`, seed 42 | κ `d1`, seed 43 | Seed 43: κ `d12` | κ `lang` | Slow heads' κ `d1` range | Entry entropy (bits) | NMI(lang) |
+|---|---|---|---|---|---|---|---|
+| 2,500 | 0.081 | 0.080 | 0.056 | 0.011 | 0.071–0.086 | 5.00 | 0.055 |
+| 5,000 | 0.094 | 0.093 | 0.066 | 0.017 | 0.085–0.104 | 5.00 | 0.067 |
+| 10,000 | 0.140 | 0.139 | 0.105 | 0.037 | 0.117–0.162 | 4.99 | 0.106 |
+| 15,000 | 0.204 | 0.203 | 0.162 | 0.071 | 0.173–0.240 | 4.97 | 0.152 |
+| 20,000 | 0.268 | 0.267 | 0.219 | 0.107 | 0.230–0.308 | 4.94 | 0.194 |
+| 25,000 | 0.323 | 0.322 | 0.271 | 0.139 | 0.283–0.359 | 4.91 | 0.229 |
+| 30,000 | 0.369 | 0.365 | 0.312 | 0.164 | 0.332–0.402 | 4.89 | 0.257 |
+| 35,000 | 0.406 | 0.401 | 0.346 | 0.187 | 0.368–0.436 | 4.88 | 0.281 |
+| 40,000 | 0.437 | 0.432 | 0.376 | 0.207 | 0.396–0.465 | 4.86 | 0.301 |
+| 45,000 | 0.463 | 0.457 | 0.402 | 0.224 | 0.419–0.491 | 4.85 | 0.318 |
+
+- Seed 43's control: slow heads at κ `d1` 0.066–0.070 throughout, and the other heads of both seed-43
+  runs at 0.066–0.071.
+- Held-out FVU_w at step 46,250 (`eval_s43_e3.json`): 0.4668 for the Fano arm against 0.4586 for the
+  control, 1.8% worse. Seed 42 read 0.4679 and 0.4593.
+
+**Do the two seeds' heads learn the same partitions?** This is `seedmatch.py`.
+- **Method.** It extends `experiments/ste-arm/partition.py`, which matches heads one-to-one by the NMI
+  between their partitions of the held-out rows (Hungarian), against a null that shuffles one model's
+  rows. Here the match is split by block. Step 46,250, the cache's last 32,768 rows:
+
+| Arm | Block | Heads | Matched NMI (median; max) | Null |
+|---|---|---|---|---|
+| Fano | slow | 38 | 0.414 (0.411; 0.458) | 0.005 |
+| Fano | rest | 342 | 0.017 (0.017; 0.022) | 0.005 |
+| Fano | all | 380 | 0.056 (0.017; 0.458) | 0.005 |
+| control | heads 0–37 | 38 | 0.016 (0.016; 0.022) | 0.005 |
+| control | rest | 342 | 0.017 (0.017; 0.023) | 0.005 |
+
+- **The whole-model assignment.** In the Fano arm it pairs **all 38** of seed 42's slow heads with seed
+  43's slow heads (chance 10%). In the control it pairs 7.9% of heads 0–37 with heads 0–37.
+- **Language.**
+  - **Method.** The slow heads carry language, so two seeds could agree only because both track it.
+    `--labels mc4_sent16.langs.npy` scores the matched slow pairs inside each language and averages,
+    weighted by rows. The null shuffles one seed's codes within each language.
+  - **Rows.** NMI over 32 entries is biased upward on a few hundred rows, and the 32,768-row tail
+    gives about 390 per language. So this uses the last 262,144 rows: 84 languages with at least
+    1,000 rows, 260,453 rows in all. Every row past the 4M-row training prefix is held out.
+  - **Fano slow pairs:** within-language NMI 0.313 (median 0.311), against a null of 0.041.
+  - **Control:** 0.069 against 0.051.
+
+**Readings.**
+- **The slow block reproduces across seeds.** Its heads match at NMI 0.41, about 25 times the 0.017 of
+  every other head and of the control's heads. Every slow head finds its counterpart in the other
+  seed's slow block.
+- **Nothing else changes.** The 342 other heads reproduce no better than the control's. 0.017 is the
+  same as the flat arm's 0.018 on mC4 documents (`experiments/ste-arm`), the result that motivated
+  this experiment.
+- **Most of it is not language.** Within a language, the slow pairs still agree at 0.31 against a
+  0.04 null, while the control's excess over its null is 0.02. So the two seeds agree on how sentences
+  are partitioned inside a language: the within-document, cross-sentence factors the Fano term
+  rewards.
+- **Caveats.**
+  - One seed pair.
+  - The two seeds share the row order. Still, the control shares it as well and does not reproduce.
+  - The cost is 1.8% of FVU_w.
+- **Next.**
+  - What do the slow heads encode beyond language? Enrichment against document-level labels where we
+    have them; otherwise autointerp of the slow cells.
+  - A third seed.
+  - Whether the result holds with a larger slow block, or at matched cost.

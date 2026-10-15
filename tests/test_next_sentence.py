@@ -273,6 +273,51 @@ def test_setup_takes_a_hyperparams_subclass_only(cache, tmp_path):
                                    src=list(range(4)), hp=Hyperparams)
 
 
+def test_seedmatch_splits_the_match_by_block():
+    from seedmatch import block_match, slow_mask, slow_to_slow
+    # two layers of three heads, the first of each slow: heads 0 and 3
+    assert slow_mask(6, 3, 1).tolist() == [True, False, False,
+                                           True, False, False]
+    M = np.full((4, 4), 0.01)
+    M[0, 1], M[1, 0] = 0.9, 0.8           # slow heads 0 and 1 swap places
+    M[2, 2], M[3, 3] = 0.5, 0.4
+    slow = np.array([True, True, False, False])
+    v = block_match(M, np.flatnonzero(slow), np.flatnonzero(slow))
+    assert sorted(v.tolist()) == [0.8, 0.9]
+    assert slow_to_slow(M, slow, slow) == 1.0
+    # the whole-model assignment can pair a slow head outside the block
+    M[0, 3] = 0.95
+    M[3, 3] = 0.0
+    M[3, 1] = 0.6
+    assert slow_to_slow(M, slow, slow) == 0.5
+
+
+def test_within_label_nmi_ignores_agreement_through_the_label():
+    from seedmatch import nmi, shuffle_within, within_label_nmi
+    rng = np.random.default_rng(0)
+    n, k = 20000, 8
+    labels = rng.integers(4, size=n)
+    a = rng.integers(k, size=n)
+    assert abs(nmi(a, a, k) - 1.0) < 1e-9
+    assert nmi(a, rng.integers(k, size=n), k) < 0.01
+    # two codes that both just name the label agree overall, not within it
+    a_lab, b_lab = labels % k, (3 * labels) % k
+    assert nmi(a_lab, b_lab, k) > 0.99
+    assert within_label_nmi(a_lab, b_lab, labels, k) == 0.0
+    # identical codes agree within every label too
+    assert abs(within_label_nmi(a, a, labels, k) - 1.0) < 1e-9
+    # labels with too few rows are left out
+    few = labels.copy()
+    few[:10] = 9
+    assert abs(within_label_nmi(a, a, few, k, min_rows=50) - 1.0) < 1e-9
+    # the within-label shuffle keeps each label's multiset of b
+    s = shuffle_within(a, labels, rng)
+    for lab in range(4):
+        m = labels == lab
+        assert sorted(s[m].tolist()) == sorted(a[m].tolist())
+    assert within_label_nmi(a, s, labels, k) < 0.01
+
+
 def test_next_with_residual_layers_is_refused():
     import train_next
     cfg = train_next.parser().parse_args([])
