@@ -109,23 +109,12 @@ experiments/next-sentence/pilot.sh fano
 
 # Train on SONAR multilingual sentence embeddings (mC4 data)
 uv run python sonar.py
-# or via tmux wrapper:
-./sonar.sh
-
-# Train an MNIST toy autoencoder (currently broken/stale, see below)
-uv run python mnist.py
 
 # Interactive reconstruction + intervention REPL against a trained checkpoint
 uv run python decode.py
 
 # Decode a trained model's learned dictionary tags to text
 uv run python decode_tags.py
-
-# Non-interactive smoke-test harnesses that drive decode.py / decode_tags.py
-# with scripted stdin (useful as a template for manual testing changes to the REPL)
-uv run python run_chat.py
-uv run python run_decode.py
-uv run python run_decode_tags.py
 
 # SAE-baseline comparison suite (all score on the cache tail sae.py holds out):
 uv run python sae.py           # train a field-standard top-k SAE on the same
@@ -322,4 +311,3 @@ Trained models, loss logs, and other experimental artifacts are stored in `data/
 ## Known dead/stale code
 
 - `ontologize/layers/dictblock_enhanced.py`, `dict_interpreter.py`, `integration_clean.py`, `vae_integration.py` all import from a nonexistent `ontologize.jax.layers.*` path (a leftover from a prior multi-backend `pytorch/`/`jax/`/`haskell/`/`julia/` layout that has since collapsed into the flat `ontologize/` package). They are never imported anywhere else and contain their own "placeholder, not implemented" docstrings. Treat them as dead — the real dictionary-learning code is `layers/dictblock.py`/`dictenc.py`.
-- `mnist.py` is dead from constructor-signature drift, not truncation: the unused `ontologize.training.data.ImageLoader` import doesn't exist (`ImageLoader` lives in `ontologize/data/loaders.py`), the positional `Ontologizer(...)` and `Hyperparams(...)` calls misalign with the current field order (values land in the wrong fields), and `Metadata(epochs=...)` passes a field `Metadata` doesn't have (immediate `TypeError`). Do not use it as a template.
