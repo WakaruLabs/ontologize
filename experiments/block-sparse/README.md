@@ -46,12 +46,15 @@ done
 
 ## Evaluation
 
-`pareto.py` places the runs beside the converged SAEs: it reads each
+`pareto.py` places the runs beside the converged SAEs: TopK-32, its
+seed-43 replica (for the seed spread) and the L1 sweep. It reads each
 run's block size from its `meta.json` and counts the support per block.
 
 ```bash
-uv run python pareto.py --sae data/out/sonar/sae_conv/m5120_bsf*/params.npz \
-    data/out/sonar/sae_conv/m5120_k32/params.npz
+S=data/out/sonar/sae_conv
+JAX_PLATFORMS=cpu uv run python pareto.py --out data/out/sonar/pareto/pareto_bsf \
+    --sae $S/m5120_bsf*/params.npz $S/m5120_k32/params.npz \
+    $S/m5120_k32_s43/params.npz $S/m5120_l1*/params.npz
 ```
 
 `quantrate.py` and `refit.py` skip block runs: neither has a block code's
