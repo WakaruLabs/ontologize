@@ -58,8 +58,8 @@ All three documents share one framing:
 - why supervision only confirms suspected concepts;
 - why a lone SAE feature is not a variable;
 - steering as a test of a discovered variable, but only against arbitrary partitions of
-  the same space (on GPT-2, random-projection categories steer as specifically as
-  learned ones);
+  the same space (on both SONAR and GPT-2, random-projection and untrained categories
+  steer their own cells as specifically as learned ones);
 - run-to-run reproducibility as the binding constraint.
 
 The findings and the proposal state it in their abstracts. The brief carries it in a

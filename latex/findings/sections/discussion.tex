@@ -290,16 +290,43 @@ seed acts only through the initialization and the training noise; it,
 rather than the data or anything after the classifier, largely fixes
 what a head carves, as in toy networks, where seeds trained on identical
 data implement one algorithm through different
-features~\cite{chughtai2023}. Candidates: replicas of \texttt{resid\_nc\_hm} to its
-full 4.4M steps and of \texttt{g160softmax}; whether large-atom heads'
-reproducibility can be extended by training pressure; whether the
-$k{=}2$ arm's one-bit heads reproduce better than 32-way ones; what lets
-the topic head recur when no other head does (at $k{=}128$ a dominant
-layer-0 head recurs with a third to a half of its agreement); whether a
-per-head router's gain is what reproduces, since on GPT-2 the router
-doubles contribution agreement while switching off the last two layers;
-and a GPT-2 flat arm, so the matched-size comparison of
-Section~\ref{sec:l0size} has a second dataset.
+features~\cite{chughtai2023}. Classical identifiability results point to
+two routes out: selecting among trained seeds by pairwise cross-seed
+agreement without labels, as Unsupervised Disentanglement Ranking scores
+models by their median alignment across seeds~\cite{udr2020} (where
+three or more conditionally independent views of a discrete variable
+identify its distribution up to label permutation~\cite{allman2009},
+though here the heads are the candidate views rather than fixed ones, and
+even sparse binary codes need nonlinear dynamics and radial richness
+when learned from static marginals~\cite{hillar2015}); and breaking the
+static marginal symmetry with paired observations, where temporal
+contrast~\cite{pcl2017}, sparse transition priors~\cite{slowvae2021},
+shared factors across corruptions~\cite{locatello2020}, auxiliary
+conditioning~\cite{ivae2020}, or contrastive alignment of conditional
+balls~\cite{zimmermann2021} give identifiability up to permutation.
+Initial probes on the sentence-split cache \texttt{mc4\_sent16}
+(Appendix~\ref{sec:seedsdetail}) bound and test the second route: linear
+ridge regression of $\mathbf{x}_{t+1}$ on $\mathbf{x}_t$ reaches
+$\mathrm{FVU}_{\mathrm{next}}{=}0.896$ (about 10\% of next-sentence
+variance explained, the ceiling for any function of $\mathbf{x}_t$
+alone); adjacent sentences concentrate strongly in direction (raw cosine
+AUC 0.923 vs.\ 0.685 in whitened distance, which norm variance
+dominates), yet existing heads switch entries on 92.2--98.1\% of adjacent
+pairs with off-diagonal transition concentration $\kappa \le 0.081$; and
+penalizing cross-sentence assignment disagreement on 38 slow heads
+collapses them to 0.04--0.09 bits for $s_{\mathrm{pair}} \ge 10^{-4}$ even
+under $\mathrm{KL}_m{=}5\times10^{-4}$, motivating a hinged Fano
+conditional-entropy lower bound $[H(P_b \mid P_a) - H_{\mathrm{floor}}]_+$
+that turns off once the transition table is sparse. Other candidates:
+replicas of \texttt{resid\_nc\_hm} to its full 4.4M steps and of
+\texttt{g160softmax}; whether large-atom heads' reproducibility can be
+extended by training pressure; whether the $k{=}2$ arm's one-bit heads
+reproduce better than 32-way ones; what lets the topic head recur when no
+other head does (at $k{=}128$ a dominant layer-0 head recurs with a third
+to a half of its agreement); whether a per-head router's gain is what
+reproduces, since on GPT-2 the router doubles contribution agreement
+while switching off the last two layers; and a GPT-2 flat arm, so the
+matched-size comparison of Section~\ref{sec:l0size} has a second dataset.
 \item \textbf{Bring the rest of the GPT-2 hard code onto this branch.}
 Direct atoms are ported (Appendix~\ref{sec:gpt2ablation}), but
 \texttt{resid\_first} and \texttt{gain\_clip} are not, so
@@ -313,6 +340,17 @@ were tuned at $k{=}32$ and carried over, and need retuning before the gap
 reads as a property of $k$. Direct atoms also make steering literal, a
 set-intervention adding $g_\ell(\mathbf{a}_{ij'} - \mathbf{a}_{ij})$ at
 one layer, and that has not been measured.
+\item \textbf{Per-layer decoders vs.\ width-matched shared decoders.}
+Early direct-atom pilots on GPT-2 showed $<0.007$ $\fvu$ gain from
+per-layer decoders, which had placed them under closed items. On the
+40M-token concatenated-head run (Appendix~\ref{sec:gpt2ablation}), giving
+each layer its own decoder instead cuts held-out $\fvu$ from $0.186$ to
+$0.169$ ($97.3\% \to 97.7\%$ loss recovered) and drops cross-layer
+same-head coupling from $97\%$ to $6\%$, near the $3\%$ chance floor,
+showing that the coupling was an artifact of head $i$'s slice being read
+through one shared decoder block across all five layers. Because five
+decoders multiply decoder parameters by $l{=}5$, a shared decoder matched
+in total width ($d_{\mathrm{head}}{=}240$) is the control still owed.
 \item \textbf{Fibers on a frozen base.} The two-stage recipe kept the base
 exact and matched unconstrained fibers' reconstruction on GPT-2. Fibers
 are ported, but no SONAR run has used them; the recipe should be the
@@ -400,10 +438,13 @@ partition there is a strong and somewhat arbitrary constraint, but it
 cannot be faked. Concatenated heads remain the only
 route to disjoint support.
 \item \textbf{Logit-scale control for straight-through training.}
-Normalize logits per head, or control $t$ against a spread$/t$ setpoint,
-in place of the hand-matched temperature, or add a term that pushes the
-logits to commit, the counterpart of the commitment loss by which
-VQ-VAE ties an encoder's scale to its code~\cite{vandenoord2017}.
+Without per-head logit normalization (\texttt{logit\_norm}), classifier
+logits adapt their scale to cancel a temperature anneal after the early
+transient (Appendix~\ref{sec:gpt2ablation}). Normalize logits per head, or
+control $t$ against a spread$/t$ setpoint, in place of the hand-matched
+temperature, or add a term that pushes the logits to commit, the
+counterpart of the commitment loss by which VQ-VAE ties an encoder's
+scale to its code~\cite{vandenoord2017}.
 \item \textbf{Codes trained for their rate.} The operational rates price
 codes that were never trained for a codec: the hard code's entries are
 used almost uniformly, the most expensive usage to entropy-code, and no
@@ -440,10 +481,8 @@ estimator's: only a frozen head escapes its floor;
 Appendix~\ref{sec:freeze}), decoder sparsification and bias (no
 structure; $<1\%$),
 code-forwarding alongside the residual, input whitening (subsumed by
-initialization), entropy-pressure rescaling across shapes (likewise), and
-per-layer decoders (on GPT-2 every layer adds what it added with the
-shared decoder, to within 0.007 of $\fvu$, so a basis fitted to layer 0's
-error is not what limits depth). The \texttt{resid\_nc} layer-4 freeze is
+initialization), and entropy-pressure rescaling across shapes
+(likewise). The \texttt{resid\_nc} layer-4 freeze is
 explained by saturation, and the probe correction leaves it unchanged;
 the two anomalously coherent heads (L2h25, L3h28) remain to inspect.
 \end{itemize}

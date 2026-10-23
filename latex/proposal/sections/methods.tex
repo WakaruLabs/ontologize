@@ -222,8 +222,8 @@ softmax gives every entry positive weight, a single sample on which two
 heads are orthogonal forces every pair of their atoms to be disjoint:
 the partition is a property of $\mathsf{D}$, holding for all inputs,
 which is the premise a static reading of the dictionary needs.
-Under $\mathtt{ConcatDictBlock}$ heads write disjoint slices by
-construction and $\omega$ is identically zero.
+With concatenated heads, heads write disjoint
+slices by construction and $\omega$ is identically zero.
 
 Two orthogonalities are in play. Disjoint support assigns each head a
 block of coordinates; \emph{within} a head the $k$ atoms are contrastive
@@ -329,10 +329,10 @@ and summed over layers,
 \end{equation}
 with $\mathrm{L1}$ the batch mean of each sample's feature norm. In
 practice $\mathrm{cossim}_b$ also minimizes $H$, which therefore carries
-no weight. Every model reported here trained before $\omega$ existed, with
-its predecessor in that slot: the mean cosine between heads' features
-within a sample, which for non-negative features stands in for the same
-disjointness.
+no weight. Most models reported here trained before $\omega$ existed, with
+its predecessor in that slot (the mean cosine between heads' features
+within a sample); a direct $\omega$-penalty sweep on GPT-2 is reported in
+Section~\ref{sec:prelim-orth}.
 
 \subsection{Evaluation}
 \label{sec:eval}

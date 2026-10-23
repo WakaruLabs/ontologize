@@ -5,16 +5,42 @@
 Before heads are named they must be reproducible, or it must be known
 which are. The first layer partly is, and one head in it recurs in every
 run; what lets that head recur when no other does, and whether training
-pressure can extend it, are the first questions.
+pressure can extend it, are the first questions. Classical
+identifiability results suggest two levers: selecting identifiable heads
+or runs by pairwise cross-seed agreement without labels~\cite{udr2020}
+(where three or more conditionally independent views of a discrete latent
+identify its distribution up to permutation~\cite{allman2009}, though
+here the heads are the candidate views), and breaking the static marginal
+symmetry~\cite{locatello2019,hillar2015} with paired observations such as
+adjacent sentences~\cite{pcl2017,slowvae2021,locatello2020,ivae2020,zimmermann2021}.
+Initial probes on a 44.1M-segment sentence-split SONAR cache
+(\texttt{mc4\_sent16}; working notes) show that $\mathbf{x}_t$ linearly
+explains $10.4\%$ of $\mathbf{x}_{t+1}$'s variance ($\mathrm{FVU}_{\mathrm{next}}{=}0.896$),
+that adjacent sentences concentrate strongly in direction (raw cosine AUC
+$0.923$ vs.\ $0.685$ in whitened distance), that existing heads switch
+entries on $92.2$--$98.1\%$ of adjacent pairs, and that a monotone
+cross-sentence agreement penalty on 38 slow heads collapses them to
+$0.04$--$0.09$ bits for $s_{\mathrm{pair}} \ge 10^{-4}$, motivating a
+hinged Fano conditional-entropy lower bound
+$[H(P_b \mid P_a) - H_{\mathrm{floor}}]_+$ that turns off once each entry
+has a sparse set of successors. Decoupling layers is a parallel lever:
+giving the 40M GPT-2 concatenated-head model per-layer decoders drops
+cross-layer same-head coupling from $97\%$ to $6\%$ while cutting
+$\mathrm{FVU}$ from $0.186$ to $0.169$ (with a width-matched shared
+decoder control still owed).
 
 \subsection{Steering at scale}
 Supervised steering vectors are now scored beside each model's own
 directions on that model's categories (working notes) and, for one
 softmax model, on language (Section~\ref{sec:prelim-steer}). Still open:
-the language comparison on the hard codes; bilinear eigenfeatures as
-steering directions; whether one entry's effect is consistent across
-contexts; and whether the flat model's near-perfect realization at half
-the stack's collateral is worth its $1.79\times$ reconstruction cost.
+the language comparison on the hard codes; AxBench-style steering toward
+externally defined concepts against supervised vectors and SAE latents at
+tuned strength (initial Gemma~3 1B and Gemma~4 A4B runs trained with MSE
+plus a small KL term and per-layer decoders are underway); bilinear
+eigenfeatures as steering directions; whether one entry's effect is
+consistent across contexts; and whether the flat model's near-perfect
+realization at half the stack's collateral is worth its $1.79\times$
+reconstruction cost.
 Collateral needs a lever more than a better direction: the hard code's
 heads sit almost on their decision boundaries, and knowing the partition
 buys little, since supervised vectors disturb the other heads at most
@@ -38,15 +64,28 @@ validated by blinded assignment accuracy against $1/k$; and parallel-text
 invariance to separate content heads from form heads.
 
 \subsection{Disjoint heads}
-No trained model partitions its coordinates between heads, and none has
-trained with the support overlap itself as a loss term. Whether that
-penalty can buy the partition, and at what reconstruction price, is open;
-concatenated heads, disjoint by construction, are the comparison that
-already has it.
+No trained summed model partitions its coordinates between heads, and
+penalizing the support overlap $\omega$ on the dictionary weights in
+GPT-2 produced a partition only by moving 73--95\% of atom energy into
+the decoder's null or near-null space while leaving the decoded atoms
+8--10\% above their coordinate-shuffle null (working notes; cf.~\cite[§5.1]{locatello2019}).
+Any overlap penalty must therefore act on decoded or direct atoms, where a
+decoder cannot absorb it; concatenated heads, disjoint by construction,
+already supply the partition and beat direct atoms on GPT-2 once each
+head's block is wider than $k$ (Section~\ref{sec:prelim-gpt2}).
 
 \subsection{Transcoder adaptation}
-The architecture currently reconstructs its own input. Adapting it to
-predict a sublayer's output from its input, as transcoders do for
-MLPs~\cite{dunefsky2024}, is the obvious next target. The residual stack
-then needs a forwarding mode that does not read the target, since the
-target is unavailable at inference.
+Adapting the architecture to predict a sublayer's output $Y$ from its
+input $X$, as transcoders do for MLPs~\cite{dunefsky2024}, has been
+tested in two pilot designs on GPT-2 block~8's MLP (10M tokens,
+concatenated heads; working notes). A dual-decoder design that
+reconstructs both $X$ and $Y$ from the residual stack beats the linear
+ridge floor ($\mathrm{FVU}_Y$ $0.769$, $28.3\%$ MLP-splice loss
+recovered; ridge on SAE latents reaches $0.612$) only when the $Y$ weight
+is raised to $\lambda \ge 3$ ($\mathrm{FVU}_Y$ $0.763 \to 0.729$,
+$28.6\% \to 32.1\%$ recovered), at a steep cost to $X$ reconstruction
+($\mathrm{FVU}_X$ $0.284 \to 0.475$). A target-free forwarding mode
+(\texttt{forward="cond"}) that does not read $Y$ at inference reaches only
+$\mathrm{FVU}_Y$ $0.855$ ($10.0\%$ recovered), with deeper layers adding
+error ($0.823 \to 0.855$). A working transcoder stack still needs a
+target-free residual recurrence that refines $Y$ rather than $X$.

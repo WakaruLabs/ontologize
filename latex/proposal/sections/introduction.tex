@@ -103,8 +103,12 @@ A head can only be named if it is the same head on every run. Past the
 first layer, no head is: two seeds reach identical error while their
 heads agree barely above chance (Section~\ref{sec:prelim-seed}). This is
 currently the binding constraint on the proposal, and an expected one: no
-method that sees only the data can recover its factors without inductive
-biases, on the model and on the data, that match~\cite{locatello2019}.
+method that sees only the marginal data can recover its factors without
+inductive biases, on the model and on the data, that
+match~\cite{locatello2019,hillar2015}, which motivates cross-seed
+selection~\cite{udr2020,allman2009} and paired-observation objectives
+~\cite{pcl2017,slowvae2021,locatello2020,ivae2020,zimmermann2021}
+(Section~\ref{sec:future}).
 
 \paragraph{Steering could push it too far off manifold}
 This is an open problem for activation steering. In robot control, a
@@ -156,12 +160,16 @@ the softmax models; the working notes trace the cause.
 
 \paragraph{Not orthogonal in the limit}
 The support overlap $\omega$ (Section~\ref{sec:disjoint}) penalizes heads
-sharing coordinates but does not guarantee disjoint support at
-convergence, and the measured answer is that it does not arrive: within a
-head atoms come apart, but no trained model partitions its coordinates
-between heads (Section~\ref{sec:prelim-orth}). A static reading of the
-dictionary cannot assume disjoint heads; concatenated heads, disjoint by
-construction, are the route to them.
+sharing coordinates, and the measured answer is that a partition does not
+arrive in summed models: within a head atoms come apart, but no trained
+summed model partitions its coordinates between heads, and penalizing
+$\omega$ on the dictionary weights pushes atom energy into the decoder's
+null or near-null space while leaving decoded overlap above null
+(Section~\ref{sec:prelim-orth}). A static reading of the dictionary
+cannot assume disjoint heads; concatenated heads, disjoint by
+construction, are the route to them, and beat direct atoms on GPT-2 once
+each head's slice has headroom beyond its $k$ entries
+(Section~\ref{sec:prelim-gpt2}).
 
 \paragraph{Might not generalize out of distribution}
 The same concern applies to every feature-based technique. Closed-form

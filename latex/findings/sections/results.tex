@@ -136,7 +136,8 @@ Every head of the single-layer hard variant decodes to directions far more
 similar than a random set of the same size: winner-take-all with a free
 magnitude leaves each head one direction at a time, the regime in which
 covering a multi-dimensional feature takes many near-collinear
-atoms~\cite{dalili2026}, so each head's atoms tile one region. An SAE's post hoc
+atoms~\cite{dalili2026}, so each head's atoms tile one
+region~\cite{bhalla2026manifolds,fel2026structuring}. An SAE's post hoc
 co-firing groups are mildly coherent, as topical clusters would be. Both
 soft architectures show the opposite: in 96--100\% of heads, the entries'
 decode directions are more dissimilar than random sets. Softmax
@@ -238,6 +239,8 @@ model & own decode & diff.\ of means & probe & random \\
 softmax stack & \textbf{0.75} / 0.57 & 0.46 / 0.46 & 0.47 / 0.51 & 0.02 / 0.56 \\
 hard-code stack & 0.37 / 0.66 & \textbf{0.91} / 0.63 & \textbf{0.94} / 0.64 & 0.02 / 0.65 \\
 hard-code flat & 1.00 / 0.33 & 0.97 / 0.27 & 1.00 / 0.31 & 0.01 / 0.37 \\
+untrained stack & 0.02 / 0.22 & 0.75 / 0.22 & \textbf{0.94} / 0.22 & 0.01 / 0.22 \\
+random-projection heads & 0.78 / 0.31 & 0.87 / 0.30 & \textbf{1.00} / 0.31 & 0.02 / 0.32 \\
 \texttt{g160top1} & 0.58 / \textbf{0.03} & 0.94 / 0.13 & 0.95 / 0.14 & 0.04 / 0.23 \\
 \texttt{g160softmax} & 1.00 / 0.30 & 0.99 / 0.27 & 1.00 / 0.31 & 0.01 / 0.34 \\
 $\topk$ SAE, $k_{\mathrm{SAE}}{=}32$ ($m{=}11264$) & 1.00 / 0.21 & 0.92 / 0.21 & 0.97 / 0.23 & 0.00 / 0.25 \\
@@ -246,9 +249,15 @@ SAE, bilinear encoder & 1.00 / 0.07 & 0.97 / 0.12 & 0.99 / 0.11 & 0.01 / 0.13 \\
 \end{tabular}
 \caption{Each model's own steering direction against supervised vectors
 fitted to the same targets (realized / collateral), at a step of
-$0.25\lVert \mathbf{x}\rVert$; 64 targets $\times$ 32 held-out rows per
-model, one seed. An SAE's collateral counts its other active latents, so
-compare within a row.}
+$0.25\lVert \mathbf{x}\rVert$; 60--64 targets $\times$ 32 held-out rows per
+model, one seed. Untrained stack: the $5\times76$ hard-code stack at step~0
+under the fixed initialization. Random-projection heads: $1\times380$
+locality-sensitive hash heads of $k{=}32$ bins (\texttt{steerembed.py
+--model lsh}), whose ``own decode'' swaps empirical cell centroids
+($\mathbf{c}_{ij'} - \mathbf{c}_{ij}$); stepping along the target bin's
+projection direction or margin gradient realizes $1.00$ at $0.32$
+collateral. An SAE's collateral counts its other active latents, so compare
+within a row.}
 \label{tab:steersup}
 \end{table}
 
@@ -284,7 +293,23 @@ every other model's own direction disturbs the other heads as much as a
 random step does. Knowing the partition buys the supervised vectors
 little precision (the difference of means sits at most 0.1 below random's
 collateral), and an SAE's decoder direction is already as good as the
-oracle. At each method's own step size the difference of means realizes
+oracle. Crucially, the two arbitrary-partition rows show that reaching a
+partition's cells in embedding space is a property of partitioning the
+space, not evidence that the learned partitions are meaningful. In an
+untrained $5\times76$ stack, the parametric decode step uses random
+dictionary and decoder weights and stays at chance ($0.02$), but the
+supervised vectors ($0.75$ and $0.94$) and the classifier's own geometry
+(\texttt{grad} $0.61$, \texttt{margin} $0.85$ vs.\ $0.30$ and $0.16$ after
+training) reach its random partitions easily and at a third of the trained
+stack's collateral ($0.22$ vs.\ $0.66$): training aligns the parametric
+decode step with the classifier's cells while moving the stack's heads
+closer to their boundaries and tripling collateral. And in $1\times380$
+random-projection heads, empirical cell-centroid swaps realize $0.78$ at
+strength $0.25$ ($0.67$ at native step) with $0.31$ collateral, while the
+target projection vector, margin gradient, and logistic probe each realize
+$1.00$ ($0.87$ for difference of means), matching the trained flat arm and
+beating the trained hard stack on both reach and collateral. At each
+method's own step size the difference of means realizes
 more in most models, partly by taking longer steps
 (Appendix~\ref{sec:steersupnative}). This tests reaching the model's own
 categories; Appendix~\ref{sec:steeroverlay} steers toward an external
@@ -659,7 +684,13 @@ matches at most 0.1\% of entries, where the $k_{\mathrm{SAE}}{=}32$ SAE
 pair matches 3--31\% (Figure~\ref{fig:softseed}), on a thresholded
 activation measure stricter than the decoder-cosine~\cite{song2025positionmechanisticinterpretabilityprioritize}
 and activation-correlation~\cite{wang2024} measures on which
-language-model SAEs agree across seeds at about 0.8.
+language-model SAEs agree across seeds at about 0.8. Without side
+information or structural constraints matched to the data-generating
+process, static marginal objectives do not identify their latent factors
+~\cite{locatello2019,hillar2015}; Appendix~\ref{sec:seedsdetail} reviews
+the identifiability conditions for discrete views and temporal
+pairs~\cite{allman2009,udr2020,pcl2017,slowvae2021,locatello2020,ivae2020,zimmermann2021}
+and tests next-sentence transition structure on \texttt{mc4\_sent16}.
 
 \subsubsection{Replication on GPT-2}
 
@@ -801,15 +832,16 @@ $5\times32$ heads of 32 entries the code is 800 bits per token, and its
 only continuous numbers are the five layers' gains.
 
 \begin{table}[htbp]\centering\small
-\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.29\linewidth}%
->{\raggedright\arraybackslash}p{0.19\linewidth}%
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{0.31\linewidth}%
+>{\raggedright\arraybackslash}p{0.18\linewidth}%
 >{\raggedright\arraybackslash}p{0.17\linewidth}rr@{}}
 \toprule
 model & atoms & code per token & $\fvu$ & \stackhead[r]{loss\\recovered} \\
 \midrule
-\textbf{direct + gain + STE} & signed, in $\mathbb{R}^{768}$ & 800 bits + 5 gains & 0.195 & \textbf{97.6\%} \\
-private heads + gain + STE & 48-dimensional blocks, shared decoder & 800 bits + 5 gains & 0.186 & 97.5\% \\
-private heads, $k{=}64$ & 48-dimensional blocks, shared decoder & 960 bits + 5 gains & \textbf{0.164} & \textbf{97.9\%} \\
+direct + gain + STE (10M tokens) & signed, in $\mathbb{R}^{768}$ & 800 bits + 5 gains & 0.217 & 97.0\% \\
+\textbf{direct + gain + STE (40M tokens)} & signed, in $\mathbb{R}^{768}$ & 800 bits + 5 gains & 0.195 & \textbf{97.6\%} \\
+concatenated heads + gain + STE & 48-dimensional blocks, shared decoder & 800 bits + 5 gains & 0.186 & 97.5\% \\
+concatenated heads, $k{=}64$ & 48-dimensional blocks, shared decoder & 960 bits + 5 gains & \textbf{0.164} & \textbf{97.9\%} \\
 \midrule
 $\topk$ SAE, $k_{\mathrm{SAE}}{=}32$, $m{=}5120$ & --- & 32 coeffs + $\sim$276 bits & 0.189 & 96.2\% \\
 $\topk$ SAE, $k_{\mathrm{SAE}}{=}128$, $m{=}5120$ & --- & 128 coeffs + $\sim$859 bits & 0.116 & 98.6\% \\
@@ -817,15 +849,22 @@ soft Ontologizer (1 epoch) & --- & 4960 mixture weights & 0.016 & 99.85\% \\
 \bottomrule
 \end{tabular}
 \caption{GPT-2 small, residual entering block 8. Ontologizers: one pass
-over 40M tokens, one seed. SAEs: 10 epochs over 10M tokens with
-\texttt{sae.py}'s unwhitened objective. Clean cross-entropy 3.806,
-mean-ablated 8.283; the direct code reaches 3.914.}
+over 10M or 40M tokens, one seed (the 10M direct run's seed-43 replica
+reaches $\fvu$ $0.219$ and $96.9\%$ recovered). SAEs: 10 epochs over the
+10M-token cache with \texttt{sae.py}'s unwhitened objective; with
+coefficients quantized to $\sim$5 bits each, the $k_{\mathrm{SAE}}{=}32$
+SAE totals 556--588 bits at $\fvu$ $0.189$--$0.190$. Clean cross-entropy
+3.806, mean-ablated 8.283; the 40M direct code reaches 3.914.}
 \label{tab:gpt2hard}
 \end{table}
 
 A discrete 800-bit code recovers more of GPT-2's loss than a
-$k_{\mathrm{SAE}}{=}32$ SAE at nearly the same $\fvu$: 97.6\% against
-96.2\%, at 0.195 against 0.189. Across architectures, then, $\fvu$ does
+$k_{\mathrm{SAE}}{=}32$ SAE both on the same 10M-token training cache
+(97.0\% against 96.2\%, at $\fvu$ 0.217 against 0.189) and after one pass
+over 40M tokens (97.6\% at 0.195), though with its 32 coefficients
+quantized to $\sim$5 bits each (556--588 total bits against the
+Ontologizer's $800 + {\sim}25$) the SAE leads on $\fvu$ per bit. Across
+architectures, then, $\fvu$ does
 not order downstream loss, while within the Ontologizer family on SONAR,
 text fidelity was monotone in $\fvu$ (Appendix~\ref{sec:textfid}). Part
 of such a gap can be mismatch rather than lost information: adapting the
@@ -835,7 +874,10 @@ entries per head (960 bits) the code passes the SAE on both measures.
 Every layer contributes, entry usage stays near uniform, and the observed
 gain is close to the best per-sample scale for each layer; one-epoch
 ablations show that the gain-shape split and direct atoms each help,
-direct atoms most, and that annealing matters
+direct atoms most, that annealing matters, and that giving the 40M
+concatenated-head model per-layer decoders cuts $\fvu$ from $0.186$ to
+$0.169$ ($97.3\% \to 97.7\%$ recovered) while dropping cross-layer
+same-head coupling from $97\%$ to $6\%$
 (Appendix~\ref{sec:gpt2ablation}).
 
 \paragraph{Fibers.} A rank-$r$ local basis per entry, with coordinates read
@@ -873,9 +915,51 @@ base is best on both counts: the base is untouched by construction
 fibers. The mechanisms used in joint training suppress the fibers rather
 than protect the base.
 
+\paragraph{Describability cliff and lexical baseline.} Scoring entries by
+how well an LLM judge, given a description written from activating contexts
+in held-out documents, separates members from non-members (balanced
+accuracy; chance $0.50$, document-split nulls $0.496$--$0.507$) reveals a
+sharp drop with depth. On the 40M models, layer~0 averages $0.70$--$0.71$
+across all entries ($0.91$ on an entry's top-scoring members, $0.65$ on
+random members, and $0.55$ near the boundary), layer~1 falls to
+$0.56$--$0.57$, and layers~2--4 sit at the $0.50$--$0.52$ null even with up
+to 256 describing examples or 64-token contexts (set-level detection on
+10-token bundles retains a small signal at layer~3, $0.556$ vs.\ a $0.505$
+null). Even in layer~0, where 29--31 of the 32 heads track token identity
+(alongside one position head at $1.3$--$1.8$ bits and two document heads),
+a judge-free rule that sees only the current token's identity beats the LLM
+judge on single cells ($0.75$ vs.\ $0.69$ on concatenated heads, $0.74$ vs.\
+$0.71$ on direct atoms); intersecting two layer-0 heads raises balanced
+accuracy against siblings by $+0.10$ on concatenated heads ($0.69 \to 0.78$,
+mostly from lexical information) and by $+0.01$ on direct atoms ($0.71 \to
+0.72$).
+
+\paragraph{Steering, edit cost, and the random-projection null.} Single-head
+edits on the 10M models are lightweight: setting one layer-0 head to its
+mean entry everywhere costs $0.02$--$0.075$ nats of next-token KL (falling
+from $0.063$ to $0.021$ on concatenated heads as head dropout rises from 0
+to $0.5$), comparable to zeroing one active SAE latent ($0.055$ nats), and
+swapping a single head from entry $j$ to $j'$ on the 40M models costs
+$0.001$--$0.06$ nats at unit strength. Scored by how closely the steered
+next-token distribution approaches entry $j'$'s empirical distribution
+among the head's 31 alternatives (rank 0 best, $\sim$15 random; one head
+each in layers 0, 2 and 4 over 128 windows), unit-strength swaps place
+$j'$ at rank $3.5$--$6$, and $4\times$ swaps at rank $5$--$8$ against
+$14$--$18$ for a norm-matched random direction. That specificity is not,
+however, evidence that the learned entries carve meaningful variables: on
+the 40M concatenated-head model (8 heads per layer, unit strength), steering
+between the centroids of random-projection bins lands the target bin at
+mean rank $0.21, 0.00, 0.44, 1.69, 1.27$ across layers 0--4, matching or
+beating the learned cells' centroid steps ($0.56, 0.66, 0.75, 1.37, 1.28$)
+and contrastive-entry steps ($0.71$--$1.94$; random directions
+$14.2$--$16.9$). Because the downstream map from block~8 to the logits is
+locally close to linear, any partition's cell-centroid differences steer
+specifically toward that partition's cells.
+
 \paragraph{Seed stability, replicated.} Matching heads across two seeds by
-partition NMI, the partitions agree only in layer 0 (NMI 0.09 against
-0.05 for unrelated heads within one run) and not at all in layers 1--4.
+partition NMI, the partitions agree only in layer 0 (NMI 0.088 against
+0.050 for unrelated heads within one run, and 0.002 under a row shuffle)
+and not at all in layers 1--4 ($0.003$--$0.015$).
 With direct signed atoms, the gain-shape split from layer 0, a different
 site and a different objective, this repeats Section~\ref{sec:seeds}:
 which entries share a head depends on the seed past the first layer.
@@ -949,5 +1033,9 @@ dictionary and lower error, roughly what the collinearity setpoint exists
 to buy. Signed atoms give up two things: a subtractive feature is harder
 to read as ``this concept is present'', and the $\lVert F\rVert_1 \geq h$
 floor under \texttt{norm\_rows}, which rests on non-cancellation,
-disappears. Concatenated heads, which face a collapsed tradeoff rather
-than a raised floor, are the worst arm (Appendix~\ref{sec:concatgeom}).
+disappears. Concatenated heads at $d_{\mathrm{head}}{=}k{=}32$ under
+non-negative atoms and constant temperature, which face a collapsed
+tradeoff rather than a raised floor, are the worst arm here
+(Appendix~\ref{sec:concatgeom}); giving each head's block headroom
+($d_{\mathrm{head}}{=}48 > k{=}32$) and annealing the temperature reverses
+that ranking in Section~\ref{sec:gpt2hard}.

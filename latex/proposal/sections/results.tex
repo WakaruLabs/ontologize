@@ -84,13 +84,17 @@ $-0.015$ to $-0.020$ below). Hard per-head selection in a single linear
 layer gives the opposite signature, heads that tile one region.
 
 The other orthogonality the architecture was designed for did not
-emerge. No trained model partitions its dictionary space between heads:
-the support overlap $\omega$ (Equation~\ref{eq:support}) sits at or above
-a null that shuffles each head's coordinates, in every model measured, and
-each head's usage covers 52--98\% of the coordinates where a partition
-into 32 heads needs about 3\%. This holds for the part of each atom the
-decoder sees as well as for its null-space part. Heads are contrast sets
-that share their coordinates.
+emerge. No trained summed model partitions its dictionary space between
+heads: the support overlap $\omega$ (Equation~\ref{eq:support}) sits at or
+above a null that shuffles each head's coordinates, in every model
+measured, and each head's usage covers 52--98\% of the coordinates where a
+partition into 32 heads needs about 3\%. This holds for the part of each
+atom the decoder sees as well as for its null-space part, and penalizing
+$\omega$ directly on GPT-2 drives it down in the dictionary space only by
+moving 73--95\% of atom energy into the decoder's null or near-null space,
+while the decoded atoms stay 8--10\% above their null (working notes).
+Summed heads are contrast sets that share their coordinates; concatenated
+heads supply the partition by construction.
 
 \begin{table}[tp]\centering\small
 \begin{tabular}{@{}lrrrr@{}}
@@ -206,12 +210,28 @@ nothing downstream can reclassify). Forcing one first-layer entry of
 \texttt{resid\_nc} reliably steers decodes into Burmese while preserving
 their content, a causally verified existence proof on one seed.
 
-Against supervised steering on language, under matched intervention
-budgets (Table~\ref{tab:steer-overlay}), forcing an entry moves decodes
-along the supervised difference-of-means direction $0.64\times$ as far
-as supervised steering itself and $4\times$ as far as linear-probe
-directions. Every arm's collateral, supervised steering included, sits
-at the random-direction floor.
+Against supervised steering on the model's own categories in embedding
+space (at $0.25\lVert\mathbf{x}\rVert$), the softmax stack's decode
+direction reaches $75\%$ of targets against $46$--$47\%$ for
+difference-of-means and logistic-probe vectors, while the hard stack's
+decode direction reaches $37\%$ against $91$--$94\%$. Yet two
+arbitrary-partition baselines show that reaching a partition's cells in
+embedding space is a property of partitioning the space rather than
+evidence that the learned partitions are meaningful: in an untrained
+$5\times76$ stack, the parametric decode step is random ($2\%$), but the
+supervised vectors ($75\%$ and $94\%$) and classifier gradients ($61\%$
+and $85\%$, vs.\ $30\%$ and $16\%$ trained) reach its random cells at a
+third of the trained stack's collateral ($22\%$ vs.\ $66\%$); and in
+$1\times380$ random-projection heads ($k{=}32$), empirical cell-centroid
+swaps reach $78\%$ ($67\%$ at native step) and the target projection
+vector, margin gradient, and logistic probe reach $100\%$ ($87\%$ for
+difference of means) at $30$--$32\%$ collateral, matching the trained flat
+arm. Against supervised steering on an external concept, language, under
+matched intervention budgets (Table~\ref{tab:steer-overlay}), forcing an
+entry moves decodes along the supervised difference-of-means direction
+$0.64\times$ as far as supervised steering itself and $4\times$ as far as
+linear-probe directions. Every arm's collateral, supervised steering
+included, sits at the random-direction floor.
 
 \begin{table}[tp]\centering\small
 \begin{tabular}{@{}lrrrr@{}}
@@ -263,21 +283,30 @@ and never by one, as a language-agnostic embedding should give.
 \subsection{Hard codes on GPT-2}
 \label{sec:prelim-gpt2}
 On GPT-2 small, with signed atoms in activation space and no decoder, an
-800-bit hard code recovers $97.6\%$ of the model's loss when its
-reconstruction is spliced back in, against $96.2\%$ for a $k_{\mathrm{SAE}}{=}32$ SAE at
-nearly the same $\mathrm{FVU}_w$ (Table~\ref{tab:prelim-gpt2}); across
-architectures, $\mathrm{FVU}_w$ does not order downstream loss. Fibers
-trained on top of the frozen discrete code recover $99.9\%$ while leaving
-the code exactly as it was, at the price of 640 continuous numbers per
-token.
+800-bit hard code recovers more of the model's loss when its
+reconstruction is spliced back in than a $k_{\mathrm{SAE}}{=}32$ SAE both
+on the same 10M-token training cache ($97.0\%$ vs.\ $96.2\%$, at
+$\mathrm{FVU}$ $0.217$ vs.\ $0.189$) and after one pass over 40M tokens
+($97.6\%$ at $0.195$; Table~\ref{tab:prelim-gpt2}), though with its 32
+coefficients quantized to $\sim$5 bits each (556--588 total bits against
+$800 + {\sim}25$) the SAE leads on FVU per bit; across architectures,
+$\mathrm{FVU}$ does not order downstream loss. Giving the 40M
+concatenated-head model per-layer decoders cuts $\mathrm{FVU}$ from
+$0.186$ to $0.169$ ($97.3\% \to 97.7\%$ recovered) and drops cross-layer
+same-head coupling from $97\%$ to $6\%$ (chance $3\%$; a width-matched
+shared decoder control is still owed). Fibers trained on top of the frozen
+discrete code recover $99.9\%$ while leaving the code exactly as it was,
+at the price of 640 continuous numbers per token.
 
 \begin{table}[tp]\centering\small
 \begin{tabular}{@{}llrr@{}}
 \toprule
 model & code per token & $\mathrm{FVU}$ & loss recovered \\
 \midrule
-\textbf{hard code, direct atoms} & 800 bits + 5 gains & 0.195 & \textbf{97.6\%} \\
-hard code, private heads, $k{=}64$ & 960 bits + 5 gains & \textbf{0.164} & \textbf{97.9\%} \\
+hard code, direct atoms (10M tokens) & 800 bits + 5 gains & 0.217 & 97.0\% \\
+\textbf{hard code, direct atoms (40M tokens)} & 800 bits + 5 gains & 0.195 & \textbf{97.6\%} \\
+hard code, concatenated heads & 800 bits + 5 gains & 0.186 & 97.5\% \\
+hard code, concatenated heads, $k{=}64$ & 960 bits + 5 gains & \textbf{0.164} & \textbf{97.9\%} \\
 $\topk$ SAE, $k_{\mathrm{SAE}}{=}32$ & 32 coeffs + $\sim$276 bits & 0.189 & 96.2\% \\
 $\topk$ SAE, $k_{\mathrm{SAE}}{=}128$ & 128 coeffs + $\sim$859 bits & 0.116 & 98.6\% \\
 \bottomrule
@@ -286,11 +315,33 @@ $\topk$ SAE, $k_{\mathrm{SAE}}{=}128$ & 128 coeffs + $\sim$859 bits & 0.116 & 98
 documents. Loss recovered is
 $(\mathrm{CE}_{\mathrm{ablate}} - \mathrm{CE}_{\mathrm{recon}}) /
 (\mathrm{CE}_{\mathrm{ablate}} - \mathrm{CE}_{\mathrm{clean}})$ with the
-residual mean-ablated as the floor; FVU is unwhitened here. Private
-heads write disjoint 48-dimensional blocks through a shared decoder. One
-seed per Ontologizer.}
+residual mean-ablated as the floor; FVU is unwhitened here. Concatenated
+heads write disjoint 48-dimensional blocks through a shared decoder. SAEs
+train 10 epochs over the 10M-token cache (556--588 total bits for
+$k_{\mathrm{SAE}}{=}32$ at $\sim$5 bits per coefficient). One seed per
+Ontologizer (10M direct seed-43 replica: $\mathrm{FVU}$ $0.219$, $96.9\%$).}
 \label{tab:prelim-gpt2}
 \end{table}
+
+On these GPT-2 codes, describability and steering each add a caution.
+Blinded LLM-judged detection of entry descriptions (balanced accuracy;
+chance $0.50$, document-split nulls $0.496$--$0.507$) drops sharply with
+depth: layer~0 averages $0.70$--$0.71$ ($0.91$ on top members, $0.65$ on
+random members, $0.55$ near the boundary), layer~1 falls to $0.56$--$0.57$,
+and layers~2--4 sit at the $0.50$--$0.52$ null; in layer~0 a rule that sees
+only token identity beats the judge on single cells ($0.75$ vs.\ $0.69$ on
+concatenated heads, $0.74$ vs.\ $0.71$ on direct atoms), and two-head
+chains add $+0.10$ on concatenated heads mostly from lexical information
+($+0.01$ on direct). Single-head edits are small in next-token KL (setting
+a layer-0 head to its mean entry costs $0.02$--$0.075$ nats vs.\ $0.055$
+for zeroing an active SAE latent; entry swaps cost $0.001$--$0.06$ nats),
+and swapping a head to entry $j'$ steers the next-token distribution
+specifically toward $j'$'s empirical distribution (mean rank $3.5$--$6$ of
+31 at unit step and $5$--$8$ at $4\times$, vs.\ $14$--$18$ for random
+directions). Yet centroid steps between random-projection bins steer just
+as specifically in every layer (mean rank $0.21$--$1.69$ across layers
+0--4 vs.\ $0.56$--$1.37$ for learned cells), because the downstream map to
+the logits is locally close to linear.
 
 \subsection{Automated interpretability}
 \label{sec:prelim-autointerp}
@@ -309,11 +360,13 @@ atom is an instance of what an entry writes, not a criterion for it, and
 naming an entry requires activation evidence.
 
 \subsection{Against the desiderata}
-Scored against the introduction. \emph{Causal}: positive with a
-qualification. Entries are realized by steps in embedding space and
-steer decodes, but an input-space step disturbs other heads exactly as
-much as a random step of its length, and the residual cascade doubles
-that. \emph{Disentangled}: positive for interventions set on heads
+Scored against the introduction. \emph{Causal}: positive with two
+qualifications. Entries are realized by steps in embedding space and
+steer decodes, but an input-space step disturbs other heads as much as a
+random step of its length (doubled by the residual cascade), and on both
+SONAR and GPT-2 arbitrary partitions (random-projection bins and an
+untrained stack) are steered into their own cells just as specifically as
+learned ones. \emph{Disentangled}: positive for interventions set on heads
 directly, each of which changes one head, and which add. \emph{Closed-form}: negative so far, since
 parameter-space decodes do not describe and heads do not own disjoint
 blocks of the dictionary that a static reading could take one at a

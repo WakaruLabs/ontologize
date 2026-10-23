@@ -54,8 +54,9 @@ that win contrast the values of a variable. The Ontologizer learns
 variables directly: stacked layers of competitive classifier heads, each
 giving every input one of $k$ entries whose atoms reconstruct it. Forcing
 a head to another entry is a label-free difference of means, so steering
-can test a discovered variable, but only against arbitrary partitions of
-the same space, not yet run here. On SONAR sentence embeddings and GPT-2
+can test a discovered variable, though only against arbitrary partitions of
+the same space --- which, on both SONAR and GPT-2, steer their own cells
+just as specifically. On SONAR sentence embeddings and GPT-2
 small residuals, structure costs little once the code is discrete: a pure
 1900-bit hard code reaches $\fvu$ $0.158$, where a $\topk$ SAE at the same
 bits cannot beat $0.236$ (an entropy-coded L1 SAE does better), and on
@@ -87,7 +88,9 @@ The SONAR models train on a fixed cache of 4{,}000{,}000 unit-norm SONAR
 sentence embeddings ($d{=}1024$) from an interleaved 86-language mC4
 sample, with a language label per row and text recoverable by row index;
 80 of the 86 languages, 93\% of rows, were encoded under SONAR's English
-source tag rather than their own (Appendix~\ref{app:data}).
+source tag rather than their own, and a companion sentence-split cache
+(\texttt{mc4\_sent16}, 44.1M consecutive segments) stores unnormalized
+embeddings under native tags (Appendix~\ref{app:data}).
 Sections~\ref{sec:gpt2} and~\ref{sec:seeds} also use residual-stream
 activations of GPT-2 small~\cite{radford2019} at the output of block 8 of
 12 ($d{=}768$), a substrate where sparse dictionary learning is known to
@@ -98,7 +101,11 @@ separate GPT-2 setup compares only within that section
 \paragraph{Objective and score.}
 Every model minimizes the whitened MSE of Eq.~\eqref{eq:mse}, and we
 report whitened FVU (Eq.~\eqref{eq:fvu}) on the final 32{,}768 cache
-rows, which SAEs and straight-through arms never train on. The softmax
+rows, which SAEs and straight-through arms never train on (coordinate~837,
+fixed on raw SONAR embeddings by the final LayerNorm hyperplane, reads out
+$1/\lVert\mathbf{x}^{\mathrm{raw}}\rVert$ after L2 normalization and holds
+at most $0.41\%$ of any sparse model's whitened error;
+Appendix~\ref{app:data}). The softmax
 Ontologizers predate that holdout, but their scores move by at most
 0.3\% on freshly encoded rows that no model saw
 (Appendix~\ref{app:data}). Every score uses the run's own final
@@ -158,9 +165,12 @@ diagnostics live in \texttt{experiments/ste-arm/}
 \texttt{lastlayer.py}, \texttt{partition.py}, \texttt{headcontrib.py},
 \texttt{entryshare.py}, \texttt{bigatoms.py}, \texttt{headlang.py},
 \texttt{headscript.py}, \texttt{headeta.py}, \texttt{embedgeom.py},
-\texttt{decodehead.py}, \texttt{make\_zca.py}); its notebook
-\texttt{experiments/ste-arm/notes.md} records every run's command and the
-superseded readings. The GPT-2 hard-code runs of
+\texttt{decodehead.py}, \texttt{coordfvu.py}, \texttt{make\_zca.py}); its
+notebook \texttt{experiments/ste-arm/notes.md} records every run's command
+and the superseded readings. The sentence-split cache and next-sentence
+transition probes live in \texttt{experiments/sentence-split/} and
+\texttt{experiments/next-sentence/} (\texttt{eval\_next.py},
+\texttt{transitions.py}, \texttt{train\_pair.py}). The GPT-2 hard-code runs of
 Section~\ref{sec:gpt2hard} live in \texttt{experiments/gpt2/}
 (\texttt{train\_onto.py}, \texttt{diagnose.py}, \texttt{seedstab.py}; notes
 in \texttt{DIRECT\_GAIN\_STE.md} and \texttt{results/README.md}, with the two

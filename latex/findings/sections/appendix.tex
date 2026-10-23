@@ -71,7 +71,7 @@ $j$, $j'$ & entries of a head & $k$ & entries per head \\
 $q$ & coordinates & $d$, $e$ & input dimension, dictionary width \\
 \midrule
 & & $r$ & fiber rank \\
-& & $d_{\mathrm{head}}$ & a head's slice of $e$ under $\mathtt{ConcatDictBlock}$ \\
+& & $d_{\mathrm{head}}$ & a head's slice of $e$ under concatenated heads \\
 & & $k_{\mathrm{sel}}$ & entries kept by the \texttt{top}$k_{\mathrm{sel}}$ selection rule \\
 & & $h'$ & heads kept, probed or conjoined, out of $h$ \\
 & & $n_{\mathrm{const}}$ & constant coordinates appended to a layer's input \\
@@ -241,6 +241,50 @@ softmax run at the default temperature $1.0$ rather than its annealed
 $0.03$ puts a healthy checkpoint at $\fvu \approx 0.91$, which is
 indistinguishable from a broken one; every number here uses the run's own
 temperature.
+
+\paragraph{Coordinate~837 and the sentence-split cache (\texttt{mc4\_sent16}).}
+SONAR's encoder ends in a LayerNorm before mean pooling, so every
+unnormalized embedding $\mathbf{x}^{\mathrm{raw}}$ lies in the affine
+hyperplane $\sum_{q=1}^{d} (x^{\mathrm{raw}}_q - \beta_q)/\gamma_q = 0$.
+In SONAR's trained weights, $\gamma_{837} = 0.00492$ is five times smaller
+than the next smallest scale and $\beta_{837} = -0.340$ is thirty times
+larger than typical, so coordinate~837 carries $97\%$ of the hyperplane
+normal's squared length and is determined by the other 1{,}023 coordinates
+to root-mean-square error $1.9\times10^{-9}$ ($1.2\times10^{-4}$ in float16
+storage). On the L2-normalized cache \texttt{mc4\_4M}, dividing by
+$\lVert\mathbf{x}^{\mathrm{raw}}\rVert$ turns that fixed coordinate into a
+direct readout of $1/\lVert\mathbf{x}^{\mathrm{raw}}\rVert$ (correlation
+$0.996$ with $\beta_{837}/\lVert\mathbf{x}^{\mathrm{raw}}\rVert$). It still
+has the smallest variance and therefore the largest inverse-variance weight
+($w_{837} = 27.25$, $2.66\%$ of total weight; top ten coordinates $5.1\%$),
+but because $1/\lVert\mathbf{x}^{\mathrm{raw}}\rVert$ is a smooth scalar on
+the sphere, every model reconstructs it to $\mathrm{FVU}_{837} \le 0.088$,
+better than its average coordinate ($\le 0.41\%$ of any sparse model's
+whitened error; \texttt{coordfvu.py}), and dropping coordinate~837 from the
+weights changes $\fvu$ by at most $+0.0043$ with every model ranking
+unchanged.
+A companion sentence-split cache, \texttt{mc4\_sent16}
+(\texttt{experiments/sentence-split/}), splits the first 4{,}000{,}000 mC4
+documents with SaT (\texttt{sat-3l-sm}, capped at 200 characters;
+three-layer SaT slightly edges twelve-layer on round-trip SONAR chrF2,
+$0.593$ vs.\ $0.583$, by avoiding under-segmented long pieces), encodes up
+to 16 consecutive segments per document ($44{,}104{,}959$ rows from
+$3{,}974{,}496$ documents: $59.1\%$ full sentences, $21.6\%$ newline-split
+lines, $19.4\%$ length-capped pieces) under each row's native fastText
+language tag (83 of 86 languages mapped to their own NLLB tag), and stores
+unnormalized float16 embeddings with document-boundary and segment-kind
+sidecars. Without L2 normalization, coordinate~837 is nearly constant and
+takes $w_{837} = 837$, $81.8\%$ of total inverse-variance weight. Paired
+369.5k-step training runs on a 4M-row slice with and without $w_{837}$
+(\texttt{ste\_h76\_sent16\_w837} vs.\ \texttt{\_no837}, and matching
+\texttt{k32} SAEs) show that keeping $w_{837}$ kills 265 SAE latents ($16\times$
+the masked run) while the SAE's decoder bias absorbs the constant so
+coordinate~837 costs $0.03\%$ of its error against $2.0$--$3.4\%$ of the
+bias-free Ontologizer's; masking $w_{837}$ fixes training (improving the
+remaining 1{,}023 coordinates' $\fvu$ from $0.1489$ to $0.1462$ on the
+Ontologizer and from $0.4596$ to $0.4538$ on the SAE), and solving
+coordinate~837 from the LayerNorm hyperplane before M2M100 decoding
+restores the $0.03$ chrF2 that leaving it unconstrained costs.
 
 \subsection{Models and baselines}
 \label{sec:models}
@@ -2318,6 +2362,8 @@ model & \stackhead[r]{own\\(step)} & \stackhead[r]{diff.\ of means\\(step)}
 softmax stack & 0.19 / 0.25 (0.064) & 0.18 / 0.25 (0.079) & 0.25 / 0.30 \\
 hard-code stack & 0.08 / 0.54 (0.129) & \textbf{0.27} / 0.47 (0.064) & 0.53 / 0.48 \\
 hard-code flat & 0.17 / 0.04 (0.028) & \textbf{0.54} / 0.12 (0.087) & 0.05 / 0.17 \\
+untrained stack & 0.00 / 0.00 (0.001) & \textbf{0.53} / 0.17 (0.162) & 0.00 / 0.17 \\
+random-projection heads & \textbf{0.67} / 0.28 (0.206) & 0.55 / 0.20 (0.146) & 0.27 / 0.20 \\
 \texttt{g160top1} & 0.41 / \textbf{0.01} (0.186) & 0.57 / 0.04 (0.053) & 0.18 / 0.07 \\
 \texttt{g160softmax} & 0.54 / 0.07 (0.050) & 0.57 / 0.13 (0.107) & 0.08 / 0.16 \\
 $\topk$ SAE, $k_{\mathrm{SAE}}{=}32$ ($m{=}5120$) & 0.46 / 0.06 (0.072) & \textbf{0.77} / 0.15 (0.180) & 0.07 / 0.17 \\
@@ -2330,7 +2376,11 @@ SAE, bilinear encoder & 0.82 / 0.04 (0.078) & 0.88 / 0.08 (0.121) & 0.04 / 0.07 
 The difference of means realizes more in most models, and in the SAEs and
 the flat arm partly by taking 2--3 times longer steps. The hard-code stack
 is the clear case where direction, not length, decides: the supervised
-vector reaches its entries three times as often with half the step. The
+vector reaches its entries three times as often with half the step, and on
+the untrained stack at its native step ($0.162$) the difference of means
+reaches twice as many targets ($0.53$) with a third of the collateral
+($0.17$), while empirical cell-centroid swaps on random-projection heads
+reach $0.67$ at native step ($0.206$). The
 softmax stack's own intervention and the supervised vector tie.
 \texttt{g160top1}'s own intervention is the most precise step any method
 takes, disturbing 1.4\% of other heads against 18\% for random.
@@ -2516,6 +2566,56 @@ their centered decoded atoms, which fixes the correspondence exactly,
 Grams stay at chance (1.05--1.19$\times$), the matched atoms at cosine
 0.07--0.15 against 0.06--0.10. Heads persist within a run and do not
 replicate across seeds.
+
+\paragraph{Identifiability theory and next-sentence transition probes.}
+The seed non-identifiability above matches classical results for static
+unsupervised objectives: without side information or structural
+constraints that match the data-generating process, unsupervised
+disentanglement is unidentifiable from marginal data
+alone~\cite{locatello2019}, and even binary sparse coding requires
+nonlinear projection and radial diversity when fit to static
+marginals~\cite{hillar2015}. Where three or more discrete views are
+conditionally independent given a latent class, Kruskal's three-way array
+theorem identifies the class distribution up to label
+permutation~\cite{allman2009}, and Unsupervised Disentanglement Ranking
+uses pairwise cross-seed similarity to select identifiable runs without
+labels~\cite{udr2020}; in the Ontologizer, however, the heads are the
+learned partitions rather than fixed views. The other established route is
+paired observations --- adjacent sentences or augmented views --- where
+permutation-level identifiability follows from temporal contrast~\cite{pcl2017},
+sparse Laplace transition priors~\cite{slowvae2021}, shared factors across
+paired corruptions~\cite{locatello2020}, auxiliary conditioning~\cite{ivae2020},
+or contrastive alignment of conditional neighborhoods~\cite{zimmermann2021}.
+To test whether adjacent sentences in \texttt{mc4\_sent16} supply that
+signal (\texttt{experiments/next-sentence/}), we first fit a linear ridge
+predictor of $\mathbf{x}_{t+1}$ from $\mathbf{x}_t$ on 500{,}000 training
+pairs and score it on 8{,}683 held-out pairs (\texttt{eval\_next.py},
+coordinate~837 masked): the linear floor is $\mathrm{FVU}_{\mathrm{next}} =
+0.8962$ ($\alpha{=}10^3$; predicting $\hat{\mathbf{x}}_{t+1} = \mathbf{x}_t$
+gives $1.418$), so $\mathbf{x}_t$ linearly explains $10.4\%$ of
+$\mathbf{x}_{t+1}$'s whitened variance, and encoding $\mathbf{x}_t$ first
+through the trained Ontologizer or \texttt{k32} SAE reaches $0.9035$ and
+$0.9186$ ($93\%$ and $78\%$ of the linear signal). Directly measuring the
+transition geometry (\texttt{transitions.py}) shows that the next-sentence
+signal is concentrated in direction rather than norm: raw cosine separates
+adjacent from random sentence pairs with AUC $0.923$ (median cosine $0.680$
+vs.\ $0.369$), whereas whitened Euclidean distance reaches only AUC $0.685$
+because $68\%$ of its pair variance is sentence-length norm fluctuation.
+Existing single-sentence heads (\texttt{ste\_h76\_sent16\_no837}) do not
+capture slow state: they switch entries on $92.2\%$ of adjacent pairs in
+layer~0 ($96.9\%$ random) and $96.9$--$98.1\%$ in layers~1--4, with flat
+off-diagonal transition tables (concentration $\kappa = 0.081$ in layer~0
+and $0.008$--$0.044$ below). A 30{,}000-step pilot sweep (\texttt{pilot.sh})
+applying a cross-sentence agreement loss to $h_{\mathrm{slow}}{=}38$ of the
+76 heads per layer showed that a monotone agreement penalty
+($1 - \sum_j p_{a,ij} p_{b,ij}$) either has no effect at $s_{\mathrm{pair}}
+\le 10^{-5}$ or collapses the slow heads to $0.04$--$0.09$ bits for
+$s_{\mathrm{pair}} \ge 10^{-4}$, overwhelming $\mathrm{KL}_m$ at
+$5\times10^{-4}$ because a constant head pays bounded $\mathrm{KL}_m$ while
+achieving zero disagreement. Replacing the monotone penalty with a hinged
+Fano bound on the plug-in conditional entropy,
+$[H(P_b \mid P_a) - H_{\mathrm{floor}}]_+$, is designed to turn off once each
+entry has a sparse set of successors.
 
 \subsection{What makes layer 0 reproduce: gain, atoms, and depth}
 \label{sec:l0size}
@@ -2856,7 +2956,7 @@ variant (800 bits unless noted) & $\fvu$ & loss recovered \\
 \midrule
 STE alone (latent dictionary + decoder) & 0.327 & 93.3\% \\
 + gain & 0.290 & 94.3\% \\
-+ gain, private heads & 0.288 & 94.2\% \\
++ gain, concatenated heads & 0.288 & 94.2\% \\
 + gain, direct atoms & \textbf{0.217} & \textbf{96.95\%} \\
 \quad seed 43 & 0.219 & 96.85\% \\
 \quad $k{=}64$ (960 bits) & 0.186 & 97.6\% \\
@@ -2866,7 +2966,7 @@ STE alone (latent dictionary + decoder) & 0.327 & 93.3\% \\
 \end{center}
 
 Gain-shape and direct atoms each help, and direct atoms most. Their
-advantage is partly speed: over 40M tokens private heads close the gap and
+advantage is partly speed: over 40M tokens concatenated heads close the gap and
 finish slightly ahead (0.186 against 0.195). Without direct atoms and
 gain, more entries per head collapse rather than help ($\fvu$ 0.75 and 0.80
 at $k{=}64$ and 128), and the other straight-through configurations froze
@@ -2883,15 +2983,26 @@ no cost to that layer.
 
 \paragraph{The 40M-token runs, layer by layer.} Every layer contributes:
 prefix $\fvu$ runs $0.472 \to 0.347 \to 0.278 \to 0.231 \to 0.195$ for the
-direct code and $0.451 \to 0.186$ for private heads. Entry usage stays
+direct code and $0.451 \to 0.186$ for concatenated heads. Entry usage stays
 near uniform in every layer (imbalance 0.01--0.16 bits of 5, and 0.30 at
-the private code's last layer), and the observed gain is close to the
+the concatenated code's last layer), and the observed gain is close to the
 best per-sample scale for each layer's contribution (optimal rescale
-0.89--1.09, coefficient of variation 0.05--0.08). The runs use two options
+0.89--1.09, coefficient of variation 0.05--0.08). Giving the 40M-token
+concatenated-head model a separate decoder $W_{\mathrm{dec},\ell}$ per layer
+cuts held-out $\fvu$ from $0.186$ to $0.169$ ($97.3\% \to 97.7\%$ loss
+recovered; prefix $\fvu$ $0.449 \to 0.312 \to 0.244 \to 0.199 \to 0.169$)
+and drops cross-layer same-head coupling from $97\%$ to $6\%$ (chance
+$3\%$), showing that the coupling was an artifact of head $i$'s slice being
+projected through one shared $768\times 48$ decoder block across all five
+layers; because five decoders multiply decoder parameters by $l{=}5$, a
+width-matched shared decoder ($d_{\mathrm{head}}{=}240$) is the control
+still owed. Without per-head logit normalization (\texttt{logit\_norm}),
+classifier logits also adapt their scale to cancel a temperature anneal
+after the early transient. The runs use two options
 this branch does not implement, \texttt{resid\_first} and
 \texttt{gain\_clip}, so they reproduce only on the \texttt{headline}
-branch; its direct atoms, private heads (this branch's
-\texttt{ConcatDictBlock}), fibers and head dropout have been ported.
+branch; its direct atoms, concatenated heads, fibers and head dropout
+have been ported.
 
 \section{Supplementary results: dictionary geometry}
 \label{app:geom}
@@ -2986,8 +3097,8 @@ the same configuration at 372.6k steps is dense and at its null. The
 predecessor penalty ($s_{\mathrm{cossim}_h}{=}10^{-6}$, or $10^{-5}$ for
 \texttt{resid\_nc}) did not produce the partition, and none of these
 models trained with $\omega$ itself as a loss term.
-\texttt{ConcatDictBlock} is the only route to disjoint support here, and
-it is disjoint by construction.
+Concatenated heads are the only route to disjoint support here, and
+they are disjoint by construction.
 
 It is not the decoder's null space. Splitting each atom into its row-space
 (visible) and null-space parts and scoring each against the same null, the
@@ -3048,12 +3159,16 @@ a few percent, because it grows a near-null space instead (condition
 number $1.0\times10^4$ unpenalized, $5.1\times10^5$ at $10^{-3}$), and
 each penalized head puts nearly all its energy in directions the decoder
 shrinks tenfold or more. Measured on the dictionary weights, $\omega$ can
-be gamed through any learned decoder.
+be gamed through any learned decoder --- the same disconnect between the
+representation a regularizer penalizes and the representation downstream
+evaluations read that Locatello et al.\ document when total-correlation
+penalties on sampled latents increase correlation of the mean
+code~\cite[§5.1]{locatello2019}.
 
 \subsection{Concatenated heads}
 \label{sec:concatgeom}
 
-\texttt{ConcatDictBlock} at $d_{\text{head}}{=}32$ gives each head a
+Concatenated heads at $d_{\text{head}}{=}32$ give each head a
 $(768,32)$ decoder block: 32 non-negative generators in a 32-dimensional
 subspace, a simplicial cone, and the per-head null space is zero. The
 floor on a head's mean row cosine is $(k/d_{\text{head}} - 1)/(k-1)$,
@@ -3066,6 +3181,10 @@ of 32, against 30.2 summing), and the worst error
 the cone frame binds; it is not explained by $\bar\kappa$ alone (at step
 90k it had slightly lower $\bar\kappa$ than \texttt{abs}/768,
 0.571 against 0.578, and much worse held-out error, 0.806 against 0.463).
+On GPT-2 (Section~\ref{sec:gpt2hard}), widening each head's slice beyond its
+entry count ($d_{\text{head}}{=}48 > k{=}32$) and annealing the temperature
+relieves that bottleneck: concatenated heads reach $\fvu$ $0.186$ (and
+$0.164$ at $k{=}64$), beating direct atoms' $0.195$.
 
 \subsection{Selection rule, training duration, and the last layer}
 \label{sec:lastlayer}

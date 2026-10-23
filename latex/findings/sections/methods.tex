@@ -360,8 +360,10 @@ component~\cite{zass2006,pompili2014,asteris2015onmf,charikar2021}.
 Measured on the trained models, the cheap
 solution was not taken: the within-head orthogonality holds, and no model
 partitions its coordinates between heads (Appendix~\ref{sec:support}).
-Under $\mathtt{ConcatDictBlock}$ heads write disjoint slices by
-construction and $\omega$ is identically zero.
+Under $\mathtt{ConcatDictBlock}$ (concatenated heads) heads write
+disjoint slices by construction and $\omega$ is identically zero
+(Section~\ref{sec:geom}, Appendix~\ref{sec:concatgeom}, and
+Section~\ref{sec:gpt2hard}).
 
 We add noise $\varepsilon_F$ to $F$, then sum over the head dimension to obtain
 pooled features $\mathbf{f}' \in \mathbb{R}^{e}$, which are added to the
@@ -518,7 +520,7 @@ $\mathrm{L1}$ on the output can be paid down by either factor.
 
 \emph{Fibers} (\texttt{fiber\_rank} $r$) give every entry a local basis
 $U_{ij} \in \mathbb{R}^{e \times r}$ (in its head's slice under
-$\mathtt{ConcatDictBlock}$), and each head reads $r$ coordinates
+concatenated heads), and each head reads $r$ coordinates
 $\mathbf{c}_i = \beta\tanh(A_i\mathbf{u}/\beta)$ from the input, so
 \begin{equation}
 	\mathbf{f}_i = \gamma_i \sum^{k}_{j=1} p_{ij}\,\big(\mathbf{a}_{ij}
