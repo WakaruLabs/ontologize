@@ -221,10 +221,14 @@ def main():
         if meta_path.exists():
             meta = json.loads(meta_path.read_text())
             topk, groups, gfn = meta["topk"], meta["groups"], meta["group_fn"]
+            block = meta.get("block", 0)
         else:
             from pareto import parse_sae_name
             _, topk = parse_sae_name(path)
-            groups, gfn = 0, "top1"
+            groups, gfn, block = 0, "top1", 0
+        if block:
+            print(f"skip {path} (block-sparse support: not implemented)")
+            continue
         if groups and gfn == "softmax":
             print(f"skip {path} (dense softmax support)")
             continue

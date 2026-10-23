@@ -30,11 +30,12 @@ length of a code uniform over the subsets of that size, not r * log2(n).
 
   SAE: coefficients = measured eval L0 (= topk for top-k runs), index bits
   = `sae_index_bits`: log2 C(m, L0) for L0 of m latents, which groups fire
-  and each one's winner under grouped top-1, none for a dense code. Runs
-  are auto-discovered from data/out/sonar/sae/ (or pass --sae paths to
-  params.npz); m, topk and the grouping come from each run's meta.json,
-  or for older runs are parsed from the m{m}_k{topk} / m{m}_l1{l1}
-  run-directory names sae.py writes.
+  and each one's winner under grouped top-1, which blocks fire for a
+  block-sparse featurizer (whose L0 is topk * block coefficients), none
+  for a dense code. Runs are auto-discovered from data/out/sonar/sae/ (or
+  pass --sae paths to params.npz); m, topk, the grouping and the block
+  size come from each run's meta.json, or for older runs are parsed from
+  the m{m}_k{topk} / m{m}_l1{l1} run-directory names sae.py writes.
 
 Caveats for the writeup: the top-m points are post-hoc truncations of a
 model never trained to truncate, while each SAE was trained at exactly its
@@ -181,17 +182,22 @@ def log2_choose(n: int, r: int) -> float:
 
 
 def sae_index_bits(m: int, l0: float, groups: int = 0,
-                   group_fn: str = "top1") -> int:
+                   group_fn: str = "top1", block: int = 0) -> int:
     """Bits naming a sample's active latents at the eval's mean L0.
 
     A free support is L0 of the m latents, log2 C(m, L0). Grouped top-1
     names which groups fire and each one's winner among m // groups,
     log2 C(groups, L0) + L0 * log2(m // groups); a tie can light two
-    latents in one group, so L0 is capped at `groups`. A dense code
+    latents in one group, so L0 is capped at `groups`. A block-sparse code
+    names which of the m // block blocks fire, log2 C(m // block,
+    L0 / block), and sends every coefficient in each. A dense code
     (grouped softmax, or L0 = m) sends every coefficient and names none.
     An L1 run's L0 varies by sample, so its mean is a plug-in for the
     per-sample average, which also has to name the size."""
     s = round(l0)
+    if block:
+        G = m // block
+        return round(log2_choose(G, min(round(l0 / block), G)))
     if groups and group_fn == "softmax":
         return 0
     if groups:
@@ -340,15 +346,18 @@ def sae_points(cfg, X_eval, w_sqrt, base_w):
             meta = json.loads(meta_path.read_text())
             m, topk = meta["m"], meta["topk"]
             groups, group_fn = meta["groups"], meta["group_fn"]
+            block = meta.get("block", 0)
         else:  # pre-meta.json run: recover the encode rule from the name
             m, topk = parse_sae_name(path)
-            groups, group_fn = 0, "top1"
+            groups, group_fn, block = 0, "top1", 0
         params = {k_: jnp.asarray(v) for k_, v in np.load(path).items()}
-        fvu, l0, *_ = sae.evaluate(sae.make_eval(topk, groups, group_fn),
-                                   params, X_eval, w_sqrt, base_w, cfg.b)
-        bits = sae_index_bits(m, l0, groups, group_fn)
+        fvu, l0, *_ = sae.evaluate(
+            sae.make_eval(topk, groups, group_fn, block),
+            params, X_eval, w_sqrt, base_w, cfg.b)
+        bits = sae_index_bits(m, l0, groups, group_fn, block)
         points.append((f"sae {Path(path).parent.name}", round(l0), bits, fvu))
-        print(f"sae: {path} (m={m} topk={topk} groups={groups})")
+        print(f"sae: {path} (m={m} topk={topk} groups={groups} "
+              f"block={block})")
     return points
 
 

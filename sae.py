@@ -68,6 +68,24 @@ gains to specific structure rather than to the whole architecture):
       W_dec row ("params") and top activations ("acts"). Composes with
       any activation rule; expect to need a lower --lr.
 
+Block-sparse featurizer (Fel et al. 2026, the vanilla form;
+`ontologize.blocksparse.BlockSparse`), a block-structured baseline rather
+than a rung:
+
+  --block B
+      The m latents form m/B blocks of B signed coordinates, and the code
+      keeps the --topk blocks of largest L2 norm, so --topk counts blocks
+      and L0 is topk*B latents. Each decoder block is held on the unit
+      Frobenius ball, the encoder starts tied, and the next --topk blocks
+      by norm reconstruct the residual at weight 1/topk in place of aux-k,
+      so it needs --aux-k 0. Linear encoder only; no --groups, --prefixes,
+      --l1 or --resample-every. The encoder is saved by block, as W_blk
+      (d, m/B, B) and b_blk, and encode/preacts refuse such a checkpoint
+      unless passed the same block=B: a consumer that would read --topk as
+      latents, or price the support per latent, fails instead of
+      mis-encoding it. dead, revived and new_dead count latents, B per
+      block.
+
   uv run python sae.py                          # m=5120 topk=32
   uv run python sae.py --m 11264 --topk 64
   uv run python sae.py --topk 0 --l1 3e-4       # vanilla ReLU+L1
@@ -77,6 +95,9 @@ gains to specific structure rather than to the whole architecture):
   uv run python sae.py --m 5120 --topk 0 --groups 160 --group-fn softmax
   uv run python sae.py --m 5120 --topk 32 --prefixes 5         # 5 "layers"
   uv run python sae.py --m 5120 --topk 32 --enc bilinear --lr 1e-4
+  uv run python sae.py --m 5120 --block 4 --topk 8 --aux-k 0
+                                                # 8 of 1280 blocks: 32
+                                                # coefficients, as --topk 32
 
 Resumable: state is snapshotted atomically every --save-each steps and
 picked up automatically on restart. loss.csv columns:
@@ -122,9 +143,11 @@ from typing import Callable, Iterator, Tuple
 from tqdm import tqdm
 
 from ontologize.sae import (AUX_COEF, SAE, BilinearSAE, from_legacy,
-                            legacy_encoder, to_legacy, topk_relu)
+                            legacy_block, legacy_encoder, to_legacy,
+                            topk_relu)
 from ontologize.sae import eigenfeatures as _eigenfeatures
 from ontologize.grouped import Grouped, group_softmax, group_top1
+from ontologize.blocksparse import BlockSparse, block_topk
 
 
 def parse_args():
@@ -148,6 +171,10 @@ def parse_args():
                    default="linear",
                    help="encoder form; bilinear latents admit eigenfeature "
                         "analysis")
+    p.add_argument("--block", type=int, default=0,
+                   help="vanilla block-sparse featurizer: blocks of B signed "
+                        "latents, --topk of them active (0 = off; needs "
+                        "--aux-k 0)")
     p.add_argument("--epochs", type=int, default=20)
     p.add_argument("--max-steps", type=int, default=0,
                    help="stop after N steps regardless of epochs (0 = off)")
@@ -189,7 +216,9 @@ def parse_args():
 
 
 def run_name(cfg):
-    if cfg.groups:
+    if cfg.block:
+        name = f"m{cfg.m}_bsf{cfg.block}_k{cfg.topk}"
+    elif cfg.groups:
         name = f"m{cfg.m}_g{cfg.groups}{cfg.group_fn}"
     elif cfg.topk:
         name = f"m{cfg.m}_k{cfg.topk}"
@@ -207,17 +236,30 @@ def run_name(cfg):
 
 
 def model_for(params=None, *, d=0, m=0, enc=None, topk=0, l1=0.0, groups=0,
-              group_fn="top1", prefixes=1, aux_k=0):
+              group_fn="top1", prefixes=1, aux_k=0, block=0):
     """The `ontologize` model that a flat `params.npz` dict (or, without
     one, `d`/`m`/`enc`) and the run's encode settings describe. The encoder
     form comes off the params' keys, so a checkpoint needs no flag; the
     gated form sets its own sparsity, so `topk` and `groups` are ignored
-    for it, as they always were here."""
+    for it, as they always were here.
+
+    A block-sparse featurizer's block size comes off its params too, but
+    the caller must pass the same `block` or this raises: a caller that
+    does not know about blocks would read its `topk` as latents."""
     if params is not None:
         enc = legacy_encoder(params)
         m, d = params["W_dec"].shape
+        held = legacy_block(params)
+        if held != block:
+            raise ValueError(
+                f"these parameters are a block-sparse featurizer with "
+                f"block={held}; pass block={held}" if held else
+                f"block={block} was passed, but these parameters are not a "
+                f"block-sparse featurizer")
     enc = enc or "linear"
     kw = dict(d=d, m=m, s_l1=l1, aux_k=aux_k, prefixes=prefixes, enc=enc)
+    if block:
+        return BlockSparse(topk=topk, block=block, **kw)
     if enc == "gated":
         return SAE(topk=0, **kw)
     if groups:
@@ -229,7 +271,7 @@ def model_from_cfg(cfg, params):
     """`model_for` with a training run's settings."""
     return model_for(params, topk=cfg.topk, l1=cfg.l1, groups=cfg.groups,
                      group_fn=cfg.group_fn, prefixes=cfg.prefixes,
-                     aux_k=cfg.aux_k)
+                     aux_k=cfg.aux_k, block=cfg.block)
 
 
 def _apply(model, params, method, *args):
@@ -237,12 +279,14 @@ def _apply(model, params, method, *args):
                        method=getattr(type(model), method))
 
 
-def init_params(rng, d, m, x_mean, enc="linear", x_scale=1.0):
+def init_params(rng, d, m, x_mean, enc="linear", x_scale=1.0, block=0):
     """Field-standard initialization (`SAE.initialize`) in the flat layout:
     unit-norm decoder rows, b_dec at the data mean, tied encoder, bilinear
     factors scaled to the linear init's pre-activation scale. A gated
-    checkpoint has no `b_enc`: its two paths carry their own biases."""
-    return to_legacy(model_for(d=d, m=m, enc=enc).initialize(
+    checkpoint has no `b_enc`: its two paths carry their own biases. With
+    `block`, `BlockSparse.initialize`: orthonormal blocks at Frobenius
+    norm 1, read by the decoder's transpose times `block`."""
+    return to_legacy(model_for(d=d, m=m, enc=enc, block=block).initialize(
         rng, x_mean, x_scale))
 
 
@@ -251,10 +295,11 @@ def gated_pre(params, X):
     return _apply(model_for(params), params, "gated_pre", X)
 
 
-def preacts(params, X):
+def preacts(params, X, block=0):
     """Raw encoder logits for any encoder form (`SAE.preacts`); for the
-    gated form, the magnitude path."""
-    return _apply(model_for(params), params, "preacts", X)
+    gated form, the magnitude path; for a block-sparse featurizer (pass
+    its `block`), the signed pre-codes."""
+    return _apply(model_for(params, block=block), params, "preacts", X)
 
 
 def eigenfeatures(params):
@@ -264,21 +309,28 @@ def eigenfeatures(params):
                           params["W_dec"])
 
 
-def activate(pre, topk, groups=0, group_fn="top1"):
-    """Raw encoder logits -> latent activations for every SAE variant."""
+def activate(pre, topk, groups=0, group_fn="top1", block=0):
+    """Raw encoder logits -> latent activations for every SAE variant;
+    `topk` counts blocks when `block` is set."""
+    if block:
+        return block_topk(pre, topk, block)
     if groups:
         return (group_softmax if group_fn == "softmax" else group_top1)(
             pre, groups)
     return topk_relu(pre, topk)
 
 
-def encode(params, X, topk, groups=0, group_fn="top1"):
+def encode(params, X, topk, groups=0, group_fn="top1", block=0):
     return _apply(model_for(params, topk=topk, groups=groups,
-                            group_fn=group_fn), params, "encode", X)
+                            group_fn=group_fn, block=block),
+                  params, "encode", X)
 
 
 def decode(params, z):
-    return _apply(model_for(params), params, "decode", z)
+    """The decoder reads every model's code alike, so a block-sparse
+    checkpoint decodes without its caller passing `block`."""
+    return _apply(model_for(params, block=legacy_block(params)), params,
+                  "decode", z)
 
 
 def gated_loss(params, X, w_sqrt, l1):
@@ -308,16 +360,17 @@ def make_step(tx, cfg):
     return step
 
 
-def make_eval(topk, groups=0, group_fn="top1"):
+def make_eval(topk, groups=0, group_fn="top1", block=0):
     @jax.jit
     def eval_batch(params, X, w_sqrt):
-        z = encode(params, X, topk, groups, group_fn)
+        z = encode(params, X, topk, groups, group_fn, block)
         err = ((decode(params, z) - X) * w_sqrt) ** 2
         # l1 is logged unpenalized in every mode, so its trajectory
         # separates penalty-driven sparsity (--l1) from what the task and
-        # the activation rule produce on their own
-        return (err.mean(0), (z > 0.0).sum(-1).mean(),
-                jnp.abs(z).sum(-1).mean(), (z > 0.0).sum(0))
+        # the activation rule produce on their own. A block code is
+        # signed, so a latent fires when it is nonzero
+        return (err.mean(0), (z != 0.0).sum(-1).mean(),
+                jnp.abs(z).sum(-1).mean(), (z != 0.0).sum(0))
 
     return eval_batch
 
@@ -544,6 +597,18 @@ def train(cfg):
         # path gradient for latents whose gate is shut, which cannot reopen
         # a gate and would only report deadness as fixed
         assert not cfg.aux_k, "--enc gated needs --aux-k 0 (see gated_loss)"
+    if cfg.block:
+        assert cfg.m % cfg.block == 0, "--m must be a multiple of --block"
+        assert cfg.topk >= 1 and 2 * cfg.topk <= cfg.m // cfg.block, \
+            "--block needs --topk >= 1 blocks, and room for as many " \
+            "runner-ups among the m/block blocks"
+        assert not cfg.groups and cfg.enc == "linear" and cfg.prefixes == 1, \
+            "--block takes the linear encoder, without --groups or --prefixes"
+        assert not cfg.l1, \
+            "--block's only sparsity is its top-k over blocks; needs --l1 0"
+        # the paper's revival is the runner-up term in BlockSparse.loss
+        assert not cfg.aux_k, "--block needs --aux-k 0 (see BlockSparse.loss)"
+        assert not cfg.resample_every, "--block has no resampling"
 
     out = Path(cfg.out) if cfg.out else Path("data/out/sonar/sae") / run_name(cfg)
     out.mkdir(parents=True, exist_ok=True)
@@ -553,7 +618,8 @@ def train(cfg):
     (out / "meta.json").write_text(json.dumps(
         {"m": cfg.m, "topk": cfg.topk, "l1": cfg.l1, "groups": cfg.groups,
          "group_fn": cfg.group_fn, "prefixes": cfg.prefixes,
-         "enc": cfg.enc, "resample_every": cfg.resample_every}))
+         "enc": cfg.enc, "resample_every": cfg.resample_every,
+         "block": cfg.block}))
 
     mm = np.load(cfg.cache, mmap_mode="r")
     n_train, n_head = splits(mm.shape[0], cfg.eval_rows, cfg.train_rows)
@@ -573,11 +639,11 @@ def train(cfg):
     X_tr = x_slice[:cfg.eval_rows]
     base_tr = (X_tr.var(0) * w).mean()
     params = init_params(jax.random.PRNGKey(cfg.seed), d, cfg.m, x_mean,
-                         cfg.enc, x_scale)
+                         cfg.enc, x_scale, cfg.block)
     tx = optax.adam(cfg.lr)
     opt_state = tx.init(params)
     step_fn = make_step(tx, cfg)
-    eval_fn = make_eval(cfg.topk, cfg.groups, cfg.group_fn)
+    eval_fn = make_eval(cfg.topk, cfg.groups, cfg.group_fn, cfg.block)
 
     step = 0
     last_fired = np.zeros(cfg.m, np.int64)

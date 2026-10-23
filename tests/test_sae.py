@@ -2,6 +2,7 @@
 # the Ontologizer ride on this being a correct field-standard top-k SAE
 # trained on the same whitened objective.
 import argparse
+import json
 
 import jax
 import jax.numpy as jnp
@@ -30,7 +31,7 @@ def make_cfg(tmp_path, **overrides):
     np.save(weights, np.ones(D, np.float32))
 
     cfg = dict(m=M, topk=TOPK, l1=0.0, groups=0, group_fn="top1", prefixes=1,
-               enc="linear",
+               enc="linear", block=0,
                epochs=200, max_steps=0, lr=2e-3,
                b=B, cache=str(cache), mse_weights=str(weights),
                eval_rows=512, train_rows=0, block_rows=0, buffer_blocks=16,
@@ -363,3 +364,62 @@ def test_matryoshka_prefixes_are_monotone(tmp_path):
         fvus.append(float(((recon - X) ** 2).mean(0).mean()) / base)
     assert all(a >= b - 0.02 for a, b in zip(fvus, fvus[1:])), fvus
     assert fvus[0] < 1.0  # the first block alone beats the constant predictor
+
+
+# ---- the block-sparse featurizer ----
+
+def plant_blocks(path, n=4096 + 512, k=2, seed=1):
+    """Block-sparse ground truth: each row sums `k` of M // 8 random 4-d
+    subspaces of R^D, at Gaussian (signed) coordinates in each."""
+    rng = np.random.default_rng(seed)
+    F = np.linalg.qr(rng.normal(size=(M // 8, D, 4)))[0]       # (8, D, 4)
+    on = np.argsort(rng.random((n, M // 8)), -1)[:, :k]
+    X = np.einsum("nkj,nkdj->nd", rng.normal(size=(n, k, 4)), F[on])
+    np.save(path, X.astype(np.float32))
+    return str(path)
+
+
+def test_block_sparse_featurizer_learns_planted_subspaces(tmp_path):
+    out = tmp_path / "out_bsf"
+    cfg = make_cfg(tmp_path, cache=plant_blocks(tmp_path / "blocks.npy"),
+                   block=4, topk=2, aux_k=0, out=str(out))
+    fvu, l0, dead = sae.train(cfg)
+    assert fvu < 0.05
+    assert l0 == pytest.approx(2 * 4)   # whole blocks of signed coordinates
+
+    params = np.load(out / "params.npz")
+    assert params["W_blk"].shape == (D, M // 4, 4) and "W_enc" not in params
+    blocks = params["W_dec"].reshape(M // 4, 4, D)
+    assert (np.sqrt((blocks ** 2).sum((1, 2))) <= 1 + 1e-5).all()
+    assert json.loads((out / "meta.json").read_text())["block"] == 4
+
+
+def test_block_checkpoints_need_their_block():
+    """A consumer that does not pass `block` would read topk as latents, so
+    encoding refuses; decoding reads every code alike."""
+    params = sae.init_params(jax.random.PRNGKey(0), D, M, np.zeros(D),
+                             block=4)
+    X = jnp.asarray(np.random.default_rng(0).normal(size=(16, D)),
+                    jnp.float32)
+    plain = sae.init_params(jax.random.PRNGKey(0), D, M, np.zeros(D))
+    for p, block in ((params, 0), (params, 2), (plain, 4)):
+        with pytest.raises(ValueError):
+            sae.encode(p, X, 2, block=block)
+    z = sae.encode(params, X, 2, block=4)
+    assert ((np.asarray(z).reshape(16, M // 4, 4) != 0).any(-1).sum(-1)
+            == 2).all()
+    assert sae.decode(params, z).shape == (16, D)
+    assert np.allclose(sae.activate(sae.preacts(params, X, block=4), 2,
+                                    block=4), z)
+
+
+def test_block_flags(tmp_path):
+    assert sae.run_name(make_cfg(tmp_path, block=4, topk=8, seed=42)) \
+        == "m64_bsf4_k8"
+    for bad in (dict(),                         # aux-k still on
+                dict(aux_k=0, topk=9),          # no room for the runner-ups
+                dict(aux_k=0, l1=1e-3),
+                dict(aux_k=0, enc="bilinear"),
+                dict(aux_k=0, resample_every=100)):
+        with pytest.raises(AssertionError):
+            sae.train(make_cfg(tmp_path, **{"block": 4, "topk": 8, **bad}))

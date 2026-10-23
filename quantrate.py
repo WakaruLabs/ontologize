@@ -817,6 +817,12 @@ def main():
     for spec in cfg.onto:
         rows += onto_rows(spec, cfg, fit_batches, X, w, base_w)
     for path in paths:
+        meta_path = Path(path).parent / "meta.json"
+        if (meta_path.exists()
+                and json.loads(meta_path.read_text()).get("block")):
+            print(f"skip {path} (block-sparse code: not implemented)",
+                  flush=True)
+            continue
         print(f"sae: {path}", flush=True)
         r, perrow = sae_rows(path, cfg, fit_batches, X, w, base_w)
         rows += r

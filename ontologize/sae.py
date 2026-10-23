@@ -7,8 +7,9 @@ or a ReLU+L1 SAE when `topk=0`. `enc` selects how a latent's
 pre-activation is read from the input: a linear map, the gated encoder of
 Rajamanoharan et al. (2024), or a bilinear form (`BilinearSAE`). `Grouped`
 (`ontologize.grouped`) replaces the global top-k with competition inside
-groups of latents. `prefixes` adds Matryoshka nested-prefix losses to any
-of them.
+groups of latents, and `BlockSparse` (`ontologize.blocksparse`) with a
+top-k over blocks of signed latents. `prefixes` adds Matryoshka
+nested-prefix losses to `SAE` and `Grouped`.
 
 These are SAEs, not Ontologizers: the decoder is signed and linear, the
 code carries magnitudes, and nothing is a dictionary lookup. The root
@@ -23,6 +24,9 @@ Layout, following `Linear` (`weights` are `(d_out, d_in)`):
   gate     Linear(d -> m)        weights (m, d), bias b_gate   "gated"
   r_mag, b_mag                   (m,)                          "gated"
   decoder  Linear(m -> d)        weights (d, m), bias b_dec
+  W_blk, b_blk                   (d, m/block, block), (m/block, block):
+                                 `BlockSparse`'s encoder, input axis
+                                 first, and the same in the flat layout
 
 The decoder bias is subtracted from the input before encoding, so `b_dec`
 is both the reconstruction's offset and the encoder's centring.
@@ -398,10 +402,20 @@ def legacy_encoder(legacy: Params) -> str:
     return "linear"
 
 
+def legacy_block(legacy: Params) -> int:
+    """The block size of a block-sparse featurizer's flat parameters, 0 for
+    every other model. It is `W_blk`'s shape, so it is static under `jit`."""
+    return legacy["W_blk"].shape[-1] if "W_blk" in legacy else 0
+
+
 def from_legacy(legacy: Params) -> Params:
     """`sae.py`'s flat parameter dict to this module's tree. Applies to any
     tree shaped like the parameters (e.g. Adam's moments) as well."""
     tree = {"decoder": {"weights": legacy["W_dec"].T, "bias": legacy["b_dec"]}}
+    if "W_blk" in legacy:
+        tree["W_blk"] = legacy["W_blk"]
+        tree["b_blk"] = legacy["b_blk"]
+        return tree
     enc = legacy_encoder(legacy)
     if enc == "gated":
         tree["gate"] = {"weights": legacy["W_gate"].T,
@@ -422,7 +436,9 @@ def to_legacy(tree: Params) -> Params:
     """The inverse of `from_legacy`."""
     legacy = {"W_dec": tree["decoder"]["weights"].T,
               "b_dec": tree["decoder"]["bias"]}
-    if "gate" in tree:
+    if "W_blk" in tree:
+        legacy.update(W_blk=tree["W_blk"], b_blk=tree["b_blk"])
+    elif "gate" in tree:
         legacy.update(W_gate=tree["gate"]["weights"].T,
                       b_gate=tree["gate"]["bias"],
                       r_mag=tree["r_mag"], b_mag=tree["b_mag"])

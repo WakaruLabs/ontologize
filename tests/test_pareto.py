@@ -114,6 +114,9 @@ def test_sae_index_bits():
     # silent groups have to be named too
     assert pareto.sae_index_bits(5120, 150.0, 160, "top1") == round(
         math.log2(math.comb(160, 150)) + 150 * 5)
+    # a block-sparse code names which blocks fire, and sends all of each
+    assert pareto.sae_index_bits(5120, 32.0, block=4) == round(
+        math.log2(math.comb(1280, 8)))
 
 
 def test_gaussian_reference_one_component():
