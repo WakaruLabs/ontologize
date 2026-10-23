@@ -169,9 +169,14 @@ weight files.
 
 The full-length runs under the masked weights train over the whole cache,
 each as its own systemd unit:
-- **`full_runs.sh`** (unit `sent16-full`): the direct k = 128 stack, then
-  the hard stack, each for 2 epochs. That is 344,383 steps of 256, about
-  the shipped `mc4_4M` runs' 369,528.
+- **`full_runs.sh [s_hm]`** (unit `sent16-full`; `sent16-shm` for
+  `s_hm` 2e-6): the direct k = 128 stack, then the hard stack, each for 2
+  epochs. That is 344,383 steps of 256, about the shipped `mc4_4M` runs'
+  369,528.
+  - `s_hm` defaults to the recipe's 1e-4. Another value is added to the run
+    and log names as `_shm<value>`.
+  - It starts training only once the GPU is idle: utilization at most 10%
+    at three checks five minutes apart.
 - **`sae_whole_run.sh`** (unit `sent16-sae`): the k32 SAE for `sae_conv`'s
   144,000 steps of 4,096. It waits until `sent16-full` has finished.
 
