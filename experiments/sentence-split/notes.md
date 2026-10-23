@@ -490,3 +490,60 @@ direct run's atoms.
   converged far ahead of both. `mc4_sent16`'s typical coordinate is about
   4× smaller than `mc4_4M`'s, so the same learning rates are relatively
   hotter here.
+
+## 2026-10-22: the full runs under the masked weights (`full_runs.sh`, `sae_whole_run.sh`)
+
+Three runs on the whole cache, all under `mse_weights_no837.npy`, with the
+shipped recipes:
+- the direct k = 128 stack and the hard stack, 2 epochs each (344,383 steps
+  of 256), unit `sent16-full`;
+- the k32 SAE, 144,000 steps of 4,096 with block-shuffled batches
+  (`--block-rows 65536`), unit `sent16-sae`.
+
+All three finished on 2026-10-14, after a host crash on 2026-10-13 and
+repeated GPU out-of-memory restarts caused by other jobs on the GPU. The
+hard stack resumed from step 80,250, because its step-80,500 checkpoint was
+zeroed by the crash; that checkpoint is in
+`data/out/sonar/sent16/corrupt/`.
+
+`coordfvu.py --coord 837` scored them on the CPU on the last 32,765 rows
+(`data/out/sonar/coordfvu_sent16_e2/`). FVU is over the 1023 free
+coordinates; "250 steps earlier" is the previous kept checkpoint.
+
+| run | FVU | 250 steps earlier |
+|---|---|---|
+| k32 SAE | 0.6679 (its own log: 0.6680) | — |
+| hard stack | 0.8728 | 0.8725 |
+| direct k = 128 | **1.0337** | 1.0335 |
+
+The direct run ends worse than the constant predictor, against 0.5813 for
+its 50k-step run on the head of the cache (2026-10-13 section). It
+degraded during training, not at evaluation:
+- Its training MSE (`loss.csv` column 1, 1000-step means) fell from 5.9e-6
+  to 4.4e-6 by step 25,000, then rose steadily to 7.3e-6 at the end.
+- The two stacks' held-out FVU over training MSE agree to within 2%, so the
+  held-out score follows the training error.
+- The hard stack's training MSE fell throughout, 7.1e-6 to 6.3e-6.
+
+**What it traded the reconstruction for.** The total loss stayed flat from
+step 25,000, because it is almost all the batch mean-entropy term:
+`--s-hm 1e-4` × KL_m ≈ 2.05.
+
+| run | MSE's share of the loss, step 25k → end | cossim_k_max, 25k → end |
+|---|---|---|
+| direct k = 128, `mc4_sent16` | 2.1% → 3.5% | 0.05 → 0.99 |
+| hard stack, `mc4_sent16` | 12.1% → 12.0% | 0.65 → 0.99 |
+| direct k = 128, `mc4_4M` (`ste_k128_h54_direct`) | 51% → 60% | 0.04 → 0.32 |
+| hard stack, `mc4_4M` (`ste_h76_init01`) | 77% → 77% | 0.42 → 0.30 |
+
+- **The weight's scale.** The recipe's auxiliary weights were set against
+  `mc4_4M`'s MSE, which is about 2e-4. On this cache the MSE is 4–7e-6,
+  about 50× smaller, so the same `--s-hm` leaves the reconstruction a few
+  percent of the loss.
+- **Collapse.** KL_m sits at 2.05 for the whole run on both caches, and the
+  direct arm's MSE also rose on `mc4_4M` (2.2e-4 to 3.2e-4). On this cache,
+  in both stacks, some head's atoms collapsed onto one another
+  (cossim_k_max 0.99).
+- **What to change.** Before more runs on this cache, rescale the auxiliary
+  weights to its loss scale (`s_hm` about 50× smaller), or scale the MSE
+  weights so the whitened variance per row matches `mc4_4M`'s. Then rerun.
