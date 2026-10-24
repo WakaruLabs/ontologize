@@ -547,3 +547,69 @@ step 25,000, because it is almost all the batch mean-entropy term:
 - **What to change.** Before more runs on this cache, rescale the auxiliary
   weights to its loss scale (`s_hm` about 50× smaller), or scale the MSE
   weights so the whitened variance per row matches `mc4_4M`'s. Then rerun.
+
+## 2026-10-24: the full runs with the mean-entropy weight rescaled (`full_runs.sh 2e-6`)
+
+The two Ontologizer runs of the 2026-10-22 section again, with
+`--s-hm 2e-6`: the recipe's 1e-4 divided by 50, the factor by which this
+cache's MSE is smaller than `mc4_4M`'s. Everything else is the same: the
+masked weights, 2 epochs, and the direct k = 128 stack before the hard
+stack.
+- **Where:** unit `sent16-shm`, 2026-10-23 01:07 to 2026-10-24 03:48; runs
+  `data/out/sonar/sent16/*_no837_e2_shm2e-6`.
+- **Interruptions:** both resumed from their own checkpoints.
+  - The home volume filled at step 177,500 of the direct run, so every save
+    after it failed. Training resumed once space was freed.
+  - Another job's memory on the GPU caused one out-of-memory restart.
+
+`coordfvu.py --coord 837` scored both on the CPU, on the same 32,765 rows
+under the same masked weights as before
+(`data/out/sonar/coordfvu_sent16_e2_shm2e-6/`). FVU is over the 1023 free
+coordinates.
+
+| run | FVU, `s_hm` 1e-4 (2026-10-22) | FVU, `s_hm` 2e-6 | 2e-6, 250 steps earlier |
+|---|---|---|---|
+| k32 SAE (no `s_hm`) | 0.6679 | — | — |
+| hard stack | 0.8728 | **0.6940** | 0.6941 |
+| direct k = 128 | 1.0337 | **0.4997** | 0.4997 |
+
+The diagnostics come from `loss.csv`, as 1,000-step means: steps 0–1,000,
+around step 25,000, and the last 1,000 steps. The script reproduces the
+2026-10-22 table's numbers for the 1e-4 runs.
+
+| run | training MSE: start → 25k → end | MSE's share of the loss, 25k → end | cossim_k_max, 25k → end | KL_m, 25k → end |
+|---|---|---|---|---|
+| direct, 1e-4 | 6.5e-6 → 4.4e-6 → 7.3e-6 | 2.1% → 3.5% | 0.05 → 0.99 | 2.05 → 2.04 |
+| direct, 2e-6 | 6.5e-6 → 4.3e-6 → 4.0e-6 | 41% → 40% | 0.10 → 0.89 | 2.05 → 2.04 |
+| hard stack, 1e-4 | 7.3e-6 → 6.5e-6 → 6.3e-6 | 12.1% → 12.0% | 0.65 → 0.99 | 0.45 → 0.45 |
+| hard stack, 2e-6 | 7.3e-6 → 6.3e-6 → 5.0e-6 | 69% → 68% | 0.68 → 0.53 | 0.75 → 0.53 |
+
+- **The rescale removes the degradation.**
+  - The MSE's share of the loss is now 40–69%, near `mc4_4M`'s balance
+    under the recipe (51–77%, 2026-10-22 table).
+  - The direct run's training MSE falls through most of the run; its
+    lowest 1,000-step mean is at step 320,500. It now holds out at 0.4997,
+    against 0.5813 for its 50k-step run on the head of the cache.
+  - The hard stack's falls throughout. Its lowest 1,000-step mean is at
+    step 342,500, so it may not have converged at 2 epochs.
+- **Against the SAE.** The direct stack's 0.4997 is below the k32 SAE's
+  0.6679, and the hard stack's 0.6940 is above it.
+  - The codes differ in what they send. The SAE sends 32 continuous
+    coefficients; each Ontologizer head sends a choice of one of its atoms,
+    plus a gain. So this is FVU at the shipped recipes, not at a matched
+    rate. `quantrate.py` would price both; it has not been run on these
+    models.
+  - One seed each.
+- **Collapse is gone from the hard stack, not from the direct one.**
+  - The hard stack's cossim_k_max falls from 0.68 to 0.53 (0.30 on
+    `mc4_4M`).
+  - The direct run's still rises, from 0.10 to 0.89 (0.32 on `mc4_4M`). Its
+    KL_m is 2.05 → 2.04 at both values of `s_hm`, as on `mc4_4M`, so the
+    mean-entropy weight does not move it.
+  - Which head collapses, and whether it costs the fit, is not checked.
+- **What this leaves open.**
+  - The 2026-10-13 paired runs, which measured coordinate 837's weight,
+    trained at `s_hm` 1e-4, in the regime where the MSE was a few percent
+    of the loss.
+  - The other auxiliary weights (`s_g`, `s_bcossim`, `s_support`, `s_L1F`)
+    and Adam's ε are also fixed in absolute units and were not rescaled.
