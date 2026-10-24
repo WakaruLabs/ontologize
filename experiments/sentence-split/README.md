@@ -179,6 +179,15 @@ each as its own systemd unit:
     at three checks five minutes apart.
 - **`sae_whole_run.sh`** (unit `sent16-sae`): the k32 SAE for `sae_conv`'s
   144,000 steps of 4,096. It waits until `sent16-full` has finished.
+- **`sae_rate_runs.sh`** (unit `sent16-rate`): SAEs that can spend as many
+  bits per row as the hard codes, for `quantrate.py`. They are the L1 sweep
+  and the k160 SAE, each with `sae_conv`'s recipe for its kind. Between
+  them it trains the k32 again at the ladder's lr of 4e-4, which
+  `sae_whole_run.sh`'s run (sae.py's default 1e-4) lacks.
+  - The L1 weights are `sae_conv`'s five times 0.0464, which keeps the L1
+    term's balance against the whitened MSE on this cache. The script's
+    header gives the derivation.
+  - It waits for an idle GPU as `full_runs.sh` does.
 
 The SAE uses `sae.py --block-rows 65536 --buffer-blocks 16`. Drawing its
 4,096-row batches at random from the 180 GB cache would be bound by the

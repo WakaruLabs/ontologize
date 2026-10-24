@@ -597,8 +597,7 @@ around step 25,000, and the last 1,000 steps. The script reproduces the
   - The codes differ in what they send. The SAE sends 32 continuous
     coefficients; each Ontologizer head sends a choice of one of its atoms,
     plus a gain. So this is FVU at the shipped recipes, not at a matched
-    rate. `quantrate.py` would price both; it has not been run on these
-    models.
+    rate. `quantrate.py` prices both (next section).
   - One seed each.
 - **Collapse is gone from the hard stack, not from the direct one.**
   - The hard stack's cossim_k_max falls from 0.68 to 0.53 (0.30 on
@@ -613,3 +612,89 @@ around step 25,000, and the last 1,000 steps. The script reproduces the
     of the loss.
   - The other auxiliary weights (`s_g`, `s_bcossim`, `s_support`, `s_L1F`)
     and Adam's ε are also fixed in absolute units and were not rescaled.
+
+## 2026-10-24: operational rate on the sent16 models (`quantrate.py`)
+
+```bash
+JAX_DEFAULT_MATMUL_PRECISION=highest uv run python quantrate.py \
+    --cache data/sonar_embeddings/mc4_sent16.npy \
+    --mse-weights data/out/sonar/sentcache/mse_weights_no837.npy \
+    --eval-rows 32765 --b 6553 \
+    --sae data/out/sonar/sae_sent16/{m5120_k32_no837_whole,m5120_k32_no837,m5120_k32_w837}/params.npz \
+    --onto data/out/sonar/sent16/<the eight runs>@0.00015 \
+    --out data/out/sonar/quantrate_sent16
+```
+
+- **Rows:** the same 32,765 rows as `coordfvu.py`. `--b 6553` because
+  `quantrate.py` scores only whole batches (32,765 = 5 × 6,553); at the
+  default 1,024 it scored 31,744.
+- **Precision:** full float32 matmuls, so every float FVU equals
+  `coordfvu.py`'s. A first run at the default precision and batch read
+  0.0003–0.0004 higher.
+- **Fit rows:** origins and gain statistics come from the cache's first
+  65,530 rows.
+
+| code | float FVU | gains pinned: bits, FVU | gains at 2 sd: bits, FVU | FVU at 1900 bits |
+|---|---|---|---|---|
+| direct k = 128, `s_hm` 2e-6 | 0.4997 | 1889, **0.5260** | 1896, 0.5097 | 0.5021 |
+| hard stack, `s_hm` 2e-6 | 0.6940 | 1894, 0.7169 | 1900, 0.7040 | 0.7036 |
+| direct k = 128, `s_hm` 1e-4 | 1.0337 | 1882, 1.0225 | 1889, 1.0385 | 1.0339 |
+| hard stack, `s_hm` 1e-4 | 0.8728 | 1895, 0.8833 | 1902, 0.8795 | 0.8803 |
+| k32 SAE, whole cache | 0.6680 | — | — | — (its curve ends at 473 bits) |
+
+- **The k32 SAE runs out of bits.**
+  - Its curve reaches its float FVU within 1% at 299 bits and ends at 473
+    bits, at the finest step.
+  - So it has no reading at the hard codes' ~1,900 bits, and it never
+    reaches the direct code's 0.526 at any rate.
+  - The two 12.8M-row k32 SAEs read the same: 0.6682 (`no837`) and 0.6710
+    (`w837`).
+- **The hard codes realize almost their nominal rate.** The direct code's
+  is 1889 of 1890 bits (5 layers × 54 heads × 7 bits); the hard stack's
+  1894 of 1900.
+- **The direct code's gains are cheap.** Six and a half bits of gains, at 2
+  sd steps, take it from 0.5260 to 0.5097; with float gains it reads 0.4997.
+- **The 50k-step pairs:**
+  - direct k = 128: pinned 0.6042 without the weight, 0.6046 with it, at
+    1889 bits;
+  - hard stack: pinned 0.9224 and 0.8852, at 1898 bits.
+- **What this cannot answer yet.** Whether the hard codes beat an SAE at a
+  matched rate needs SAEs that can spend ~1,900 bits. On `mc4_4M` those
+  were the L1 sweep and k160. `sae_rate_runs.sh` trains them on this cache
+  (below).
+- **The baseline's recipe.** The k32 SAEs here trained at sae.py's default
+  lr of 1e-4. `sae_conv`'s `m5120_k32` trained at 4e-4 after its first 48k
+  steps (`sae_ladder.sh`), so these are not quite its recipe.
+
+### The L1 weight's scale on this cache (`sae_rate_runs.sh`)
+
+The L1 term, `s_l1 · Σ|z|`, scales with the raw norm of the codes, because
+the decoder rows have unit raw norm. The whitened MSE scales with the
+rows' whitened variance. Both were measured on the last 32,768 rows of each
+cache, centered, under the weights each trains with:
+- whitened variance per coordinate, `mean(w · var)`: 7.01e-6 on `mc4_sent16`
+  against 5.94e-4 on `mc4_4M`, a ratio of 0.0118 (1/85). The masked
+  weights were not renormalized after coordinate 837's was zeroed: their
+  mean is 0.182, and the normalization that set them was dominated by that
+  coordinate's inverse variance.
+- raw centered norm: 0.211 against 0.826, a ratio of 0.255.
+
+Keeping the two terms' balance multiplies `s_l1` by 0.0118 / 0.255 =
+0.0464. The pilots ran 1,000 steps with the sweep's recipe (lr 4e-4,
+resampling every 5,000 steps) on block-shuffled batches. They are compared
+with `sae_conv`'s runs at the same step:
+
+| `s_l1` on `mc4_sent16` | L0, FVU at step 1,000 | `sae_conv` at the unscaled weight: L0, FVU |
+|---|---|---|
+| 1.39e-6 (3e-5 × 0.0464) | 392, 0.481 | 497, 0.378 |
+| 4.64e-6 (1e-4 × 0.0464) | 53, 0.882 | 69, 0.831 |
+| 3e-5 (unscaled) | 2.3, 1.021 | — |
+
+The rescaled weights land within about 25% of `mc4_4M`'s sparsity. The
+unscaled one leaves almost nothing active. `sae_rate_runs.sh` (unit
+`sent16-rate`, started 2026-10-24) trains:
+- the five rescaled weights, 1.39e-7 to 1.39e-5, on the whole cache for
+  144,300 steps;
+- the k32 SAE again, at the ladder's lr of 4e-4, for 144,300 steps
+  (`m5120_k32_lr4e-4_no837_whole`);
+- then the k160 SAE (m = 11264, lr 1e-4) for 336,000 steps.
