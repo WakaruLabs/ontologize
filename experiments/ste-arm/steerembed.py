@@ -138,16 +138,20 @@ from typing import Any, Callable, Dict, List, NamedTuple, Sequence, Tuple
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import numpy as np
 import jax
 import jax.numpy as jnp
 import optax
-from jaxtyping import Array, Bool, Float, Int
+import orbax.checkpoint as ocp
+from jaxtyping import Array, Bool, Float, Int, PyTree
 
 import sae
+from initscale import InitScaleHyperparams
 from ontologize.layers.nlinear import orient
 from ontologize.ontologizer import Ontologizer
+from ontologize.training.serialize import restore_spec
 from pareto import load_onto, parse_sae_name
 
 
@@ -156,9 +160,21 @@ def parse_args() -> argparse.Namespace:
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--model", required=True,
-                   help="Ontologizer checkpoint dir, or an sae.py params.npz")
+                   help="Ontologizer checkpoint dir, an sae.py params.npz, "
+                        "or 'lsh' for random-projection heads")
     p.add_argument("--temperature", type=float, default=0.00015,
                    help="Ontologizer only")
+    p.add_argument("--untrained", action="store_true",
+                   help="Ontologizer only: score a freshly initialized model "
+                        "with --model's spec instead of loading its trained "
+                        "weights")
+    p.add_argument("--dict-init-scale", type=float, default=0.1,
+                   help="--untrained only: dictionary init scale passed to "
+                        "InitScaleHyperparams")
+    p.add_argument("--lsh-heads", type=int, default=380,
+                   help="--model lsh only: number of random-projection heads")
+    p.add_argument("--lsh-k", type=int, default=32,
+                   help="--model lsh only: bins per random-projection head")
     p.add_argument("--cache", default="data/sonar_embeddings/mc4_4M.npy")
     p.add_argument("--n-features", type=int, default=64)
     p.add_argument("--n-samples", type=int, default=32,
@@ -192,19 +208,44 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     cfg = parse_args()
-    if cfg.model.endswith(".npz"):
+    if cfg.model == "lsh":
+        main_lsh(cfg)
+    elif cfg.model.endswith(".npz"):
         main_sae(cfg)
     else:
         main_onto(cfg)
 
 
+def init_onto(ckpt: str | Path, seed: int, temperature: float,
+              dict_init_scale: float, cache: str
+              ) -> Tuple[Ontologizer, PyTree]:
+    """Freshly initialized Ontologizer with `ckpt`'s spec and
+    `InitScaleHyperparams`'s dictionary scaling."""
+    manager = ocp.CheckpointManager(
+        Path(ckpt).resolve(),
+        checkpointers={"state": ocp.PyTreeCheckpointer(),
+                       "spec": ocp.PyTreeCheckpointer()})
+    model = Ontologizer(**restore_spec(manager, manager.latest_step()))
+    hp = InitScaleHyperparams(
+        d_in=model.d_in, d_out=model.d_out, b=64, seed=seed,
+        temperature=temperature, dict_init_scale=dict_init_scale,
+        init_probe_cache=cache)
+    return model, hp.init(model).params
+
+
 def main_onto(cfg: argparse.Namespace) -> None:
-    model, raw, step = load_onto(cfg.model, cfg.step)
-    params = {"params": raw}
+    if cfg.untrained:
+        model, params = init_onto(cfg.model, cfg.seed, cfg.temperature,
+                                  cfg.dict_init_scale, cfg.cache)
+        step, tag = 0, "init"
+    else:
+        model, raw, step = load_onto(cfg.model, cfg.step)
+        params = {"params": raw}
+        tag = str(step)
     l, h, k = model.l, model.h, model.k
     T = cfg.temperature
     out = Path(cfg.out or f"data/out/sonar/steerembed/"
-                          f"{Path(cfg.model).name}_{step}")
+                          f"{Path(cfg.model).name}_{tag}")
     out.mkdir(parents=True, exist_ok=True)
 
     mm = np.load(cfg.cache, mmap_mode="r")
@@ -243,7 +284,8 @@ def main_onto(cfg: argparse.Namespace) -> None:
     # entries the model actually uses, so "make it select this" is possible
     rng = np.random.default_rng(cfg.seed)
     live = [(li, hi, ki) for li in range(l) for hi in range(h) for ki in range(k)
-            if (A_ref[li, :, hi] == ki).mean() >= cfg.min_rate]
+            if (A_ref[li, :, hi] == ki).mean() >= cfg.min_rate
+            and (A_ref[li, :, hi] != ki).sum() >= cfg.n_samples]
     # stratify by layer: uniform sampling lands few features in layer 0
     # (its usage is the most concentrated, so fewest entries clear
     # --min-rate), and the layers differ sharply in how a steering
@@ -270,7 +312,7 @@ def main_onto(cfg: argparse.Namespace) -> None:
     f_forced = jax.jit(
         lambda p, X, li, hi, ki: model.apply(
             p, X, li, hi, ki, method=forced_decode),
-        static_argnums=(2, 3, 4))
+        static_argnums=(2,))
 
     def layer_input(module, X: Float[Array, "b d_in"], li: int
                     ) -> Tuple[Any, Float[Array, "b d"],
@@ -400,19 +442,19 @@ def main_onto(cfg: argparse.Namespace) -> None:
     f_adj = jax.jit(
         lambda p, X, li, hi, ki: model.apply(
             p, X, li, hi, ki, method=adjoint_dir),
-        static_argnums=(2, 3, 4))
+        static_argnums=(2,))
     f_grad = jax.jit(
         lambda p, X, li, hi, ki: model.apply(
             p, X, li, hi, ki, method=grad_dir),
-        static_argnums=(2, 3, 4))
+        static_argnums=(2,))
     f_margin = jax.jit(
         lambda p, X, li, hi, ki: model.apply(
             p, X, li, hi, ki, method=margin_dir),
-        static_argnums=(2, 3, 4))
+        static_argnums=(2,))
     f_adjor = jax.jit(
         lambda p, X, li, hi, ki: model.apply(
             p, X, li, hi, ki, method=adjoint_oriented_dir),
-        static_argnums=(2, 3, 4))
+        static_argnums=(2,))
 
     rows, geo = [], []
     Xs_all = Xref
@@ -642,6 +684,127 @@ def main_sae(cfg: argparse.Namespace) -> None:
         {"model": str(cfg.model), "m": m, "topk": topk, "groups": groups,
          "group_fn": group_fn, "n_features": len(feats),
          "n_samples": cfg.n_samples, "chance": base, "results": summary,
+         **_metric_summary(cfg, metric, ranks), "geometry": geometry},
+        indent=2))
+    print(f"-> {out}")
+
+
+def lsh_select(X: Float[Array, "b d"], mu: Float[Array, "1 d"],
+               W: Float[Array, "h k d"]) -> Int[Array, "1 b h"]:
+    """Winning bin per random-projection head after centering on `mu`,
+    shaped (1, b, h) like a one-layer Ontologizer's argmax code."""
+    return jnp.argmax(jnp.einsum("bd,hkd->bhk", X - mu, W), -1)[None]
+
+
+def lsh_dirs(Xref: Float[Array, "n d"], A_head: Int[np.ndarray, "n"],
+             Wh: Float[Array, "k d"], ki: int,
+             exclude: Int[np.ndarray, "b"]
+             ) -> Tuple[Float[Array, "b d"], Float[Array, "b d"],
+                        Float[Array, "b d"]]:
+    """For one random-projection head and target bin `ki` on steered rows
+    `exclude` (whose incumbent bins are `A_head[exclude]`):
+      delta  reference cell-centroid swap C[ki] - C[cur], `exclude` held out
+      proj   the target bin's unit projection direction Wh[ki]
+      grad   the unit logit-margin gradient Wh[ki] - Wh[cur]"""
+    keep = np.ones(len(A_head), bool)
+    keep[exclude] = False
+    Xk = np.asarray(Xref)[keep]
+    Ak = A_head[keep]
+    k = Wh.shape[0]
+    oh = (Ak[:, None] == np.arange(k)).astype(np.float32)
+    C = jnp.asarray((oh.T @ Xk) / np.maximum(oh.sum(0)[:, None], 1.0))
+    cur = jnp.asarray(A_head[exclude])
+    delta = C[ki] - C[cur]
+    proj = unit(jnp.broadcast_to(Wh[ki], delta.shape))
+    grad = unit(Wh[ki] - Wh[cur])
+    return delta, proj, grad
+
+
+def main_lsh(cfg: argparse.Namespace) -> None:
+    h, k = cfg.lsh_heads, cfg.lsh_k
+    out = Path(cfg.out or f"data/out/sonar/steerembed/lsh_h{h}_k{k}")
+    out.mkdir(parents=True, exist_ok=True)
+
+    mm = np.load(cfg.cache, mmap_mode="r")
+    Xref = jnp.asarray(np.asarray(mm[-cfg.ref_rows:], np.float32))
+    metric, ranks = load_metric(cfg)
+    Sh, Sih, Q = (jnp.asarray(a, jnp.float32)
+                  for a in (metric.Sh, metric.Sih, metric.Q))
+    pair_rng = np.random.default_rng([cfg.seed, 2])
+
+    rng = np.random.default_rng(cfg.seed)
+    W_np = rng.standard_normal((h, k, Xref.shape[1])).astype(np.float32)
+    W_np /= np.linalg.norm(W_np, axis=-1, keepdims=True) + 1e-9
+    W = jnp.asarray(W_np)
+    mu = Xref.mean(0, keepdims=True)
+    f_arg = jax.jit(lambda X: lsh_select(X, mu, W))
+    A_ref = np.concatenate(
+        [np.asarray(f_arg(Xref[i:i + cfg.ref_b]))
+         for i in range(0, Xref.shape[0], cfg.ref_b)], axis=1)
+
+    live = [(0, hi, ki) for hi in range(h) for ki in range(k)
+            if (A_ref[0, :, hi] == ki).mean() >= cfg.min_rate
+            and (A_ref[0, :, hi] != ki).sum() >= cfg.n_samples]
+    feats = [live[i] for i in rng.choice(
+        len(live), min(cfg.n_features, len(live)), replace=False)]
+    print(f"lsh: 1x{h} random-projection heads, k={k}")
+    print(f"{len(live)} of {h*k} bins fire on >= {cfg.min_rate:.1%} of "
+          f"rows; steering {len(feats)} of them, {cfg.n_samples} rows each\n")
+
+    rows, geo = [], []
+    for (li, hi, ki) in feats:
+        idx = np.where(A_ref[li, :, hi] != ki)[0]
+        idx = rng.choice(idx, min(cfg.n_samples, len(idx)), replace=False)
+        X = Xref[jnp.asarray(idx)]
+        A0 = np.asarray(f_arg(X))
+        n = jnp.linalg.norm(X, axis=-1, keepdims=True)
+
+        delta, proj, grad = lsh_dirs(Xref, A_ref[li, :, hi], W[hi], ki, idx)
+        z = jax.random.normal(jax.random.PRNGKey(int(idx[0])), X.shape)
+        rnd = unit(z)
+        rows += _native(delta, rnd, X,
+                        lambda Xi: np.asarray(f_arg(Xi)),
+                        lambda A: (A[li, :, hi] == ki),
+                        lambda A: _collateral(A, A0, li, hi),
+                        dict(layer=li, head=hi, entry=ki))
+        dm, probe = supervised_dirs(Xref, A_ref[li, :, hi] == ki, idx)
+        rows += _native(jnp.broadcast_to(dm, X.shape), rnd, X,
+                        lambda Xi: np.asarray(f_arg(Xi)),
+                        lambda A: (A[li, :, hi] == ki),
+                        lambda A: _collateral(A, A0, li, hi),
+                        dict(layer=li, head=hi, entry=ki), name="native_dm")
+        dirs = {
+            "decode": unit(delta),
+            "proj": proj,
+            "grad": grad,
+            "dm": unit(jnp.broadcast_to(dm, X.shape)),
+            "probe": jnp.broadcast_to(probe, X.shape),
+            **controls(z, X, Xref[jnp.asarray(
+                partners(idx, Xref.shape[0], pair_rng))], Sh, Sih),
+            **split_dirs(delta, Q, ranks),
+        }
+        geo += geometry_rows(dirs, metric, ranks,
+                             dict(layer=li, head=hi, entry=ki))
+        for s in cfg.strengths:
+            for kind, D in dirs.items():
+                Xi = X + s * n * D
+                Xi = Xi * n / (jnp.linalg.norm(Xi, axis=-1, keepdims=True) + 1e-9)
+                A = np.asarray(f_arg(Xi))
+                rows.append(dict(
+                    kind=kind, layer=li, head=hi, entry=ki, strength=s,
+                    hit=float((A[li, :, hi] == ki).mean()),
+                    collateral=float(_collateral(A, A0, li, hi))))
+
+    _write_csv(out / "steer.csv", rows)
+    _write_csv(out / "geometry.csv", geo)
+    summary = _swept_summary(rows, cfg.strengths)
+    summary.update(_native_summary(rows))
+    geometry = _geometry_summary(geo)
+    print(f"\nbaseline: the bin was selected on 0 of the steered rows by "
+          f"construction; chance for a head is 1/k = {1/k:.3f}")
+    (out / "summary.json").write_text(json.dumps(
+        {"model": "lsh", "h": h, "k": k, "n_features": len(feats),
+         "n_samples": cfg.n_samples, "chance": 1 / k, "results": summary,
          **_metric_summary(cfg, metric, ranks), "geometry": geometry},
         indent=2))
     print(f"-> {out}")

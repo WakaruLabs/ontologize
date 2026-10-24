@@ -13,9 +13,9 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "experiments"
                        / "ste-arm"))
-from steerembed import (controls, data_metric, partners, pct,  # noqa: E402
-                        principal_ranks, split_dirs, step_geometry,
-                        supervised_dirs)
+from steerembed import (controls, data_metric, lsh_dirs, lsh_select,  # noqa: E402
+                        partners, pct, principal_ranks, split_dirs,
+                        step_geometry, supervised_dirs)
 
 D, N = 32, 4096
 
@@ -138,3 +138,31 @@ def test_controls_have_the_shapes_the_geometry_says():
     assert (med["cov"]["var_share"] > med["random"]["var_share"]
             > med["icov"]["var_share"])
     assert med["cov"]["top50"] > med["random"]["top50"] > med["icov"]["top50"]
+
+
+def test_lsh_dirs_exclude_steered_rows_and_flip_the_bin():
+    rng = np.random.default_rng(7)
+    X = jnp.asarray(rng.normal(size=(N, D)) / np.sqrt(D), jnp.float32)
+    W_np = rng.normal(size=(4, 8, D)).astype(np.float32)
+    W_np /= np.linalg.norm(W_np, axis=-1, keepdims=True)
+    W = jnp.asarray(W_np)
+    mu = X.mean(0, keepdims=True)
+    A = np.asarray(lsh_select(X, mu, W))
+    assert A.shape == (1, N, 4)
+
+    ki = 0
+    excl = np.where(A[0, :, 0] != ki)[0][:32]
+    d0, p0, g0 = lsh_dirs(X, A[0, :, 0], W[0], ki, excl)
+    X_corrupt = X.at[excl].set(50.0 * jnp.ones((len(excl), D)))
+    d1, p1, g1 = lsh_dirs(X_corrupt, A[0, :, 0], W[0], ki, excl)
+    assert np.allclose(d0, d1, atol=1e-6)
+    assert np.allclose(p0, p1, atol=1e-6)
+    assert np.allclose(g0, g1, atol=1e-6)
+
+    # A step along grad, proj, or the centroid swap lands in bin ki.
+    Xb = X[jnp.asarray(excl)]
+    assert (np.asarray(lsh_select(Xb + 2.0 * g0, mu, W))[0, :, 0] == ki).all()
+    assert (np.asarray(lsh_select(Xb + 2.0 * p0, mu, W))[0, :, 0] == ki).all()
+    assert (np.asarray(lsh_select(Xb + d0, mu, W))[0, :, 0] == ki).mean() > 0.7
+
+

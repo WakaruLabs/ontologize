@@ -3144,6 +3144,8 @@ row only):
 | softmax stack (`sweep_softmax_shm`) | **0.752** / 0.568 | 0.464 / 0.460 | 0.469 / 0.505 | 0.019 / 0.560 |
 | hard-code stack (`ste_h76_init01`) | 0.370 / 0.656 | **0.910** / 0.628 | **0.939** / 0.640 | 0.021 / 0.654 |
 | hard-code flat (`ste_l1_h380_i01_hm1e4`) | 0.996 / 0.328 | 0.974 / **0.274** | 0.995 / 0.313 | 0.005 / 0.368 |
+| untrained stack (`ste_h76_init01 --untrained`) | 0.017 / 0.220 | 0.747 / 0.215 | **0.944** / 0.219 | 0.014 / 0.219 |
+| random-projection heads (`lsh`, 1x380, k=32) | 0.775 / 0.308 | 0.871 / 0.300 | **0.998** / 0.312 | 0.015 / 0.315 |
 | `g160top1` | 0.582 / **0.026** | 0.936 / 0.131 | 0.947 / 0.142 | 0.036 / 0.232 |
 | `g160softmax` | 1.000 / 0.301 | 0.985 / 0.270 | 1.000 / 0.309 | 0.012 / 0.336 |
 | SAE `m5120_k32` | 0.999 / 0.187 | 0.908 / 0.190 | 0.975 / 0.209 | 0.000 / 0.213 |
@@ -3159,6 +3161,8 @@ the median step as a fraction of |x| and each control's collateral:
 | softmax stack | 0.194 / 0.251 (0.064) | 0.179 / 0.247 (0.079) | 0.249 / 0.298 |
 | hard-code stack | 0.076 / 0.536 (0.129) | **0.266** / 0.465 (0.064) | 0.531 / 0.482 |
 | hard-code flat | 0.169 / 0.043 (0.028) | **0.540** / 0.117 (0.087) | 0.051 / 0.170 |
+| untrained stack | 0.000 / 0.002 (0.001) | **0.527** / 0.166 (0.162) | 0.002 / 0.167 |
+| random-projection heads (`lsh`) | **0.665** / 0.277 (0.206) | 0.547 / 0.202 (0.146) | 0.273 / 0.205 |
 | `g160top1` | 0.410 / **0.014** (0.186) | 0.570 / 0.036 (0.053) | 0.176 / 0.070 |
 | `g160softmax` | 0.536 / 0.067 (0.050) | 0.565 / 0.126 (0.107) | 0.077 / 0.162 |
 | SAE `m5120_k32` | 0.456 / 0.062 (0.072) | **0.765** / 0.146 (0.180) | 0.070 / 0.165 |
@@ -3175,6 +3179,30 @@ the median step as a fraction of |x| and each control's collateral:
   collateral. Its categories are linearly reachable; its decode delta does
   not point at them, consistent with `steergeom.py`'s finding that a forced
   entry's output change barely moves the classifier.
+- **Arbitrary partitions steer just as well in embedding space.** Two
+  untrained baselines (`--untrained --dict-init-scale 0.1` on
+  `ste_h76_init01`, and `--model lsh` with 1x380 random-projection heads of
+  k=32 bins whose `decode` step swaps empirical cell centroids
+  `C_{h,k} - C_{h,cur}`) test what training actually adds:
+  - In the untrained 5x76 stack, `decode` uses random dictionary/decoder
+    weights and sits at chance (0.017 at strength 0.25; 0.000 at native
+    step 0.001). But the classifier's own geometry and the supervised
+    vectors reach its random partitions easily and at a third of the
+    trained stack's collateral (0.22 vs 0.63-0.66): `grad` realizes 0.606
+    and `margin` 0.851 (vs 0.304 and 0.158 trained), `dm` 0.747 (0.968 at
+    0.50, 0.527 at native step 0.162 with 0.166 collateral), and `probe`
+    0.944. Training aligns the parametric decode delta with the partition
+    while moving the stack's heads closer to their boundaries and tripling
+    collateral.
+  - In the 1x380 random-projection (`lsh`) heads, empirical cell-centroid
+    swaps (`decode`) realize 0.775 at strength 0.25 (0.665 at native step
+    0.206) with 0.308 collateral (0.277 native), while the target
+    projection vector (`proj`), first-order margin (`grad`), and logistic
+    `probe` each realize 0.998-1.000 (`dm` 0.871) at 0.300-0.319
+    collateral -- matching the trained flat arm and beating the trained
+    hard stack on both realization and collateral. Reaching a partition's
+    cells in embedding space is a property of partitioning the space, not
+    evidence that the learned partitions are meaningful.
 - **`g160top1` trades realization for precision.** Its decode direction
   reaches fewer targets than the supervised vectors (0.58 against 0.94)
   but disturbs a fifth as many other heads (0.026 against 0.13); every
@@ -3190,6 +3218,13 @@ the median step as a fraction of |x| and each control's collateral:
   (0.999 against 0.91-0.97 at equal budget). At native magnitude difference
   of means realizes more (0.77-0.82 against 0.46-0.50), but it takes
   2.3-2.5x longer steps, so that is budget, not direction.
+
+```bash
+uv run python experiments/ste-arm/steerembed.py --model lsh
+uv run python experiments/ste-arm/steerembed.py \
+    --model data/out/sonar/multilingual/ste_h76_init01 --untrained \
+    --dict-init-scale 0.1 --temperature 0.00015
+```
 
 ## Data-shaped controls, and where a decode step realizes (`steerembed.py`)
 
