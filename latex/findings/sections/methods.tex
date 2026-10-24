@@ -72,8 +72,8 @@ outputs fill the simplex the atoms span (Section~\ref{sec:dict}).
 
 \subsubsection{DictEnc}
 \label{sec:dictenc}
-Each $\dictenc$ consists of a multihead bilinear classifier
-($\bilinearblock$) with weights
+Each $\dictenc$ consists of a multihead bilinear
+classifier~\cite{pirsiavash2009,kim2017} ($\bilinearblock$) with weights
 $[\mathsf{W}, \mathsf{V}] \in \mathbb{R}^{2 \times h \times k \times d}$
 ($d+1$ with the constant coordinate of Eq.~\eqref{eq:y_norm})
 and a multihead linear dictionary ($\dictblock$)

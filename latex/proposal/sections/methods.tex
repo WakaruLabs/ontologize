@@ -79,7 +79,8 @@ below for a generic input, and returns logits $K \in \mathbb{R}^{h \times k}$,
 	 \odot \left(\sum^{d}_{q=1}V_{\cdot\cdot q}\,x_q\right).
 	 \label{eq:bilinearblock}
 \end{equation}
-Each logit is a quadratic form in $\mathbf{x}$, so a classifier admits
+Each logit is a quadratic form in $\mathbf{x}$, the low-rank form of
+bilinear classifiers~\cite{pirsiavash2009,kim2017}, so a classifier admits
 closed-form eigendecomposition in the manner of bilinear
 MLPs~\cite{pearce2025}.
 
