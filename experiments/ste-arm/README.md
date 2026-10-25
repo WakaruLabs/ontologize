@@ -65,6 +65,7 @@ does.
 | how concentrated each classifier's input is | `inputgeom.py` |
 | what the final layer contributes | `lastlayer.py` |
 | each model's error per coordinate, on the coordinates the MSE weights most against the median coordinate, and how far each moves between checkpoints; SAEs and Ontologizers | `coordfvu.py` |
+| one coordinate's error over a run's checkpoints, and its share of the residual each layer classifies | `coordtrace.py` |
 | which auxiliary losses do anything, at what weight | `auxpull.py` |
 | the layer-0 logit scale against the temperature and the training noise, at initialization and over training | `logitscale.py` |
 | **dictionary geometry** | |
@@ -134,6 +135,10 @@ uv run python experiments/ste-arm/reconseeds.py \
 # per-coordinate error on the coordinates the MSE weights most (default:
 # the shipped SAEs and checkpoints; --models P.npz CKPT@T for others)
 uv run python experiments/ste-arm/coordfvu.py
+
+# one coordinate through a run's checkpoints (default: every kept step)
+uv run python experiments/ste-arm/coordtrace.py \
+    --ckpt data/out/sonar/multilingual/ste_k128_h54_direct --coord 837
 
 # language per head, with completeness rows around the top 32
 uv run python experiments/ste-arm/headlang.py --temperature 0.00015 \

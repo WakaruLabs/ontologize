@@ -1,4 +1,5 @@
-"""experiments/adam-eps/train_eps.py: `EpsHyperparams` hands its eps to optax."""
+"""experiments/adam-eps/train_eps.py: `EpsHyperparams` hands its eps to optax.
+throttle.py: the step share, and an sae.py run's state read per parameter."""
 import sys
 from pathlib import Path
 
@@ -35,6 +36,34 @@ def test_throttle_is_the_step_share():
     np.testing.assert_allclose(throttle(g ** 2, 10 ** 6, 1e-8), g / (g + 1e-8))
     # early on, v_hat = nu / (1 - b2^count) undoes the moving average's start
     np.testing.assert_allclose(throttle((1 - 0.999) * g ** 2, 1, 1e-8), g / (g + 1e-8))
+
+
+def test_sae_medians_reads_sae_state(tmp_path):
+    # sae.py's own save_state after real optax steps, read back per
+    # parameter under the run's eps; a constant gradient g has v_hat = g**2
+    import json
+    import numpy as np
+    import optax
+    import sae
+    from throttle import sae_medians
+    params = {"W_dec": jnp.zeros((6, 4)), "W_enc": jnp.zeros((4, 6)),
+              "b_dec": jnp.zeros(4), "b_enc": jnp.zeros(6)}
+    g = {"W_dec": 1e-6, "W_enc": 1e-8, "b_dec": 1e-10, "b_enc": 1e-7}
+    tx = optax.adam(1e-3)
+    opt = tx.init(params)
+    for _ in range(3):
+        _, opt = tx.update({k: jnp.full(v.shape, g[k]) for k, v in params.items()},
+                           opt, params)
+    sae.save_state(tmp_path / "state.npz", params, opt, 3, np.zeros(6, np.int64))
+    eps, step, count, med = sae_medians(tmp_path)
+    assert (eps, step, count) == (1e-8, 3, 3)  # no meta.json: optax's eps
+    assert list(med) == [f"leaf_{i}" for i in range(4)]  # no params.npz yet
+    (tmp_path / "meta.json").write_text(json.dumps({"adam_eps": 1e-9}))
+    np.savez(tmp_path / "params.npz", **params)
+    eps, _, _, med = sae_medians(tmp_path)
+    assert eps == 1e-9
+    for k in params:
+        assert med[k] == pytest.approx(g[k] / (g[k] + 1e-9), rel=1e-4)
 
 
 def test_on_the_init_scale_class():

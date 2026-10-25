@@ -22,9 +22,11 @@ logits, so their gradients can sit orders of magnitude below optax's default
 - `throttle.py` reads the second moments a checkpoint saves with its optimizer
   state and prints, per layer, the median share of a full Adam step the
   classifier and the dictionary take, √v̂/(√v̂ + ε) with the run's own ε. It
-  restores arrays as numpy, so it runs on CPU beside a GPU job.
-- `tests/test_adam_eps.py` checks that ε reaches the optimizer and the throttle
-  arithmetic.
+  restores arrays as numpy, so it runs on CPU beside a GPU job. Given an
+  `sae.py` run directory instead of `RUN:STEP`, it reads the run's
+  `state.npz` per parameter, under the ε its `meta.json` records.
+- `tests/test_adam_eps.py` checks that ε reaches the optimizer, the throttle
+  arithmetic, and the reading of `sae.py`'s saved state.
 
 ## Usage
 
