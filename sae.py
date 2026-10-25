@@ -179,6 +179,11 @@ def parse_args():
     p.add_argument("--max-steps", type=int, default=0,
                    help="stop after N steps regardless of epochs (0 = off)")
     p.add_argument("--lr", type=float, default=1e-4)
+    p.add_argument("--adam-eps", type=float, default=1e-8,
+                   help="Adam's eps (optax's default 1e-8). A floor in the "
+                        "loss's own units: a parameter whose gradient scale "
+                        "is well below it takes about that scale / eps of a "
+                        "full step")
     p.add_argument("--b", type=int, default=4096)
     p.add_argument("--cache", default="data/sonar_embeddings/mc4_4M.npy")
     p.add_argument("--mse-weights", default="data/out/sonar/mse_weights.npy")
@@ -230,6 +235,8 @@ def run_name(cfg):
         name += "_gated"
     if cfg.prefixes > 1:
         name += f"_p{cfg.prefixes}"
+    if cfg.adam_eps != 1e-8:
+        name += f"_eps{cfg.adam_eps:g}"
     if cfg.seed != 42:
         name += f"_s{cfg.seed}"  # seed-stability replicas get their own dir
     return name
@@ -619,7 +626,7 @@ def train(cfg):
         {"m": cfg.m, "topk": cfg.topk, "l1": cfg.l1, "groups": cfg.groups,
          "group_fn": cfg.group_fn, "prefixes": cfg.prefixes,
          "enc": cfg.enc, "resample_every": cfg.resample_every,
-         "block": cfg.block}))
+         "block": cfg.block, "adam_eps": cfg.adam_eps}))
 
     mm = np.load(cfg.cache, mmap_mode="r")
     n_train, n_head = splits(mm.shape[0], cfg.eval_rows, cfg.train_rows)
@@ -640,7 +647,7 @@ def train(cfg):
     base_tr = (X_tr.var(0) * w).mean()
     params = init_params(jax.random.PRNGKey(cfg.seed), d, cfg.m, x_mean,
                          cfg.enc, x_scale, cfg.block)
-    tx = optax.adam(cfg.lr)
+    tx = optax.adam(cfg.lr, eps=cfg.adam_eps)
     opt_state = tx.init(params)
     step_fn = make_step(tx, cfg)
     eval_fn = make_eval(cfg.topk, cfg.groups, cfg.group_fn, cfg.block)

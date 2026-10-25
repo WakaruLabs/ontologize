@@ -165,28 +165,34 @@ systemd-run --user --unit sent16-mask -p Restart=on-failure -p RestartSec=120 \
 ```
 
 `experiments/ste-arm/coordfvu.py --coord 837` scores the runs under both
-weight files.
+weight files. `experiments/ste-arm/coordtrace.py --coord 837` follows the
+coordinate through an Ontologizer run's checkpoints.
 
 The full-length runs under the masked weights train over the whole cache,
 each as its own systemd unit:
-- **`full_runs.sh [s_hm]`** (unit `sent16-full`; `sent16-shm` for
-  `s_hm` 2e-6): the direct k = 128 stack, then the hard stack, each for 2
-  epochs. That is 344,383 steps of 256, about the shipped `mc4_4M` runs'
-  369,528.
+- **`full_runs.sh [s_hm [adam_eps]]`** (unit `sent16-full`; `sent16-shm`
+  for `s_hm` 2e-6; `sent16-eps` for `s_hm` 2e-6 at `adam_eps` 1e-15): the
+  direct k = 128 stack, then the hard stack, each for 2 epochs. That is
+  344,383 steps of 256, about the shipped `mc4_4M` runs' 369,528.
   - `s_hm` defaults to the recipe's 1e-4. Another value is added to the run
     and log names as `_shm<value>`.
+  - `adam_eps` defaults to optax's 1e-8. Another value trains through
+    `experiments/adam-eps/train_eps.py`, and is added to the names as
+    `_eps<value>`.
   - It starts training only once the GPU is idle: utilization at most 10%
     at three checks five minutes apart.
 - **`sae_whole_run.sh`** (unit `sent16-sae`): the k32 SAE for `sae_conv`'s
   144,000 steps of 4,096. It waits until `sent16-full` has finished.
-- **`sae_rate_runs.sh`** (unit `sent16-rate`): SAEs that can spend as many
-  bits per row as the hard codes, for `quantrate.py`. They are the L1 sweep
-  and the k160 SAE, each with `sae_conv`'s recipe for its kind. Between
-  them it trains the k32 again at the ladder's lr of 4e-4, which
-  `sae_whole_run.sh`'s run (sae.py's default 1e-4) lacks.
+- **`sae_rate_runs.sh [adam_eps]`** (unit `sent16-rate`): SAEs that can
+  spend as many bits per row as the hard codes, for `quantrate.py`.
+  - It trains the k32 again at the ladder's lr of 4e-4, which
+    `sae_whole_run.sh`'s run (sae.py's default 1e-4) lacks; then the L1
+    sweep and the k160 SAE, each with `sae_conv`'s recipe for its kind.
   - The L1 weights are `sae_conv`'s five times 0.0464, which keeps the L1
     term's balance against the whitened MSE on this cache. The script's
     header gives the derivation.
+  - `adam_eps` goes to `sae.py --adam-eps` and is named as in
+    `full_runs.sh`.
   - It waits for an idle GPU as `full_runs.sh` does.
 
 The SAE uses `sae.py --block-rows 65536 --buffer-blocks 16`. Drawing its

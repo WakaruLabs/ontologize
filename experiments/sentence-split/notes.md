@@ -698,3 +698,254 @@ unscaled one leaves almost nothing active. `sae_rate_runs.sh` (unit
 - the k32 SAE again, at the ladder's lr of 4e-4, for 144,300 steps
   (`m5120_k32_lr4e-4_no837_whole`);
 - then the k160 SAE (m = 11264, lr 1e-4) for 336,000 steps.
+
+## 2026-10-24: Adam's step share on the sent16 models (`throttle.py`)
+
+`experiments/adam-eps/throttle.py` reads each checkpoint's Adam second
+moments. For each layer it reports the median of √v̂/(√v̂ + ε), where 1 is a
+full step and 0 a parameter ε has frozen. Every run here used optax's
+ε = 1e-8.
+
+```bash
+JAX_PLATFORMS=cpu uv run python experiments/adam-eps/throttle.py RUN:STEP ...
+```
+
+| run | step | classifiers, layers 0–4 | dictionaries, layers 0–4 |
+|---|---|---|---|
+| direct k = 128, `s_hm` 2e-6 | 25,000 | 0.211 0.201 0.198 0.198 0.198 | 0.178 0.124 0.095 0.076 0.064 |
+| | 344,250 | 0.200 0.184 0.180 0.179 0.180 | 0.169 0.127 0.156 0.124 0.097 |
+| hard stack, `s_hm` 2e-6 | 25,000 | 0.055 0.093 0.098 0.101 0.105 | 0.318 0.405 0.388 0.377 0.361 |
+| | 344,250 | 0.080 0.058 0.058 0.061 0.065 | 0.273 0.292 0.303 0.280 0.242 |
+| direct k = 128, `s_hm` 1e-4 | 25,000 | 0.923 0.924 0.925 0.925 0.925 | 0.179 0.125 0.096 0.077 0.064 |
+| | 344,250 | 0.615 0.682 0.731 0.749 0.755 | 0.224 0.212 0.201 0.155 0.117 |
+| hard stack, `s_hm` 1e-4 | 25,000 | 0.652 0.657 0.660 0.662 0.660 | 0.324 0.308 0.309 0.269 0.207 |
+| | 344,250 | 0.452 0.521 0.535 0.538 0.535 | 0.312 0.291 0.290 0.275 0.232 |
+| `mc4_4M` direct k = 128 (`ste_k128_h54_direct`) | 369,500 | 0.824 0.900 0.899 0.873 0.832 | 0.947 0.910 0.869 0.800 0.656 |
+| `mc4_4M` hard stack (`ste_h76_init01`) | 369,500 | 0.802 0.768 0.731 0.705 0.660 | 0.949 0.899 0.845 0.753 0.566 |
+
+The 50k-step pairs read as the 1e-4 full runs do at step 25,000, with and
+without coordinate 837's weight alike. Their classifiers take 0.92 (direct)
+and 0.64–0.66 (hard stack) of a step; their dictionaries 0.07–0.37. The
+2e-6 runs at step 175,000 lie between their rows above.
+
+The SAEs were read from `state.npz` with the same formula: the median over
+each parameter's entries, optax's b2 0.999, ε 1e-8.
+
+| SAE | step | W_dec | W_enc | b_dec | b_enc |
+|---|---|---|---|---|---|
+| k32, `mc4_sent16` whole cache | 144,000 | 0.003 | 0.001 | 0.763 | 0.109 |
+| k32, `mc4_sent16` first 12.8M rows (`no837`) | 144,000 | 0.003 | 0.001 | 0.762 | 0.109 |
+| `sae_conv/m5120_k32` (`mc4_4M`) | 144,300 | 0.166 | 0.058 | 0.985 | 0.702 |
+| `sae_conv/m5120_l13e-06` | 144,300 | 0.050 | 0.061 | 0.855 | 0.896 |
+| `sae_conv/m11264_k160` | 336,700 | 0.096 | 0.070 | 0.977 | 0.739 |
+
+- **Every sent16 model trained under a far heavier throttle than its
+  `mc4_4M` counterpart.**
+  - The Ontologizers' dictionaries take 0.06–0.41 of a step, against
+    0.57–0.95 on `mc4_4M`.
+  - The k32 SAE's encoder and decoder take 0.1–0.3% of a step, against
+    6–17% for `sae_conv`'s.
+  - ε is a floor in the loss's own units (`experiments/adam-eps`), and
+    this cache's whitened variance is 1/85 of `mc4_4M`'s.
+- **Rescaling `s_hm` moved the throttle onto the classifiers.** At 1e-4 the
+  mean-entropy term's gradient kept them at 0.45–0.93 of a step. At 2e-6,
+  with the MSE most of the loss, they take 0.06–0.21.
+- **What follows.** None of the sent16 comparisons so far is at an
+  unthrottled optimum: the 2026-10-13 pairs, the full runs, and the k32
+  baseline in the operational-rate table. The direct code's lead over
+  the k32 SAE may partly reflect which one ε throttles more.
+  `sae_rate_runs.sh` is held, before training, until the step size is
+  settled.
+
+### Reruns at ε = 1e-15
+
+`sae.py --adam-eps` sets Adam's ε. `full_runs.sh` and `sae_rate_runs.sh`
+take it as an argument and train through `experiments/adam-eps/train_eps.py`
+and `sae.py --adam-eps` respectively.
+
+The 1,000-step pilots ran on block-shuffled batches. The Ontologizer pilot
+ran on the head of the cache, with the 2e-6 run's flags.
+
+| pilot | at step 1,000, stock ε 1e-8 | at step 1,000, ε 1e-15 |
+|---|---|---|
+| k32 SAE, lr 4e-4: FVU | 0.795 | **0.531** |
+| L1 SAE, `s_l1` 1.39e-6: FVU, L0 | 0.481, 392 | **0.319**, 515 |
+| direct k = 128, `s_hm` 2e-6: training MSE, steps 900–1,000 | 6.11e-6 (the full run's) | **5.02e-6** |
+
+- **The k32 SAE.** At 1e-15 it is below, after 1,000 steps, the 0.668
+  that the stock k32 (lr 1e-4) reached after 144,000.
+- **The L1 SAE.** At 1e-15 its L0 is about `sae_conv`'s 3e-5 run's at the
+  same step (497), with a lower FVU (0.378 there).
+- **The direct Ontologizer.** Its training MSE is 4% below the stock run's
+  over the first 100 steps and 18% below it by step 1,000. No pilot produced
+  a NaN.
+
+Started 2026-10-24, both units at once (the Ontologizer trainer claims half
+the GPU's memory, and the SAEs allocate as they go):
+- unit `sent16-eps`: `full_runs.sh 2e-6 1e-15`, writing
+  `data/out/sonar/sent16/*_no837_e2_shm2e-6_eps1e-15`;
+- unit `sent16-rate`: `sae_rate_runs.sh 1e-15`, writing
+  `data/out/sonar/sae_sent16/*_eps1e-15`. The k32 trains first, then the
+  L1 sweep, then k160.
+
+## 2026-10-25: the reruns at ε = 1e-15
+
+- **Where:** `sent16-rate` finished 2026-10-24 22:38 and `sent16-eps`
+  2026-10-25 17:43.
+- **Interruptions:** each Ontologizer run stopped once with a GPU
+  out-of-memory error at 12:30, the direct run on 2026-10-24 and the hard
+  stack on 2026-10-25. Both resumed from their last checkpoint. The direct
+  run's restart waited about ten hours for an idle GPU, until the SAE queue
+  had finished.
+
+### The throttle
+
+`throttle.py` on both Ontologizers at steps 25,000 and 344,250, and on each
+SAE's run directory, which it reads from `state.npz` under the run's own ε
+(`experiments/logs/throttle_sent16_eps1e-15.log`,
+`throttle_sae_sent16_eps1e-15.log`). Every layer's classifier and
+dictionary, and every SAE parameter, takes a median 1.000 of a full step.
+The stock k32 reads 0.003, 0.001, 0.763 and 0.109, as in the 2026-10-24
+section.
+
+### Held-out FVU
+
+`coordfvu.py --coord 837` on the same 32,765 rows under the masked weights
+(`data/out/sonar/coordfvu_sent16_eps1e-15/`). FVU is over the 1023 free
+coordinates.
+
+| run | ε 1e-8 | ε 1e-15 |
+|---|---|---|
+| hard stack, `s_hm` 2e-6 | 0.6940 | **0.3508** |
+| direct k = 128, `s_hm` 2e-6 | **0.4997** | 0.6538 |
+| k32 SAE | 0.6679 (lr 1e-4) | 0.4180 (lr 4e-4) |
+| k160 SAE | — | 0.1872 |
+
+The k32 pair differs in lr as well as ε. At lr 4e-4, ε alone took the
+1,000-step pilot from 0.795 to 0.531 (2026-10-24).
+
+The SAEs beside `sae_conv`'s at the unscaled weights on `mc4_4M` (ε 1e-8).
+The sent16 numbers are `sae.py`'s final eval; `sae_conv`'s are its last
+logged eval. The caches differ, so this compares sparsity regimes, not
+fits.
+
+| SAE (`sae_conv`'s weight) | `mc4_sent16`, ε 1e-15: FVU, L0, dead | `sae_conv`: FVU, L0, dead |
+|---|---|---|
+| k32 | 0.4180, 32, 33 | 0.4995, 32, 0 |
+| k160 | 0.1872, 160, 0 | 0.2585, 160, 0 |
+| L1 1.39e-7 (3e-6) | 0.5592, 176, 4054 | 0.0052, 1636, 0 |
+| L1 4.64e-7 (1e-5) | 0.0526, 1193, 0 | 0.0472, 1440, 0 |
+| L1 1.39e-6 (3e-5) | 0.2138, 338, 0 | 0.2199, 518, 0 |
+| L1 4.64e-6 (1e-4) | 0.4866, 51, 0 | 0.5518, 61, 0 |
+| L1 1.39e-5 (3e-4) | 0.8847, 2.6, 2257 | 0.8390, 4.4, 463 |
+
+The middle three L1 weights land near `sae_conv`'s FVU at 65–85% of its
+L0. The smallest collapsed (below).
+
+### The direct run and coordinate 837
+
+The direct run's training MSE (1,000-step means) was 17% below the stock
+run's at step 10,000 and 2% below at 170,000. It was lowest around step
+81,500 (3.80e-6), then rose to 5.00e-6 by the end, 26% above the stock
+run's 3.96e-6. The hard stack's fell throughout, to 3.04e-6 against the
+stock run's 5.01e-6.
+
+`experiments/ste-arm/coordtrace.py --coord 837` on the same rows and
+weights, at each checkpoint below (`data/out/sonar/coordtrace/<run>/`,
+`experiments/logs/coordtrace_sent16_eps1e-15.log`):
+- the held-out FVU;
+- coordinate 837's root-mean-square error over the median coordinate's;
+- 837's share of the raw squared norm of the residual the last layer
+  classifies.
+
+| run, step | FVU | 837 error / median | 837's share of layer 4's residual |
+|---|---|---|---|
+| direct, ε 1e-15, 25,000 | 0.4703 | 4.5 | 0.019 |
+| 75,000 | 0.4591 | 4.7 | 0.019 |
+| 125,000 | **0.4582** | 6.9 | 0.034 |
+| 175,000 | 0.4652 | 14.2 | 0.084 |
+| 225,000 | 0.4979 | 28.5 | 0.169 |
+| 275,000 | 0.5500 | 45.3 | 0.243 |
+| 344,250 | 0.6538 | 77.5 | 0.404 |
+| direct, ε 1e-8, 344,250 | 0.4997 | 3.4 | 0.011 |
+| hard stack, ε 1e-15, 175,000 | 0.4242 | 6.1 | 0.033 |
+| 344,250 | 0.3508 | 13.7 | 0.092 |
+| hard stack, ε 1e-8, 344,250 | 0.6940 | 1.3 | 0.003 |
+
+- **The direct run degrades as coordinate 837 takes over its residual.**
+  - Its error on 837 grows 16-fold after step 75,000.
+  - By the end 837 holds 40% of what the last layer classifies, and 14%
+    already at layer 1.
+  - Before that, at step 125,000, it held out at 0.4582, below the stock
+    run's 0.4997.
+- **The likely reason.** The masked weight leaves 837's output without a
+  gradient of its own. What reaches the parameters that write it comes
+  only from the later layers that classify the residual, and from the
+  auxiliary terms. At ε 1e-8 that gradient presumably sat far below ε and
+  barely moved them (not measured per coordinate). At 1e-15 Adam scales it
+  up to a full step.
+- **The hard stack drifts the same way, more slowly.** Its 837 share
+  triples over the second half while its FVU still falls.
+- **Collapse.** The direct run's head collapse, already present at
+  stock ε, comes sooner: cossim_k_max is 0.89 at step 25,000, where the
+  stock run's is 0.10, and 0.93–0.96 after. Its realized rate is 1,783 bits against 1,889 at ε 1e-8, so
+  its heads use fewer of their entries.
+
+### The smallest L1 weight
+
+The run at 1.39e-7 (`sae_conv`'s 3e-6):
+- **Before the collapse.** From step 10,000 to 85,000 its FVU stayed
+  between 0.004 and 0.010, with L0 falling from about 1,400 to 940. Its
+  best was 0.0042 at step 50,000.
+- **Dead latents** (none firing for 1,000 steps) appeared from step
+  16,000, and from step 25,000 every eval found 1,000–2,000 of them.
+- **Resampling** every 5,000 steps revived them all. The next eval showed
+  the FVU jump (0.0045 to 0.0313 from step 85,000 to 86,000), and most
+  were dead again by the eval after.
+- **The collapse.** At step 105,000 it resampled 2,218 latents. The FVU
+  went to 0.439 at L0 328, and the run never recovered.
+
+A candidate cause, untested: resampling zeroes the touched entries' Adam
+moments, but optax's step count is global. Bias correction is then
+already 1, and a steady gradient moves those entries by up to about 6.6
+learning rates per step over their first ~100 steps. That compares with
+at most 1 for an entry whose moments have settled.
+
+### Operational rate
+
+`quantrate.py`, with the 2026-10-24 section's command and the new runs
+added (`data/out/sonar/quantrate_sent16_eps1e-15/`). The earlier runs
+read as before.
+
+| code | float FVU | pinned: bits, FVU | FVU at 1,900 bits |
+|---|---|---|---|
+| hard stack, ε 1e-15 | 0.3508 | 1888, **0.3763** | 0.3581 |
+| direct k = 128, ε 1e-15 | 0.6538 | 1783, 0.6610 | — (its curve ends at 1,835) |
+| direct k = 128, ε 1e-8 | 0.4997 | 1889, 0.5260 | 0.5021 |
+
+| SAE, ε 1e-15 | float FVU | FVU at 1,900 bits | bits to 0.376 | bits to 0.526 |
+|---|---|---|---|---|
+| k160 | 0.1872 | 0.1872 | 405 | 202 |
+| L1 4.64e-7 | 0.0526 | 0.1421 | 560 | 267 |
+| L1 1.39e-6 | 0.2138 | 0.2202 | 439 | 193 |
+| L1 4.64e-6 | 0.4866 | — (ends at 726) | — | 209 |
+| k32, lr 4e-4 | 0.4180 | — (ends at 491) | — | 171 |
+
+Held to a per-row budget of 1,900 bits (`rowbudget.csv`), k160 reads 0.1868
+and L1 4.64e-7 0.1740. Reaching 0.376 per row takes 501 and 744 bits.
+
+- **At a matched rate the SAEs are far ahead.**
+  - The best Ontologizer code, the hard stack at ε 1e-15, sends 1,888 bits
+    for 0.376. k160 reaches that at 405 bits, and the L1 SAE at 1.39e-6 at
+    439.
+  - At 1,900 bits the L1 SAE at 4.64e-7 reads 0.142 and k160 0.187,
+    against the hard stack's 0.358.
+- **The 2026-10-24 lead over the k32 baseline is gone.** That baseline
+  could not reach the direct code's 0.526 at any rate. The k32 at lr 4e-4
+  and ε 1e-15 reaches it at 171 bits.
+- **What this leaves open.**
+  - The Ontologizers at ε 1e-15 are limited by coordinate 837, so their
+    rows are not their best. The direct run's step-125,000 checkpoint
+    holds out at 0.458 before quantization. The k32 SAE reaches that at
+    239 bits and k160 at 273.
+  - One seed each.

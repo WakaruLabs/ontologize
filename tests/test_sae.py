@@ -32,7 +32,7 @@ def make_cfg(tmp_path, **overrides):
 
     cfg = dict(m=M, topk=TOPK, l1=0.0, groups=0, group_fn="top1", prefixes=1,
                enc="linear", block=0,
-               epochs=200, max_steps=0, lr=2e-3,
+               epochs=200, max_steps=0, lr=2e-3, adam_eps=1e-8,
                b=B, cache=str(cache), mse_weights=str(weights),
                eval_rows=512, train_rows=0, block_rows=0, buffer_blocks=16,
                aux_k=8, resample_every=0, dead_steps=50,
@@ -63,6 +63,26 @@ def test_resume_from_snapshot(tmp_path):
     sae.train(cfg2)
     state = np.load(tmp_path / "out" / "state.npz")
     assert int(state["step"]) == 40
+
+
+def test_adam_eps_is_a_floor_in_the_loss_units(tmp_path):
+    # Adam steps by m_hat / (sqrt(v_hat) + eps), so scaling the loss by c
+    # is the same as dividing eps by c. With the MSE weights scaled by
+    # 1e-10 the stock eps all but freezes training; eps scaled with them
+    # gives the unscaled run back. FVU does not see the weights' scale
+    small = tmp_path / "w_small.npy"
+    np.save(small, np.full(D, 1e-10, np.float32))
+    run = lambda name, **kw: sae.train(make_cfg(
+        tmp_path, max_steps=300, out=str(tmp_path / name), **kw))[0]
+    stock = run("stock")
+    frozen = run("frozen", mse_weights=str(small))
+    scaled = run("scaled", mse_weights=str(small), adam_eps=1e-18)
+    assert abs(scaled - stock) < 1e-3
+    assert frozen > stock + 0.1
+    assert json.loads((tmp_path / "scaled" / "meta.json").read_text())[
+        "adam_eps"] == 1e-18
+    assert "_eps1e-15" in sae.run_name(make_cfg(tmp_path, adam_eps=1e-15))
+    assert "_eps" not in sae.run_name(make_cfg(tmp_path))
 
 
 def test_train_rows_takes_the_head_and_keeps_the_tail():
