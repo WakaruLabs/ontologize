@@ -6,7 +6,7 @@
 # 2 epochs (344,383 steps of 256, about the shipped runs' 369,528 on
 # mc4_4M).
 #
-#   full_runs.sh [s_hm [adam_eps]]
+#   full_runs.sh [s_hm [adam_eps [weights]]]
 #
 # s_hm defaults to the recipe's 1e-4, which on this cache leaves the MSE a
 # few percent of the loss (notes.md, 2026-10-22); any other value names the
@@ -14,6 +14,10 @@
 # the loss's units that this cache's small loss sits near; any other value
 # trains through experiments/adam-eps/train_eps.py, which takes
 # train_ste.py's flags and --adam-eps, and adds _eps<adam_eps> to the names.
+# weights names the MSE weights file
+# data/out/sonar/sentcache/mse_weights_<weights>.npy and takes no837's
+# place in the names: no837 (default) for coordinate 837 at 0, med837 for
+# it at the median of the other weights (`cachestats.py mask --fill median`).
 # Training waits until the GPU is idle
 # (utilization at most 10% at three checks five minutes apart), so it starts
 # when no other job is running rather than beside one. The two runs go one
@@ -24,6 +28,7 @@ set -eu
 cd "$(dirname "$0")/../.."
 s_hm=${1:-1e-4}
 eps=${2:-1e-8}
+wt=${3:-no837}
 tag=""
 [ "$s_hm" = 1e-4 ] || tag="_shm$s_hm"
 trainer=experiments/ste-arm/train_ste.py
@@ -32,7 +37,8 @@ if [ "$eps" != 1e-8 ]; then
     trainer="experiments/adam-eps/train_eps.py --adam-eps $eps"
 fi
 cache=data/sonar_embeddings/mc4_sent16.npy
-weights=data/out/sonar/sentcache/mse_weights_no837.npy
+weights=data/out/sonar/sentcache/mse_weights_$wt.npy
+[ -f "$weights" ] || { echo "no $weights" >&2; exit 1; }
 ste="--temperature 0.00015 --lr 1e-5 --noise-k batchnorm --sd-k 0.3 --s-hm $s_hm
      --dict-init-scale 0.1 --cache $cache --mse-weights $weights --epochs 2"
 logs=experiments/logs
@@ -53,8 +59,8 @@ done
 
 /usr/bin/uv run python $trainer $ste \
     --h 54 --k 128 --signed --direct \
-    --out data/out/sonar/sent16/ste_k128_h54_direct_no837_e2$tag \
-    >> $logs/sent16_ste_k128_h54_direct_no837_e2$tag.log 2>&1
+    --out data/out/sonar/sent16/ste_k128_h54_direct_${wt}_e2$tag \
+    >> $logs/sent16_ste_k128_h54_direct_${wt}_e2$tag.log 2>&1
 /usr/bin/uv run python $trainer $ste \
-    --out data/out/sonar/sent16/ste_h76_init01_no837_e2$tag \
-    >> $logs/sent16_ste_h76_init01_no837_e2$tag.log 2>&1
+    --out data/out/sonar/sent16/ste_h76_init01_${wt}_e2$tag \
+    >> $logs/sent16_ste_h76_init01_${wt}_e2$tag.log 2>&1

@@ -31,6 +31,9 @@ Stages (outputs under --out):
           unchanged, for a cache without an L2 step: a loss mask any
           --mse-weights reader takes
           -> mse_weights_no<coordinate>.npy, mask.json
+          With --fill median the coordinate takes the median of the other
+          weights instead, so its error counts as a typical coordinate's
+          -> mse_weights_med<coordinate>.npy, mask_median.json
 
   uv run python experiments/sentence-split/cachestats.py scan
   uv run python experiments/sentence-split/cachestats.py report
@@ -92,6 +95,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--shrink", type=float, default=1e-3,
                    help="LDA's ridge, as a multiple of the mean within-language variance")
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--fill", choices=["zero", "median"], default="zero",
+                   help="mask: the fixed coordinate's new weight, 0 or the "
+                        "median of the other weights")
     return p.parse_args()
 
 
@@ -538,12 +544,14 @@ def report(cfg: argparse.Namespace) -> None:
 
 # ---------- stage: mask ----------
 
-def masked(w: Float[np.ndarray, "d"], coords: List[int]) -> Float[np.ndarray, "d"]:
-    """`w` with the weights of `coords` set to 0 and every other weight
+def masked(w: Float[np.ndarray, "d"], coords: List[int],
+           fill: str = "zero") -> Float[np.ndarray, "d"]:
+    """`w` with the weights of `coords` set to 0 (`fill="zero"`) or to the
+    median of the other weights (`"median"`), and every other weight
     unchanged (not renormalized, so a run under it differs from one under
     `w` only in those terms)."""
     out = np.array(w, copy=True)
-    out[coords] = 0
+    out[coords] = 0 if fill == "zero" else np.median(np.delete(w, coords))
     return out
 
 
@@ -558,12 +566,15 @@ def mask(cfg: argparse.Namespace) -> None:
     c = int(np.argmin(np.abs(gamma)))
     src = d / f"{cfg.name}.mse_weights.npy"
     w = np.load(src)
-    dst = out / f"mse_weights_no{c}.npy"
-    np.save(dst, masked(w, [c]))
+    zero = cfg.fill == "zero"
+    dst = out / f"mse_weights_{'no' if zero else 'med'}{c}.npy"
+    m = masked(w, [c], cfg.fill)
+    np.save(dst, m)
     record = {"source": str(src), "coord": c, "weight": float(w[c]),
+              "fill": cfg.fill, "new_weight": float(m[c]),
               "norm_gamma": float(gamma[c]), "out": str(dst),
               "why": "fixed by the other coordinates through the encoder's final LayerNorm"}
-    (out / "mask.json").write_text(json.dumps(record, indent=1))
+    (out / ("mask.json" if zero else "mask_median.json")).write_text(json.dumps(record, indent=1))
     print(json.dumps(record, indent=1))
 
 

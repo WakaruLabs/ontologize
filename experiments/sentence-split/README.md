@@ -145,6 +145,9 @@ from (`--name`, `--docs-cache`; outputs under `--out`, default
   given it with `--mse-weights` differs from one under the cache's weights
   only in that term. `mask.json` records the coordinate, its old weight and
   the source file. The cache and its own weights are not touched.
+  `mask --fill median` gives the coordinate the median of the other weights
+  instead (`mse_weights_med<c>.npy`, `mask_median.json`), so its error
+  counts as a typical coordinate's.
 
 `mask_runs.sh` trains the paired runs that measure what that weight does.
 Three architectures each train under the cache's weights (`_w837`) and
@@ -170,15 +173,20 @@ coordinate through an Ontologizer run's checkpoints.
 
 The full-length runs under the masked weights train over the whole cache,
 each as its own systemd unit:
-- **`full_runs.sh [s_hm [adam_eps]]`** (unit `sent16-full`; `sent16-shm`
-  for `s_hm` 2e-6; `sent16-eps` for `s_hm` 2e-6 at `adam_eps` 1e-15): the
-  direct k = 128 stack, then the hard stack, each for 2 epochs. That is
-  344,383 steps of 256, about the shipped `mc4_4M` runs' 369,528.
+- **`full_runs.sh [s_hm [adam_eps [weights]]]`** (unit `sent16-full`;
+  `sent16-shm` for `s_hm` 2e-6; `sent16-eps` for `s_hm` 2e-6 at `adam_eps`
+  1e-15; `sent16-med` for those under `med837`): the direct k = 128 stack,
+  then the hard stack, each for 2 epochs. That is 344,383 steps of 256,
+  about the shipped `mc4_4M` runs' 369,528.
   - `s_hm` defaults to the recipe's 1e-4. Another value is added to the run
     and log names as `_shm<value>`.
   - `adam_eps` defaults to optax's 1e-8. Another value trains through
     `experiments/adam-eps/train_eps.py`, and is added to the names as
     `_eps<value>`.
+  - `weights` names the MSE weights file
+    `data/out/sonar/sentcache/mse_weights_<weights>.npy` and takes `no837`'s
+    place in the names. It defaults to `no837`; `med837` gives coordinate
+    837 the median weight.
   - It starts training only once the GPU is idle: utilization at most 10%
     at three checks five minutes apart.
 - **`sae_whole_run.sh`** (unit `sent16-sae`): the k32 SAE for `sae_conv`'s

@@ -970,3 +970,26 @@ and L1 4.64e-7 0.1740. Reaching 0.376 per row takes 501 and 744 bits.
     holds out at 0.458 before quantization. The k32 SAE reaches that at
     239 bits and k160 at 273.
   - One seed each.
+
+## 2026-10-25: coordinate 837 at the median weight (`full_runs.sh 2e-6 1e-15 med837`)
+
+Under the masked weights nothing in the loss holds the Ontologizers'
+output on 837 to the data, and at ε 1e-15 it drifts (previous section).
+These runs give it a weight back, at the size of a typical coordinate's
+rather than the cache's.
+- **The weights.** `cachestats.py mask --fill median` writes
+  `data/out/sonar/sentcache/mse_weights_med837.npy`: coordinate 837 at
+  0.1731, the median of the other 1023 weights, and every other weight as
+  in `mse_weights_no837.npy`. 837 holds 0.09% of the weights' sum, against
+  82% under the cache's own. `mask_median.json` records the old and new
+  weight.
+- **The runs.** Unit `sent16-med`, started 2026-10-25 21:37: the direct
+  k = 128 stack, then the hard stack, with the ε 1e-15 runs' flags
+  (`s_hm` 2e-6, 2 epochs), writing
+  `data/out/sonar/sent16/*_med837_e2_shm2e-6_eps1e-15`. It waits for an
+  idle GPU, which another user's job held at the start.
+- **Unchanged.** The SAEs stay under the masked weights. At ε 1e-15 they
+  keep 837's error within 3× the median coordinate's without a weight.
+- **To score.** `coordfvu.py` under the masked weights, so the FVU stays
+  over the 1023 free coordinates and compares with the rows above;
+  `coordtrace.py --coord 837` for the drift; `quantrate.py` for the rate.
