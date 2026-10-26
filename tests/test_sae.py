@@ -36,6 +36,7 @@ def make_cfg(tmp_path, **overrides):
                b=B, cache=str(cache), mse_weights=str(weights),
                eval_rows=512, train_rows=0, block_rows=0, buffer_blocks=16,
                aux_k=8, resample_every=0, dead_steps=50,
+               sd_pre=0.0, p_drop=0.0, sd_out=0.0,
                save_each=10**6,
                seed=0, out=str(tmp_path / "out"), overwrite=False)
     cfg.update(overrides)
@@ -83,6 +84,78 @@ def test_adam_eps_is_a_floor_in_the_loss_units(tmp_path):
         "adam_eps"] == 1e-18
     assert "_eps1e-15" in sae.run_name(make_cfg(tmp_path, adam_eps=1e-15))
     assert "_eps" not in sae.run_name(make_cfg(tmp_path))
+
+
+def noise_model(**kw):
+    """A flat linear top-k SAE over the planted data's shape, with its
+    parameters, a batch and its whitening."""
+    from ontologize.sae import SAE
+    model = SAE(d=D, m=M, topk=TOPK, aux_k=0, **kw)
+    X = jax.random.normal(jax.random.PRNGKey(1), (B, D))
+    params = model.init(jax.random.PRNGKey(0), X)
+    return model, params, X, jnp.ones(D), jnp.zeros(M, bool)
+
+
+def test_training_noise_off_is_the_stock_loss():
+    model, params, X, w, dead = noise_model()
+    stock = model.apply(params, X, w, dead, method="loss")[0]
+    keyed = model.apply(params, X, w, dead, jax.random.PRNGKey(2), method="loss")[0]
+    assert float(stock) == float(keyed)
+    # set but given no rng (encoding, evaluation): stock again
+    noisy, *_ = noise_model(sd_pre=0.3, p_drop=0.1, sd_out=0.1)
+    assert float(noisy.apply(params, X, w, dead, method="loss")[0]) == float(stock)
+    np.testing.assert_array_equal(noisy.apply(params, X, method="encode"),
+                                  model.apply(params, X, method="encode"))
+
+
+def test_selection_noise_moves_the_choice_not_the_values():
+    model, params, X, *_ = noise_model(sd_pre=3.0)
+    pre = model.apply(params, X, method="preacts")
+    z = model.apply(params, pre, jax.random.PRNGKey(3), method="noisy_activate")
+    clean = model.apply(params, pre, method="activate")
+    on = z > 0
+    np.testing.assert_allclose(z[on], jax.nn.relu(pre)[on])  # clean values
+    assert int(on.sum(-1).max()) <= TOPK
+    assert not np.array_equal(np.asarray(on), np.asarray(clean > 0))
+
+
+def test_winner_dropout_at_one_promotes_the_next_k():
+    model, params, X, *_ = noise_model(p_drop=1.0)
+    pre = model.apply(params, X, method="preacts")
+    z = model.apply(params, pre, jax.random.PRNGKey(4), method="noisy_activate")
+    ranks = np.argsort(-np.asarray(pre), axis=-1)
+    for n in range(B):
+        if (np.asarray(pre[n])[ranks[n, :2 * TOPK]] > 0).all():
+            np.testing.assert_array_equal(np.sort(np.nonzero(np.asarray(z[n]))[0]),
+                                          np.sort(ranks[n, TOPK:2 * TOPK]))
+
+
+def test_output_noise_variance_is_the_per_latent_sum():
+    model, params, X, *_ = noise_model(sd_out=0.5)
+    z = model.apply(params, X, method="encode")
+    W = np.asarray(params["params"]["decoder"]["weights"], np.float64)  # (d, m)
+    want = 0.25 * (W ** 2) @ np.asarray(z, np.float64).var(0)
+    draws = np.stack([np.asarray(model.apply(params, z, jax.random.PRNGKey(i),
+                                             method="out_noise"))
+                      for i in range(64)])
+    np.testing.assert_allclose(draws.reshape(-1, D).var(0), want, rtol=0.1)
+
+
+def test_training_noise_needs_a_flat_linear_topk_sae(tmp_path):
+    with pytest.raises(AssertionError):
+        sae.train(make_cfg(tmp_path, topk=0, l1=1e-3, sd_pre=0.3))
+    with pytest.raises(ValueError):
+        model, params, X, w, dead = noise_model(sd_pre=0.3, prefixes=2)
+        model.apply(params, X, w, dead, jax.random.PRNGKey(0), method="loss")
+
+
+def test_noised_run_trains_and_records_its_noise(tmp_path):
+    cfg = make_cfg(tmp_path, max_steps=300, sd_pre=0.3, p_drop=0.1, sd_out=0.1)
+    fvu, l0, _ = sae.train(cfg)
+    assert np.isfinite(fvu) and fvu < 0.5 and l0 <= TOPK + 0.01
+    meta = json.loads((tmp_path / "out" / "meta.json").read_text())
+    assert (meta["sd_pre"], meta["p_drop"], meta["sd_out"]) == (0.3, 0.1, 0.1)
+    assert sae.run_name(cfg).endswith("_sdpre0.3_pdrop0.1_sdout0.1_s0")
 
 
 def test_train_rows_takes_the_head_and_keeps_the_tail():

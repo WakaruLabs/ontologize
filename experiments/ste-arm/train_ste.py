@@ -141,6 +141,14 @@ def parser() -> argparse.ArgumentParser:
                         "than a fixed number of logit units")
     p.add_argument("--p-drop", type=float, default=None,
                    help="winner dropout (default sonar.py's 0.1)")
+    p.add_argument("--sd-f", type=float, default=None,
+                   help="noise on each head's output before pooling, of "
+                        "this many times each coordinate's batch std "
+                        "(sonar.py's `noise_F`, 'featvar'; default its 0.1). "
+                        "Its scale is stop-gradiented, so it is unbiased for "
+                        "the layer's own gradient and acts through Adam's "
+                        "second moment and the residual the layers above "
+                        "classify")
     p.add_argument("--s-kcossim", type=float, default=None,
                    help="within-head row-collinearity penalty (default "
                         "sonar.py's 0). Targets head death by a different "
@@ -189,6 +197,10 @@ def parser() -> argparse.ArgumentParser:
                         "(`DictBlock.support_overlap`; default sonar.py's "
                         "1e-6). Replaces the retired --s-hcossim and "
                         "--s-flatcos")
+    p.add_argument("--s-l1f", type=float, default=None,
+                   help="L1 penalty on the heads' outputs (`L1_F`; default "
+                        "sonar.py's 1e-9, which its comment marks as needing "
+                        "recalibration). Distinct from --s-l1s")
     p.add_argument("--s-l1k", type=float, default=None,
                    help="classifier L1 penalty (`NLinearBlock.withL1`), 0 = "
                         "off, which is sonar.py's setting and is marked "
@@ -366,6 +378,13 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--epochs", type=int, default=0,
                    help="0 = sonar.py's (24); a small value pilots")
     p.add_argument("--seed", type=int, default=0, help="0 = sonar.py's")
+    p.add_argument("--max-to-keep", type=int, default=10,
+                   help="rolling checkpoints kept between the kept periods "
+                        "(Metadata.max_to_keep); 1 keeps only the latest, "
+                        "which is all a resume needs")
+    p.add_argument("--checkpoint-each", type=int, default=0,
+                   help="steps between checkpoints kept for good (0 = "
+                        "sonar.py's 25,000)")
     p.add_argument("--cache", default=None)
     p.add_argument("--mse-weights", default=None, metavar="NPY",
                    help="per-dim MSE weights (default: the base config's). "
@@ -533,8 +552,10 @@ def setup(cfg: argparse.Namespace, src=None, hp=None, hp_extra=None):
         base.wd, cfg.temperature if not cfg.anneal else base.temperature,
         base.noise_in, cfg.noise_k or base.noise_K, base.noise_F,
         base.sd_in,
-        base.sd_K if cfg.sd_k is None else cfg.sd_k, base.sd_F,
-        s_g=base.s_g, s_L1F=base.s_L1F, s_H=base.s_H,
+        base.sd_K if cfg.sd_k is None else cfg.sd_k,
+        base.sd_F if cfg.sd_f is None else cfg.sd_f,
+        s_g=base.s_g, s_L1F=base.s_L1F if cfg.s_l1f is None else cfg.s_l1f,
+        s_H=base.s_H,
         s_L1K=base.s_L1K if cfg.s_l1k is None else cfg.s_l1k,
         s_L1S=getattr(base, 's_L1S', 0.0) if cfg.s_l1s is None
         else cfg.s_l1s,
@@ -587,7 +608,9 @@ def setup(cfg: argparse.Namespace, src=None, hp=None, hp_extra=None):
 
     meta = Metadata(
         "embedding", base.encoder, out_path=out, threads=base.threads,
-        save_each=base.save_each, checkpoint_each=base.checkpoint_each)
+        save_each=base.save_each,
+        checkpoint_each=cfg.checkpoint_each or base.checkpoint_each,
+        max_to_keep=cfg.max_to_keep)
     return hyper, model, meta, out, src
 
 

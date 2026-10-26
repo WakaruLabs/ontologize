@@ -39,6 +39,7 @@ import flax.linen as nn
 import numpy as np
 from jaxtyping import Array, Bool, Float, PRNGKeyArray
 
+from .fns.loss import addnoise_batchnorm
 from .layers.sparse import Sparse
 from .layers.linear import Linear
 from .layers.nlinear import Bilinear
@@ -93,7 +94,12 @@ class SAE(Sparse):
 
     The gated encoder sets its own sparsity, so it needs `topk=0` and
     `prefixes=1`, and to train, `s_l1 > 0` and `aux_k=0`; see
-    `gated_loss`."""
+    `gated_loss`.
+
+    `sd_pre`, `p_drop` and `sd_out` are the Ontologizer's three training
+    noises carried over to a linear top-k SAE (`noisy_activate`,
+    `out_noise`). `loss` applies them only when it is given an rng, so
+    encoding and evaluation never see them."""
     d: int = 0
     m: int = 0
     topk: int = 32
@@ -101,6 +107,9 @@ class SAE(Sparse):
     aux_k: int = 512
     prefixes: int = 1
     enc: str = "linear"
+    sd_pre: float = 0.0
+    p_drop: float = 0.0
+    sd_out: float = 0.0
 
     dtype_str: str = "float32"
     dtype_p_str: str = "float32"
@@ -180,6 +189,56 @@ class SAE(Sparse):
         """Encoder logits to latent activations."""
         return topk_relu(pre, self.topk)
 
+    def noisy_activate(self, pre: Float[Array, "b m"], rng: PRNGKeyArray
+                       ) -> Float[Array, "b m"]:
+        """`activate` under the Ontologizer's selection noise and winner
+        dropout, for training. The top k are chosen from the pre-activations
+        plus Gaussian noise of `sd_pre` times each sample's pre-activation
+        RMS (`addnoise_batchnorm`, whose scale is stop-gradiented), as
+        `DictEnc` adds `sd_K` noise to the logits. Then each chosen latent,
+        with probability `p_drop`, is masked out and the runner-up takes its
+        place, as `DictBlock.drop_winners` does for each head's winner. The
+        chosen latents keep their clean ReLU values: under the
+        straight-through estimator the Ontologizer's hard code carries no
+        logit magnitude, so its noise changes only which entry is chosen."""
+        r_sel, r_drop = jax.random.split(rng)
+        sel = pre.astype(self.dtype)
+        if self.sd_pre:
+            sel = addnoise_batchnorm(sel, r_sel, self.sd_pre)
+
+        def choose(s: Float[Array, "b m"]) -> Bool[Array, "b m"]:
+            a = jax.nn.relu(s)
+            thr = jax.lax.top_k(a, self.topk)[0][..., -1:]
+            return (a >= thr) & (s > 0)
+
+        chosen = choose(sel)
+        if self.p_drop:
+            drop = chosen & jax.random.bernoulli(r_drop, self.p_drop, sel.shape)
+            chosen = choose(jnp.where(drop, -jnp.inf, sel))
+        return jnp.where(chosen, jax.nn.relu(pre), 0.0)
+
+    def out_noise(self, z: Float[Array, "b m"], rng: PRNGKeyArray
+                  ) -> Float[Array, "b d"]:
+        """Noise for the reconstruction with each coordinate's variance
+        `sd_out**2 * sum_j var_b(z_j) W_dec[q, j]**2`. That is the sum of
+        independent noise on each latent's output `z_j W_dec[:, j]` of
+        `sd_out` times its batch std per coordinate, which is what
+        `DictBlock` adds to each head's output under `noise_F="featvar"`,
+        drawn without materializing the (b, m, d) per-latent outputs. Its
+        scale is stop-gradiented, as there."""
+        W = self.decoder.weights.astype(self.dtype)              # (d, m)
+        var = jnp.var(z.astype(self.dtype), axis=0)              # (m,)
+        sd = jax.lax.stop_gradient(self.sd_out * jnp.sqrt((W ** 2) @ var))
+        return sd * jax.random.normal(rng, (z.shape[0], W.shape[0]), self.dtype)
+
+    def check_noise(self) -> None:
+        """The training noises are defined for the flat linear top-k SAE."""
+        if type(self) is not SAE or self.enc != "linear" or not self.topk \
+                or self.prefixes != 1:
+            raise ValueError(
+                "sd_pre, p_drop and sd_out need a flat linear top-k SAE "
+                "(no groups, blocks, gating, bilinear encoder or prefixes)")
+
     def encode(self, X: Float[Array, "... d"]) -> Float[Array, "... m"]:
         if self.enc == "gated":
             gate, mag = self.gated_pre(X)
@@ -212,16 +271,23 @@ class SAE(Sparse):
     # ---- objective ----------------------------------------------------------
 
     def loss(self, X: Float[Array, "b d"], w_sqrt: Float[Array, "d"],
-             dead: Bool[Array, "m"]
+             dead: Bool[Array, "m"], rng: Optional[PRNGKeyArray] = None
              ) -> Tuple[Float[Array, ""],
                         Tuple[Float[Array, ""], Bool[Array, "m"]]]:
         """`(loss, (mse, fired))`: the training objective, its whitened
         reconstruction term, and which latents fired on this batch. `dead`
-        marks the latents aux-k may recruit."""
+        marks the latents aux-k may recruit. Given `rng`, the training
+        noises apply; aux-k reads the clean pre-activations and the clean
+        reconstruction's residual."""
         if self.enc == "gated":
             return self.gated_loss(X, w_sqrt)
+        noisy = rng is not None and bool(self.sd_pre or self.p_drop or self.sd_out)
+        if noisy:
+            self.check_noise()
+            r_sel, r_out = jax.random.split(rng)
         pre = self.preacts(X)
-        z = self.activate(pre)
+        z = (self.noisy_activate(pre, r_sel) if noisy and (self.sd_pre or self.p_drop)
+             else self.activate(pre))
         if self.prefixes > 1:
             # every prefix of latent blocks must reconstruct on its own
             # (joint, no stop-gradient between blocks)
@@ -230,7 +296,8 @@ class SAE(Sparse):
             recon = recons[-1]
         else:
             recon = self.decode(z)
-            mse = (((recon - X) * w_sqrt) ** 2).mean()
+            noised = recon + self.out_noise(z, r_out) if noisy and self.sd_out else recon
+            mse = (((noised - X) * w_sqrt) ** 2).mean()
         loss = mse
         if self.s_l1:
             loss = loss + self.s_l1 * jnp.abs(z).sum(-1).mean()

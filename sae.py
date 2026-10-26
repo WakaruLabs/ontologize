@@ -211,6 +211,20 @@ def parse_args():
                         "--enc linear; pick N > --dead-steps; 0 = off)")
     p.add_argument("--dead-steps", type=int, default=1000,
                    help="steps without firing before a latent counts as dead")
+    p.add_argument("--sd-pre", type=float, default=0.0,
+                   help="selection noise, training only: the top k are "
+                        "chosen from the pre-activations plus Gaussian noise "
+                        "of this many times each sample's pre-activation RMS, "
+                        "and keep their clean values (the Ontologizer's "
+                        "logit noise, --sd-k with --noise-k batchnorm)")
+    p.add_argument("--p-drop", type=float, default=0.0,
+                   help="winner dropout, training only: each chosen latent "
+                        "is replaced by the runner-up with this probability "
+                        "per sample (the Ontologizer's --p-drop)")
+    p.add_argument("--sd-out", type=float, default=0.0,
+                   help="output noise, training only: the sum of noise on "
+                        "each latent's output of this many times its batch "
+                        "std per coordinate (the Ontologizer's --sd-f)")
     p.add_argument("--save-each", type=int, default=1000)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--out", default=None,
@@ -237,13 +251,17 @@ def run_name(cfg):
         name += f"_p{cfg.prefixes}"
     if cfg.adam_eps != 1e-8:
         name += f"_eps{cfg.adam_eps:g}"
+    for flag, tag in (("sd_pre", "sdpre"), ("p_drop", "pdrop"), ("sd_out", "sdout")):
+        if getattr(cfg, flag):
+            name += f"_{tag}{getattr(cfg, flag):g}"
     if cfg.seed != 42:
         name += f"_s{cfg.seed}"  # seed-stability replicas get their own dir
     return name
 
 
 def model_for(params=None, *, d=0, m=0, enc=None, topk=0, l1=0.0, groups=0,
-              group_fn="top1", prefixes=1, aux_k=0, block=0):
+              group_fn="top1", prefixes=1, aux_k=0, block=0,
+              sd_pre=0.0, p_drop=0.0, sd_out=0.0):
     """The `ontologize` model that a flat `params.npz` dict (or, without
     one, `d`/`m`/`enc`) and the run's encode settings describe. The encoder
     form comes off the params' keys, so a checkpoint needs no flag; the
@@ -264,7 +282,8 @@ def model_for(params=None, *, d=0, m=0, enc=None, topk=0, l1=0.0, groups=0,
                 f"block={block} was passed, but these parameters are not a "
                 f"block-sparse featurizer")
     enc = enc or "linear"
-    kw = dict(d=d, m=m, s_l1=l1, aux_k=aux_k, prefixes=prefixes, enc=enc)
+    kw = dict(d=d, m=m, s_l1=l1, aux_k=aux_k, prefixes=prefixes, enc=enc,
+              sd_pre=sd_pre, p_drop=p_drop, sd_out=sd_out)
     if block:
         return BlockSparse(topk=topk, block=block, **kw)
     if enc == "gated":
@@ -278,7 +297,8 @@ def model_from_cfg(cfg, params):
     """`model_for` with a training run's settings."""
     return model_for(params, topk=cfg.topk, l1=cfg.l1, groups=cfg.groups,
                      group_fn=cfg.group_fn, prefixes=cfg.prefixes,
-                     aux_k=cfg.aux_k, block=cfg.block)
+                     aux_k=cfg.aux_k, block=cfg.block, sd_pre=cfg.sd_pre,
+                     p_drop=cfg.p_drop, sd_out=cfg.sd_out)
 
 
 def _apply(model, params, method, *args):
@@ -349,15 +369,20 @@ def gated_loss(params, X, w_sqrt, l1):
 def make_step(tx, cfg):
     """One optimizer step on the flat layout, with the model's loss
     (`SAE.loss`) and decoder renormalization (`SAE.renorm`). The model is
-    built from the params inside the trace, where their shapes are fixed."""
-    def loss_fn(params, X, w_sqrt, dead):
+    built from the params inside the trace, where their shapes are fixed.
+    `rng` reaches the loss only when a training noise is set; the other
+    models' losses take none."""
+    noisy = bool(cfg.sd_pre or cfg.p_drop or cfg.sd_out)
+
+    def loss_fn(params, X, w_sqrt, dead, rng):
         model = model_from_cfg(cfg, params)
-        return _apply(model, params, "loss", X, w_sqrt, dead)
+        args = (X, w_sqrt, dead, rng) if noisy else (X, w_sqrt, dead)
+        return _apply(model, params, "loss", *args)
 
     @jax.jit
-    def step(params, opt_state, X, w_sqrt, dead):
+    def step(params, opt_state, X, w_sqrt, dead, rng):
         (loss, (mse, fired)), g = jax.value_and_grad(
-            loss_fn, has_aux=True)(params, X, w_sqrt, dead)
+            loss_fn, has_aux=True)(params, X, w_sqrt, dead, rng)
         updates, opt_state = tx.update(g, opt_state, params)
         params = optax.apply_updates(params, updates)
         params = to_legacy(model_from_cfg(cfg, params).renorm(
@@ -616,6 +641,10 @@ def train(cfg):
         # the paper's revival is the runner-up term in BlockSparse.loss
         assert not cfg.aux_k, "--block needs --aux-k 0 (see BlockSparse.loss)"
         assert not cfg.resample_every, "--block has no resampling"
+    if cfg.sd_pre or cfg.p_drop or cfg.sd_out:
+        assert cfg.topk and not cfg.groups and not cfg.block \
+            and cfg.enc == "linear" and cfg.prefixes == 1, \
+            "--sd-pre, --p-drop and --sd-out need a flat linear top-k SAE"
 
     out = Path(cfg.out) if cfg.out else Path("data/out/sonar/sae") / run_name(cfg)
     out.mkdir(parents=True, exist_ok=True)
@@ -626,7 +655,8 @@ def train(cfg):
         {"m": cfg.m, "topk": cfg.topk, "l1": cfg.l1, "groups": cfg.groups,
          "group_fn": cfg.group_fn, "prefixes": cfg.prefixes,
          "enc": cfg.enc, "resample_every": cfg.resample_every,
-         "block": cfg.block, "adam_eps": cfg.adam_eps}))
+         "block": cfg.block, "adam_eps": cfg.adam_eps,
+         "sd_pre": cfg.sd_pre, "p_drop": cfg.p_drop, "sd_out": cfg.sd_out}))
 
     mm = np.load(cfg.cache, mmap_mode="r")
     n_train, n_head = splits(mm.shape[0], cfg.eval_rows, cfg.train_rows)
@@ -651,6 +681,10 @@ def train(cfg):
     opt_state = tx.init(params)
     step_fn = make_step(tx, cfg)
     eval_fn = make_eval(cfg.topk, cfg.groups, cfg.group_fn, cfg.block)
+    # the training noises draw from their own stream, keyed by step, so a
+    # noised run shares the stock run's initialization and batch order and
+    # a resume draws what the uninterrupted run would have
+    noise_key = jax.random.fold_in(jax.random.PRNGKey(cfg.seed), 1)
 
     step = 0
     last_fired = np.zeros(cfg.m, np.int64)
@@ -684,7 +718,8 @@ def train(cfg):
             X = jnp.asarray(batch)
             dead = jnp.asarray(step - last_fired > cfg.dead_steps)
             params, opt_state, L, mse, fired = step_fn(
-                params, opt_state, X, w_sqrt, dead)
+                params, opt_state, X, w_sqrt, dead,
+                jax.random.fold_in(noise_key, step))
             last_fired[np.asarray(fired)] = step
             step += 1
             pbar.update(1)

@@ -120,6 +120,17 @@ experiments/next-sentence/pilot.sh fano
 uv run python experiments/adam-eps/train_eps.py --base gpt2_l8 --dict-init-scale 1.0 --adam-eps 1e-15
 JAX_PLATFORMS=cpu uv run python experiments/adam-eps/throttle.py <run>:<step> ... [<sae.py run dir> ...]
 
+# The recipe ladder (experiments/recipe-ladder): both Ontologizers on
+# mc4_sent16 with one training noise (--sd-k, --sd-f, --p-drop) or one
+# auxiliary weight (--s-bcossim, --s-support, --s-l1f, --s-hm) removed at a
+# time against a control and its seed-43 replica, 50k steps each, keeping
+# only the final checkpoint (train_ste.py --max-to-keep 1
+# --checkpoint-each 50000); and the k32 SAE with the Ontologizer's noises
+# added (sae.py --sd-pre/--p-drop/--sd-out). WEIGHTS is no837 or med837.
+# Both run as systemd units that wait for an idle GPU (README.md)
+experiments/recipe-ladder/ladder.sh WEIGHTS
+experiments/recipe-ladder/sae_noise_runs.sh
+
 # Train on SONAR multilingual sentence embeddings (mC4 data)
 uv run python sonar.py
 
@@ -136,7 +147,11 @@ uv run python sae.py           # train a field-standard top-k SAE on the same
                                # structure one rung at a time (heads / deepsup layers).
                                # --block B --topk L --aux-k 0 trains the vanilla
                                # block-sparse featurizer (Fel et al. 2026): the L
-                               # largest-norm of m/B blocks of B signed latents
+                               # largest-norm of m/B blocks of B signed latents.
+                               # --sd-pre/--p-drop/--sd-out add the Ontologizer's
+                               # training noises (selection noise, winner dropout,
+                               # output noise) to a flat linear top-k SAE; they
+                               # apply only in training (SAE.loss with an rng)
 uv run python pareto.py        # reconstruction-vs-code-capacity Pareto table:
                                # Ontologizer top-m deviation codes vs trained SAEs
 uv run python autointerp.py -h # auto-interp pipeline (harvest/texts/describe/
@@ -234,7 +249,7 @@ Seed stability: train a replica with `sae.py --seed 43` (run dirs get an
 `_s43` suffix) and feed the pair to `splitting.py` — its "A matched"/"B
 matched" columns are the reproducible-feature fractions.
 
-Tests: the curated suite lives in `tests/`, wired via `[tool.pytest.ini_options] testpaths = ["tests"]` in `pyproject.toml`, so a bare `uv run pytest` runs only it (fast, CPU-only — `tests/conftest.py` forces `JAX_PLATFORMS=cpu`, so it is safe to run alongside a live GPU training run). It covers: `deepsup_sg` gradient semantics, `resid_norm`/`resid_const` conditioning (including bilinear sign-blindness), the `s_Hm`/`KL_m` batch mean-entropy bonus, top-k tag selection (`select="top<k>"`), the `s_L2pwak`/`L2_pwak` noise2self partition score and the `s_pwak`/`KL_pwak` consensus KL with the kernel the two share (`test_pwak_kl`), noise-path NaN regressions, checkpoint save/restore including the `n_stats` stats-width migration and the legacy-spec-key rename, `ConcatDictBlock`'s overridden statistics, the gated SAE encoder's gradient routing, `NLinearBlock.withL1`'s gate-factor L1, `L1_S`'s position in the stats row, `support_overlap` and the retired `cossim_h`/`cossim_flat` slots (`test_support`), fibers and head dropout (`test_fibers`), the SAE modules' layout converters and configuration checks (`test_sae_modules`), `TokenizeTransform`'s source-language tags (`test_tokenize`), `NpyDataSource` and the batching of `(input, target)` records (`test_loaders`), `l2_pooling` with and without its L2 step (`test_l2_pooling`), sentence segmentation, the script check and run selection (`test_segment`) and `encode_sentences.py`'s choice of a document's sentences and token-capped batches (`test_encode_sentences`), and a short end-to-end training loop per live run configuration. The suite's largest block now tests the root eval scripts' pure helpers (`test_sae`, `test_autointerp`, `test_pareto`, `test_headstruct`, `test_headcoh`, `test_compose`, `test_splitting`, `test_textfid`, `test_langprobe`, `test_refit`, `test_steerfid`, `test_encode_acts`, `test_assignmap`, `test_enrich`, `test_headnmi`, `test_entrydrift`, `test_bilinspec`, `test_selection`, `test_anatomy`, `test_textstrip`, `test_quantrate` import them directly), and some `experiments/ste-arm` analyses' the same way (`test_steerembed`, `test_headlang`, `test_logitscale`, `test_atomgram`, `test_reconseeds`, `test_headrange`, `test_coordfvu`, `test_coordtrace`, `experiments/lang-tags`'s `test_retag`, `experiments/sentence-split`'s `test_cachestats`, `experiments/next-sentence`'s `test_next_sentence`, which also covers `train`'s `(input, target)` batches, and `experiments/adam-eps`'s `test_adam_eps`, which checks that `--adam-eps` reaches optax — Adam, AdamW, and `DictWDHyperparams`'s own `opt` — the throttle arithmetic, and its reading of `sae.py`'s saved state) — breaking `sae.py` or its siblings breaks the suite, so keep those scripts import-safe under `__main__` guards.
+Tests: the curated suite lives in `tests/`, wired via `[tool.pytest.ini_options] testpaths = ["tests"]` in `pyproject.toml`, so a bare `uv run pytest` runs only it (fast, CPU-only — `tests/conftest.py` forces `JAX_PLATFORMS=cpu`, so it is safe to run alongside a live GPU training run). It covers: `deepsup_sg` gradient semantics, `resid_norm`/`resid_const` conditioning (including bilinear sign-blindness), the `s_Hm`/`KL_m` batch mean-entropy bonus, top-k tag selection (`select="top<k>"`), the `s_L2pwak`/`L2_pwak` noise2self partition score and the `s_pwak`/`KL_pwak` consensus KL with the kernel the two share (`test_pwak_kl`), noise-path NaN regressions, checkpoint save/restore including the `n_stats` stats-width migration and the legacy-spec-key rename, `ConcatDictBlock`'s overridden statistics, the gated SAE encoder's gradient routing, `NLinearBlock.withL1`'s gate-factor L1, `L1_S`'s position in the stats row, `support_overlap` and the retired `cossim_h`/`cossim_flat` slots (`test_support`), fibers and head dropout (`test_fibers`), the SAE modules' layout converters and configuration checks (`test_sae_modules`), `TokenizeTransform`'s source-language tags (`test_tokenize`), `NpyDataSource` and the batching of `(input, target)` records (`test_loaders`), `l2_pooling` with and without its L2 step (`test_l2_pooling`), sentence segmentation, the script check and run selection (`test_segment`) and `encode_sentences.py`'s choice of a document's sentences and token-capped batches (`test_encode_sentences`), and a short end-to-end training loop per live run configuration. The suite's largest block now tests the root eval scripts' pure helpers (`test_sae`, `test_autointerp`, `test_pareto`, `test_headstruct`, `test_headcoh`, `test_compose`, `test_splitting`, `test_textfid`, `test_langprobe`, `test_refit`, `test_steerfid`, `test_encode_acts`, `test_assignmap`, `test_enrich`, `test_headnmi`, `test_entrydrift`, `test_bilinspec`, `test_selection`, `test_anatomy`, `test_textstrip`, `test_quantrate` import them directly), and some `experiments/ste-arm` analyses' the same way (`test_steerembed`, `test_headlang`, `test_logitscale`, `test_atomgram`, `test_reconseeds`, `test_headrange`, `test_coordfvu`, `test_coordtrace`, `test_auxpull`, `test_train_ste` (the recipe flags reach what `setup` builds), `experiments/lang-tags`'s `test_retag`, `experiments/sentence-split`'s `test_cachestats`, `experiments/next-sentence`'s `test_next_sentence`, which also covers `train`'s `(input, target)` batches, and `experiments/adam-eps`'s `test_adam_eps`, which checks that `--adam-eps` reaches optax — Adam, AdamW, and `DictWDHyperparams`'s own `opt` — the throttle arithmetic, and its reading of `sae.py`'s saved state) — breaking `sae.py` or its siblings breaks the suite, so keep those scripts import-safe under `__main__` guards.
 
 ```bash
 uv run pytest -v
