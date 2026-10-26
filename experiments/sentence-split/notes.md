@@ -896,9 +896,8 @@ weights, at each checkpoint below (`data/out/sonar/coordtrace/<run>/`,
     median coordinate's (`param_change_over_median` in `trace.csv`).
   - At ε 1e-8 they stay at 2.9–3.9× and move 2.8–2.9×.
   - With the reconstruction silent on 837, what moves them is the
-    auxiliary terms on the dictionary; which one is not measured. At
-    ε 1e-8 that gradient presumably sat far below ε (not measured per
-    coordinate). At 1e-15 Adam scales it up to a full step.
+    auxiliary terms on the dictionary: chiefly the support overlap, then
+    `cossim_b` (next section).
 - **The hard stack's decoder row for 837 never moves.**
   - Its change between the steps traced is exactly 0 in both arms. No term
     of the loss reaches it, so it keeps its initialization.
@@ -911,6 +910,54 @@ weights, at each checkpoint below (`data/out/sonar/coordtrace/<run>/`,
   stock ε, comes sooner: cossim_k_max is 0.89 at step 25,000, where the
   stock run's is 0.10, and 0.93–0.96 after. Its realized rate is 1,783 bits against 1,889 at ε 1e-8, so
   its heads use fewer of their entries.
+
+### Which term moves the atoms (`auxpull.py --coord 837`)
+
+`experiments/ste-arm/auxpull.py --coord 837` restricts each statistic's
+gradient to the parameters that write coordinate 837, on the same cache
+tail. Each gradient is averaged over 8 batches of 256, and each term is
+weighted by the run's own recorded weight
+(`experiments/logs/auxpull_sent16_837.log`, `data/out/sonar/auxpull_sent16/`).
+The columns:
+- **pull ÷ MSE's**: the weighted gradient on 837's parameters over the
+  MSE's gradient on the median coordinate's;
+- **share**: each term's part of the net pull on 837.
+
+The MSE's own gradient on 837 is exactly 0 everywhere.
+
+| run, step | support: pull ÷ MSE's, share | `cossim_b`: pull ÷ MSE's, share | net pull, RMS per parameter |
+|---|---|---|---|
+| direct, ε 1e-15, 25,000 | 1.00, 0.94 | 0.42, 0.05 | 5.3e-10 |
+| 75,000 | 1.58, 0.82 | 0.79, 0.17 | 9.3e-10 |
+| 125,000 | 2.58, 0.77 | 1.42, 0.23 | 1.6e-9 |
+| 175,000 | 3.54, 0.78 | 1.89, 0.22 | 2.2e-9 |
+| 275,000 | 4.03, 0.73 | 2.43, 0.26 | 3.6e-9 |
+| 344,250 | 3.65, 0.74 | 2.18, 0.26 | 7.1e-9 |
+| direct, ε 1e-8, 25,000 | 1.04, 0.98 | 0.34, 0.01 | 6.3e-10 |
+| 175,000 | 1.79, 0.75 | 1.09, 0.25 | 1.2e-9 |
+| 344,250 | 4.12, 0.66 | 2.97, 0.34 | 2.8e-9 |
+
+- **Two terms carry it.**
+  - The support overlap (`s_support` 1e-6) takes 66–98% of the net pull
+    on 837's atom components, and `cossim_b` (`s_bcossim` 1e-5) the rest.
+  - `L1_F` takes at most 1.2%. `KL_m` reads only the classifications, so
+    it has no gradient there. `cossim_k`'s weight is 0.
+- **Each pulls harder on 837 than on a typical coordinate.**
+  - The support term's gradient on 837's parameters is 1.6–6.8× its own
+    on the median coordinate's in the ε 1e-15 run, and `cossim_b`'s is
+    3.8–18×.
+  - By step 75,000 the support term alone pulls on 837 harder than the
+    MSE pulls on a typical coordinate.
+- **ε decides what the pull does.**
+  - The two runs feel pulls of similar size. Only at ε 1e-15 do the atoms
+    drift.
+  - Per parameter the net pull is 5e-10 to 7e-9, below ε 1e-8. That fits
+    a throttle at 1e-8 and full steps at 1e-15. Adam's second moments for
+    these parameters were not read, so the step share at 1e-8 is not
+    measured.
+- **The hard stack's decoder row for 837** gets no gradient from any term,
+  at either step read. The auxiliary terms act in the dictionary space,
+  which its decoder maps to the output.
 
 ### The smallest L1 weight
 

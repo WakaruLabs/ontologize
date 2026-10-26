@@ -2096,14 +2096,22 @@ everything looks fine before step 9,000.
 
 **Loss-value share is not gradient share, and only the second selects a
 weight.** At 1e-4 the penalty was 12% of the loss value, which reads
-like a weak setting. Measured at the converged checkpoint, batch 256:
+like a weak setting. Measured with `auxpull.py --hsic-estimator biased` on
+`ste_h76` at step 369,500, batch 256
+(`experiments/logs/auxpull_ste_h76_hsic_biased.log`):
 
 | gradient norm | MSE | CKA | ratio |
 |---|---|---|---|
-| classifier | 1.76e-4 | 2.21e-1 | 1250 |
-| dictionary | 9.96e-4 | 2.21e-1 | 221 |
+| classifier | 1.70e-4 | 2.16e-1 | 1265 |
+| dictionary | 9.68e-4 | 0 | — |
 
-so the weight for equal pull on the classifier is 8e-4 and 1e-3 is
+The CKA reads only the classifications, so it has no gradient to the
+dictionary. This table's first version gave the dictionary 2.21e-1, the
+classifier's own figure. `auxpull.py` then matched parameter groups by
+substring, which put each layer's classifier, under `dictencs_<i>`, into
+`dict`.
+
+So the weight for equal pull on the classifier is 7.9e-4 and 1e-3 is
 already balanced, not weak. At balanced pull the statistic does not
 move, which says the penalty is a weak lever on this architecture
 rather than a mis-scaled one: reducing head dependence costs more

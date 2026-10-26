@@ -66,7 +66,7 @@ does.
 | what the final layer contributes | `lastlayer.py` |
 | each model's error per coordinate, on the coordinates the MSE weights most against the median coordinate, and how far each moves between checkpoints; SAEs and Ontologizers | `coordfvu.py` |
 | one coordinate's error over a run's checkpoints, how the parameters that write it move, and its share of the residual each layer classifies | `coordtrace.py` |
-| which auxiliary losses do anything, at what weight | `auxpull.py` |
+| which auxiliary losses do anything, at what weight, and which pull on the parameters that write one coordinate (`--coord`) | `auxpull.py` |
 | the layer-0 logit scale against the temperature and the training noise, at initialization and over training | `logitscale.py` |
 | **dictionary geometry** | |
 | within-head row geometry from the weights | `dictgeom.py` |

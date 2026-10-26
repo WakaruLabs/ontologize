@@ -2518,8 +2518,9 @@ estimator the penalty changes nothing and costs localization
 before trusting a statistic as a training signal, measure it on a null
 it should score zero on; and loss-value share is not gradient share ---
 at $s_{\mathrm{HSIC}}{=}10^{-4}$ the penalty was 12\% of the loss value, while the
-measured MSE-to-CKA gradient ratio (1250 at the classifier, 221 at the
-dictionary) put equal pull at $8\times10^{-4}$.
+measured MSE-to-CKA gradient ratio at the classifier, 1265, put equal
+pull at $8\times10^{-4}$. The CKA reads only the classifications, so the
+classifier is all it reaches.
 
 \subsection{Seed reproducibility, measure by measure}
 \label{sec:seedsdetail}
