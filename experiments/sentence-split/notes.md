@@ -856,21 +856,27 @@ weights, at each checkpoint below (`data/out/sonar/coordtrace/<run>/`,
 - the held-out FVU;
 - coordinate 837's root-mean-square error over the median coordinate's;
 - 837's share of the raw squared norm of the residual the last layer
-  classifies.
+  classifies;
+- the spread of the parameters that write 837 over the median
+  coordinate's: the direct runs' atoms, the hard stack's decoder row.
 
-| run, step | FVU | 837 error / median | 837's share of layer 4's residual |
-|---|---|---|---|
-| direct, ε 1e-15, 25,000 | 0.4703 | 4.5 | 0.019 |
-| 75,000 | 0.4591 | 4.7 | 0.019 |
-| 125,000 | **0.4582** | 6.9 | 0.034 |
-| 175,000 | 0.4652 | 14.2 | 0.084 |
-| 225,000 | 0.4979 | 28.5 | 0.169 |
-| 275,000 | 0.5500 | 45.3 | 0.243 |
-| 344,250 | 0.6538 | 77.5 | 0.404 |
-| direct, ε 1e-8, 344,250 | 0.4997 | 3.4 | 0.011 |
-| hard stack, ε 1e-15, 175,000 | 0.4242 | 6.1 | 0.033 |
-| 344,250 | 0.3508 | 13.7 | 0.092 |
-| hard stack, ε 1e-8, 344,250 | 0.6940 | 1.3 | 0.003 |
+| run, step | FVU | 837 error / median | 837's share of layer 4's residual | 837's parameters' spread / median |
+|---|---|---|---|---|
+| direct, ε 1e-15, 25,000 | 0.4703 | 4.5 | 0.019 | 4.65 |
+| 75,000 | 0.4591 | 4.7 | 0.019 | 4.87 |
+| 125,000 | **0.4582** | 6.9 | 0.034 | 7.86 |
+| 175,000 | 0.4652 | 14.2 | 0.084 | 13.37 |
+| 225,000 | 0.4979 | 28.5 | 0.169 | 20.81 |
+| 275,000 | 0.5500 | 45.3 | 0.243 | 30.78 |
+| 344,250 | 0.6538 | 77.5 | 0.404 | 50.71 |
+| direct, ε 1e-8, 25,000 | 0.5657 | 2.1 | 0.005 | 2.86 |
+| 125,000 | 0.5096 | 3.4 | 0.011 | 3.88 |
+| 344,250 | 0.4997 | 3.4 | 0.011 | 3.84 |
+| hard stack, ε 1e-15, 25,000 | 0.6834 | 0.9 | 0.001 | 1.01 |
+| 175,000 | 0.4242 | 6.1 | 0.033 | 0.85 |
+| 344,250 | 0.3508 | 13.7 | 0.092 | 0.75 |
+| hard stack, ε 1e-8, 25,000 | 0.8894 | 0.7 | 0.001 | 0.98 |
+| 344,250 | 0.6940 | 1.3 | 0.003 | 1.00 |
 
 - **The direct run degrades as coordinate 837 takes over its residual.**
   - Its error on 837 grows 16-fold after step 75,000.
@@ -878,14 +884,29 @@ weights, at each checkpoint below (`data/out/sonar/coordtrace/<run>/`,
     already at layer 1.
   - Before that, at step 125,000, it held out at 0.4582, below the stock
     run's 0.4997.
-- **The likely reason.** The masked weight leaves 837's output without a
-  gradient of its own. What reaches the parameters that write it comes
-  only from the later layers that classify the residual, and from the
-  auxiliary terms. At ε 1e-8 that gradient presumably sat far below ε and
-  barely moved them (not measured per coordinate). At 1e-15 Adam scales it
-  up to a full step.
-- **The hard stack drifts the same way, more slowly.** Its 837 share
-  triples over the second half while its FVU still falls.
+- **No gradient reaches 837's output through the reconstruction.** Its
+  weight is 0, and each layer's input residual is stop-gradiented
+  (`Ontologizer.nextinput`), so the later layers send nothing back to the
+  parameters that wrote it. The two architectures drift by different
+  routes.
+- **The direct run's atoms carry 837 away.**
+  - The spread of their 837 components grows from 4.65× the median
+    coordinate's at step 25,000 to 50.71× at the end.
+  - Between the steps traced after 75,000 they move 16–27× as far as the
+    median coordinate's (`param_change_over_median` in `trace.csv`).
+  - At ε 1e-8 they stay at 2.9–3.9× and move 2.8–2.9×.
+  - With the reconstruction silent on 837, what moves them is the
+    auxiliary terms on the dictionary; which one is not measured. At
+    ε 1e-8 that gradient presumably sat far below ε (not measured per
+    coordinate). At 1e-15 Adam scales it up to a full step.
+- **The hard stack's decoder row for 837 never moves.**
+  - Its change between the steps traced is exactly 0 in both arms. No term
+    of the loss reaches it, so it keeps its initialization.
+  - The output on 837 is then a fixed readout of a code that trains for
+    the other coordinates, and its error grows as the code moves. At
+    ε 1e-15 it rises from 0.9× the median coordinate's at step 25,000 to
+    13.7× at the end; at ε 1e-8, from 0.7× to 1.3×.
+  - Its 837 share triples over the second half while its FVU still falls.
 - **Collapse.** The direct run's head collapse, already present at
   stock ε, comes sooner: cossim_k_max is 0.89 at step 25,000, where the
   stock run's is 0.10, and 0.93–0.96 after. Its realized rate is 1,783 bits against 1,889 at ε 1e-8, so

@@ -17,6 +17,13 @@ and per --coord coordinate c:
                        the squared norm of the residual layer i classifies:
                        x itself for layer 0, x - xhat_{<i} above it, with
                        xhat_{<i} the reconstruction of layers 0 to i-1
+  param_spread_over_median  the spread of the parameters that write c (a
+                       decoder-free model's atoms, else the decoder kernel's
+                       row for c; coordfvu.py's output_params) over the
+                       median coordinate's
+  param_change_over_median  their root-mean-square change since the
+                       previous step traced, over the median coordinate's;
+                       blank at the first
 
 resid_const's constant coordinate is left out of the residual. resid_norm
 and resid_gain rescale each row, which leaves the shares unchanged. A model
@@ -29,7 +36,8 @@ it only resid_share_0 is reported.
       --steps 25000 75000 344250
 
 Writes <out>/trace.csv (step, coord, fvu, fvu_over_median,
-err_raw_over_median, resid_share_0, ...) and <out>/summary.json; default out
+err_raw_over_median, param_spread_over_median, param_change_over_median,
+resid_share_0, ...) and <out>/summary.json; default out
 data/out/sonar/coordtrace/<run>. Matmuls run at full float32 precision, so a
 GPU run matches a CPU one.
 """
@@ -52,7 +60,8 @@ import numpy as np
 import jax
 from jaxtyping import Float
 
-from coordfvu import coord_stats, kept_steps
+from coordfvu import coord_stats, kept_steps, output_params, param_moves
+from pareto import load_onto
 from reconseeds import is_sae, onto_recon
 
 
@@ -115,25 +124,37 @@ def main() -> None:
     summary = {"ckpt": cfg.ckpt, "cache": cfg.cache, "rows": cfg.rows,
                "mse_weights": cfg.mse_weights, "temperature": cfg.temperature,
                "coords": cfg.coord, "steps": {}}
+    P_prev = None
     with open(out / "trace.csv", "w", newline="") as f:
         wr = csv.writer(f)
         for i, step in enumerate(steps):
             recon, used, name = onto_recon(cfg.ckpt, step, cfg.temperature)
             err, share = trace_sums(recon, X, cfg.batch, cfg.coord)
             s = coord_stats(err, var, w, cfg.coord)
+            P = output_params(load_onto(cfg.ckpt, used)[1], X.shape[1])
+            spread = P.std(0)
+            moves = param_moves(P_prev, P, cfg.coord)["coords"] if P_prev is not None else None
+            P_prev = P
             if i == 0:
-                wr.writerow(["step", "coord", "fvu", "fvu_over_median", "err_raw_over_median"]
+                wr.writerow(["step", "coord", "fvu", "fvu_over_median", "err_raw_over_median",
+                             "param_spread_over_median", "param_change_over_median"]
                             + [f"resid_share_{l}" for l in range(len(share))])
             rec = {"fvu": s["fvu"], "coords": {}}
             for j, c in enumerate(cfg.coord):
                 r = s["coords"][str(c)]
+                ps = float(spread[c] / np.median(spread))
+                pc = moves[str(c)]["change_over_median"] if moves is not None else None
                 rec["coords"][str(c)] = {"fvu_over_median": r["fvu_over_median"],
                                          "err_raw_over_median": r["err_raw_over_median"],
+                                         "param_spread_over_median": ps,
+                                         "param_change_over_median": pc,
                                          "resid_share": [float(v) for v in share[:, j]]}
-                wr.writerow([used, c, s["fvu"], r["fvu_over_median"], r["err_raw_over_median"]]
-                            + [float(v) for v in share[:, j]])
+                wr.writerow([used, c, s["fvu"], r["fvu_over_median"], r["err_raw_over_median"],
+                             ps, "" if pc is None else pc] + [float(v) for v in share[:, j]])
                 print(f"{name}: FVU {s['fvu']:.4f}  coord {c}: err/median "
                       f"{r['err_raw_over_median']:.1f}, FVU/median {r['fvu_over_median']:.1f}, "
+                      f"params spread/median {ps:.2f}, change/median "
+                      + ("-" if pc is None else f"{pc:.2f}") + ", "
                       "share of residual by layer " + " ".join(f"{v:.3f}" for v in share[:, j]),
                       flush=True)
             summary["steps"][str(used)] = rec
