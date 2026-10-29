@@ -878,7 +878,9 @@ weights, at each checkpoint below (`data/out/sonar/coordtrace/<run>/`,
 | hard stack, ε 1e-8, 25,000 | 0.8894 | 0.7 | 0.001 | 0.98 |
 | 344,250 | 0.6940 | 1.3 | 0.003 | 1.00 |
 
-- **The direct run degrades as coordinate 837 takes over its residual.**
+- **The direct run degrades while coordinate 837 takes over its
+  residual.** With 837 held by the median weight it still declines, by a
+  little over half as much (2026-10-28).
   - Its error on 837 grows 16-fold after step 75,000.
   - By the end 837 holds 40% of what the last layer classifies, and 14%
     already at layer 1.
@@ -1012,8 +1014,9 @@ and L1 4.64e-7 0.1740. Reaching 0.376 per row takes 501 and 744 bits.
   could not reach the direct code's 0.526 at any rate. The k32 at lr 4e-4
   and ε 1e-15 reaches it at 171 bits.
 - **What this leaves open.**
-  - The Ontologizers at ε 1e-15 are limited by coordinate 837, so their
-    rows are not their best. The direct run's step-125,000 checkpoint
+  - The Ontologizers at ε 1e-15 are limited by coordinate 837, in part
+    (2026-10-28), so their rows are not their best. The direct run's
+    step-125,000 checkpoint
     holds out at 0.458 before quantization. The k32 SAE reaches that at
     239 bits and k160 at 273.
   - One seed each.
@@ -1040,3 +1043,89 @@ rather than the cache's.
 - **To score.** `coordfvu.py` under the masked weights, so the FVU stays
   over the 1023 free coordinates and compares with the rows above;
   `coordtrace.py --coord 837` for the drift; `quantrate.py` for the rate.
+
+## 2026-10-28: the median weight holds 837, and the direct run still declines
+
+- **Where:** `sent16-med` finished 2026-10-27 17:55.
+- **Interruption:** the hard stack stopped once, with a GPU out-of-memory
+  error at step 235,452 (2026-10-27 06:33), and resumed from its last
+  checkpoint.
+- **Scoring:** on the CPU, with the 2026-10-25 commands, outputs and logs
+  under `*_sent16_med837`:
+  - `coordfvu.py`, on the same 32,765 rows under the masked weights;
+  - `coordtrace.py --coord 837`;
+  - `quantrate.py`, into `data/out/sonar/quantrate_sent16_med837_saenoise/`.
+
+### Held-out FVU over the 1023 free coordinates
+
+| run | no837 | med837 |
+|---|---|---|
+| hard stack | 0.3508 | **0.3406** |
+| direct k = 128 | 0.6538 | **0.5685** |
+
+The median weight improves both. By the rule set when the runs were
+queued, the recipe ladder (`experiments/recipe-ladder`) trains under
+`med837`.
+
+### Coordinate 837
+
+- **Its error stays small.** At every step traced it is 0.3–0.4× the
+  median coordinate's in the direct run and 0.1× in the hard stack. Under
+  `no837` they reached 77.5× and 13.7×.
+- **It leaves the residual alone.** Its share of the residual each of
+  layers 1–4 classifies reads 0.000; layer 0's 0.001 is the input's own.
+- **Its parameters stay at a typical scale.**
+  - The direct run's atoms' 837 components spread 0.54–0.61× the median
+    coordinate's, against 4.65–50.71×.
+  - The hard stack's decoder row for 837 now trains: it moves 0.34× and
+    0.11× as far as the median row between the steps traced.
+
+### The direct run's decline has a second cause
+
+| step | FVU, no837 | FVU, med837 |
+|---|---|---|
+| 25,000 | 0.4703 | 0.4706 |
+| 75,000 | 0.4591 | 0.4591 |
+| 125,000 | 0.4582 | **0.4581** |
+| 175,000 | 0.4652 | 0.4627 |
+| 225,000 | 0.4979 | 0.4818 |
+| 275,000 | 0.5500 | 0.5043 |
+| 344,250 | 0.6538 | 0.5685 |
+
+- **The median weight removes less than half the decline.** The best
+  checkpoint is the same under both weights. From there the `no837` run
+  loses 0.196, and the `med837` run, with 837 held throughout, 0.110.
+- **The fit itself worsens, not only the held-out score.**
+  - Training MSE (1,000-step means, under each run's own weights) is
+    lowest at step 81,556 in both runs: 3.81e-6 under `med837`, 3.80e-6
+    under `no837`.
+  - It ends at 4.82e-6 under `med837` and 5.02e-6 under `no837`.
+- **Collapse comes sooner and goes further.** `cossim_k_max` is 0.92 at
+  step 25,000 and 0.99 at the end, against 0.89 and 0.93.
+- **Not tested: whether full-size steps are the cause.** The ε 1e-8 run,
+  whose dictionaries take 0.06–0.18 of a step, improves throughout (0.5657
+  at step 25,000, 0.5096 at 125,000, 0.4997 at the end). At ε 1e-15 the
+  same lr of 1e-5 takes full steps. A lower lr at ε 1e-15 would test this.
+- **The hard stack does not decline.**
+  - It reads 0.6834 at step 25,000, 0.4201 at 175,000 and 0.3406 at the
+    end.
+  - Its training MSE ends at 3.00e-6 (3.04e-6 under `no837`).
+  - Its `cossim_k_max` falls from 0.76 to 0.40 (0.65 to 0.49).
+
+### Operational rate
+
+| code | float FVU | pinned: bits, FVU |
+|---|---|---|
+| hard stack, med837 | 0.3406 | 1891, **0.3675** |
+| direct k = 128, med837 | 0.5685 | 1875, 0.5934 |
+
+- **The hard stack's rate curve starts above its pinned rate.** Its first
+  point is 1,901 bits, at FVU 0.3494.
+- **SAEs reaching the hard stack's 0.3675** (the 2026-10-25 runs; the
+  SAEs were not retrained): k160 at 424 bits, the L1 SAE at 1.39e-6 at
+  462, at 4.64e-7 at 585. The k32 never does; its floor is 0.418.
+- **SAEs reaching the direct run's 0.5934:** the L1 SAE at 4.64e-6 at 113
+  bits, the k32 at 120, the L1 SAE at 1.39e-6 at 134, k160 at 151.
+- **The gap stays.** The SAEs reach the stack's FVU at 22–31% of its
+  bits (under `no837`, 21–30% at its 0.376), and the direct run's at
+  6–8%.
