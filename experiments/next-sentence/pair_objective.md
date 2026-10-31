@@ -143,10 +143,19 @@ L = Σ_rows L_stock(x) + s_pair · (1 / (b·|S|)) Σ_pairs Σ_{(ℓ,h) ∈ S} (1
 - **Triples.** For discrete codes, Kruskal identifiability needs three conditionally independent
   views, and two never suffice. Serve three sentences of a document (positions spread, e.g. 1, 6 and
   11), reshape (b, 3d) to (3b, d), and apply the term over the three pairs.
+  - Three views identify a document-level class only under two conditions (Allman et al.,
+    Theorem 9). The sentences must be conditionally independent given the class, and the
+    class-conditional distributions linearly independent.
+  - Spacing the positions makes the first likelier. Neither is established.
 - **Markov heads.** Replace the sticky prior with a learned k × k transition matrix per slow head,
-  T_h, trained on consecutive sentences with the term −log T_h[a(x_t), a(x_{t+1})]. This is the
-  discrete HMM that Allman et al.'s Theorem 6 identifies from windows of three, but it covers one
-  chain; per-head identifiability in a factorial model is unproven.
+  T_h, trained on consecutive sentences with the term −log T_h[a(x_t), a(x_{t+1})]. This is an HMM
+  whose observations are sentences.
+  - Allman et al.'s Theorem 9, applied to three consecutive sentences given the middle state,
+    identifies one such chain if its emission distributions are linearly independent and T_h is
+    invertible.
+  - Their Theorem 6 is for finite alphabets. It covers windows of three only when there are at
+    least as many observable states as hidden ones.
+  - Either covers one chain; per-head identifiability in a factorial model is unproven.
 
 ## Risks
 
