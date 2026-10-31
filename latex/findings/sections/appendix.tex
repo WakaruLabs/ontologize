@@ -518,7 +518,8 @@ applied to every head, so the code transmits $\nu$ coefficients per head.
 The origin is the
 corpus-mean classification $\mathbf{o}$ --- measured, not
 uniform: the model output is jointly \emph{linear} in the flattened
-classifications (zero residual seed, linear decoder), so
+classifications (zero residual seed, linear decoder, and no residual
+gains, which \texttt{resid\_nc} predates), so
 $\mathrm{decode}(\mathbf{o}) = \mathbb{E}[\hat{\mathbf{x}}]$,
 which decodes to the corpus-mean generic text, while the uniform code lands
 off-manifold (cosine $0.067$ to $\bar{\mathbf{x}}$).
@@ -632,7 +633,16 @@ of the linear map $W_{\mathrm{flat}}$ with
 $\hat{\mathbf{x}} = W_{\mathrm{flat}}\mathbf{p}_{\mathrm{flat}}$; for SAEs,
 decoder directions --- and SONAR space is a semantic sentence space, so
 within-head direction similarity is semantic similarity of what entries
-decode to. Per head or group $\mathcal{G}$ we report mean pairwise cosine
+decode to. For a head whose assignment sums to one (the Ontologizer's and
+\texttt{g160softmax}'s), the function fixes these directions only up to a
+vector added to all of a head's columns, with the vectors summing to zero
+over the heads: $\mathbf{p}_{\mathrm{flat}}$ sums to one within each head,
+so such a shift leaves $\hat{\mathbf{x}}$ unchanged. The cosines below
+therefore describe the trained parameters, and only within-head
+differences, the swap moves, are fixed by the function
+(Section~\ref{sec:prelim-orth}). SAE latents, and \texttt{g160top1}'s
+winners, carry free magnitudes and have no such freedom.
+Per head or group $\mathcal{G}$ we report mean pairwise cosine
 and top-singular-value energy fraction, z-scored as $\zeta$ against
 size-matched random subsets of the same pool (same layer for Ontologizer
 heads),
@@ -646,8 +656,9 @@ with $\mathbf{v}_j$ entry $j$'s decode direction and $\mathcal{G}'$ ranging
 over 500 random same-size subsets; as a metric-hygiene control the same
 statistics are recomputed under the training objective's inverse-variance
 inner product (\texttt{--metric whitened}). $\zeta_{\cos} \gg 0$ means a
-head clusters semantically; $\zeta_{\cos} \ll 0$ means its atoms repel --- the signature of a
-\emph{contrastive classifier}, whose entries' atoms are pushed apart. A
+head clusters semantically; $\zeta_{\cos} \ll 0$ means its atoms repel, as
+a \emph{contrastive classifier}'s would, whether through the contrasts or
+through the offsets training left. A
 second view SONAR-encodes autointerp description texts and tests pooled
 within-head similarity against a label-permutation null.
 \texttt{--assignment} scores discovered (post-hoc) groups.
@@ -1635,7 +1646,9 @@ directions. The two are not directly comparable: raw decode directions on
 \texttt{resid\_nc} repel ($\zeta_{\cos}{=}{-}17.6$), while refit directions on
 \texttt{resid\_nc\_hm}'s final checkpoint cohere ($\zeta_{\cos}{=}{+}72$); they differ
 in both instrument and substrate, and the refit frame folds in the shared
-decoder and cross-layer interactions. On that statistic the shape is rise,
+decoder and cross-layer interactions. A head's directions are also fixed
+only up to a shared offset (Section~\ref{sec:prelim-orth}), which the
+trained parameters and a refit resolve in their own ways. On that statistic the shape is rise,
 peak and partial relaxation (Figure~\ref{fig:devinterp}): mean within-head
 $\zeta_{\cos}$ climbs from $1.8$ at step 10k to a peak of $119$ near step 370k
 (median $123$, every head above $\zeta_{\cos}{=}2$), then relaxes over the
@@ -2569,17 +2582,23 @@ Grams stay at chance (1.05--1.19$\times$), the matched atoms at cosine
 replicate across seeds.
 
 \paragraph{Identifiability theory and next-sentence transition probes.}
-The seed non-identifiability above matches classical results for static
-unsupervised objectives: without side information or structural
-constraints that match the data-generating process, unsupervised
-disentanglement is unidentifiable from marginal data
-alone~\cite{locatello2019}, and even binary sparse coding requires
-nonlinear projection and radial diversity when fit to static
-marginals~\cite{hillar2015}. Where three or more discrete views are
-conditionally independent given a latent class, Kruskal's three-way array
-theorem identifies the class distribution up to label
-permutation~\cite{allman2009}, and Unsupervised Disentanglement Ranking
-uses pairwise cross-seed similarity to select identifiable runs without
+The seed disagreement above is what classical results for static
+unsupervised objectives lead one to expect, though it shows that these
+training runs are unstable, not that every optimum or training procedure
+must disagree. Without side information or structural constraints that
+match the data-generating process, unsupervised disentanglement is
+unidentifiable from marginal data alone~\cite{locatello2019}. Sparse
+coding's uniqueness guarantees need exact linear reconstruction, a
+dictionary that meets the spark condition and enough samples of every
+support, and even then fix the dictionary only up to permutation and
+scaling~\cite{hillar2015}; a lossy code is outside them. Where three or
+more discrete views are conditionally independent given a latent class,
+Kruskal's three-way array theorem identifies the class distribution up to
+label permutation if the views' class-conditional distributions meet a
+rank condition: always when each view's are linearly independent, and
+generically when every view has at least as many outcomes as there are
+classes~\cite{allman2009}. Unsupervised Disentanglement Ranking uses
+pairwise cross-seed similarity to select identifiable runs without
 labels~\cite{udr2020}; in the Ontologizer, however, the heads are the
 learned partitions rather than fixed views. The other established route is
 paired observations --- adjacent sentences or augmented views --- where
@@ -2602,21 +2621,53 @@ signal is concentrated in direction rather than norm: raw cosine separates
 adjacent from random sentence pairs with AUC $0.923$ (median cosine $0.680$
 vs.\ $0.369$), whereas whitened Euclidean distance reaches only AUC $0.685$
 because $68\%$ of its pair variance is sentence-length norm fluctuation.
-Existing single-sentence heads (\texttt{ste\_h76\_sent16\_no837}) do not
-capture slow state: they switch entries on $92.2\%$ of adjacent pairs in
-layer~0 ($96.9\%$ random) and $96.9$--$98.1\%$ in layers~1--4, with flat
-off-diagonal transition tables (concentration $\kappa = 0.081$ in layer~0
-and $0.008$--$0.044$ below). A 30{,}000-step pilot sweep (\texttt{pilot.sh})
-applying a cross-sentence agreement loss to $h_{\mathrm{slow}}{=}38$ of the
-76 heads per layer showed that a monotone agreement penalty
-($1 - \sum_j p_{a,ij} p_{b,ij}$) either has no effect at $s_{\mathrm{pair}}
-\le 10^{-5}$ or collapses the slow heads to $0.04$--$0.09$ bits for
-$s_{\mathrm{pair}} \ge 10^{-4}$, overwhelming $\mathrm{KL}_m$ at
-$5\times10^{-4}$ because a constant head pays bounded $\mathrm{KL}_m$ while
-achieving zero disagreement. Replacing the monotone penalty with a hinged
-Fano bound on the plug-in conditional entropy,
-$[H(P_b \mid P_a) - H_{\mathrm{floor}}]_+$, is designed to turn off once each
-entry has a sparse set of successors.
+The hard stack trained on \texttt{mc4\_sent16}
+(\texttt{sent16/ste\_h76\_init01\_no837}, 50{,}000 steps) does not capture
+slow state: its heads switch entries on $91.6\%$ of adjacent pairs in
+layer~0 and $92.3$--$92.5\%$ in layers~1--4, against $96.9\%$ for random
+pairs, and keep their entry across an adjacent pair barely more often
+than chance (Cohen's kappa $0.054$ in layer~0 and $0.045$--$0.047$ above,
+at most $0.081$ for any head). A pilot sweep (\texttt{pilot.sh}) trained
+a flat model ($l{=}1$, $h{=}380$, $k{=}32$) for one epoch of 5{,}011 steps
+on pairs of sentences at least two apart in one document, with a
+cross-sentence agreement penalty ($1 - \sum_j p_{a,ij} p_{b,ij}$) on its
+first 38 heads. The penalty barely moves the slow heads at
+$s_{\mathrm{pair}} \le 3\times10^{-5}$ and collapses them to
+$0.04$--$0.09$ bits for $s_{\mathrm{pair}} \ge 10^{-4}$, overwhelming the
+usage penalty at $s_{\mathrm{KL}_m}{=}10^{-4}$, because a constant head
+pays a bounded $\mathrm{KL}_m$ while achieving zero disagreement.
+
+\paragraph{Slow heads from a Fano pair term.}
+The term that replaced the agreement penalty (\texttt{pair\_term=fano},
+\texttt{pairloss.py}) rewards a lower bound on each slow head's mutual
+information between the entries it gives the two sentences. Guessing one
+sentence's entry from the other's errs exactly on the pairs where the head
+switches, so Fano's inequality bounds the conditional entropy by the
+binary entropy of the head's switch share plus that share times
+$\log_2(k-1)$; the bound is the head's batch usage entropy less that
+amount, as a fraction of $\log_2 k$. A collapsed head scores zero, so
+collapse no longer pays. In the pilot's 5{,}011 steps no slow head
+collapsed (5.00 bits at every $s_{\mathrm{pair}}$ up to $10^{-2}$),
+held-out $\fvu$ stayed within 0.0002 of the control's, and the slow
+heads' kappa on adjacent pairs rose from 0.072 to at most 0.097. Trained
+at $s_{\mathrm{pair}}{=}10^{-3}$ for three epochs over the 3.9M pairs of
+the first 4M rows (\texttt{long.sh}), the slow heads reach a mean kappa of
+0.463 on adjacent pairs and 0.407 at twelve sentences apart by step
+45{,}000, against 0.067--0.072 for the control's first 38 heads, while
+their usage stays at 4.85 of 5 bits. A second seed (43) follows the same
+trajectory (0.457 at step 45{,}000), and the two seeds' slow heads carve
+similar partitions. Matched one to one by NMI at step 46{,}250
+(\texttt{seedmatch.py}, Eq.~\eqref{eq:headmatch}, last 32{,}768 rows), the
+38 slow heads agree at 0.414 against a 0.005 null, and every one is
+matched to a slow head of the other seed (chance 10\%); the other 342
+heads agree at 0.017, and the control's first 38 at 0.016. Most of the
+agreement is not language: scored within each of 84 languages on
+260{,}453 held-out rows, the slow heads agree at 0.313 against a 0.041
+null, and the control's at 0.069 against 0.051. The cost is 1.8--1.9\% of
+held-out $\fvu$ (0.4679 against 0.4593 for seed 42, 0.4668 against 0.4586
+for seed 43). This is one seed pair of a one-layer model, and the two
+seeds see the rows in the same order, as the control's seeds do without
+reproducing.
 
 \subsection{What makes layer 0 reproduce: gain, atoms, and depth}
 \label{sec:l0size}

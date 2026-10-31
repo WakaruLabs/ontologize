@@ -8,11 +8,14 @@ run; what lets that head recur when no other does, and whether training
 pressure can extend it, are the first questions. Classical
 identifiability results suggest two levers: selecting identifiable heads
 or runs by pairwise cross-seed agreement without labels~\cite{udr2020}
-(where three or more conditionally independent views of a discrete latent
-identify its distribution up to permutation~\cite{allman2009}, though
-here the heads are the candidate views), and breaking the static marginal
-symmetry~\cite{locatello2019,hillar2015} with paired observations such as
-adjacent sentences~\cite{pcl2017,slowvae2021,locatello2020,ivae2020,zimmermann2021}.
+(three or more conditionally independent views of a discrete latent
+identify its distribution up to permutation when their class-conditional
+distributions meet a rank condition~\cite{allman2009}, though here the
+heads are the candidate views), and breaking the static marginal
+symmetry~\cite{locatello2019} with paired observations such as
+adjacent sentences~\cite{pcl2017,slowvae2021,locatello2020,ivae2020,zimmermann2021};
+sparse coding's own uniqueness guarantees need exact
+reconstruction~\cite{hillar2015}, which a lossy code lacks.
 Initial probes on a 44.1M-segment sentence-split SONAR cache
 (\texttt{mc4\_sent16}; working notes) show that $\mathbf{x}_t$ linearly
 explains $10.4\%$ of $\mathbf{x}_{t+1}$'s variance ($\mathrm{FVU}_{\mathrm{next}}{=}0.896$),
@@ -20,10 +23,14 @@ that adjacent sentences concentrate strongly in direction (raw cosine AUC
 $0.923$ vs.\ $0.685$ in whitened distance), that existing heads switch
 entries on $92.2$--$98.1\%$ of adjacent pairs, and that a monotone
 cross-sentence agreement penalty on 38 slow heads collapses them to
-$0.04$--$0.09$ bits for $s_{\mathrm{pair}} \ge 10^{-4}$, motivating a
-hinged Fano conditional-entropy lower bound
-$[H(P_b \mid P_a) - H_{\mathrm{floor}}]_+$ that turns off once each entry
-has a sparse set of successors. Decoupling layers is a parallel lever:
+$0.04$--$0.09$ bits for $s_{\mathrm{pair}} \ge 10^{-4}$. Rewarding a Fano
+lower bound on each slow head's mutual information across the pair keeps
+the heads in use and slows them instead: after three epochs their
+agreement beyond chance (Cohen's kappa) is $0.46$, against $0.07$ for the
+control's, and a second seed's slow heads carve partitions similar to the
+first seed's (matched NMI $0.414$ against a $0.005$ null), while every
+other head matches at $0.017$. That is one seed pair of a one-layer model,
+at a $1.8$--$1.9\%$ cost in reconstruction error. Decoupling layers is a parallel lever:
 giving the 40M GPT-2 concatenated-head model per-layer decoders drops
 cross-layer same-head coupling from $97\%$ to $6\%$ while cutting
 $\mathrm{FVU}$ from $0.186$ to $0.169$ (with a width-matched shared

@@ -69,19 +69,25 @@ real data can beat.}
 \label{tab:prelim-pareto}
 \end{table}
 
-\subsection{Heads are contrast sets}
+\subsection{Trained atoms form contrast sets}
 \label{sec:prelim-orth}
-Trained heads carry the signature the steering goal predicts. Every
-entry has an exact decode direction in output space, and within a soft
+Trained heads' atoms carry the signature the steering goal predicts.
+Every entry has a decode direction in output space, and within a soft
 head those directions repel: in 96\% of the softmax Ontologizer's heads
 they are more dissimilar than size-matched random sets of atoms from the
-same pool (Table~\ref{tab:prelim-headcoh}). A head holds well-separated
-alternatives along one dimension, not a semantic cluster, and the
-repulsion strengthens under the training objective's whitened inner
-product. The hard code agrees from the weights: a head's decoded atoms
-are orthogonal to slightly repelling (mean cosine $0.023$ at layer 0,
-$-0.015$ to $-0.020$ below). Hard per-head selection in a single linear
-layer gives the opposite signature, heads that tile one region.
+same pool (Table~\ref{tab:prelim-headcoh}). A head's atoms are
+well-separated alternatives along one dimension, not a semantic cluster,
+and the repulsion strengthens under the training objective's whitened
+inner product. The hard code agrees from the weights: a head's decoded
+atoms are orthogonal to slightly repelling (mean cosine $0.023$ at
+layer 0, $-0.015$ to $-0.020$ below). Both readings describe the trained
+atoms rather than the function: a head's assignment sums to one, so a
+vector added to all of one head's atoms and subtracted from another's in
+the same layer leaves every output unchanged, and only differences within
+a head are fixed. A control that centers each head's atoms, against a
+null centered the same way, is still owed. Hard per-head selection in a
+single linear layer, whose free magnitudes fix each direction, gives the
+opposite signature, heads that tile one region.
 
 The other orthogonality the architecture was designed for did not
 emerge. No trained summed model partitions its dictionary space between
@@ -93,7 +99,8 @@ atom the decoder sees as well as for its null-space part, and penalizing
 $\omega$ directly on GPT-2 drives it down in the dictionary space only by
 moving 73--95\% of atom energy into the decoder's null or near-null space,
 while the decoded atoms stay 8--10\% above their null (working notes).
-Summed heads are contrast sets that share their coordinates; concatenated
+Measured on their trained atoms, summed heads are contrast sets that share
+their coordinates; concatenated
 heads supply the partition by construction.
 
 \begin{table}[tp]\centering\small

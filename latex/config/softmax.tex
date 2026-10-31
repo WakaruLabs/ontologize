@@ -8,7 +8,7 @@
 input & SONAR mC4 embeddings, $d{=}1024$, unit norm \\
 shape & $l{=}5$ layers $\times$ $h{=}32$ heads, $k{=}32$ entries per head \\
 classifier & bilinear (order 2), no gate \\
-forward & residual; \texttt{resid\_norm}, \texttt{resid\_const}, \texttt{resid\_gain}; joint deep supervision \\
+forward & residual; \texttt{resid\_norm}, \texttt{resid\_const}; \texttt{resid\_gain} in the \texttt{sweep\_*} runs only (\texttt{resid\_nc} and \texttt{resid\_nc\_hm} predate it); joint deep supervision \\
 optimizer & Adam, lr $5\times10^{-5}$, gradient clip 1.0, batch 256, 24 epochs \\
 temperature & $t{=}1 \to 0.03$, geometric over 50k steps, then held \\
 noise & logits normal, $\sigma_K{=}0.02 \to 0.006$; features featvar, $\sigma_F{=}0.1$; input off \\

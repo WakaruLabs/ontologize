@@ -53,7 +53,8 @@ silent, and absorption makes its silence uninformative, while the methods
 that win contrast the values of a variable. The Ontologizer learns
 variables directly: stacked layers of competitive classifier heads, each
 giving every input one of $k$ entries whose atoms reconstruct it. Forcing
-a head to another entry is a label-free difference of means, so steering
+a head to another entry swaps one learned atom for another, a label-free
+analogue of a difference of means, so steering
 can test a discovered variable, though only against arbitrary partitions of
 the same space --- which, on both SONAR and GPT-2, steer their own cells
 just as specifically. On SONAR sentence embeddings and GPT-2

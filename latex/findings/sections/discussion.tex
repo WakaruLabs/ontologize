@@ -92,7 +92,10 @@ under the
 training objective's inverse-variance metric (a whitening of the data,
 not their causal inner product) the Ontologizer's
 within-head repulsion strengthens ($-24.4$ vs.\ $-17.6$ raw) and both
-rivals' signatures are unchanged. Two further rules emerged. Measure in
+rivals' signatures are unchanged. It does depend on the parameters: a
+soft head's decode directions are fixed by the function only up to a
+shared offset, so the result describes the trained atoms
+(Section~\ref{sec:prelim-orth}). Two further rules emerged. Measure in
 output space, not in the dictionary space, whose null-space component is
 unconstrained (Section~\ref{sec:rowcos}) and is exactly the kind of
 causally disconnected direction that makes subspace patching
@@ -143,11 +146,14 @@ one.
 \section{Preliminary conclusions}
 
 \begin{enumerate}
-\item \textbf{Contrast-set structure is real, and it is what the
-architecture buys.} Trained softmax heads' decode directions repel (96\%
-of heads below null), and hard-code heads' decoded atoms are orthogonal
-to slightly repelling: each head holds well-separated alternatives. This
-is invisible to reconstruction metrics and to per-latent probes.
+\item \textbf{The trained atoms form contrast sets.} Trained softmax
+heads' decode directions repel (96\% of heads below null), and hard-code
+heads' decoded atoms are orthogonal to slightly repelling: each head's
+atoms are well-separated alternatives. The function fixes only the
+differences within a head, so this describes the parameters training
+selected, and whether it is what the architecture buys awaits contrasts
+centered within each head against a centered null. It is invisible to
+reconstruction metrics and to per-latent probes.
 \item \textbf{The other designed orthogonality did not emerge: heads share
 their coordinates.} No trained model partitions its dictionary space
 between heads; the support overlap sits at or above a coordinate-shuffle
@@ -293,31 +299,38 @@ data implement one algorithm through different
 features~\cite{chughtai2023}. Classical identifiability results point to
 two routes out: selecting among trained seeds by pairwise cross-seed
 agreement without labels, as Unsupervised Disentanglement Ranking scores
-models by their median alignment across seeds~\cite{udr2020} (where
-three or more conditionally independent views of a discrete variable
-identify its distribution up to label permutation~\cite{allman2009},
-though here the heads are the candidate views rather than fixed ones, and
-even sparse binary codes need nonlinear dynamics and radial richness
-when learned from static marginals~\cite{hillar2015}); and breaking the
-static marginal symmetry with paired observations, where temporal
-contrast~\cite{pcl2017}, sparse transition priors~\cite{slowvae2021},
-shared factors across corruptions~\cite{locatello2020}, auxiliary
-conditioning~\cite{ivae2020}, or contrastive alignment of conditional
-balls~\cite{zimmermann2021} give identifiability up to permutation.
-Initial probes on the sentence-split cache \texttt{mc4\_sent16}
-(Appendix~\ref{sec:seedsdetail}) bound and test the second route: linear
-ridge regression of $\mathbf{x}_{t+1}$ on $\mathbf{x}_t$ reaches
+models by their median alignment across seeds~\cite{udr2020} (three or
+more conditionally independent views of a discrete variable identify its
+distribution up to label permutation when their class-conditional
+distributions meet a rank condition~\cite{allman2009}, though here the
+heads are the candidate views rather than fixed ones, and sparse coding's
+uniqueness guarantees need exact reconstruction~\cite{hillar2015}); and
+breaking the static marginal symmetry with paired observations, where
+temporal contrast~\cite{pcl2017}, sparse transition
+priors~\cite{slowvae2021}, shared factors across
+corruptions~\cite{locatello2020}, auxiliary conditioning~\cite{ivae2020},
+or contrastive alignment of conditional balls~\cite{zimmermann2021} give
+identifiability up to permutation under each method's assumptions.
+Probes on the sentence-split cache \texttt{mc4\_sent16}
+(Appendix~\ref{sec:seedsdetail}) test the second route. Linear ridge
+regression of $\mathbf{x}_{t+1}$ on $\mathbf{x}_t$ reaches
 $\mathrm{FVU}_{\mathrm{next}}{=}0.896$ (about 10\% of next-sentence
-variance explained, the ceiling for any function of $\mathbf{x}_t$
-alone); adjacent sentences concentrate strongly in direction (raw cosine
-AUC 0.923 vs.\ 0.685 in whitened distance, which norm variance
+variance explained linearly, which does not bound a nonlinear
+predictor); adjacent sentences concentrate strongly in direction (raw
+cosine AUC 0.923 vs.\ 0.685 in whitened distance, which norm variance
 dominates), yet existing heads switch entries on 92.2--98.1\% of adjacent
-pairs with off-diagonal transition concentration $\kappa \le 0.081$; and
-penalizing cross-sentence assignment disagreement on 38 slow heads
-collapses them to 0.04--0.09 bits for $s_{\mathrm{pair}} \ge 10^{-4}$ even
-under $\mathrm{KL}_m{=}5\times10^{-4}$, motivating a hinged Fano
-conditional-entropy lower bound $[H(P_b \mid P_a) - H_{\mathrm{floor}}]_+$
-that turns off once the transition table is sparse. Other candidates:
+pairs and keep their entry barely more often than chance (Cohen's kappa
+at most 0.081 for any head). Penalizing cross-sentence assignment
+disagreement on 38 slow heads collapses them to 0.04--0.09 bits for
+$s_{\mathrm{pair}} \ge 10^{-4}$. Rewarding a Fano lower bound on each slow
+head's mutual information across the pair does not: after three epochs
+the slow heads' kappa is 0.46, against 0.07 for the control's, and a
+second seed's slow heads carve partitions similar to the first seed's
+(matched NMI 0.414 against a 0.005 null), while every other head matches
+at 0.017. That is one seed pair of a one-layer model, at a 1.8--1.9\%
+cost in $\fvu$,
+and the next tests are a third seed, a larger slow block and what the
+slow heads encode beyond language. Other candidates:
 replicas of \texttt{resid\_nc\_hm} to its full 4.4M steps and of
 \texttt{g160softmax}; whether large-atom heads' reproducibility can be
 extended by training pressure; whether the $k{=}2$ arm's one-bit heads

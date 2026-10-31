@@ -262,8 +262,8 @@ incorporating it into the loss speeds up convergence.
 	rows drawn from the eval tail; one seed. (a) The
 	assignments $P_i$, rows sorted by winning entry and entries by mean
 	usage $\bar{p}_{ij}$ (bars). ``Use'' is the effective number of
-	entries across rows, $\exp H(\bar{\mathbf{p}}_i)$, and ``row'' the
-	effective number within a row, the exponential of the mean per-row
+	entries across rows, $2^{\mathrm{entropy}_k(\bar{\mathbf{p}}_i)}$, and
+	``row'' the effective number within a row, 2 to the mean per-row
 	entropy: 31.2 and 1.0 of $k{=}32$, a hard code that uses nearly every
 	entry. (b) The neighbor graph that
 	$\mathrm{KL}_{\mathrm{pwak}}$ and $\mathrm{L2}_{\mathrm{pwak}}$

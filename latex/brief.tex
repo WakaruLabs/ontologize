@@ -57,8 +57,11 @@ classifier's choice for an input, from category $j$ to category $j'$,
 swaps one stored vector for another. This swap is the steering move that
 the method is built around. It moves the representation from $j$ to $j'$
 along one axis found by the method. The result is always another valid
-description, so the edited representation stays within the range of
-states that occur in normal operation.
+description, with every classifier still choosing one of its categories.
+A valid description is not always one that occurs in normal operation,
+though. If two classifiers' categories only ever occur in matching pairs,
+a swap in one of them makes a mismatched pair, so whether an edited
+representation stays in range has to be measured.
 
 We study two representations. The main one is the internal state of GPT-2
 small after its first eight blocks~\cite{radford2019}, on web text. The
@@ -330,9 +333,15 @@ sentence explains only about 10\% of the next sentence's variance
 directions (cosine discrimination 0.923), yet existing classifiers switch
 categories on 92.2--98.1\% of adjacent pairs. Directly penalizing category
 changes across adjacent sentences collapses the penalized classifiers to
-0.04--0.09 bits. That points instead to a bound on conditional entropy
-that switches off once a classifier rarely changes category between
-adjacent sentences.
+0.04--0.09 bits. Rewarding instead a lower bound on how much one
+sentence's category says about the next one's avoids the collapse. After
+three passes over the data, the 38 classifiers it trains keep their
+category across adjacent sentences well above chance (agreement 0.46,
+where 0 is chance, against 0.07 without the reward). Retrained from a
+different random start, they divide the sentences similarly (match score
+0.414, where unrelated divisions score 0.005), while the other 342
+classifiers match at only 0.017. That is one pair of runs of a one-round
+model, and it costs about 2\% in reconstruction error.
 
 The method then needs the AxBench-style test: steering toward externally
 defined concepts~\cite{wu2025axbenchsteeringllmssimple}.

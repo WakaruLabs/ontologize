@@ -45,12 +45,13 @@
 			\tcp*{softmax, \texttt{top}$k_{\mathrm{sel}}$ or straight-through}
 		$H \leftarrow \mathbb{E}_{n,i}\,\mathrm{entropy}_k(\mathbf{p}_{ni})$
 			\tcp*{Eq.~\eqref{eq:entropy}}
-		$\bar{\mathbf{p}}_i \leftarrow \mathrm{sg}[\mathbb{E}_n\,
-			\mathbf{p}_{ni}]$ \tcp*{head origin}
+		$\bar{\mathbf{p}}_i \leftarrow \mathbb{E}_n\,\mathbf{p}_{ni}$;\quad
+			$\mathbf{o}_i \leftarrow \mathrm{sg}[\bar{\mathbf{p}}_i]$
+			\tcp*{usage; head origin}
 		\ForEach(\tcp*[f]{head dropout}){$(n,i)$}{
-			$\mathbf{p}'_{ni} \leftarrow \bar{\mathbf{p}}_i$ with
+			$\mathbf{p}'_{ni} \leftarrow \mathbf{o}_i$ with
 				probability $p_{\mathrm{head}}$, else
-				$\bar{\mathbf{p}}_i + (\mathbf{p}_{ni} - \bar{\mathbf{p}}_i)
+				$\mathbf{o}_i + (\mathbf{p}_{ni} - \mathbf{o}_i)
 				/ (1 - p_{\mathrm{head}})$\;
 		}
 		each $(n,i)$: $\mathbf{c}_{ni} \leftarrow \mathbf{0}$ with
@@ -61,8 +62,9 @@
 		$\tilde{\mathsf{F}} \leftarrow \mathrm{noise}_{\mathrm{featvar}}
 			(\mathsf{F})$ \tcp*{Eq.~\eqref{eq:noise_featvar}}
 		$\mathrm{cossim}_b \leftarrow \mathbb{E}_{n,n'}
-			\lvert\cos\angle(\mathbf{f}_n, \mathbf{f}_{n'})\rvert$
-			\tcp*{Eq.~\eqref{eq:cossim_b}, from $\mathsf{P}$ through the Grams}
+			\lvert\cos\angle(\mathbf{f}_n, \mathbf{f}_{n'})\rvert$, with
+			$\mathbf{f}$ built from $\mathsf{P}$, not $\mathsf{P}'$
+			\tcp*{Eq.~\eqref{eq:cossim_b}, through the Grams}
 		$\kappa_i \leftarrow \mathbb{E}_{j \ne j'}
 			\cos\angle(\mathbf{a}_{ij}, \mathbf{a}_{ij'})$
 			\tcp*{within-head atom cosine}

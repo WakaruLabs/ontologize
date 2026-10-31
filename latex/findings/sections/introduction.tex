@@ -158,9 +158,11 @@ there. Under a quadratic cost on activity and a bound on the
 weights~\cite{whittington2023,dorrell2025}, a non-negative code gives two
 variables disjoint supports when their joint range is spread enough,
 roughly when every combination of their extreme values
-occurs~\cite{dorrell2025}. On SONAR the data meet that condition: of the
-entry pairs of two heads that independence predicts at least ten times,
-at most 0.24\% never occur in any layer of a SONAR model. The summed
+occurs~\cite{dorrell2025}. That condition concerns the factors that
+generate the data, which are unknown, but the learned codes are
+consistent with it: of the entry pairs of two heads that independence
+predicts at least ten times, at most 0.24\% never occur in any layer of a
+SONAR model. The summed
 models carry no such cost and do not partition
 (Appendix~\ref{sec:support}); concatenation imposes the partition by
 construction. Nothing yet forces a head to hold one concept rather than a
@@ -289,9 +291,9 @@ input~\cite{xu2025redundancydiversespecializedmultiexpert}. A head layer is
 the dual arrangement --- every head fires, choosing one entry --- and the
 hard stack's heads partition near-independently
 (Figure~\ref{fig:headnmi}), while in the reference softmax model a head's
-decode directions repel (Section~\ref{sec:prelim-orth}): a head there is a
-contrast set rather than the coherent cluster that MoE work counts as a
-specialized expert. MoEfication~\cite{zhang2022} supplies the frame's name,
+trained decode directions repel (Section~\ref{sec:prelim-orth}): measured
+on its atoms, a head there is a contrast set rather than the coherent
+cluster that MoE work counts as a specialized expert. MoEfication~\cite{zhang2022} supplies the frame's name,
 but its experts are found post hoc in already-trained layers and several
 are active per input; a head's entries instead exclude one another, and
 the partition is the training objective's own discovery.
