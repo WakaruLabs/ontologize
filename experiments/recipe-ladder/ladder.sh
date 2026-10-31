@@ -6,11 +6,15 @@
 # at mask_runs.sh's schedule: 50,000 steps of 256, which see the cache's
 # first 12.8M rows once (--steps exposes only the head).
 #
-#   ladder.sh WEIGHTS
+#   ladder.sh WEIGHTS [ARM ...]
 #
 # WEIGHTS names the MSE weights file
 # data/out/sonar/sentcache/mse_weights_<WEIGHTS>.npy (no837 or med837) and
-# the runs. Each arm keeps only its final checkpoint (--max-to-keep 1
+# the runs. ARM picks arms from the flags table below; the default is the
+# first ten, one change each. The rest remove or rescale s_bcossim and
+# s_support together and apart; a rescaled weight is the recipe's divided by
+# 50, as --s-hm 2e-6 is, the factor by which mc4_sent16's whitened MSE is
+# below mc4_4M's. Each arm keeps only its final checkpoint (--max-to-keep 1
 # --checkpoint-each 50000): collapse is read from loss.csv, which logs every
 # 250 steps. The arms go in pairs, both architectures per arm, in the order
 # below, so a partial queue leaves complete comparisons. Training waits
@@ -20,7 +24,8 @@
 # finished arm is passed over.
 set -eu
 cd "$(dirname "$0")/../.."
-wt=${1:?usage: ladder.sh WEIGHTS}
+wt=${1:?usage: ladder.sh WEIGHTS [ARM ...]}
+shift
 cache=data/sonar_embeddings/mc4_sent16.npy
 weights=data/out/sonar/sentcache/mse_weights_$wt.npy
 [ -f "$weights" ] || { echo "no $weights" >&2; exit 1; }
@@ -35,13 +40,20 @@ declare -A arch=(
     [ste_h76_init01]=""
     [ste_k128_h54_direct]="--h 54 --k 128 --signed --direct")
 arms=(ctrl ctrl_s43 nosdk nosdf nopdrop nonoise nobcos nosupp nol1f nohm)
+[ $# -eq 0 ] || arms=("$@")
 # a later flag overrides the recipe's
 declare -A flags=(
     [ctrl]="" [ctrl_s43]="--seed 43"
     [nosdk]="--sd-k 0" [nosdf]="--sd-f 0" [nopdrop]="--p-drop 0"
     [nonoise]="--sd-k 0 --sd-f 0 --p-drop 0"
     [nobcos]="--s-bcossim 0" [nosupp]="--s-support 0" [nol1f]="--s-l1f 0"
-    [nohm]="--s-hm 0")
+    [nohm]="--s-hm 0"
+    [nobcos_nosupp]="--s-bcossim 0 --s-support 0"
+    [bcos2e-7_supp2e-8]="--s-bcossim 2e-7 --s-support 2e-8"
+    [bcos2e-7]="--s-bcossim 2e-7" [supp2e-8]="--s-support 2e-8")
+for arm in "${arms[@]}"; do
+    [ -v "flags[$arm]" ] || { echo "no arm $arm" >&2; exit 1; }
+done
 
 # idle: utilization at most 10% at five samples two seconds apart
 idle() {

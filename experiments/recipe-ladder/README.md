@@ -63,13 +63,20 @@ What to expect:
     records the three.
 - **Tests:** `tests/test_sae.py` covers the noises and `tests/test_train_ste.py`
   the flags.
-- **`ladder.sh WEIGHTS`** trains the Ontologizer arms.
+- **`ladder.sh WEIGHTS [ARM ...]`** trains the Ontologizer arms.
   - Both architectures: the hard stack, and the direct k = 128 stack.
   - The ε 1e-15 full runs' flags, at `mask_runs.sh`'s schedule (50,000
     steps of 256 on the cache's first 12.8M rows).
-  - The arms, in this order: `ctrl`, `ctrl_s43` (a seed-43 replica, for
-    the seed-to-seed spread), `nosdk`, `nosdf`, `nopdrop`, `nonoise`,
-    `nobcos`, `nosupp`, `nol1f`, `nohm`.
+  - The default arms, in this order: `ctrl`, `ctrl_s43` (a seed-43
+    replica, for the seed-to-seed spread), `nosdk`, `nosdf`, `nopdrop`,
+    `nonoise`, `nobcos`, `nosupp`, `nol1f`, `nohm`.
+  - Arms named on the command line run instead, in the order given. The
+    table also has `nobcos_nosupp` (both weights off), and
+    `bcos2e-7_supp2e-8`, `bcos2e-7` and `supp2e-8`. Those three divide
+    `s_bcossim` and `s_support` by 50, together and apart. That is
+    `--s-hm 2e-6`'s factor, by which `mc4_sent16`'s whitened MSE is below
+    `mc4_4M`'s, so the rescaled arms tell whether a term is unhelpful or
+    only too heavy.
   - `WEIGHTS` is `no837` or `med837` (`cachestats.py mask`). Runs go to
     `data/out/sonar/recipe_ladder/<arch>_<WEIGHTS>_<arm>`, and each keeps
     only its final checkpoint.

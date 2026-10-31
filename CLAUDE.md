@@ -126,9 +126,11 @@ JAX_PLATFORMS=cpu uv run python experiments/adam-eps/throttle.py <run>:<step> ..
 # time against a control and its seed-43 replica, 50k steps each, keeping
 # only the final checkpoint (train_ste.py --max-to-keep 1
 # --checkpoint-each 50000); and the k32 SAE with the Ontologizer's noises
-# added (sae.py --sd-pre/--p-drop/--sd-out). WEIGHTS is no837 or med837.
-# Both run as systemd units that wait for an idle GPU (README.md)
-experiments/recipe-ladder/ladder.sh WEIGHTS
+# added (sae.py --sd-pre/--p-drop/--sd-out). WEIGHTS is no837 or med837;
+# ARM names arms from ladder.sh's table (default: the one-change arms),
+# which also removes or rescales --s-bcossim and --s-support together and
+# apart. Both run as systemd units that wait for an idle GPU (README.md)
+experiments/recipe-ladder/ladder.sh WEIGHTS [ARM ...]
 experiments/recipe-ladder/sae_noise_runs.sh
 
 # Train on SONAR multilingual sentence embeddings (mC4 data)
