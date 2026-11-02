@@ -71,7 +71,8 @@ What to expect:
     replica, for the seed-to-seed spread), `nosdk`, `nosdf`, `nopdrop`,
     `nonoise`, `nobcos`, `nosupp`, `nol1f`, `nohm`.
   - Arms named on the command line run instead, in the order given. The
-    table also has `nobcos_nosupp` (both weights off), and
+    table also has `nobcos_nosupp` (both weights off),
+    `nobcos_nosupp_nol1f` (`s_L1F` off as well), and
     `bcos2e-7_supp2e-8`, `bcos2e-7` and `supp2e-8`. Those three divide
     `s_bcossim` and `s_support` by 50, together and apart. That is
     `--s-hm 2e-6`'s factor, by which `mc4_sent16`'s whitened MSE is below

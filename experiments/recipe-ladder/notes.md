@@ -237,3 +237,131 @@ curve never reaches that FVU (the k32's floor is 0.418).
     costs fit at any weight from one that is only too heavy for this
     cache's loss scale.
 - **Disk.** 283 GB free at the start; the 8 runs take about 7 GB.
+
+## 2026-11-02: both weights off is best; `s_bcossim` costs even rescaled
+
+- **Where:** the queue ran 2026-10-30 22:24 to 2026-10-31 10:10, with no
+  restarts. All 8 runs reached 50,000 steps with no NaN, and each
+  `log.jsonl` records the intended `s_bcossim` and `s_support`.
+- **Scoring**, as in the 2026-10-30 section. The outputs:
+  - `data/out/sonar/coordfvu_recipe_ladder2/`;
+  - `coordtrace/<arm>/`;
+  - `auxpull_recipe_ladder/`;
+  - `quantrate_recipe_ladder2/`.
+
+  The logs are `experiments/logs/*_recipe_ladder2.log`.
+- **The first `quantrate` run stopped partway** (2026-10-31 20:15), with no
+  out-of-memory kill in the journal. It was rerun from the start as
+  systemd unit `score-ladder2` (2026-11-02), and its log holds both
+  attempts.
+- The control and single-removal rows below are the 2026-10-30 section's.
+
+### Held-out FVU over the 1023 free coordinates
+
+| arm | hard stack | direct |
+|---|---|---|
+| control | 0.5838 | 0.4608 |
+| `s_bcossim` off | 0.2682 | 0.3369 |
+| `s_bcossim` 2e-7 (÷50) | 0.3429 | 0.3957 |
+| `s_support` off | 0.4280 | 0.2003 |
+| `s_support` 2e-8 (÷50) | 0.4328 | 0.2024 |
+| both off | **0.2373** | **0.1959** |
+| both ÷50 | 0.2585 | 0.2002 |
+
+The seed pairs differ by 0.0020 and 0.0018.
+
+- **`s_support` at ÷50 reads as if it were removed.** The rescaled arm is
+  within 0.005 of the off arm in both architectures.
+- **`s_bcossim` costs even at ÷50.**
+  - Against removing it, the rescaled arm is +0.075 in the hard stack
+    (0.3429 against 0.2682) and +0.059 in the direct one.
+  - So it is not only too heavy for this cache's loss scale.
+- **The two removals add in the hard stack.** With both off it reads
+  0.2373, against 0.2682 with `s_bcossim` alone off.
+- **In the direct stack, `s_support` carries nearly all of it.** Both off
+  is 0.0044 below `s_support` off, 2.4× the seed pair's difference.
+- **Both ÷50** is 0.021 (hard) and 0.0043 (direct) above both off.
+- **Against the SAEs:** the direct stack with both off is 0.0087 above
+  the k160 SAE's 0.1872, and below the L1 1.39e-6 SAE's 0.2138.
+- **Coordinate 837 is held in every arm,** at 0.1–0.3× the median
+  coordinate's error. Where `s_bcossim` is lowered but `s_support` stays,
+  the direct atoms' 837 components spread out:
+  - 15.8× the median coordinate's at ÷50, and 41× with `s_bcossim` off;
+  - 0.14× once `s_support` is also off or rescaled;
+  - in the `s_bcossim` ÷50 arm, the support term carries 98% of the
+    auxiliary pull on them.
+
+### Collapse
+
+Means over the last 1,000 steps of `loss.csv`.
+
+| arm | hard stack: `cossim_k_max`, `KL_m` | direct: `cossim_k_max`, `KL_m` |
+|---|---|---|
+| control | 0.61, 0.68 | 0.995, 2.05 |
+| `s_bcossim` off | 0.998, 0.48 | 0.96, 2.05 |
+| `s_bcossim` ÷50 | 0.89, 0.48 | 0.84, 2.05 |
+| `s_support` off | 0.48, 0.66 | 0.046, 2.05 |
+| `s_support` ÷50 | 0.49, 0.67 | 0.18, 2.05 |
+| both off | 0.45, 0.48 | 0.002, 2.05 |
+| both ÷50 | 0.74, 0.48 | 0.17, 2.05 |
+
+- **The direct run's head collapse follows `s_support`.** `cossim_k_max`
+  is 0.995 at full weight, 0.18 at ÷50, 0.046 off, and 0.002 with both
+  weights off.
+- **In the hard stack, `KL_m` falls from 0.68 to 0.48** whenever
+  `s_bcossim` is off or rescaled, so entry usage is more even.
+
+### Gradient pulls at step 50,000 (`auxpull.py`)
+
+Each term's configured weight × its gradient norm over the MSE's, on the
+classifier / the dictionary:
+
+| arm | hard stack: `cossim_b`, support | direct: `cossim_b`, support |
+|---|---|---|
+| control | 4.71 / 2.28, 0.89 / 1.16 | 0.29 / 0.13, 0.08 / 0.67 |
+| `s_bcossim` ÷50 | 0.08 / 0.03, 0.09 / 0.50 | 0.06 / 0.007, 0.10 / 0.16 |
+| `s_support` ÷50 | 3.81 / 1.52, 0.05 / 0.04 | 0.21 / 0.09, 0.001 / 0.003 |
+| both ÷50 | 0.06 / 0.03, 0.01 / 0.02 | 0.006 / 0.003, 0.001 / 0.004 |
+
+- **At ÷50, `s_bcossim`'s pull is at most 0.08 of the MSE's.** It still
+  costs the hard stack 0.075 against removing it. A small pull at the end
+  of training does not make a term harmless.
+- **Rescaling `s_bcossim` lowers the support term's pull too.** In the hard
+  stack's classifier it falls from 0.89 to 0.09, at an unchanged weight.
+
+### Operational rate
+
+| code | float FVU | pinned: bits, FVU | k32: bits to the pinned FVU | k160 | L1 1.39e-6 |
+|---|---|---|---|---|---|
+| hard stack, both off | 0.2373 | 1896, **0.2650** | — | 715 | 959 |
+| hard stack, both ÷50 | 0.2585 | 1896, 0.2859 | — | 641 | 801 |
+| hard stack, `s_bcossim` ÷50 | 0.3429 | 1897, 0.3708 | — | 417 | 453 |
+| hard stack, `s_support` ÷50 | 0.4328 | 1881, 0.4573 | 241 | 274 | 279 |
+| direct, both off | 0.1959 | 1889, **0.2265** | — | 891 | 1599 |
+| direct, both ÷50 | 0.2002 | 1889, 0.2307 | — | 867 | 1472 |
+| direct, `s_bcossim` ÷50 | 0.3957 | 1889, 0.4217 | 325 | 324 | 339 |
+| direct, `s_support` ÷50 | 0.2024 | 1889, 0.2329 | — | 856 | 1415 |
+
+- **The closest any Ontologizer has come is the direct stack with both
+  weights off:** 0.2265 at 1,889 bits.
+  - The k160 SAE reaches that at 891 bits (47% of the stack's bits), and
+    the L1 SAE at 1,599 (85%).
+  - The 50,000-step direct control is at 11–13%, and `s_support` off at
+    46–78% (2026-10-30).
+- **The hard stack with both off:** the SAEs need 38–51% of its bits.
+- **What this leaves open.**
+  - One seed per arm.
+  - 50,000 steps on the cache's first 12.8M rows, against the SAEs'
+    144,300 steps over the whole cache. Whether the both-off stacks keep
+    improving with more steps is not tested.
+  - `s_L1F` is also unrescaled. Removing it took 0.019 off the direct
+    stack's FVU (2026-10-30), and it has not been removed together with
+    these two.
+
+## 2026-11-02: queued, `s_L1F` off as well
+
+Unit `recipe-ladder` was started 2026-11-02 15:56 with
+`ladder.sh med837 nobcos_nosupp_nol1f`: `s_bcossim`, `s_support` and
+`s_L1F` all at 0, in both architectures, against `nobcos_nosupp`. The
+noises and `s_Hm` 2e-6 are as in the control. Two runs, about 3 GPU-hours;
+277 GB free at the start.

@@ -129,7 +129,8 @@ JAX_PLATFORMS=cpu uv run python experiments/adam-eps/throttle.py <run>:<step> ..
 # added (sae.py --sd-pre/--p-drop/--sd-out). WEIGHTS is no837 or med837;
 # ARM names arms from ladder.sh's table (default: the one-change arms),
 # which also removes or rescales --s-bcossim and --s-support together and
-# apart. Both run as systemd units that wait for an idle GPU (README.md)
+# apart, and removes --s-l1f with both. Both run as systemd units that wait
+# for an idle GPU (README.md)
 experiments/recipe-ladder/ladder.sh WEIGHTS [ARM ...]
 experiments/recipe-ladder/sae_noise_runs.sh
 

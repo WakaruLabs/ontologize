@@ -12,9 +12,10 @@
 # data/out/sonar/sentcache/mse_weights_<WEIGHTS>.npy (no837 or med837) and
 # the runs. ARM picks arms from the flags table below; the default is the
 # first ten, one change each. The rest remove or rescale s_bcossim and
-# s_support together and apart; a rescaled weight is the recipe's divided by
-# 50, as --s-hm 2e-6 is, the factor by which mc4_sent16's whitened MSE is
-# below mc4_4M's. Each arm keeps only its final checkpoint (--max-to-keep 1
+# s_support together and apart, and remove s_L1F with both of them; a
+# rescaled weight is the recipe's divided by 50, as --s-hm 2e-6 is, the
+# factor by which mc4_sent16's whitened MSE is below mc4_4M's. Each arm
+# keeps only its final checkpoint (--max-to-keep 1
 # --checkpoint-each 50000): collapse is read from loss.csv, which logs every
 # 250 steps. The arms go in pairs, both architectures per arm, in the order
 # below, so a partial queue leaves complete comparisons. Training waits
@@ -49,6 +50,7 @@ declare -A flags=(
     [nobcos]="--s-bcossim 0" [nosupp]="--s-support 0" [nol1f]="--s-l1f 0"
     [nohm]="--s-hm 0"
     [nobcos_nosupp]="--s-bcossim 0 --s-support 0"
+    [nobcos_nosupp_nol1f]="--s-bcossim 0 --s-support 0 --s-l1f 0"
     [bcos2e-7_supp2e-8]="--s-bcossim 2e-7 --s-support 2e-8"
     [bcos2e-7]="--s-bcossim 2e-7" [supp2e-8]="--s-support 2e-8")
 for arm in "${arms[@]}"; do
