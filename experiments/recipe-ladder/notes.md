@@ -482,3 +482,12 @@ the classifier, relative to the MSE's, is:
     hard stack 0.067, which then realized 496 of its 1,900 nominal bits.
     It helped the direct stack by 0.041 (2026-10-30). It has not been
     removed with the other three.
+
+## 2026-11-03: queued, `s_Hm` off as well
+
+Unit `recipe-ladder` was started 2026-11-03 03:13 with
+`ladder.sh med837 nobcos_nosupp_nol1f_nohm`. With `s_bcossim`, `s_support`,
+`s_L1F` and `s_Hm` all at 0, no auxiliary weight is left, and the MSE is
+the whole loss. The three training noises are as in the control. The arm
+runs in both architectures, against `nobcos_nosupp_nol1f`: two runs, about
+2.5 GPU-hours. 274 GB was free at the start.

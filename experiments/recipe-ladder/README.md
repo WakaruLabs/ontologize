@@ -72,7 +72,8 @@ What to expect:
     `nonoise`, `nobcos`, `nosupp`, `nol1f`, `nohm`.
   - Arms named on the command line run instead, in the order given. The
     table also has `nobcos_nosupp` (both weights off),
-    `nobcos_nosupp_nol1f` (`s_L1F` off as well), and
+    `nobcos_nosupp_nol1f` (`s_L1F` off as well),
+    `nobcos_nosupp_nol1f_nohm` (`s_Hm` too, so no auxiliary weight), and
     `bcos2e-7_supp2e-8`, `bcos2e-7` and `supp2e-8`. Those three divide
     `s_bcossim` and `s_support` by 50, together and apart. That is
     `--s-hm 2e-6`'s factor, by which `mc4_sent16`'s whitened MSE is below
