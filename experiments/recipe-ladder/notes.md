@@ -365,3 +365,120 @@ Unit `recipe-ladder` was started 2026-11-02 15:56 with
 `s_L1F` all at 0, in both architectures, against `nobcos_nosupp`. The
 noises and `s_Hm` 2e-6 are as in the control. Two runs, about 3 GPU-hours;
 277 GB free at the start.
+
+## 2026-11-03: with `s_L1F` off as well, the direct stack's FVU is below the k160 SAE's
+
+- **Where:** the queue ran 2026-11-02 15:56 to 18:36, with no restarts.
+  Both runs reached 50,000 steps with no NaN in the live columns. Each
+  `log.jsonl` records `s_bcossim`, `s_support` and `s_L1F` at 0, `s_Hm` at
+  2e-6 and ε at 1e-15.
+- **Scoring**, as in the 2026-10-30 section, ran as systemd unit
+  `score-ladder3` on 2026-11-03. The outputs:
+  - `data/out/sonar/coordfvu_recipe_ladder3/`;
+  - `coordtrace/<arm>/`;
+  - `auxpull_recipe_ladder/`;
+  - `quantrate_recipe_ladder3/`.
+
+  The logs are `experiments/logs/*_recipe_ladder3.log`.
+- The other rows below come from the 2026-10-30 and 2026-11-02 sections.
+
+### Held-out FVU over the 1023 free coordinates
+
+| arm | hard stack | direct |
+|---|---|---|
+| control | 0.5838 | 0.4608 |
+| `s_L1F` off | 0.5772 | 0.4421 |
+| `s_bcossim`, `s_support` off | 0.2373 | 0.1959 |
+| all three off | **0.1869** | **0.1806** |
+
+The seed pairs differ by 0.0020 and 0.0018. On the same rows, the k160
+SAE reads 0.1872 and the L1 1.39e-6 SAE 0.2138.
+
+- **With the other two weights off, removing `s_L1F` helps both
+  architectures.**
+  - The hard stack improves by 0.050 (0.2373 to 0.1869), 25× its seed
+    pair's difference.
+  - The direct stack improves by 0.015 (0.1959 to 0.1806), 8.4× its seed
+    pair's difference.
+- **In the hard stack, `s_L1F`'s cost shows only once the other two weights
+  are off.** Removing it alone improves the hard stack by 0.0067, and the
+  direct stack by 0.019.
+- **Against the SAEs:**
+  - The direct stack's FVU is 0.0066 below the k160's, 3.6× its seed pair's
+    difference. That makes it the first Ontologizer on `mc4_sent16` with a
+    lower float FVU than the k160.
+  - The hard stack's is 0.0002 below the k160's, well within its seed
+    spread.
+  - Both are below the L1 SAE's.
+  - Each arm has one seed. The arms train for 50,000 steps on the cache's
+    first 12.8M rows, the SAEs for 144,300 steps over the whole cache.
+- **`s_L1F` pulled little at the end of training, but removing it still
+  helped.** In the both-off arms at step 50,000, its pull relative to the
+  MSE's was:
+  - 0.024 on the classifier and 0.027 on the dictionary in the hard stack;
+  - 0.074 and 0.022 in the direct stack.
+
+  This repeats the case of `s_bcossim` at ÷50 (2026-11-02): a small pull at
+  the end of training does not make a term harmless.
+- **Coordinate 837 is held in both stacks,** at 0.13× (hard) and 0.12×
+  (direct) the median coordinate's error.
+- **In the hard stack, coordinate 652 gets worse as weights come off.**
+  - It has the largest MSE weight (13.0, 60× the next largest), and its
+    standard deviation is 0.12× the median coordinate's.
+  - Its FVU over the median coordinate's is:
+    - 2.4× in the control;
+    - 12.9× with both weights off;
+    - 20.4× with all three off.
+  - With all three off it holds 2.0% of the residual, and its own FVU is
+    3.8: the stack predicts it worse than its mean does.
+  - The direct stack holds it at 6.0×.
+
+### Collapse and output L1
+
+Means over the last 1,000 steps of `loss.csv`.
+
+| arm | hard stack: `cossim_k_max`, `KL_m`, `L1_F` | direct: `cossim_k_max`, `KL_m`, `L1_F` |
+|---|---|---|
+| control | 0.61, 0.68, 86 | 0.995, 2.05, 166 |
+| both off | 0.45, 0.48, 543 | 0.002, 2.05, 338 |
+| all three off | 0.57, 0.50, 1327 | 0.006, 2.05, 425 |
+
+- **Output L1 grows** 2.4× in the hard stack and 1.26× in the direct one.
+- **The hard stack's worst head pair** rises from 0.45 to 0.57. That is
+  still below the control's 0.61.
+- **The direct stack's heads stay apart.**
+
+### Gradient pulls at step 50,000 (`auxpull.py`)
+
+With all three off, `s_Hm` is the only auxiliary weight left. Its pull on
+the classifier, relative to the MSE's, is:
+
+| arm | hard stack | direct |
+|---|---|---|
+| control | 2.78 | 9.83 |
+| `s_L1F` on (both off) | 2.85 | 15.3 |
+| all three off | 2.85 | 14.4 |
+
+### Operational rate
+
+| code | float FVU | pinned: bits, FVU | k32: bits to the pinned FVU | k160 | L1 1.39e-6 |
+|---|---|---|---|---|---|
+| hard stack, all three off | 0.1869 | 1894, **0.2096** | — | 1009 | — |
+| direct, all three off | 0.1806 | 1889, **0.2073** | — | 1030 | — |
+
+"—" marks an SAE whose curve never reaches that FVU.
+
+- **At a matched rate, the k160 still leads, by less.**
+  - It reaches the pinned FVUs at 1,009 bits, 53% of the hard stack's, and
+    at 1,030, 55% of the direct stack's.
+  - With `s_L1F` on, those were 38% and 47% (2026-11-02).
+- **Neither pinned FVU is in the L1 SAE's reach.** Its curve gets no lower
+  than 0.2138, at 3,631 bits, the highest rate its sweep tries.
+- **What this leaves open.**
+  - One seed per arm. A seed-43 replica would put a spread under the k160
+    comparisons.
+  - Whether the all-three-off stacks keep improving past 50,000 steps.
+  - `s_Hm`, the one weight left, pulls hardest. Removed alone, it cost the
+    hard stack 0.067, which then realized 496 of its 1,900 nominal bits.
+    It helped the direct stack by 0.041 (2026-10-30). It has not been
+    removed with the other three.
