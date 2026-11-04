@@ -468,10 +468,17 @@ the classifier, relative to the MSE's, is:
 
 "—" marks an SAE whose curve never reaches that FVU.
 
-- **At a matched rate, the k160 still leads, by less.**
-  - It reaches the pinned FVUs at 1,009 bits, 53% of the hard stack's, and
-    at 1,030, 55% of the direct stack's.
+- **To reach the pinned FVUs, the k160 needs about half the stacks' bits.**
+  - It reaches them at 1,009 bits, 53% of the hard stack's, and at 1,030,
+    55% of the direct stack's.
   - With `s_L1F` on, those were 38% and 47% (2026-11-02).
+- **At 1,900 bits, the direct stack is ahead of the k160.** The pinned code
+  sends no gains. Sending them costs the direct stack 11 more bits (1,899.7
+  bits, FVU 0.1829). At 1,900 bits:
+  - the direct stack reads 0.1828;
+  - the k160 reads 0.1872;
+  - the hard stack reads 0.1971;
+  - the L1 SAE reads 0.2202.
 - **Neither pinned FVU is in the L1 SAE's reach.** Its curve gets no lower
   than 0.2138, at 3,631 bits, the highest rate its sweep tries.
 - **What this leaves open.**
@@ -491,3 +498,119 @@ Unit `recipe-ladder` was started 2026-11-03 03:13 with
 the whole loss. The three training noises are as in the control. The arm
 runs in both architectures, against `nobcos_nosupp_nol1f`: two runs, about
 2.5 GPU-hours. 274 GB was free at the start.
+
+## 2026-11-04: with no auxiliary weight, both stacks' FVUs are below the k160 SAE's
+
+- **Where:** the queue ran 2026-11-03 03:13 to 06:07. Both runs reached
+  50,000 steps with no NaN in the live columns. Each `log.jsonl` records
+  all four weights at 0, and `loss` equals `MSE` on every row of `loss.csv`.
+- **The hard stack's run stopped once, at step 7,681, and resumed.** Its log
+  has no traceback, and the journal has no entry for it, so the cause is
+  not known. It resumed from the rolling save at 7,500, and its loss at
+  step 7,681 matches the first attempt's (3.08e-6). The direct run went
+  straight through.
+- **Scoring**, as in the 2026-10-30 section, ran as systemd unit
+  `score-ladder4` on 2026-11-04. The outputs:
+  - `data/out/sonar/coordfvu_recipe_ladder4/`;
+  - `coordtrace/<arm>/`;
+  - `auxpull_recipe_ladder/`;
+  - `quantrate_recipe_ladder4/`.
+
+  The logs are `experiments/logs/*_recipe_ladder4.log`.
+- **A manual restart of the machine cut off the first `quantrate` run.** It
+  was rerun alone, from the start, and its log holds both attempts.
+- **`auxpull.py` has no pull to report:** with every weight at 0, each
+  term's applied pull is 0.
+- The other rows below come from the earlier sections.
+
+### Held-out FVU over the 1023 free coordinates
+
+| arm | hard stack | direct |
+|---|---|---|
+| control | 0.5838 | 0.4608 |
+| `s_Hm` off | 0.6510 | 0.4197 |
+| `s_bcossim`, `s_support`, `s_L1F` off | 0.1869 | 0.1806 |
+| all four off | **0.1681** | **0.1611** |
+
+The seed pairs differ by 0.0020 and 0.0018. On the same rows, the k160
+SAE reads 0.1872 and the L1 1.39e-6 SAE 0.2138.
+
+- **With the other three weights off, removing `s_Hm` helps both
+  architectures.**
+  - The hard stack improves by 0.019, 9.4× its seed pair's difference.
+    Removed alone, `s_Hm` cost it 0.067.
+  - The direct stack improves by 0.019, 10.6× its seed pair's difference.
+- **Both stacks' FVUs are below the k160's:** the hard stack's by 0.019
+  (9.5× its seed pair's difference), and the direct stack's by 0.026 (14×).
+- **Against the control,** the MSE alone leaves 0.29× the hard stack's FVU
+  and 0.35× the direct stack's.
+- **Coordinate 837 is held,** at 0.16× (hard) and 0.10× (direct) the median
+  coordinate's error.
+- **Coordinate 652 partly recovers.** Its FVU over the median coordinate's
+  falls from 20.4× to 7.8× in the hard stack and from 6.0× to 3.9× in the
+  direct one. Its own FVU is 1.32 and 0.64, so the hard stack still
+  predicts it worse than its mean does.
+
+### Collapse and output L1
+
+Means over the last 1,000 steps of `loss.csv`.
+
+| arm | hard stack: `cossim_k_max`, `KL_m`, `L1_F` | direct: `cossim_k_max`, `KL_m`, `L1_F` |
+|---|---|---|
+| `s_Hm` off | 0.58, 17.5, 67 | 0.26, 11.8, 155 |
+| `s_bcossim`, `s_support`, `s_L1F` off | 0.57, 0.50, 1327 | 0.006, 2.05, 425 |
+| all four off | 0.56, 0.55, 1356 | 0.010, 2.23, 431 |
+
+- **Entry usage stays even without `s_Hm`.**
+  - Removed alone, it sends `KL_m` to 17.5 and 11.8. With all four off,
+    `KL_m` is 0.55 and 2.23.
+  - So the uneven usage of the `s_Hm`-off arm needs at least one of the
+    other three weights on.
+  - The rates agree. With all four off, the stacks realize 1,891 of 1,900
+    and 1,877 of 1,890 nominal bits. With `s_Hm` off alone, they realize
+    496 and 1,306.
+
+### Operational rate
+
+| code | float FVU | pinned: bits, FVU | FVU at 1,900 bits | at 1,900 bits, subset rate |
+|---|---|---|---|---|
+| hard stack, all four off | 0.1681 | 1891, 0.1893 | 0.1722 | 0.1893 |
+| direct, all four off | 0.1611 | 1877, 0.1865 | **0.1612** | 0.1638 |
+| k160 | 0.1872 | — | 0.1872 | 0.1874 |
+| L1 1.39e-6 | 0.2138 | — | 0.2202 | 0.2201 |
+
+The k32's curve stops at 491 bits, at FVU 0.4180, so it has no reading at
+1,900 bits.
+
+- **At 1,900 bits, both stacks are below every SAE at the mean rate.**
+  - The direct stack is 0.026 below the k160, and the hard stack 0.015.
+  - Under the subset rate the direct stack stays 0.024 below it.
+  - The hard stack does not. Its gains start at 1,906 nominal bits, so at
+    1,900 it reads its pinned 0.1893, 0.0019 above the k160.
+- **The gains cost few bits.**
+  - The direct stack goes from 0.1865 at 1,877 bits (pinned) to 0.1633 at
+    1,888 and 0.1612 at 1,898.
+  - The hard stack goes from 0.1893 at 1,891 bits to 0.1699 at 1,902.
+- **To reach the pinned FVUs:**
+  - The k160 reaches the hard stack's 0.1893 at 1,355 bits, 72% of the
+    stack's (1,646 at the subset rate, 87%).
+  - It does not reach the direct stack's 0.1865. Its floor is 0.0007
+    above that, less than the seed pair's difference, so the two are level
+    at that point.
+  - The L1 SAE reaches neither.
+- **What this comparison does not show.**
+  - The k160 is saturated at this rate: it reads 0.1872 from about 1,710
+    bits up, so it has bits it cannot use. The stacks beat this SAE at
+    1,900 bits, which is not the same as beating the SAE frontier there.
+    A larger k has not been trained on `mc4_sent16`.
+  - The stacks have no code below about 1,880 bits, so only the SAEs have
+    a reading at lower rates.
+  - The rates leave out the coders' tables.
+  - One seed per arm. The arms train for 50,000 steps on the cache's first
+    12.8M rows, the SAEs for 144,300 steps over the whole cache.
+- **What this leaves open.**
+  - The three noises were tested only under the full recipe, where the
+    weights dominated the fit. Whether they help or hurt the MSE-only runs
+    is not tested.
+  - A seed replica of this arm, and a longer run of it.
+  - An SAE of larger k at this rate.
