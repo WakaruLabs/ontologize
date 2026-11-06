@@ -13,7 +13,8 @@
 # the runs. ARM picks arms from the flags table below; the default is the
 # first ten, one change each. The rest remove or rescale s_bcossim and
 # s_support together and apart, remove s_L1F with both of them, and then
-# s_Hm with all three, which leaves no auxiliary weight; a
+# s_Hm with all three, which leaves no auxiliary weight (with a seed-43
+# replica of that arm); a
 # rescaled weight is the recipe's divided by 50, as --s-hm 2e-6 is, the
 # factor by which mc4_sent16's whitened MSE is below mc4_4M's. Each arm
 # keeps only its final checkpoint (--max-to-keep 1
@@ -53,6 +54,7 @@ declare -A flags=(
     [nobcos_nosupp]="--s-bcossim 0 --s-support 0"
     [nobcos_nosupp_nol1f]="--s-bcossim 0 --s-support 0 --s-l1f 0"
     [nobcos_nosupp_nol1f_nohm]="--s-bcossim 0 --s-support 0 --s-l1f 0 --s-hm 0"
+    [nobcos_nosupp_nol1f_nohm_s43]="--s-bcossim 0 --s-support 0 --s-l1f 0 --s-hm 0 --seed 43"
     [bcos2e-7_supp2e-8]="--s-bcossim 2e-7 --s-support 2e-8"
     [bcos2e-7]="--s-bcossim 2e-7" [supp2e-8]="--s-support 2e-8")
 for arm in "${arms[@]}"; do

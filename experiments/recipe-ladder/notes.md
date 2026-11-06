@@ -219,8 +219,9 @@ curve never reaches that FVU (the k32's floor is 0.418).
 - **Without `s_Hm`, the hard stack uses few entries.** It realizes 496 of
   its 1,900 nominal bits, and the direct stack 1,306 of 1,890.
 - **What this leaves open.**
-  - The arms train for 50,000 steps on the cache's first 12.8M rows. The
-    SAEs train for 144,300 steps over the whole cache.
+  - The arms train for 50,000 steps of 256 on the cache's first 12.8M rows.
+    The SAEs train over the whole cache, for 144,300 steps of 4,096 (the
+    k32 and L1 SAEs) or 336,000 (the k160).
   - Each arm drops one weight. Whether the two costliest weights compound
     is not tested; nor is a longer run of either arm.
 
@@ -351,9 +352,9 @@ classifier / the dictionary:
 - **The hard stack with both off:** the SAEs need 38–51% of its bits.
 - **What this leaves open.**
   - One seed per arm.
-  - 50,000 steps on the cache's first 12.8M rows, against the SAEs'
-    144,300 steps over the whole cache. Whether the both-off stacks keep
-    improving with more steps is not tested.
+  - 50,000 steps of 256 on the cache's first 12.8M rows, against the SAEs'
+    144,300 or 336,000 steps of 4,096 over the whole cache. Whether the
+    both-off stacks keep improving with more steps is not tested.
   - `s_L1F` is also unrescaled. Removing it took 0.019 off the direct
     stack's FVU (2026-10-30), and it has not been removed together with
     these two.
@@ -409,9 +410,11 @@ SAE reads 0.1872 and the L1 1.39e-6 SAE 0.2138.
     lower float FVU than the k160.
   - The hard stack's is 0.0002 below the k160's, well within its seed
     spread.
-  - Both are below the L1 SAE's.
-  - Each arm has one seed. The arms train for 50,000 steps on the cache's
-    first 12.8M rows, the SAEs for 144,300 steps over the whole cache.
+  - Both are below the L1 1.39e-6 SAE's. The L1 4.64e-7 SAE, left out of
+    this scoring, reads 0.0526 (2026-11-04).
+  - Each arm has one seed. The arms train for 50,000 steps of 256 on the
+    cache's first 12.8M rows, the SAEs for 144,300 or 336,000 steps of
+    4,096 over the whole cache.
 - **`s_L1F` pulled little at the end of training, but removing it still
   helped.** In the both-off arms at step 50,000, its pull relative to the
   MSE's was:
@@ -478,9 +481,12 @@ the classifier, relative to the MSE's, is:
   - the direct stack reads 0.1828;
   - the k160 reads 0.1872;
   - the hard stack reads 0.1971;
-  - the L1 SAE reads 0.2202.
-- **Neither pinned FVU is in the L1 SAE's reach.** Its curve gets no lower
-  than 0.2138, at 3,631 bits, the highest rate its sweep tries.
+  - the L1 1.39e-6 SAE reads 0.2202.
+
+  The L1 4.64e-7 SAE, left out of this scoring, reads 0.1421 and is ahead
+  of them all (2026-11-04).
+- **Neither pinned FVU is in the L1 1.39e-6 SAE's reach.** Its curve gets
+  no lower than 0.2138, at 3,631 bits, the highest rate its sweep tries.
 - **What this leaves open.**
   - One seed per arm. A seed-43 replica would put a spread under the k160
     comparisons.
@@ -533,7 +539,7 @@ runs in both architectures, against `nobcos_nosupp_nol1f`: two runs, about
 | all four off | **0.1681** | **0.1611** |
 
 The seed pairs differ by 0.0020 and 0.0018. On the same rows, the k160
-SAE reads 0.1872 and the L1 1.39e-6 SAE 0.2138.
+SAE reads 0.1872, the L1 1.39e-6 SAE 0.2138 and the L1 4.64e-7 SAE 0.0526.
 
 - **With the other three weights off, removing `s_Hm` helps both
   architectures.**
@@ -576,17 +582,33 @@ Means over the last 1,000 steps of `loss.csv`.
 |---|---|---|---|---|
 | hard stack, all four off | 0.1681 | 1891, 0.1893 | 0.1722 | 0.1893 |
 | direct, all four off | 0.1611 | 1877, 0.1865 | **0.1612** | 0.1638 |
+| L1 4.64e-7 | 0.0526 | — | **0.1421** | **0.1423** |
 | k160 | 0.1872 | — | 0.1872 | 0.1874 |
 | L1 1.39e-6 | 0.2138 | — | 0.2202 | 0.2201 |
 
 The k32's curve stops at 491 bits, at FVU 0.4180, so it has no reading at
-1,900 bits.
+1,900 bits. The L1 4.64e-7 row comes from
+`data/out/sonar/quantrate_sent16_eps1e-15/`, under the same settings: the
+k160's curve there matches this run's to 4e-8. It was left out of this
+ladder's scoring, which passed `quantrate.py` only the k32, the k160 and
+the L1 1.39e-6.
 
-- **At 1,900 bits, both stacks are below every SAE at the mean rate.**
-  - The direct stack is 0.026 below the k160, and the hard stack 0.015.
-  - Under the subset rate the direct stack stays 0.024 below it.
-  - The hard stack does not. Its gains start at 1,906 nominal bits, so at
-    1,900 it reads its pinned 0.1893, 0.0019 above the k160.
+- **At 1,900 bits on average per row, the L1 4.64e-7 SAE leads.**
+  - It reads 0.1421, against the direct stack's 0.1612 and the hard
+    stack's 0.1722.
+  - It reaches the direct stack's 0.1612 at 1,682 bits and the hard stack's
+    0.1722 at 1,575.
+- **Under a fixed budget of 1,900 bits per row, the direct stack leads
+  these SAEs.** The k256 SAE, trained later, does not leave that lead
+  standing (next results section).
+  - Its code has a fixed length, and it reads 0.1638 at 1,900 nominal bits.
+  - Held to that budget on every row (`rowbudget.csv`), the L1 4.64e-7 SAE
+    reads 0.1742 and the k160 0.1867. The L1 SAE needs a budget of 2,011
+    bits to reach 0.1638. (Exact budgets: see the next results section.)
+  - The hard stack's gains start at 1,906 nominal bits, so at 1,900 it
+    reads its pinned 0.1893, behind both SAEs.
+- **Both stacks are below the k160 at the mean rate:** the direct stack by
+  0.026 and the hard stack by 0.015.
 - **The gains cost few bits.**
   - The direct stack goes from 0.1865 at 1,877 bits (pinned) to 0.1633 at
     1,888 and 0.1612 at 1,898.
@@ -597,20 +619,218 @@ The k32's curve stops at 491 bits, at FVU 0.4180, so it has no reading at
   - It does not reach the direct stack's 0.1865. Its floor is 0.0007
     above that, less than the seed pair's difference, so the two are level
     at that point.
-  - The L1 SAE reaches neither.
+  - The L1 4.64e-7 SAE reaches them at 1,427 and 1,450 bits, 75% and 77%
+    of the stacks' bits.
+  - The L1 1.39e-6 SAE reaches neither.
 - **What this comparison does not show.**
   - The k160 is saturated at this rate: it reads 0.1872 from about 1,710
-    bits up, so it has bits it cannot use. The stacks beat this SAE at
-    1,900 bits, which is not the same as beating the SAE frontier there.
-    A larger k has not been trained on `mc4_sent16`.
+    bits up, so it has bits it cannot use. A larger k has not been trained
+    on `mc4_sent16`, so the fixed-budget lead is over a top-k code that
+    cannot spend the budget.
   - The stacks have no code below about 1,880 bits, so only the SAEs have
     a reading at lower rates.
   - The rates leave out the coders' tables.
-  - One seed per arm. The arms train for 50,000 steps on the cache's first
-    12.8M rows, the SAEs for 144,300 steps over the whole cache.
+  - One seed per arm. The arms train for 50,000 steps of 256 on the cache's
+    first 12.8M rows, the SAEs for 144,300 or 336,000 steps of 4,096 over
+    the whole cache.
 - **What this leaves open.**
   - The three noises were tested only under the full recipe, where the
     weights dominated the fit. Whether they help or hurt the MSE-only runs
     is not tested.
   - A seed replica of this arm, and a longer run of it.
   - An SAE of larger k at this rate.
+
+## 2026-11-04: queued, a seed replica and a k256 SAE
+
+Three systemd units, in series, so nothing shares the GPU:
+- **`recipe-ladder`:** `ladder.sh med837 nobcos_nosupp_nol1f_nohm_s43`, the
+  all-four-off arm at seed 43 in both architectures. Two runs, about 2.5
+  GPU-hours. It puts a spread under this arm's comparisons, which so far
+  lean on the controls' seed pairs.
+- **`sae-k256`:** `sae_k256_run.sh`, the k160 with `--topk 256`, once
+  `recipe-ladder` has finished. A 30-step smoke run went at 13.4 steps per
+  second, so about 7 GPU-hours.
+- **`score-ladder5`:** `coordfvu.py` and `coordtrace.py` on the replicas,
+  then `quantrate.py` on both seeds against the k32, k160, k256, L1 1.39e-6
+  and L1 4.64e-7 SAEs. It waits for the two units above.
+
+343 GB was free at the start.
+
+## 2026-11-04: the seeds agree, and the k256 SAE leads the stacks at 1,900 bits
+
+- **Where:** the three units ran 2026-11-04 01:59 to 12:18.
+  - Both replicas reached 50,000 steps with no resume and no NaN in the live
+    columns, and `loss` equals `MSE` on every row.
+  - The k256 ran 04:49 to 11:28 and reached 336,000 steps, with 47 of its
+    11,264 latents dead.
+- **The outputs:**
+  - `data/out/sonar/coordfvu_recipe_ladder5/`;
+  - `coordtrace/<arm>/`;
+  - `quantrate_recipe_ladder5/`, which now has all five SAEs and both seeds
+    in one run.
+
+  The logs are `experiments/logs/*_recipe_ladder5.log`. `auxpull.py` was
+  not run, since no weight is left to pull.
+
+### The seed replica
+
+Held-out FVU over the 1023 free coordinates:
+
+| | hard stack | direct |
+|---|---|---|
+| seed 42 | 0.1681 | 0.1611 |
+| seed 43 | 0.1679 | 0.1609 |
+| difference | 0.0003 | 0.0002 |
+| the controls' seed pairs | 0.0020 | 0.0018 |
+
+- **The arm reproduces.** Its seed differences are about a tenth of the
+  controls', so the multiples of the seed difference in the earlier
+  sections are conservative for this arm.
+- **The rest reproduces too.**
+  - Pinned rates: 1,891 and 1,877 bits in both seeds.
+  - `cossim_k_max`: 0.56 and 0.010. `KL_m`: 0.55 and 2.23.
+  - Coordinate 837: 0.16× and 0.10× the median coordinate's error.
+- **Coordinate 652 varies most.** In the hard stack it reads 8.9× the median
+  coordinate's FVU at seed 43, against 7.8× at seed 42. Its own FVU is 1.49
+  and 1.32, so both seeds predict it worse than its mean does. The direct
+  stack reads 3.8× and 3.9×.
+
+### The k256 SAE
+
+All at 1,900 bits, from the one `quantrate.py` run, with the stacks at
+seed 42. A stack's fixed per-row reading is its nominal reading, since its
+code has a fixed length.
+
+| code | float FVU | mean rate | subset rate | fixed per-row budget |
+|---|---|---|---|---|
+| **k256** | 0.1260 | **0.1282** | **0.1538** | **0.1288** |
+| L1 4.64e-7 | 0.0526 | 0.1421 | 0.1423 | 0.1742 |
+| direct stack | 0.1611 | 0.1612 | 0.1638 | 0.1638 |
+| hard stack | 0.1681 | 0.1722 | 0.1893 | 0.1893 |
+| k160 | 0.1872 | 0.1872 | 0.1874 | 0.1867 |
+
+- **The k256 is below both stacks in all three columns.** It is below the
+  direct stack by 0.033 at the mean rate, 0.010 at the subset rate and
+  0.035 under the fixed budget.
+- **So the direct stack's fixed-budget lead does not hold, as long as an
+  SAE can change its step row by row.** It was a lead over SAEs that could
+  not spend the budget: the k160 is saturated there, and the L1 SAE's rows
+  vary in length. The next subsection has what happens without that freedom.
+- **Bits for the k256 to match the stacks,** each as a share of 1,900:
+
+  | target | mean rate | subset rate | per-row budget |
+  |---|---|---|---|
+  | direct, 0.1612 | 1,262 (66%) | 1,813 (95%) | 1,392 (73%) |
+  | hard, 0.1722 | 1,182 (62%) | 1,705 (90%) | 1,361 (72%) |
+
+  Under the full recipe at ε 1e-15, the SAEs needed about a fifth of the
+  hard stack's bits (`experiments/sentence-split/notes.md`, 2026-10-25).
+- **The k256 is not the SAE frontier either.** Going from k = 160 to 256
+  took the float FVU from 0.1872 to 0.1260, and at 1,900 bits it is still
+  short of its floor.
+- **The training budgets are far apart.**
+  - The k256 saw 1.38 billion rows: 336,000 steps of 4,096, about 31 passes
+    over the cache.
+  - Each stack saw 12.8 million: 50,000 steps of 256, one pass over 29% of
+    the cache. That is 107× fewer.
+  - So this compares a finished SAE with a short Ontologizer run. How much
+    of the gap training closes is not tested.
+
+### What the fixed per-row budget measures
+
+A top-k SAE's budget reading differs from its mean-rate reading, and for
+the k32 and k160 it is below the unquantized FVU. Both come from variable
+quantization. These readings use `quantrate.sae_rows`'s per-row lengths and
+errors, passed through `rate_control` at exactly 1,900 bits. "—" is a
+reading the code cannot give or that was not taken.
+
+| at a 1,900-bit budget | k32 | k160 | k256 | L1 4.64e-7 |
+|---|---|---|---|---|
+| float FVU | 0.4180 | 0.1872 | 0.1260 | 0.0526 |
+| one step for all rows, 1,900 bits on average | — | 0.1872 | 0.1282 | 0.1421 |
+| each row at its longest code that fits | 0.4180 | 0.1872 | 0.1291 | — |
+| each row at its lowest-error step that fits | 0.4163 | 0.1867 | 0.1288 | 0.1742 |
+| one step that every row fits | 0.4180 | 0.1879 | 0.1846 | 0.4985 |
+
+- **A fixed k fixes how many latents a row sends, not how many bits they
+  cost.** Rare latents and large values cost more.
+  - At a mean of 1,887 bits, the k256's rows run from 1,734 to 2,133 (5th
+    to 95th percentile), up to 2,562, and 39% are over 1,900.
+  - The L1 4.64e-7 SAE's, at a mean of 1,969, run from 974 to 3,359.
+- **The budget column is variable quantization.** Each row picks one of 67
+  steps, named in 6.07 bits that count against the budget. The mean-rate
+  column uses one step for every row.
+- **Picking steps by error is what takes the k32 and k160 below float.**
+  - No single step beats float, and neither does each row's longest code.
+  - Row error is not monotonic in step size, so the search finds a lucky
+    rounding for 100% of the k32's rows and 97.5% of the k160's.
+  - The rows it picks are also shorter: 363 and 1,615 bits on average.
+- **For the k256, the budget binds, but it costs little.** Forcing long rows
+  onto coarser steps adds 0.0008, and the search takes back 0.0003.
+- **The single-step reading is the one that models lowering the
+  coefficients' precision.**
+  - One step is a property of the model: the same quantization for every
+    input. A per-row step makes precision depend on the row, which makes it
+    a codec. The stacks' gains also use one step for all rows.
+  - That reading is the mean-rate column, where the k256 leads (0.1282,
+    against the direct stack's 0.1612).
+  - "One step" is one scale: each latent's step is that scale over its
+    whitened decoder norm, so latents differ, but rows do not.
+- **A hard cap on top of one step changes the ranking.** The two single-step
+  rows differ only in how the bits are charged. One that every row fits gives,
+  with the stacks' fixed-length readings:
+  - direct stack, 0.1638;
+  - k256, 0.1846;
+  - k160, 0.1879;
+  - hard stack, 0.1893;
+  - L1 4.64e-7, 0.4985.
+
+  This is a worst case. The longest of the 32,765 rows sets the step, and
+  the k256's rows then average 1,107 bits, so about 800 go unspent. Those
+  long rows exist because the lengths come from an entropy coder.
+- **That reading is still not a bound on the SAE.** It is the longest row
+  seen, under tables fit on those same rows, and a symbol the tables have
+  not seen has no code at all (`row_bits` raises on one).
+- **The stacks' strict bound is the pinned reading:** exactly 1,900 and
+  1,890 bits, for 0.1893 and 0.1865. The direct stack's 0.1638 adds gains
+  whose 10 or so bits are entropy-coded, so it is not a strict bound either.
+- **A literal fixed-width format is not measured.** It is the reading that
+  would bound an SAE's rows. With no entropy coder,
+  naming the support alone costs 1,757 bits for the k256 (log2 of 11,264
+  choose 256), which leaves 0.56 bits per coefficient at 1,900 bits. The
+  k160 has 4.3 and the k32 51.
+- **`quantrate.py`'s reading at 1,900 bits is interpolated.** `rowbudget.csv`
+  has budgets on a quarter-octave grid, and the reading interpolates between
+  1,722 and 2,048. For the k256 it gives 0.1300, against the exact 0.1288.
+  The per-row readings in this section are exact.
+
+### Between-head support
+
+`support` from `loss.csv`, summed over the 5 layers, so 5 means identical
+coordinate profiles in every layer. Means over the last 1,000 steps.
+
+| arm | hard stack | direct |
+|---|---|---|
+| control | 0.26 | 1.18 |
+| `s_support` off | 2.62 | 4.95 |
+| all four off | 4.91 | 4.97 |
+
+- **These stacks do not have the findings' disjoint support.**
+  - All four off reads 0.98 and 0.99 per layer, against 0.05 and 0.24 in
+    the controls.
+  - They start at 4.87 and 4.86 (the first 100 steps) and stay there, since
+    nothing pulls the heads apart.
+- **The per-row bit bound does not depend on it.** That bound comes from
+  each head choosing one entry, which every arm has by construction.
+- **The ladder cannot separate the penalty from the property.** It shows
+  `s_support` costing the fit. It does not show whether disjoint heads
+  themselves do, since heads disjoint by construction (`--concat`) are not
+  in this ladder.
+
+### What this leaves open
+
+- A full-length run of this arm.
+- The three noises under the MSE alone.
+- A fixed-width reading of the SAEs, the comparison for a strict bound.
+- `--concat` under the MSE alone, to separate disjoint heads from the
+  penalty.

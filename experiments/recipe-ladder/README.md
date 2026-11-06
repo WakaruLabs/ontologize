@@ -73,7 +73,8 @@ What to expect:
   - Arms named on the command line run instead, in the order given. The
     table also has `nobcos_nosupp` (both weights off),
     `nobcos_nosupp_nol1f` (`s_L1F` off as well),
-    `nobcos_nosupp_nol1f_nohm` (`s_Hm` too, so no auxiliary weight), and
+    `nobcos_nosupp_nol1f_nohm` (`s_Hm` too, so no auxiliary weight),
+    `nobcos_nosupp_nol1f_nohm_s43` (its seed-43 replica), and
     `bcos2e-7_supp2e-8`, `bcos2e-7` and `supp2e-8`. Those three divide
     `s_bcossim` and `s_support` by 50, together and apart. That is
     `--s-hm 2e-6`'s factor, by which `mc4_sent16`'s whitened MSE is below
@@ -88,6 +89,15 @@ What to expect:
   `data/out/sonar/sae_sent16/m5120_k32_lr4e-4_no837_whole_eps1e-15_<arm>`,
   and the stock run of that name is the control. It starts once unit
   `sent16-med` has finished.
+- **`sae_k256_run.sh`** trains `sae_rate_runs.sh`'s k160 at ε 1e-15 with
+  `--topk 256` and nothing else changed, to
+  `data/out/sonar/sae_sent16/m11264_k256_no837_whole_eps1e-15`.
+  - **Why.** The k160 has more bits at a rate near the Ontologizers' than
+    it can use, so it cannot show what a top-k code does there. An L1 SAE
+    can spend more, but its rows vary widely in length, and it does worse
+    under a fixed per-row budget. A top-k code's length varies less.
+  - It starts once unit `recipe-ladder` has finished, so the two never
+    share the GPU.
 
 ## Usage
 
