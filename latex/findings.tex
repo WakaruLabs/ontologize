@@ -59,8 +59,9 @@ can test a discovered variable, though only against arbitrary partitions of
 the same space --- which, on both SONAR and GPT-2, steer their own cells
 just as specifically. On SONAR sentence embeddings and GPT-2
 small residuals, structure costs little once the code is discrete: a pure
-1900-bit hard code reaches $\fvu$ $0.158$, where a $\topk$ SAE at the same
-bits cannot beat $0.236$ (an entropy-coded L1 SAE does better), and on
+1900-bit hard code reaches $\fvu$ $0.158$, where a $\topk$ SAE with 160
+latents at the same bits cannot beat $0.236$ (entropy-coded SAEs with
+uneven or wider supports do better), and on
 GPT-2 an 800-bit code recovers 97.6\% of the model's loss, more than a
 $k_{\mathrm{SAE}}{=}32$ SAE at nearly the same $\fvu$. In the soft code,
 forced entries steer along the supervised difference-of-means direction,
@@ -68,10 +69,15 @@ $0.64\times$ as far as supervised steering, and compose nearly additively.
 But the variables are not yet identifiable: seeds agree on the error to
 four digits but share no head past the first layer, input-space steps
 disturb other heads as much as random steps of the same length, and
-weight-only decodes do not describe entries. Identifiability, not
-fidelity, is the binding constraint, for auditing and for any goal that
-must keep pointing at one concept as a model is retrained, and
-reconstruction cannot see it fail.
+weight-only decodes do not describe entries. The exception is a block
+trained on sentence pairs: heads rewarded for keeping their entry across
+two sentences of a document reproduce as a block across three seeds
+(matched NMI $0.41$ against $0.005$), though not yet head by head, and
+their code changes more slowly than any linear projection of the
+embedding. Identifiability, not fidelity, is the
+binding constraint, for auditing and for any goal that must keep pointing
+at one concept as a model is retrained; reconstruction cannot see it
+fail, and paired views are the first lever that moves it.
 \end{abstract}
 
 \input{findings/sections/introduction}

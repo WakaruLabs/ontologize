@@ -8,23 +8,24 @@ and classifications can natively be used for steering.
 
 The model (Figure~\ref{fig:onto-stack}) consists of $l$ $\dictenc$
 layers writing into a shared residual accumulator, decoded by a single
-linear map. Each layer (Figure~\ref{fig:dictenc}) is a classifier
-followed by a dictionary. The classifier splits its input into $h$
-independent \emph{assignments}, each a distribution over one head's $k$
-\emph{entries}, and the dictionary maps each entry to an \emph{atom}.
-Each layer writes the assignment-weighted sum of its atoms to the
-accumulator; after each layer the accumulator is decoded and the residual
-passed on, so layer $\ell$ receives $\mathbf{x} - \mathrm{dec}(\mathbf{r}_\ell)$,
-where $\mathbf{r}_\ell$ holds the $\ell$ layers before it. Deep
-supervision~\cite{lee2015deeply} constrains every prefix of the stack to
-reconstruct the input.
+linear map. Each layer (Figure~\ref{fig:dictenc}) is composed of a
+classifier followed by a dictionary. The classifier splits its input
+into $h$ independent \emph{assignments}, each a distribution over one
+head's $k$ \emph{entries}, and the dictionary maps each entry to a
+representative vector (an \emph{atom}). Each layer writes the
+assignment-weighted sum of its atoms to the accumulator; after each
+layer the accumulator is decoded and the residual
+$\mathbf{x} - \mathrm{dec}(\mathbf{r}_\ell)$ is passed to the next
+layer, where $\mathbf{r}_\ell$ accumulates the $\ell$ layers before it.
+Deep supervision~\cite{lee2015deeply} constrains every prefix of the
+stack to reconstruct the input.
 
 Because entries within a head are mutually exclusive rather than
-independent, each head is a contrastive set: a $k$-way classifier whose
-entry swaps are steering moves. A between-head penalty is meant to push
-each head onto its own coordinates of the dictionary space
-(Figure~\ref{fig:head-simplex}); measured on the trained models, it did
-not (Section~\ref{sec:disjoint}).
+independent, each head acts as a contrastive set: a $k$-way classifier
+whose entry swaps are steering moves. An auxiliary between-head penalty
+is intended to push each head onto a disjoint set of dictionary
+coordinates (Figure~\ref{fig:head-simplex}), though in practice summed
+models do not form a coordinate partition (Section~\ref{sec:disjoint}).
 
 \begin{figure}[tp]
 \centering
@@ -69,10 +70,11 @@ not (Section~\ref{sec:disjoint}).
 Each $\dictenc$'s classifier is a multihead bilinear map
 ($\bilinearblock$) with weights
 $[\mathsf{W}, \mathsf{V}] \in \mathbb{R}^{2 \times h \times k \times d}$
-($d+1$ with the constant coordinate of Equation~\ref{eq:y_norm}). It
-reads the shape $\mathbf{u}_\ell$ of the layer's input (the residual left
-by the layers before it, or $\mathbf{x}$ at layer 0), written $\mathbf{x}$
-below for a generic input, and returns logits $K \in \mathbb{R}^{h \times k}$,
+($d+1$ with the constant coordinate of Eq.~\eqref{eq:y_norm}). It
+reads the normalized shape $\mathbf{u}_\ell$ of the layer's input (the
+residual left by previous layers, or $\mathbf{x}$ at layer 0), written
+$\mathbf{x}$ below for a generic input, and returns logits
+$K \in \mathbb{R}^{h \times k}$:
 \begin{equation}
 	\bilinearblock([\mathsf{W},\mathsf{V}],\mathbf{x}) :=
 	\left(\sum^{d}_{q=1}W_{\cdot\cdot q}\,x_q\right)
@@ -92,18 +94,19 @@ MLPs~\cite{pearce2025}.
 	including noising and causal interventions.
 	Dashed lines below indicate statistics used as tuneable auxiliary loss
 	functions. Each \texttt{DictEnc} consists of a multihead bilinear
-	classifier (§\ref{sec:bilinear}) and a multihead dictionary
-	(§\ref{sec:dict}). Noise $\varepsilon_K$ and $\varepsilon_F$ and winner
-	dropout regularize training (§\ref{sec:noise}).
+	classifier (Section~\ref{sec:bilinear}) and a multihead dictionary
+	(Section~\ref{sec:dict}). Noise $\varepsilon_K$ and $\varepsilon_F$ and winner
+	dropout regularize training (Section~\ref{sec:noise}).
 	Assignments $P$ are $\mathrm{softmax}_{k}(K/t)$, or its straight-through
-	argmax (§\ref{sec:labels}); interventions act on $P$. From $P$ we
+	argmax (Section~\ref{sec:labels}); interventions act on $P$. From $P$ we
 	collect per-sample entropy $H$, between-sample similarity
-	$\mathrm{cossim}_b$ and batch-mean entropy $\mathrm{KL}_m$
-	(Equations~\ref{eq:entropy}--\ref{eq:KL}). A $\dictblock$ maps
+	$\mathrm{cossim}_b$, and the divergence of the batch-mean assignment
+	from uniform $\mathrm{KL}_m$
+	(Eqs.~\eqref{eq:entropy}--\eqref{eq:KL}). A $\dictblock$ maps
 	$P \in \mathbb{R}^{h \times k}$ to features
-	$F \in \mathbb{R}^{h \times e}$ (Equation~\ref{eq:dictblock}); from $P$
+	$F \in \mathbb{R}^{h \times e}$ (Eq.~\eqref{eq:dictblock}); from $P$
 	and the atoms we collect the support overlap $\omega$
-	(Equation~\ref{eq:support}), and from $F$ the sparsity penalty
+	(Eq.~\eqref{eq:support}), and from $F$ the sparsity penalty
 	$\mathrm{L1}$. $F$ is summed over heads to give pooled
 	features $\mathbf{f}' \in \mathbb{R}^{e}$, which are added to the
 	accumulator $\mathbf{r}$.
@@ -113,18 +116,19 @@ MLPs~\cite{pearce2025}.
 
 \subsubsection{Assignments and selection}
 \label{sec:labels}
-Soft assignments are $P = \mathrm{softmax}_{k}(K/t)$, where the
-temperature $t$ is annealed to sharpen them. A soft code's argmax is
-not, however, what the model decodes: Section~\ref{sec:prelim-pareto}
-finds the softmax model's discrete reading far from its embedding, as a
-soft relaxation of quantization trained from scratch need not quantize
-when the decoder can learn to invert it~\cite{vandenoord2017}. The
-\emph{straight-through} selection rule makes the discrete code the model:
-the forward pass selects the one-hot argmax, and the backward pass uses
-$\mathrm{softmax}(K/t)$ as its surrogate gradient, the straight-through
-estimator~\cite{bengio2013} in its categorical form~\cite{jang2017}. A
-hard code transmits exactly $l\,h\log_2 k$ bits, and its only continuous
-numbers are the layers' gains $g_\ell$.
+Soft assignments are given by $P = \mathrm{softmax}_{k}(K/t)$, with the
+temperature $t$ annealed during training to sharpen the distributions.
+When trained from scratch with soft assignments, however, the model
+continues to rely on the full probability vector rather than its discrete
+argmax, since the linear decoder can invert a soft relaxation of
+quantization~\cite{vandenoord2017} (Section~\ref{sec:prelim-pareto}). To
+train a genuinely discrete code, the \emph{straight-through} selection
+rule selects the one-hot argmax in the forward pass and uses
+$\mathrm{softmax}(K/t)$ as a surrogate gradient in the backward pass,
+following the categorical straight-through
+estimator~\cite{bengio2013,jang2017}. A hard code transmits
+$l\,h\log_2 k$ index bits per sample, with the per-layer gains $g_\ell$
+as its only continuous values.
 
 From the assignments $P_n$ of each sample $n$ we collect per-sample
 entropy, in bits,
@@ -188,8 +192,8 @@ its atoms (Figure~\ref{fig:head-simplex}).
 	output lies within the convex hull of the head's atoms.
 	Because $\lvert \mathsf{D}\rvert\geq0$ and $P\geq0$, $F\geq0$, so
 	$\cos\angle(\mathbf{f}_i, \mathbf{f}_{i'}) \in [0,1]$, and driving the support overlap $\omega$
-	to zero asks the heads to partition the coordinates of $\mathbb{R}^e$
-	between them (§\ref{sec:disjoint}).
+	to zero encourages the heads to partition the coordinates of $\mathbb{R}^e$
+	between them (Section~\ref{sec:disjoint}).
 }
 \label{fig:head-simplex}
 \end{figure}
@@ -197,16 +201,17 @@ its atoms (Figure~\ref{fig:head-simplex}).
 \paragraph{Disjoint support}
 \label{sec:disjoint}
 For non-negative vectors the inner product is a sum of non-negative
-terms, so it vanishes exactly when the supports are disjoint,
+terms, so it vanishes if and only if the supports are disjoint,
 \begin{equation}
 	\langle \mathbf{u},\mathbf{v}\rangle = 0
 	\iff
 	\mathrm{supp}(\mathbf{u}) \cap \mathrm{supp}(\mathbf{v}) = \emptyset .
 	\label{eq:disjoint}
 \end{equation}
-Between heads, then, orthogonality is not a rotation constraint but a
-support partition. The support overlap compares heads' usage-weighted
-coordinate profiles,
+Between heads, orthogonality on non-negative atoms is therefore a
+support-partition condition rather than a rotation constraint. The
+support overlap $\omega$ measures the mean cosine between heads'
+usage-weighted coordinate profiles:
 \begin{equation}
 	\boldsymbol{\pi}_i := \sum^{k}_{j=1} \bar{p}_{ij}\,
 	\lvert \mathbf{a}_{ij}\rvert,
@@ -218,29 +223,28 @@ coordinate profiles,
 	\bar{\mathbf{p}}_i := \mathbb{E}_{n}\,[\mathbf{p}_{ni}],
 	\label{eq:support}
 \end{equation}
-and is zero exactly when no two heads share a coordinate. Because a
-softmax gives every entry positive weight, a single sample on which two
-heads are orthogonal forces every pair of their atoms to be disjoint:
-the partition is a property of $\mathsf{D}$, holding for all inputs,
-which is the premise a static reading of the dictionary needs.
-With concatenated heads, heads write disjoint
-slices by construction and $\omega$ is identically zero.
+which vanishes if and only if no two heads share an active coordinate.
+Because softmax assignments give every entry positive weight, two heads
+that are orthogonal on even a single sample must have disjoint supports
+across all $k^2$ pairs of their atoms, making the partition a weight-level
+property of $\mathsf{D}$ that holds for all inputs. In the
+concatenated-head variant, each head writes to a separate coordinate
+slice by construction and $\omega$ is identically zero.
 
-Two orthogonalities are in play. Disjoint support assigns each head a
-block of coordinates; \emph{within} a head the $k$ atoms are contrastive
-alternatives spread apart inside that block, which
-Section~\ref{sec:prelim-orth} measures. Neither is guaranteed at
-convergence: $\omega$ is a penalty, and the geometry makes a support
-partition the cheap solution rather than forcing one. Measured, the
-within-head orthogonality holds and the between-head partition does not
-form (Section~\ref{sec:prelim-orth}).
+This design distinguishes between-head and within-head geometry: disjoint
+support assigns each head its own coordinate block, while the $k$ atoms
+\emph{within} a head act as contrastive alternatives spread across that
+block. When heads are summed rather than concatenated, $\omega$ is only a
+soft penalty, and empirically the within-head contrast emerges while a
+between-head coordinate partition does not
+(Section~\ref{sec:prelim-orth}).
 
 \subsubsection{Decoder}
 \label{sec:decoder}
 Each layer's pooled output $\mathbf{f}'_\ell = \sum_{i=1}^{h}\tilde{\mathbf{f}}_{i}$ is scaled
-by its input's gain $g_\ell$ and added to the accumulator, whose state
-after $\ell$ layers a single unbiased linear map shared by all layers
-decodes,
+by its input's gain $g_\ell$ and added to the accumulator, which is
+projected back to the input space by a single unbiased linear decoder
+shared across all layers:
 \begin{equation}
 	\mathbf{r}_\ell = \sum_{\ell'=0}^{\ell-1} g_{\ell'}\,\mathbf{f}'_{\ell'},
 	\qquad
@@ -249,11 +253,12 @@ decodes,
 	W_{\mathrm{dec}} \in \mathbb{R}^{d \times e}.
 	\label{eq:dec}
 \end{equation}
-The residual $\mathbf{y}_\ell$, layer $\ell$'s input, is stop-gradiented,
-so that lower layers cannot write a communication code into it instead
-of reducing it, and split into a gain and a shape $\mathbf{u}_\ell$, its
-unit direction with a constant coordinate appended, which is what layer
-$\ell$ classifies:
+The residual $\mathbf{y}_\ell$ entering layer $\ell$ is stop-gradiented
+so that earlier layers cannot pass a communication code through the
+residual instead of reducing reconstruction error. It is decomposed into
+a scalar gain $g_\ell$ and a normalized shape vector $\mathbf{u}_\ell$
+with a constant coordinate appended, which forms the input to layer
+$\ell$'s classifier:
 \begin{equation}
 	\mathbf{y}_\ell = \mathrm{sg}\!\left[\mathbf{x} - \hat{\mathbf{x}}_\ell\right],
 	\qquad
@@ -263,29 +268,30 @@ $\ell$ classifies:
 	g_{\ell} := \mathrm{sg}\!\left[\mathrm{L2}(\mathbf{y}_\ell)\right].
 	\label{eq:y_norm}
 \end{equation}
-The empty sum makes $\mathbf{r}_0 = \mathbf{0}$, so $\mathbf{y}_0 = \mathbf{x}$:
-layer 0 classifies the input itself.
-Under \texttt{resid\_gain} each layer classifies the direction of what it
-corrects, and the gain carries the magnitude it cannot see; without it
-$g_\ell = 1$.
+At layer 0 the empty sum gives $\mathbf{r}_0 = \mathbf{0}$ and
+$\mathbf{y}_0 = \mathbf{x}$, so the first layer classifies the input
+directly. When gain scaling (\texttt{resid\_gain}) is enabled, each
+layer classifies the direction of the current residual and scales its
+write by $g_\ell$; otherwise $g_\ell = 1$.
 
 \paragraph{Direct atoms and fibers.}
-Two variants change what an entry writes. With \emph{direct atoms} the
-dictionary is signed and lives in the output space itself, with no
-decoder, so every atom is literally a steering direction. With
-\emph{fibers} each entry carries a rank-$r$ local basis, and each head
-reads $r$ coordinates from its input, so a hard code becomes a discrete
-base point plus a continuous correction within that entry's fiber;
-training the fibers after freezing the base keeps the discrete code
-exactly what it was.
+We also evaluate two architectural variants of the dictionary. In the
+\emph{direct-atom} variant, the shared decoder is omitted and signed
+atoms live directly in the $d$-dimensional output space, so each atom is
+an explicit vector in activation space. In the \emph{fiber} variant, each
+entry carries a local rank-$r$ basis and each head reads $r$ continuous
+coordinates from its input, augmenting the discrete entry choice with a
+low-rank continuous correction; training fibers on top of a frozen hard
+code refines reconstruction without altering the discrete assignments.
 
 \subsubsection{Noise and dropout}
 \label{sec:noise}
-Classifier logits take Gaussian noise $\varepsilon_K$, relative to the
-logit scale under a hard forward; features take noise $\varepsilon_F$
-proportional to each feature's batch standard deviation, stop-gradiented
-so the model cannot evade it by shrinking variance. Winner dropout sets a
-head's argmax logit to $-\infty$ with probability $p_{\mathrm{drop}}$.
+Classifier logits take Gaussian noise $\varepsilon_K$, scaled relative to
+the logit standard deviation under hard selection; dictionary features
+take Gaussian noise $\varepsilon_F$ proportional to each coordinate's
+batch standard deviation, with the scale stop-gradiented so the model
+cannot suppress noise by shrinking feature variance. Winner dropout sets
+a head's argmax logit to $-\infty$ with probability $p_{\mathrm{drop}}$.
 
 \subsection{Training}
 \label{sec:training}
@@ -293,33 +299,35 @@ head's argmax logit to $-\infty$ with probability $p_{\mathrm{drop}}$.
 \subsubsection{Embedding model}
 \label{sec:sonar}
 We embed texts using SONAR~\cite{sonar}, a multimodal and
-language-agnostic sentence embedding model: a translation-trained
-encoder, mean-pooled into one 1024-dimensional vector, and a decoder that
-generates text from that vector alone, in a target language chosen at
-decoding time. Translations embed close together, so a reconstructed or
-steered embedding can be decoded in one fixed language and re-encoded,
-which is how text fidelity and text-cycle steering are scored. Large
-Concept Models~\cite{lcmteam2024largeconceptmodelslanguage} generate one
-sentence embedding per step in SONAR space, so an edit to a SONAR
-embedding is an edit to an LCM's context or output; the same work finds
-SONAR decoding fragile to small perturbations. GPT-2 small's residual
-stream~\cite{radford2019} is a second
-substrate, where sparse dictionary learning is known to work and the
-reconstruction can be spliced back into the model.
+language-agnostic sentence embedding model consisting of a
+translation-trained encoder (mean-pooled into a 1024-dimensional vector)
+and a paired decoder that generates text from that vector in a chosen
+target language. Because translations map to nearby vectors, reconstructed
+or steered embeddings can be decoded into a fixed language and re-encoded
+to measure text fidelity and cycle-consistent steering. Large Concept
+Models~\cite{lcmteam2024largeconceptmodelslanguage} generate sentence
+embeddings directly in SONAR space, making SONAR a natural testbed for
+embedding-level interventions, though SONAR decoding is known to be
+sensitive to small perturbations~\cite{lcmteam2024largeconceptmodelslanguage}.
+As a second substrate where sparse dictionary learning is well
+established and reconstructions can be spliced directly into a forward
+pass, we also train models on the residual stream of GPT-2
+small~\cite{radford2019}.
 
 \subsubsection{Loss function}
 \label{sec:loss}
-Reconstruction is trained with a whitened MSE, $\mathbf{w}$ being the
-per-dimension inverse variance normalized to mean one,
+Reconstruction is trained with a whitened mean-squared error, where
+$\mathbf{w}$ is the per-dimension inverse variance normalized to mean one,
 \begin{equation}
 	\mathrm{MSE}(X,\hat{X}) := \frac{1}{bd}\sum^{b}_{n=1}\sum^{d}_{q=1}
 	w_q\left(\hat{x}_{nq} - x_{nq}\right)^2,
 	\label{eq:mse}
 \end{equation}
-under deep supervision~\cite{lee2015deeply}: it is computed at every prefix
-$\hat{X}_\ell$, $\ell = 1, \dots, l$, and averaged, so each layer must explain
-what earlier layers left unexplained. The auxiliary statistics are weighted
-and summed over layers,
+applied with deep supervision~\cite{lee2015deeply} at every prefix
+$\hat{X}_\ell$ ($\ell = 1, \dots, l$) and averaged across layers, so each
+layer is trained to explain the residual left by earlier layers. The
+auxiliary statistics are weighted by $\mathbf{s}$ and summed across
+layers:
 \begin{equation}
 	L := \frac{1}{l}\sum^{l}_{\ell=1}\mathrm{MSE}(X,\hat{X}_\ell)
 	+ \sum^{l-1}_{\ell=0}\mathbf{s}\cdot\boldsymbol{\psi}_\ell,
@@ -328,33 +336,40 @@ and summed over layers,
 	\mathrm{KL}_m \;\; \omega \,\big]^{\top}_\ell,
 	\label{eq:loss_total}
 \end{equation}
-with $\mathrm{L1}$ the batch mean of each sample's feature norm. In
-practice $\mathrm{cossim}_b$ also minimizes $H$, which therefore carries
-no weight. Most models reported here trained before $\omega$ existed, with
-its predecessor in that slot (the mean cosine between heads' features
-within a sample); a direct $\omega$-penalty sweep on GPT-2 is reported in
-Section~\ref{sec:prelim-orth}.
+where $\mathrm{L1}$ is the batch mean of the feature L1 norm. Because
+minimizing $\mathrm{cossim}_b$ also reduces per-sample entropy $H$, we
+set the weight on $H$ to zero. Most models reported below were trained
+with the predecessor of $\omega$ (the within-sample mean cosine between
+heads' feature vectors); Section~\ref{sec:prelim-orth} reports a direct
+sweep over the $\omega$ penalty on GPT-2.
 
 \subsection{Evaluation}
 \label{sec:eval}
-Evaluation runs against $\topk$ SAEs~\cite{gao2024} trained on the same
-cached embeddings under the same whitened objective, scored by whitened
-fraction of variance unexplained ($\mathrm{FVU}_w$) on a held-out tail.
-A structural-ablation ladder of SAE variants adds one Ontologizer
-commitment at a time; two of its rungs, which add per-head competition
-over a shared decoder, are one-layer Ontologizers with linear
-classifiers (\texttt{g160top1} with hard selection, \texttt{g160softmax}
-with softmax) and are reported as simplified variants rather than
-baselines. The headline instruments are reconstruction against code
-capacity and a Gaussian rate--distortion reference~\cite{cover2006}; the
-semantic coherence of a
-head's decoded atoms against size-matched nulls; steering scored in
-embedding space (whether a step realizes the target entry, and what
-share of other heads it disturbs, against a random step of the same
-length); additivity of paired interventions; cross-seed head matching
-by partition and by contribution; and blinded auto-interpretability.
-AxBench~\cite{wu2025axbenchsteeringllmssimple} found that prompting,
-finetuning and one simple supervised direction, the difference of means,
-beat SAE latents at steering, while a linear probe's direction did not;
-the steering comparison here, which includes both, is built to face that
-result.
+We evaluate Ontologizer models against $\topk$ SAEs~\cite{gao2024}
+trained on the same cached embeddings under the same whitened MSE
+objective, reporting whitened fraction of variance unexplained
+($\mathrm{FVU}_w$) on a held-out evaluation tail. A structural-ablation
+ladder of SAE variants introduces Ontologizer components one step at a
+time; two rungs that add per-head competition over a shared decoder are
+equivalent to single-layer Ontologizers with linear classifiers
+(\texttt{g160top1} with hard selection and \texttt{g160softmax} with
+softmax) and are treated as simplified model variants rather than
+external baselines. Our evaluation suite measures:
+\begin{itemize}
+	\item reconstruction error against code capacity and a Gaussian
+	rate--distortion baseline~\cite{cover2006};
+	\item within-head semantic coherence of decoded atoms against
+	size-matched random subsets from the same dictionary;
+	\item steering efficacy and collateral in embedding space (how often
+	a step along a target direction realizes the target entry and how
+	many other heads it flips, relative to a random step of equal norm),
+	along with additivity of two-head interventions;
+	\item cross-seed reproducibility of head partitions and output
+	contributions; and
+	\item blinded autointerp detection.
+\end{itemize}
+Because AxBench~\cite{wu2025axbenchsteeringllmssimple} found that
+prompting, fine-tuning, and supervised difference-of-means vectors
+outperform SAE latents at steering while linear probes do not, we compare
+our unsupervised steering primitives directly against both
+difference-of-means and linear-probe vectors.

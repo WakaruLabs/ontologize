@@ -4,15 +4,16 @@ or unsupervised steering poorly. The Google DeepMind mechanistic
 interpretability team has pivoted from ambitious reverse-engineering to
 pragmatic interpretability judged on proxy tasks, and has deprioritized
 SAE research: SAE probes did not generalize better out of distribution,
-and SAEs did not beat a steering vector built from one contrastive pair
-of prompts at suppressing a model's awareness of being
-evaluated~\cite{gdmprogress2025}. On current benchmarks the supervised
-difference of means steers better than SAE latents, though worse than
-prompting~\cite{wu2025axbenchsteeringllmssimple}. But a supervised
-method finds only the concepts an experimenter already has labels for,
-and a direction that changes outputs as intended need not be one the
-model computes with: a subspace intervention optimized for its effect
-can instead activate a dormant pathway~\cite{makelov2023}. The dominant
+and SAEs did not beat a steering vector built from a single contrastive
+pair of prompts at suppressing evaluation
+awareness~\cite{gdmprogress2025}. On current benchmarks, supervised
+difference-of-means vectors steer better than SAE latents, though still
+worse than prompting~\cite{wu2025axbenchsteeringllmssimple}. However,
+supervised methods only find concepts for which an experimenter already
+has examples, and a direction optimized to produce a desired output
+change need not reflect how the model normally computes: a targeted
+subspace intervention can instead route through a dormant
+pathway~\cite{makelov2023}. The dominant
 unsupervised paradigm is the sparse autoencoder (SAE). A model's hidden
 state is approximated as a finite state machine consisting of discrete
 features. The first implementations used a $\relu$ activation and
@@ -23,43 +24,44 @@ sparsity loss~\cite{gao2024}.
 \subsection{Common problems with SAEs}
 The motivation is to decompile a model to a finite state machine (FSM).
 The limitation is that such an FSM is only as interpretable as an
-enumeration of all possible states. Even a mixture of two structureless
-processes, one constant and one a fair coin, needs infinitely many
-states to track which component is generating, so the structure lives
-in how the components overlap~\cite{crutchfield2026}.
+enumeration of all possible states; even a mixture of two simple
+processes (one constant and one a fair coin) requires infinitely many
+states to track which component is active, because the structure lies in
+how the components overlap~\cite{crutchfield2026}.
 
 \subsubsection{Features are not disentangled}
-A representation is disentangled when a change in one factor of variation
-changes one factor of the representation~\cite{locatello2019}. A
-persistent problem with SAEs is feature absorption~\cite{chanin2025}:
-when one feature implies another, sparsity is better served by folding
-the general feature's direction into the specific feature's latent and
-switching the general latent off there, so a latent that looks
-monosemantic silently fails to fire on some inputs that have its feature
-(a ``starts with S'' latent that is silent on ``short''). A related
-failure, feature composition, learns co-occurring concepts as one latent.
-Matryoshka SAEs~\cite{bussmann2025} reduce both by training nested
-prefixes of a single dictionary to reconstruct the input on their own,
-so early latents learn general features and later ones specific
-features. Tree SAEs~\cite{cao2026} make the hierarchy explicit by gating
-each latent on an assigned parent.
+A representation is disentangled when changing a single underlying factor
+of variation changes a single factor of the
+representation~\cite{locatello2019}. A persistent problem with SAEs is
+feature absorption~\cite{chanin2025}: when a narrow feature implies a
+broader one, sparsity rewards folding the broad feature's direction into
+the narrow latent and leaving the broad latent off, so a seemingly
+monosemantic latent fails to fire on subset cases (for instance, a
+``starts with S'' latent that stays silent on ``short''). A related
+failure mode, feature composition, merges frequently co-occurring
+concepts into a single latent. Matryoshka SAEs~\cite{bussmann2025}
+mitigate both issues by training nested dictionary prefixes to
+reconstruct the input independently, encouraging early latents to learn
+broad features and later latents to learn narrower ones. Tree
+SAEs~\cite{cao2026} enforce hierarchy explicitly by gating child latents
+on assigned parents.
 
 \subsubsection{Features are not cleanly causal}
 Sparsity trades off against reconstruction fidelity~\cite{gao2024}.
-Steering with an SAE feature is rarely clean: adding its decoder
-direction moves the logits differently in different contexts and
-disturbs unrelated downstream features. How much varies by feature and is
-partly predictable before intervening, from the crowding of its decoder
-direction and its direct effect on the logits, though which predictor
-works differs between models and dictionaries~\cite{duan2026}.
+Using SAE features for steering often produces inconsistent,
+context-sensitive effects: adding a decoder direction shifts logits
+differently across contexts and perturbs unrelated downstream features.
+While steerability varies across features and can be partially predicted
+from decoder-direction crowding and direct logit effects, the best
+predictors vary across models and dictionaries~\cite{duan2026}.
 
 \subsubsection{Features are not closed-form}
 A major concern is how well an interpretability technique generalizes
-out-of-distribution. Ideally we would like to infer behavior by looking
-solely at model weights. Bilinear MLPs make this partly possible: the
-interaction matrix of any output direction can be eigendecomposed
-without data, although in deep models the output directions to
-decompose still come from data-dependent SAEs~\cite{pearce2025}.
+out of distribution. Ideally we would like to infer behavior by looking
+solely at model weights. Bilinear MLPs make this partly possible because
+the interaction matrix for any output direction can be eigendecomposed
+without data, though in deep networks the target output directions still
+depend on data-driven SAEs~\cite{pearce2025}.
 
 \subsubsection{Forward passes are expensive}
 Efficiency is also a problem. Although the sparsity constraint means
@@ -68,35 +70,35 @@ entire feature space needs to be computed for each
 sample~\cite{gao2024,mudide2025}. Mixture-of-experts (MoE) SAE variants
 reduce compute costs by dividing feature space between smaller
 submodules. Examples include Switch SAEs, which route each input to one
-expert~\cite{mudide2025}, and Scale SAEs, which activate several to curb
-features duplicated across
+expert~\cite{mudide2025}, and Scale SAEs, which activate several experts
+per input to reduce feature duplication across
 experts~\cite{xu2025redundancydiversespecializedmultiexpert}.
 
 Less explored is the effect of the structure imposed by the MoEfied
 architecture on the interpretability of feature space. A common approach
-to scalably interpreting features is to have an LLM explain each feature
-from its activating examples and score the explanation by how well an
-LLM judge, given only the explanation, separates activating from
-non-activating contexts~\cite{paulo2025}; in the results here one model
-both writes and judges the explanations. With an unstructured feature
-space, it quickly becomes intractable to interpret all permutations of
-features this way. It is however possible to instead apply this
-technique to expert routings. The ReLU feed-forward layers of a trained
-transformer can themselves be split into experts of co-activating
-neurons, keeping over 95\% of performance with 10--30\% of the
-parameters~\cite{zhang2022}. Language models appear to represent a
-categorical concept as a simplex whose vertices are the vectors of its
-values, with hierarchically related concepts in orthogonal subspaces, so
-that a hierarchy is a direct sum of simplices; differences between value
-vectors are the steering vectors of binary contrasts~\cite{park2025}. We
-conjecture that MoEfication into classifiers can reveal such latent
-contrastive steering vectors, since an entry swap writes exactly such a
-difference. Penalizing the cosine between each SAE decoder direction and
-its nearest neighbor cuts measured feature absorption by about two
-thirds relative to BatchTopK SAEs, at slightly lower explained variance
-and unchanged autointerp scores~\cite{korznikov2025}; that penalty is
-unstructured, where the Ontologizer asks for orthogonality between heads
-and contrast within them.
+to scalably interpreting features is to have an LLM generate an
+explanation from activating examples and score how well an LLM judge can
+distinguish activating from non-activating contexts using that
+explanation alone~\cite{paulo2025} (in our experiments, the same model
+both generates and scores explanations). With an unstructured feature
+space, it quickly becomes intractable to interpret all combinations of
+features this way, whereas structured expert routings can be analyzed one
+module at a time. The ReLU feed-forward layers of a trained transformer
+can themselves be partitioned into experts of co-activating neurons,
+retaining over 95\% of task performance while activating only 10--30\% of
+the parameters~\cite{zhang2022}. Language models also appear to represent
+categorical concepts as simplices whose vertices correspond to category
+values, with hierarchically related concepts placed in orthogonal
+subspaces and differences between vertices acting as contrastive steering
+vectors~\cite{park2025}. This suggests that MoEfication into classifiers
+can expose latent contrastive steering vectors, since swapping one class
+entry for another applies the difference between their vectors. Similarly,
+penalizing the cosine similarity between each SAE decoder direction and
+its nearest neighbor reduces feature absorption by roughly two thirds
+relative to BatchTopK SAEs at a small cost in explained variance and
+unchanged autointerp scores~\cite{korznikov2025}; whereas that penalty is
+unstructured, the Ontologizer enforces competition within heads and
+seeks orthogonality between them.
 
 Existing attempts to route activations to expert SAEs focus on routing
 similar inputs to the same expert~\cite{mudide2025}, and score an expert
@@ -110,88 +112,92 @@ category.
 
 \subsection{Disjoint support}
 \label{sec:bg-disjoint}
-Concatenated heads give each head its own block of the
-dictionary's coordinates, so the atoms of different heads have disjoint
-supports by construction. Disjoint support is the strong form of
-orthogonality: for non-negative atoms the two coincide
-(Equation~\ref{eq:disjoint}), while signed vectors can be orthogonal by
-cancellation and share every coordinate. Summed heads can only be asked
-for it, and they do not deliver it: no trained summed model partitions its
-coordinates between heads, and penalizing the overlap $\omega$ on GPT-2
-produced a partition only by moving atom energy into directions the
-decoder discards or shrinks, where reconstruction cannot see it
-(Sections~\ref{sec:disjoint} and~\ref{sec:prelim-orth}). Disjoint support
-bears on each of the four problems above, though unequally. In each case
-the guarantee holds between the heads of one layer and in the dictionary;
-what reaches the output passes through a shared decoder, which in general
-maps the heads' blocks onto overlapping subspaces.
+In the concatenated-head variant, each head writes to its own slice of
+dictionary coordinates, so atoms from different heads have disjoint
+supports by construction. For non-negative atoms, disjoint support is
+equivalent to orthogonality (Eq.~\eqref{eq:disjoint}), whereas signed
+vectors can be orthogonal through cancellation while sharing every
+coordinate. When heads are summed across the full dictionary space and
+encouraged to separate only through a penalty, a coordinate partition
+fails to form: no trained summed model partitions its dictionary
+coordinates between heads, and penalizing support overlap $\omega$ on
+GPT-2 reduces dictionary-space overlap only by shifting atom energy into
+directions that the decoder shrinks or discards
+(Sections~\ref{sec:disjoint} and~\ref{sec:prelim-orth}). Enforcing
+disjoint support by concatenation affects each of the four SAE failure
+modes above differently; in every case, the guarantee holds between
+heads within a single layer's dictionary space, before the shared linear
+decoder projects those blocks into the output space.
 
 \paragraph{Disentanglement.}
-Absorption needs two things: a general latent that switches off where a
-specific one fires, and a specific latent whose direction takes over the
-general one's. The head structure removes the first, since every head
-writes on every input, choosing among its entries, and so cannot fall
-silent where its feature applies. Disjoint support removes the second: no
-entry of one head can carry a component of another head's block. Feature
-composition is discouraged rather than excluded. Heads already make the
-code factorial, $k^h$ codes from $hk$ atoms, so concepts that vary
-independently can take separate heads, and under a quadratic cost on
-activity and a bound on the weights~\cite{whittington2023,dorrell2025}, a
-non-negative code gives two variables disjoint supports when their joint
-range is spread enough, roughly when every combination of their extreme
-values occurs~\cite{dorrell2025}. On SONAR the data meet that condition:
-of the entry pairs of two heads that independence predicts at least ten
-times, at most 0.24\% never occur in any layer of a SONAR model. The
-summed models carry no such cost and do not partition; concatenation
-imposes the partition by construction. Nothing yet forces a head to hold
-one concept rather than a conjunction of two, nor can any method that sees
-only the marginal data recover its factors without matching inductive
-biases~\cite{locatello2019}. The heads are such a bias, and
-Section~\ref{sec:prelim-seed} measures how far it reaches.
+Feature absorption occurs when a general latent turns off in the
+presence of a narrower latent whose decoder direction absorbs the
+general one. Classifier heads prevent the first step because every head
+must select an entry on every input and cannot simply turn off; disjoint
+dictionary blocks prevent the second step in dictionary space because one
+head's atoms have zero weight on every other head's coordinates. Feature
+composition (merging two independent factors into a single head) is
+discouraged rather than ruled out. Because $h$ heads with $k$ entries
+define $k^h$ combined codes from $hk$ atoms, independent factors can be
+represented by separate heads. Theoretical results for non-negative
+representations with activity and weight regularization show that two
+factors take disjoint supports when their joint distribution covers a
+broad enough product range~\cite{whittington2023,dorrell2025}. Our
+learned SONAR codes satisfy the analogous empirical coverage condition:
+among entry pairs from two heads that would occur at least ten times
+under independence, at most 0.24\% have zero count in any layer. However,
+without activity regularization the summed models do not partition their
+coordinates, whereas concatenated heads enforce the partition directly.
+Even so, unsupervised reconstruction of marginal data cannot guarantee
+that individual heads align with true generative factors without
+matching inductive biases~\cite{locatello2019}, as our cross-seed tests
+confirm (Section~\ref{sec:prelim-seed}).
 
 \paragraph{Causality.}
-An SAE's steering is unclean partly because its decoder directions crowd
-one another~\cite{duan2026}. Between heads, nothing crowds in the
-dictionary. Forcing a head's entry rewrites only that head's block of the
-layer's output, orthogonal to everything the other heads of the layer
-write, so interventions on different heads move the output along
-orthogonal directions and each head's contribution can be read off its
-own block. Summed heads also compose additively, by linearity, but their
-writes overlap, so one head's contribution cannot be read apart from the
-others'. What disjoint support does not govern is how the other heads
-read a stepped input: measured by re-encoding, an input-space step moves
-as many other heads as a random step of its length, because the heads sit
-almost on their decision boundaries and downstream layers reclassify a
-changed residual (Section~\ref{sec:prelim-depth}). A disjoint write
-removes neither cause.
+One source of steering collateral in SAEs is crowding among decoder
+directions~\cite{duan2026}. With concatenated heads, atoms from
+different heads never overlap in dictionary space: changing one head's
+entry modifies only that head's coordinate block, orthogonal to the
+writes of all other heads in the same layer, so each head's contribution
+can be read directly from its slice. Summed heads also compose
+additively by linearity, but because their dictionary writes overlap, a
+single head's contribution cannot be isolated from a layer's pooled
+vector. Disjoint dictionary blocks do not, however, prevent collateral
+when stepping in input space: re-encoding a stepped input flips as many
+other heads as a random step of the same norm, both because hard-code
+heads sit near their decision boundaries and because downstream residual
+layers reclassify the modified residual (Section~\ref{sec:prelim-depth}).
 
 \paragraph{Closed form.}
-A static reading of the dictionary, which interprets a head from its
-atoms without data, needs heads that own disjoint coordinates as a
-property of the weights, for every input rather than on the data measured
-(Section~\ref{sec:disjoint}). In the summed models that premise fails:
-each head's usage covers 52--98\% of the coordinates. Concatenated heads
-supply it, and when each head's decoder block has full column rank, every
-part of a head's atoms reaches the output, unlike the partitions the
-overlap penalty produced. It is a premise, not yet a reading: decoding
-atoms through the paired decoder has not described what an entry does in
-the models scored so far (Section~\ref{sec:prelim-autointerp}).
+Interpreting a head statically from its dictionary weights requires each
+head to occupy its own coordinates across all inputs rather than merely
+having low average overlap on a dataset (Section~\ref{sec:disjoint}).
+Summed models violate this condition, with each head's usage spanning
+52--98\% of dictionary coordinates. Concatenated heads satisfy it by
+construction, and when each head's decoder block has full column rank,
+every direction within a head's slice maps nontrivially to the output
+(unlike the degenerate solutions produced by penalizing $\omega$). This
+structural property is necessary for weight-level interpretation, though
+not sufficient on its own: decoding entry directions through the SONAR
+decoder has not yet produced usable descriptions
+(Section~\ref{sec:prelim-autointerp}).
 
 \paragraph{Cost.}
-Disjoint support does least here. Concatenation divides the dictionary
-among the heads, so at matched width $e$ each head stores $k$ atoms of
-$e/h$ coordinates rather than $e$, $h$ times fewer dictionary parameters,
-and a hard code's dictionary step is $h$ lookups that together write one
-$e$-vector. But the classifier still scores all $hk$ entries for every
-input, as an SAE scores all of its latents, so the forward pass is no
-cheaper on the encoder side. Narrow blocks also cost reconstruction: on
-GPT-2 layer-8 residuals at $d_{\mathrm{head}}{=}k{=}32$ under non-negative
-atoms and constant temperature, where orthogonal atoms within a head need
-one coordinate each, concatenated heads had the worst held-out error of
-the orthant arms ($\mathrm{FVU}_w$ $0.416$ against $0.154$--$0.293$;
-working notes), whereas giving each head headroom
-($d_{\mathrm{head}}{=}48 > k{=}32$) and annealing the temperature brings
-concatenated heads to $\mathrm{FVU}$ $0.186$ ($0.164$ at $k{=}64$), ahead
-of direct atoms' $0.195$ (Section~\ref{sec:prelim-gpt2}).
+Disjoint support does not reduce encoder compute. Concatenating heads
+partitions the dictionary width $e$ across $h$ heads, so each head
+stores $k$ atoms of dimension $e/h$ ($h$ times fewer dictionary
+parameters than a summed layer of width $e$), and a hard forward pass in
+the dictionary reduces to $h$ slice lookups. However, the classifier
+still evaluates all $hk$ logits per sample, just as an SAE evaluates all
+of its latents. If each head's slice is too narrow, concatenation also
+hurts reconstruction: on GPT-2 layer-8 residuals with non-negative atoms,
+constant temperature, and $d_{\mathrm{head}}{=}k{=}32$ (where $k$
+orthogonal non-negative atoms require $k$ coordinates), concatenated
+heads had the highest held-out error among the orthant variants
+($\mathrm{FVU}_w$ $0.416$ vs.\ $0.154$--$0.293$; working notes). Giving
+each head extra dimensions ($d_{\mathrm{head}}{=}48 > k{=}32$) and
+annealing the temperature reduces $\mathrm{FVU}$ to $0.186$ ($0.164$ at
+$k{=}64$), outperforming direct atoms at $0.195$
+(Section~\ref{sec:prelim-gpt2}).
 
 

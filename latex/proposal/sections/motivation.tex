@@ -4,17 +4,18 @@
 
 \subsubsection{The ontology identification problem}
 We can't yet reliably look inside a model and draw conclusions about its
-goals or world model; interpretability has found a model's hidden
-objective in a planted test, but a semantic search of the training data,
-with no access to the model, surfaced the same evidence~\cite{marks2025}.
-This is a major limitation on almost all proposed alignment agendas,
-because behavior alone cannot settle the question: a model can behave
-differently when it believes it is being trained, and when that belief
-reaches it through training documents rather than its prompt, the
-difference can persist with no written reasoning to
-inspect~\cite{greenblatt2024}. Only some models show such a
-gap~\cite{sheshadri2025}, but that a good record under test need not
-predict later behavior is an old argument~\cite[Ch.~8]{bostrom2014}.
+goals or world model. Interpretability tools have recovered a hidden
+objective in an auditing game with a planted behavior, but a semantic
+search of the training data surfaced the same evidence without inspecting
+the model at all~\cite{marks2025}. This is a major limitation on almost
+all proposed alignment agendas, because behavioral testing alone cannot
+settle what a model is optimizing for: a model can behave differently
+when it infers that it is being trained or evaluated, and when that
+context comes from training documents rather than the prompt, the gap
+can persist without any visible chain of thought~\cite{greenblatt2024}.
+Although not every model exhibits this gap~\cite{sheshadri2025}, the
+broader point that aligned behavior during testing need not predict
+behavior after deployment is standard~\cite[Ch.~8]{bostrom2014}.
 
 \paragraph{Inner misalignment}
 We don't currently know how to specify a robust goal for a model.
@@ -23,16 +24,15 @@ goal misgeneralization as the default outcome.
 
 
 \subsubsection{Limits of natural abstractions}
-Networks trained on the same task can share an algorithm across
-architectures while differing, even between random seeds, in which
-features implement it: evidence for weak but not strong
-universality~\cite{chughtai2023}. In language models, SAE features of a
-Transformer and a Mamba trained on the same data match nearly as well as
-those of two Transformer seeds~\cite{wang2024}.
-This is evidence for a weak form of the universality hypothesis, the
-part of the natural abstraction hypothesis that says many cognitive
-systems learn similar abstractions~\cite{lang2023}; if it holds, it
-would be a very convenient shortcut for auditing a model.
+Networks trained on the same task can converge on the same algorithm
+across architectures while differing, even across random seeds, in which
+features implement it~\cite{chughtai2023}. Similarly, in language models,
+SAE features from a Transformer and a Mamba trained on the same corpus
+match nearly as well as those from two Transformer seeds~\cite{wang2024}.
+Both results support a weak form of the universality hypothesis---the
+claim within the natural abstraction hypothesis that diverse cognitive
+systems learn similar high-level abstractions~\cite{lang2023}---which,
+if true, would provide a convenient shortcut for auditing models.
 
 Natural abstractions could be considered the set of concepts we could use to communicate with aliens. 
 They should consistently emerge through unsupervised learning (in the limit given some constraints).
@@ -43,7 +43,7 @@ Unfortunately, the abstractions a model learns seem highly sensitive to choice o
 \footnote{The same applies to those that seem most natural to humans.}
 Assuming that model capabilities will continue to primarily be driven by access to more data and more modalities, we cannot expect the abstractions learned by a weak model to remain robust in a more powerful model.
 
-Even if we could fully characterise a model's state space in terms of natural abstractions,
+Even if we could fully characterize a model's state space in terms of natural abstractions,
 that still doesn't mean we can reconstruct the latent FSM, 
 as the transition rules can be arbitrarily complex.
 
@@ -82,33 +82,35 @@ ontology identification subproblems. MAD requires mapping between the model's ac
 the model's ontology. ELK requires mapping between the model's ontology
 and human ontology. These are hard but not intractable problems.
 Recently, developmental interpretability
-(devinterp) techniques have divided training into ``developmental
-stages'', each marked by a change in the network's internal structure
-and behavior, such as learning bigram statistics or forming induction
-heads~\cite{hoogland2024developmental}. This is suggestive evidence,
-from two small transformers, that learning consists primarily of the
-network grokking~\cite{nanda2023progress} discrete concepts. While these results
+(devinterp) techniques have identified distinct ``developmental
+stages'' during training, each marked by a shift in internal structure
+and behavior such as learning bigram statistics or forming induction
+heads~\cite{hoogland2024developmental}. This suggests, at least in small
+transformers, that training consists largely of the network
+grokking~\cite{nanda2023progress} discrete concepts. While these results
 are promising for MAD, locating these emergent capabilities in the
 model's activations remains an open problem.
 
-Interpretability glosses broadly as ``let humans understand AI''. Getting
-AI to understand humans better scales badly: making the model smarter
-leads to subtler and subtler issues with larger and larger effects.
-Between the two sits scalable oversight, in which models help humans
-supervise models: people working with an unreliable dialog assistant
-already outperform both the assistant and themselves
-alone~\cite{bowman2022}, and interpretability is one of the channels such
-oversight can draw on. And what we're doing is not just
+Interpretability glosses broadly as ``let humans understand AI''. The
+alternative---getting AI to understand humans better---scales badly:
+making the model smarter leads to subtler and subtler issues with larger
+and larger effects. Between the two sits scalable oversight, in which
+models help humans supervise other models; humans paired with an
+unreliable dialog assistant already outperform both the assistant and
+unaided humans~\cite{bowman2022}, and interpretability provides another
+signal such oversight can use. Moreover, what we're doing is not just
 letting humans understand AI. Because an LLM reflects humanity from its
 training data, high quality conceptual interpretability provides
 machine-comprehensible mathematical representations of every concept
 that humanity cares about. We work on interp for the usual
 corrigibility reasons, and also because outer alignment needs a stable
-place to attach values: a goal defined over one of a model's concepts
-must keep pointing at that concept as the model's representations are
-revised~\cite[Ch.~12]{bostrom2014}. The preliminary results measure a
-small version of this problem: past the first layer, no head survives a
-change of seed (Section~\ref{sec:prelim-seed}). This attacks both.
+target to attach values to: a goal defined in terms of a model's internal
+concepts must continue to point at those concepts as the model's
+representations are updated~\cite[Ch.~12]{bostrom2014}. This agenda
+attacks both problems, though our preliminary results show how hard
+concept stability is even at small scale: past the first layer, learned
+heads do not survive a change of random seed
+(Section~\ref{sec:prelim-seed}).
 
 \subsubsection{Macro-scale strategy}
 Broadly, the goals are to

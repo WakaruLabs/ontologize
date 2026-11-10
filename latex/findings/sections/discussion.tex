@@ -169,14 +169,18 @@ least 77$\times$ from the best 800-bit code for \texttt{resid\_nc}, nine
 orders of magnitude on \texttt{softmax\_shm}). A straight-through arm
 with $2.4\times$ the heads makes the discrete code the model: with its
 four per-layer gains pinned it is a pure 1900-bit code at $0.158$. At the
-same total rate the converged $\topk$ SAE and the single-layer hard
-variant cannot get below $0.236$--$0.273$ however their coefficients are
+same total rate the converged $k_{\mathrm{SAE}}{=}160$ $\topk$ SAE and the
+single-layer hard variant cannot get below $0.236$--$0.273$ however their
+coefficients are
 coded, but a coarsely quantized L1 SAE, entropy-coded, reaches $0.129$
 averaged over rows and $0.152$, level with the hard code, held to 1900
 bits on every row; averaged over rows the hard code leads every SAE only
 when each support is charged its fixed-length cost (0.158 against 0.180),
 because its own entries are used almost uniformly and an L1 SAE's latents
-are not.
+are not. On the sentence cache a wider $\topk$ SAE
+($k_{\mathrm{SAE}}{=}256$) beats the stacks trained there under both
+accountings (0.128 and 0.129 against 0.161 and 0.164;
+Appendix~\ref{sec:quantrate}).
 It sits $3.1\times$ above the Gaussian reference for its rate, so at least
 that far from the data's distortion--rate function, a limit over long
 blocks of samples that a code describing each sample alone need not be
@@ -234,7 +238,13 @@ are its gain, which is a property of the layer. Within layer 0, heads
 with outsized atoms are the reproducible ones --- on SONAR almost
 entirely one head. This remains the most consequential result for the
 steering frame: a head that is not the same head on the next run cannot
-be named, and every per-head claim here inherits that.
+be named, and every per-head claim here inherits that. The one exception
+is a block trained for it: on sentence pairs, a Fano term's block of 38
+slow heads reproduces across three seeds, matched at NMI 0.412--0.414
+against a 0.005 null, and its code is slower than any linear projection
+of the embedding. It reproduces as a block: two of its heads agree at
+0.40 within one seed, and no single slow head is yet identified across
+runs (Section~\ref{sec:slowheads}).
 \item \textbf{Entries contribute near-equally except where the input is
 raw.} In layers 1--3 every entry carries close to its share (Gini
 0.06--0.15, no dead entries); layer 0's entries are unequal (Gini
@@ -323,14 +333,16 @@ pairs and keep their entry barely more often than chance (Cohen's kappa
 at most 0.081 for any head). Penalizing cross-sentence assignment
 disagreement on 38 slow heads collapses them to 0.04--0.09 bits for
 $s_{\mathrm{pair}} \ge 10^{-4}$. Rewarding a Fano lower bound on each slow
-head's mutual information across the pair does not: after three epochs
-the slow heads' kappa is 0.46, against 0.07 for the control's, and a
-second seed's slow heads carve partitions similar to the first seed's
-(matched NMI 0.414 against a 0.005 null), while every other head matches
-at 0.017. That is one seed pair of a one-layer model, at a 1.8--1.9\%
-cost in $\fvu$,
-and the next tests are a third seed, a larger slow block and what the
-slow heads encode beyond language. Other candidates:
+head's mutual information across the pair does not, and it makes the
+block of those heads reproduce across three seeds, though not head by
+head (Section~\ref{sec:slowheads}). The next tests: a decorrelated slow
+block, since its heads now stack on the top one or two linear slow
+directions and agree with one another nearly as well as with another
+seed's, so that no head is identified on its own; triples, three spaced
+sentences of a document, which are the conditionally independent views
+the classical result needs~\cite{allman2009}; what the slow heads encode
+beyond language; and the same objective on a causal language model with
+conversation-level states. Other candidates:
 replicas of \texttt{resid\_nc\_hm} to its full 4.4M steps and of
 \texttt{g160softmax}; whether large-atom heads' reproducibility can be
 extended by training pressure; whether the $k{=}2$ arm's one-bit heads

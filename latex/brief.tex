@@ -28,128 +28,148 @@ A Summary}
 \begin{document}
 \maketitle
 
-Checking a model for a hidden goal, or for a concept that no one has
-thought to name, means finding the model's internal variables without
-labeling them first. This summary presents a method built for that task
-and states plainly where it stands. The method describes a network's
-internal state compactly enough for the network to run on. But editing
-that description steers the network no more specifically than editing
-arbitrary categories of the same state would. Past the first round, the
-variables found by the method also differ from one training run to the next.
-Until both of these change, the variables cannot be named or relied on.
+Auditing a model for a hidden goal or an unnamed concept requires
+identifying its internal variables without labeled examples. This summary
+presents an unsupervised method designed for that task and summarizes its
+current empirical standing. The method compresses a network's internal
+state into a discrete categorical description that preserves nearly all of
+the network's downstream performance. However, editing that description
+steers the network no more specifically than swapping between arbitrary
+categories of the same representation, and past the first round of the
+code, independent training runs learn different categories. Until the
+learned variables are both reproducible across runs and more causally
+specific than arbitrary partitions, they cannot be reliably named or used
+in an audit.
 
 \section*{What the method does}
 
-The method, which we call an \emph{Ontologizer}, rewrites a neural
-network's internal representation at one point as a short list of
-discrete choices. It then rebuilds the representation from those choices.
-The method is made of small classifiers. Each classifier sorts every input
-into one of $k$ categories, and each category stores one vector. The input
-is rebuilt by adding up the vectors of the categories that it was sorted
-into. The models described here have 5 rounds of 32 classifiers, with 32
-categories each. So an input is described by 160 choices (800 bits), plus
-one number per round that sets the size of that round's contribution.
-Nothing is labeled: classifiers and vectors are learned only by asking the
-rebuilt representation to match the original.
+The method, which we call an \emph{Ontologizer}, encodes a neural
+network's internal representation at a given layer as a short list of
+discrete categorical choices and reconstructs the representation from
+those choices. Each round of the encoder consists of a bank of small
+classifiers, each of which assigns every input to one of $k$ categories
+associated with a learned vector. The representation is reconstructed by
+summing the vectors of the selected categories. In the main GPT-2 models
+described below, the encoder stacks 5 rounds of 32 classifiers with 32
+categories each, describing each input with 160 discrete choices (800
+bits) and one scalar per round that scales that round's contribution.
+Training is entirely unsupervised: the classifiers and category vectors
+are learned solely to minimize reconstruction error.
 
-Because a classifier's categories are mutually exclusive, changing one
-classifier's choice for an input, from category $j$ to category $j'$,
-swaps one stored vector for another. This swap is the steering move that
-the method is built around. It moves the representation from $j$ to $j'$
-along one axis found by the method. The result is always another valid
-description, with every classifier still choosing one of its categories.
-A valid description is not always one that occurs in normal operation,
-though. If two classifiers' categories only ever occur in matching pairs,
-a swap in one of them makes a mismatched pair, so whether an edited
-representation stays in range has to be measured.
+Because the categories within each classifier are mutually exclusive,
+changing a classifier's assignment from category $j$ to category $j'$
+replaces one learned vector with another. This category swap is the basic
+steering intervention of the architecture, shifting the representation
+from $j$ to $j'$ along a learned contrastive axis. Every swap produces
+another valid discrete code in which each classifier still selects one of
+its categories. However, a valid code is not guaranteed to lie within the
+distribution of codes the model produces on natural inputs---for instance,
+if two classifiers only ever select certain categories together, changing
+one without the other creates an out-of-distribution combination---so
+whether steered representations remain well-behaved must be tested
+empirically.
 
-We study two representations. The main one is the internal state of GPT-2
-small after its first eight blocks~\cite{radford2019}, on web text. The
-rebuilt state can be put back into the running model, so we can
-measure how much of the model's behavior survives. The second is SONAR
-sentence embeddings~\cite{sonar}. SONAR gives one fixed-length vector per
-text, here the opening of a web document (SONAR is built for sentences).
-The vector can be decoded back into a short paraphrase, which makes a
-steered embedding readable.
+We evaluate the method on two representations. The primary testbed is the
+residual stream of GPT-2 small after its eighth transformer
+block~\cite{radford2019} on web text, where reconstructed or edited states
+can be spliced directly back into the forward pass to measure how much of
+the model's next-token prediction performance is preserved. The second
+testbed is SONAR sentence embeddings~\cite{sonar}, which represent the
+opening of each web document as a single fixed-length vector that can be
+decoded back into text to inspect the effect of steering.
 
 \section*{What it is for}
 
-Watching what a model does cannot settle what it is trying to do: a model
-can behave differently when it believes it is being
-trained~\cite{greenblatt2024}. Settling the question means reading the
-model's internal state, including concepts that have never been named.
+Behavioral evaluation alone cannot establish what a model is optimizing
+for, because a model can behave differently when it infers that it is
+being trained or evaluated~\cite{greenblatt2024}. Auditing a model's goals
+therefore requires inspecting its internal representations, including
+concepts that an evaluator has not thought to name in advance.
 
-To steer a model is to change its internal state so that it behaves
-differently in a chosen way. A standard method is a
-\emph{steering vector}. Average the representations of examples that have
-a property, subtract the average of examples without it, and add the
-difference to new inputs~\cite{rimsky2024}. A single contrasting pair of
-prompts can be enough~\cite{turner2024}. This often works, though not for
-every property. And someone who already suspects that the property exists
-must supply contrasting examples of it. Supervised steering, and the
-linear probe that detects a property in the same way, can therefore
-confirm a suspected concept but cannot find an unsuspected one.
+In activation steering, the goal is to modify a model's internal state so
+as to change its behavior in a controlled direction. A standard supervised
+approach is the \emph{difference-of-means} steering vector, computed by
+averaging the representations of examples with a target property,
+subtracting the average of examples without it, and adding that difference
+vector to new activations~\cite{rimsky2024}; in some cases even a single
+contrastive pair of prompts suffices~\cite{turner2024}. While supervised
+steering vectors and linear probes are effective, both require contrastive
+examples of a property that an experimenter already suspects is present.
+They can therefore test for a hypothesized concept, but cannot discover an
+unsuspected one.
 
-Sparse autoencoders (SAEs) find features without labels: each input is
-described by a few active features out of thousands~\cite{bricken2023,
-gao2024}. But each feature is an isolated direction that is either on or
-off, with no stated alternatives. A feature can stay off on inputs that
-have its property, because a more specific feature has taken over its
-direction~\cite{chanin2025}. A silent feature is therefore weak evidence
-that the property is absent. Features also split as the dictionary
-grows~\cite{bussmann2025}, and adding a feature direction can push the
-representation anywhere. On a recent steering benchmark, prompting,
-fine-tuning and the averaged difference each beat SAE
+Sparse autoencoders (SAEs) learn features without supervision by
+representing each input as a sparse combination of a few active feature
+directions out of thousands~\cite{bricken2023,gao2024}. However, each SAE
+feature is an isolated direction that is either active or inactive rather
+than a choice among explicit alternatives. When a narrow feature implies a
+broader one, the narrow feature can absorb the broader feature's direction
+so that the broader feature stays silent even when its concept is
+present~\cite{chanin2025}, making inactivity weak evidence that a property
+is absent. SAE features also split into finer variants as dictionary size
+increases~\cite{bussmann2025}, and adding an unbounded multiple of a
+feature direction can push activations off the natural manifold. On a
+recent steering benchmark, prompting, fine-tuning, and supervised
+difference-of-means vectors all outperformed SAE
 features~\cite{wu2025axbenchsteeringllmssimple}.
 
-The methods that win are contrasts between alternatives. They contrast a
-property with its absence, or one value of a \emph{variable} (a property
-with several possible values, such as a text's topic) with another. The
-goal is steering vectors that need no labels but keep that shape. Each
-would be a move between named alternatives, found together with the
-contrast that it moves along. Steering can then test the method, but only
-against a baseline. Suppose that a swap moves the model's behavior the way
-that the categories predict. This shows that the variable matters to the model
-only if the swap does better than swaps between arbitrary categories of
-the same state. On both representations, it does not yet do better (see
-below).
+The supervised steering methods that perform best work by contrasting
+alternatives---either contrasting the presence of a property with its
+absence, or contrasting one value of a categorical \emph{variable} (such
+as a document's topic or language) with another. Our goal is to learn
+unsupervised steering vectors that share this contrastive structure,
+representing each variable as a set of mutually exclusive alternatives so
+that swapping between categories applies a contrastive difference vector.
+Testing whether such swaps identify the model's actual variables requires
+comparing them against a null baseline: a category swap demonstrates that
+a learned variable is causally meaningful only if it steers the model more
+specifically than swaps between arbitrary partitions of the same
+representation space. On both GPT-2 and SONAR, the learned categories do
+not yet beat this baseline.
 
 \section*{What it assumes, and why that is acceptable}
 
 \begin{enumerate}
-\item \textbf{A representation is mostly a sum of a few categorical
-choices, plus a remainder that is described by later rounds.} Much of
-language is categorical: which token, which syntactic role, which topic.
-Describing a remainder in successive rounds is also how residual vector
-quantization works in compression~\cite{zeghidour2021}. On GPT-2, 800 bits
-per token rebuild the held-out state well. Put back into the model, the
-rebuilt state recovers 97.5\% of the next-token loss that replacing the
-state with its average would cost.
-\item \textbf{The classifiers act as roughly independent factors.}
-Independence is what lets a few small choices cover many combinations. On
-GPT-2, two classifiers' choices share 0.27 bits of information in the
-first round and 0.02 bits by the third. Each choice carries about 5 bits.
-\item \textbf{The network still works when it runs on the description.}
-If it did not, editing the description would mean nothing. Beyond the
-97.5\% recovery, swapping one classifier's choice changes GPT-2's
-next-token distribution by only 0.001--0.06 nats.
-\item \textbf{The categories can be named.} Partly true. On GPT-2, we show
-a judge model a description of a first-round category. The judge then
-distinguishes the category's most typical members from distractors with a
-score of 0.91, where 0.5 is chance. The score falls to 0.65 for randomly
-chosen members and 0.55 for members near the category's edge. In the
-fourth and fifth rounds, the judge is at or near chance even on the most
-typical members. In the first round, 29--31 of the 32 classifiers track
-which token is present. There, a rule that uses only the current token's
-identity beats the judge on single categories. It scores 0.75 vs.\ 0.69
-when each classifier writes to its own block of coordinates, and 0.74 vs.\
-0.71 when every classifier writes to all of them (\emph{direct vectors}).
-On sentence embeddings, the strongest classifier sorts by topic and genre
-(crime news, legislation, encyclopedic description, and so on).
-\item \textbf{The categories are a property of the data, not of the
-training run.} This has \emph{not} held. Two runs from different random
-starts reconstruct equally well, but on both representations only the
-first round's classifiers recur; later rounds differ from run to run.
+\item \textbf{A representation can be approximated as a sum of discrete
+categorical choices refined across successive residual rounds.} Many
+properties of language (token identity, syntax, topic) are naturally
+categorical, and iterative residual refinement is the standard mechanism
+of residual vector quantization~\cite{zeghidour2021}. On GPT-2, an 800-bit
+code per token reconstructs held-out activations accurately enough that
+splicing the reconstruction into the forward pass recovers 97.5\% of the
+next-token cross-entropy loss relative to mean ablation.
+\item \textbf{Classifiers within a round act as roughly independent
+factors.} Combinatorial expressiveness comes from combining largely
+independent choices across classifiers. On GPT-2, pairs of classifiers
+share an average of 0.27 bits of mutual information in the first round and
+0.02 bits by the third round, out of roughly 5 bits of entropy per
+classifier.
+\item \textbf{The network continues to function when run on the
+reconstructed state.} Steering through the discrete code is only
+meaningful if the reconstruction preserves normal model computation.
+Beyond the 97.5\% loss recovery of the full reconstruction, swapping a
+single classifier's choice in the first round perturbs GPT-2's next-token
+distribution by only 0.001--0.06 nats.
+\item \textbf{Learned categories correspond to nameable concepts.} This
+holds only partially. On GPT-2, when an automated LLM judge is given a
+natural-language description of a first-round category, it distinguishes
+the category's highest-margin examples from random distractors with 0.91
+balanced accuracy (chance 0.50), but accuracy drops to 0.65 on random
+category members and 0.55 near the category boundary, and falls to chance
+in the fourth and fifth rounds even on typical examples. Moreover, 29--31
+of the 32 first-round classifiers primarily track current-token identity:
+a simple lookup table based only on the current token outperforms the LLM
+judge on single first-round categories, scoring 0.75 vs.\ 0.69 when each
+classifier writes to its own coordinate block and 0.74 vs.\ 0.71 when
+classifiers write \emph{direct vectors} in the full space. On SONAR
+sentence embeddings, the largest first-round classifier partitions
+documents by broad topic and genre (such as crime news, legislation, and
+encyclopedic articles).
+\item \textbf{Learned categories reflect the data rather than the random
+seed.} This assumption currently fails: two training runs initialized with
+different random seeds reach the same reconstruction error, but on both
+GPT-2 and SONAR only the first round's classifiers show above-chance
+agreement across runs, while deeper rounds learn different partitions.
 \end{enumerate}
 
 \section*{How it works, intuitively}
@@ -158,81 +178,90 @@ first round's classifiers recur; later rounds differ from run to run.
 \includegraphics[width=0.78\linewidth]{figures/overview_diagram.png}
 \end{center}
 
-Think of describing a token by answering a fixed list of multiple-choice
-questions, where both the questions and the answers are learned. In the
-first round, each of 32 classifiers assigns the token to one of its
-categories, all in parallel. The chosen vectors are summed and scaled to
-the size of what they explain. The next round receives only what the
-first round left unexplained, and describes that remainder; there are
-five rounds in all. Training uses hard choices in the forward pass and
-soft ones when computing gradients (a straight-through estimator). In
-compression terms, the design is a residual quantizer in which each round
-adds up vectors chosen from several sets~\cite{zeghidour2021,babenko2014}.
-(Product quantization~\cite{jegou2011} is the case in which each set
-covers its own coordinates.) Here the quantizer is used not for
-compression but so that every choice can be read and swapped. The same
-kind of quantizer has been used to turn SONAR embeddings into discrete
-codes for a language model that writes in
-them~\cite{lcmteam2024largeconceptmodelslanguage}.
+Intuitively, the encoder describes an activation vector by answering a
+fixed bank of multiple-choice questions in which both the questions and
+the vector answers are learned. In the first round, 32 classifiers run in
+parallel and each assigns the input to one of its 32 categories; the
+selected category vectors are summed and scaled to match the norm of the
+input. The second round receives the residual error left unexplained by
+the first round and encodes that remainder in the same way, repeating for
+five rounds in total. Training uses discrete argmax choices in the forward
+pass and soft probabilities to propagate gradients in the backward pass
+(a straight-through estimator). From a compression standpoint, each round
+is an additive multi-codebook quantizer~\cite{babenko2014} stacked into a
+multi-stage residual quantizer~\cite{zeghidour2021} (reducing to product
+quantization~\cite{jegou2011} when each classifier writes to a disjoint
+block of coordinates). Here, however, the quantizer is used not for
+storage compression, but to expose discrete choices that can be inspected
+and swapped; a related residual quantizer has been used to discretize
+SONAR embeddings for concept-level language
+modeling~\cite{lcmteam2024largeconceptmodelslanguage}.
 
 \section*{How it compares with existing methods}
 
-\textbf{Against supervised steering --- the comparison that matters.}
-Three tests so far, none of them yet the decisive one.
+\textbf{Comparison with supervised steering.}
+We have evaluated three steering comparisons against supervised vectors so
+far, though the main benchmark on externally labeled concepts remains to
+be run:
 \begin{itemize}
-\item \emph{Swaps are specific, but so are arbitrary categories (GPT-2).}
-Swapping a token's category from $j$ to $j'$ moves the model's output
-toward the typical output of $j'$. Among 31 alternatives, $j'$ ranks
-3.5--6 on average, and still 5--8 at four times the step. A random step of
-the same size ranks 14--18 (one classifier each in the first, third and
-fifth rounds). But arbitrary categories steer just as specifically in
-every round (mean rank 0.21--1.69 across the five rounds, against
-0.56--1.37 for learned categories, on 8 classifiers per round). We made
-them by sorting each state by which of 32 random directions it points
-along most, so nothing in them is learned. Specificity shows that the state
-can be steered along any way of dividing it, not that the method's
-categories mean anything.
-\item \emph{Language (sentence embeddings).} Forcing one of the method's
-categories moved decoded text toward a target language 0.64 times as far
-as the supervised difference-of-means vector did, and 4 times as far as
-a linear-probe direction. All methods, supervised included, damaged
-unrelated content about as much as a random step of the same size.
-\item \emph{Reaching its own categories (sentence embeddings).} For each
-category, we fitted the two standard supervised vectors (difference of
-means and a linear probe) to the method's own choices. This baseline is
-generous, because it is fitted to the answer.
-Every direction got the same step. The soft version's own direction
-reached its category on 75\% of inputs, against 46--47\% for the
-supervised vectors. The hard multi-round version's own direction reached
-only 37\%, against 91--94\%: its categories are reachable, but its own
-direction does not point at them. Arbitrary categories are just as
-reachable. On an untrained 5-round model, the supervised vectors reach
-75\% and 94\% of its random categories (and the classifiers' own gradients
-reach 61--85\%), while disturbing a third as many other classifiers (22\%
-vs.\ 66\%). On 380 random-direction classifiers of 32 categories, swapping
-category averages reaches 78\%. The supervised or projection directions
-reach 87--100\%, while disturbing 30--32\%.
+\item \emph{Next-token specificity against arbitrary categories (GPT-2).}
+Swapping a token's category from $j$ to $j'$ shifts GPT-2's next-token
+predictions toward the empirical token distribution of category $j'$:
+among the 31 alternative categories, $j'$ ranks at 3.5--6 on average at a
+unit step and 5--8 at four times that step, compared to 14--18 for a
+random step of equal norm (evaluated on one classifier each in the first,
+third, and fifth rounds). However, arbitrary categories formed by binning
+activations along 32 random directions per classifier steer just as
+specifically across all five rounds (mean target rank 0.21--1.69 vs.\
+0.56--1.37 for learned categories across 8 classifiers per round). High
+rank specificity therefore reflects the near-linearity of the downstream
+network rather than semantic structure in the learned categories.
+\item \emph{Language steering (SONAR sentence embeddings).} In the
+soft-assignment variant of the model, forcing a category associated with a
+target language moves decoded text 0.64 times as far along the supervised
+difference-of-means direction as supervised steering itself, and 4 times
+as far as a linear probe direction, while all methods (including
+supervised steering) disturb unrelated content about as much as a random
+step of the same size.
+\item \emph{Reaching the model's own categories (SONAR sentence
+embeddings).} For each category, we also fitted supervised
+difference-of-means and logistic-probe directions to the model's own
+category assignments at matched step size. In the soft model, stepping
+along a category's decoded vector reaches that category on 75\% of inputs
+(vs.\ 46--47\% for the supervised directions), whereas in the hard
+five-round model the decoded vector reaches its target on 37\% of inputs
+(vs.\ 91--94\% for the supervised directions). Again, however, arbitrary
+partitions are equally reachable: on an untrained five-round model,
+supervised vectors reach 75\% and 94\% of the random categories (and
+classifier gradients reach 61--85\%) while flipping one third as many
+other classifiers as in the trained model (22\% vs.\ 66\%). Similarly, in
+a single-round bank of 380 random-direction classifiers ($k{=}32$), swaps
+between empirical category centroids reach 78\% of targets and supervised
+or projection directions reach 87--100\% while flipping 30--32\% of other
+classifiers.
 \end{itemize}
-The decisive test has not been run. It would steer toward externally
-defined concepts, as in AxBench~\cite{wu2025axbenchsteeringllmssimple}.
-Supervised vectors fitted to those concepts' labels, SAE features and the
-method's swaps would each run at their best tuned strength. The same judge
-would score each of them for the concept, for staying on task and for
-fluency.
+A decisive comparison requires steering toward externally defined concepts
+at tuned intervention strengths, following the AxBench
+protocol~\cite{wu2025axbenchsteeringllmssimple}, where supervised
+difference-of-means vectors, SAE features, and category swaps are scored
+by the same judge on concept presence, task preservation, and fluency.
 
-\textbf{Against SAEs on steering.} On sentence embeddings, each model is
-steered with its own step size. A feature of a standard SAE (32 active per
-input) takes effect on 46--50\% of inputs, and the multi-round method on
-8--19\%. Both disturb other features or classifiers about as much as a
-random step. A one-round version of the method takes effect on 41\% while
-disturbing 1.4\% of its other classifiers, against 18\% for a random step.
-On GPT-2, only removal has been compared. Setting one classifier to its
-average choice everywhere costs 0.02--0.075 nats, and removing one SAE
-feature where it is active costs 0.055.
+\textbf{Comparison with SAEs on steering.} On SONAR sentence embeddings at
+each model's native step size, stepping along an active feature of a
+standard SAE (32 active features per input) activates that feature on
+46--50\% of inputs, compared to 8--19\% for the five-round hard
+Ontologizer, with both models disturbing unrelated features or classifiers
+about as much as a random step of the same norm. A single-round linear
+variant of the hard method reaches its target category on 41\% of inputs
+while flipping only 1.4\% of other classifiers (vs.\ 18\% for a random
+step). On GPT-2, replacing a first-round classifier's choice with its mean
+category increases next-token loss by 0.02--0.075 nats, comparable to the
+0.055-nat cost of ablating an active SAE feature.
 
-\textbf{Against SAEs on reconstruction (a precondition, not the goal).}
-Steering through a description only means something if the model runs on
-it.
+\textbf{Comparison with SAEs on reconstruction.}
+Because steering through a discrete representation requires the model to
+function on that representation, reconstruction fidelity serves as a
+precondition rather than an end in itself.
 \begin{center}\small\setlength{\tabcolsep}{4pt}
 \begin{tabular}{@{}llrr@{}}
 \toprule
@@ -250,108 +279,130 @@ SAE, 128 active features & 128 indices + 128 numbers & 0.116 & 98.6\% \\
 \bottomrule
 \end{tabular}
 \end{center}
-The 800-bit description recovers more of the model's loss than the
-32-feature SAE. That holds on the same 10M-token training cache (97.0\% vs.\
-96.2\%) and after one pass over 40M tokens (97.5--97.6\%). Its errors must
-then fall in directions that matter less to the model's output. But if the
-SAE's 32 numbers are rounded to about 5 bits each (556--588 total bits),
-the SAE leads on unexplained variance per bit. In the concatenated-head
-model (concat.\ in the table), each classifier writes to its own block of
-coordinates. Giving each of its rounds a separate output projection,
-instead of one shared across all five, cuts unexplained variance from
-0.186 to 0.169 (97.3\% to 97.7\% loss recovered). It also cuts the
-coupling between classifiers that hold the same position in different
-rounds from 97\% to 6\%. On sentence embeddings, 1900 bits of choices and
-the per-round sizes leave 15\% of the variance unexplained, and 16\% with
-the sizes fixed. A standard SAE can be held to the same 1900 bits: about
-1200 bits to specify which 160 features are active, and the rest for their
-160 numbers. It then leaves at least 24\% unexplained, however those
-numbers are rounded. But consider an SAE trained with a weaker sparsity
-penalty, with its numbers rounded coarsely and each feature's activity
-coded by how often it fires. At 1900 bits, it leaves 13\% unexplained. Its
-features fire unevenly, which makes the list of active ones cheap to send.
-The method's categories are used evenly, so there is nothing to save.
+On GPT-2, the 800-bit discrete code recovers more of the model's
+next-token loss than a standard 32-feature SAE, both on the 10M-token
+training cache (97.0\% vs.\ 96.2\%) and after one pass over 40M tokens
+(97.5--97.6\%), indicating that its reconstruction errors fall in
+directions that affect next-token predictions less. However, when the
+SAE's 32 active coefficients are quantized to roughly 5 bits each
+(556--588 total bits), the SAE achieves lower unexplained variance per
+bit. In the concatenated variant (\texttt{concat.}\ in the table), where
+each classifier writes to a disjoint coordinate block, replacing the
+shared output projection with separate per-round projections reduces
+unexplained variance from 0.186 to 0.169 (97.3\% to 97.7\% loss
+recovered) and reduces cross-round coupling between co-indexed classifiers
+from 97\% to 6\%. On SONAR sentence embeddings, a 1900-bit code leaves
+15\% of variance unexplained with per-round scalar gains and 16\% when
+those gains are fixed to their means. At the same 1900-bit budget, a
+standard 160-feature SAE spends roughly 1200 bits to index its active
+features and leaves at least 24\% of variance unexplained under any
+quantization of its 160 magnitudes. By contrast, a weakly penalized L1 SAE
+whose quantized magnitudes are entropy-coded reaches 13\% unexplained
+variance at an average rate of 1900 bits, because its skewed firing rates
+make active feature indices cheaper to transmit than the Ontologizer's
+near-uniform categories; on a second sentence-split SONAR cache, a wider
+standard SAE with 256 active features and entropy coding similarly reaches
+13\% unexplained variance against 16\% for the hard code.
 
 \section*{What we can claim}
 
-On both representations, the method describes the network's state with a
-small set of discrete choices. It does so about as accurately as a sparse
-autoencoder that also sends continuous numbers: more accurately than the
-standard kind at the same number of bits, though not than every kind. On
-GPT-2, the model runs on that description with little loss. Swapping one
-choice moves the model's output specifically toward the new category,
-though swapping between arbitrary categories does too. Some categories can
-be named. On GPT-2, a first-round category can be named from its most
-typical members (0.91, where 0.5 is chance). But a rule based on token
-identity beats the judge on single first-round categories (0.74--0.75
-vs.\ 0.69--0.71). Combining two first-round categories adds 0.10 when each
-classifier has its own block (0.69 to 0.78, mostly from token identity),
-and 0.01 with direct vectors (0.71 to 0.72). On sentence embeddings, a
-classifier that sorts by topic and genre recurs in every run. Three
-questions remain open: whether the categories are in general easier to
-interpret than SAE features, whether they steer better than arbitrary
-categories, and whether swapping them steers better than supervised
-vectors toward concepts that a user cares about.
+Across both GPT-2 and SONAR, the Ontologizer compresses internal
+activations into a compact set of discrete choices with reconstruction
+accuracy competitive with moderate-width sparse autoencoders: at a matched
+bit budget it outperforms standard SAEs up to 160 active features,
+though wider or entropy-coded SAEs achieve lower distortion. On GPT-2,
+splicing the discrete reconstruction into the model preserves 97.5--97.9\%
+of next-token loss recovery, and swapping a category shifts predictions
+specifically toward the target category's distribution, though swaps
+between arbitrary random-projection categories are equally specific. A
+subset of first-round categories can be described in natural language: on
+GPT-2, an LLM judge identifies typical members of first-round categories
+at 0.91 balanced accuracy, though a token-identity lookup rule outperforms
+the judge on single categories (0.74--0.75 vs.\ 0.69--0.71) and accounts
+for most of the accuracy gain from pairing two categories in the
+concatenated model (0.69 to 0.78, vs.\ 0.71 to 0.72 with direct vectors).
+On SONAR, a first-round topic-and-genre classifier emerges consistently
+across training runs. Furthermore, adding a paired-sentence objective on
+SONAR makes a designated block of 38 classifiers reproduce across three
+random seeds: in a one-round model trained on adjacent sentences from the
+same document, the 38 slow classifiers match across seeds at 0.41 normalized
+mutual information (vs.\ 0.005 for unrelated partitions), remain
+reproducible within individual languages, and vary more slowly across a
+document than any linear projection of the raw embeddings, at a cost of
+roughly 2\% in unexplained variance. What reproduces is the block as a
+whole: within one run the 38 classifiers largely overlap with one
+another, so no single classifier is yet matched to its counterpart in
+another run. Whether the learned categories are
+more interpretable overall than SAE features, whether they can surpass
+arbitrary partitions on causal specificity, and whether they outperform
+supervised steering vectors on external concepts remain open questions.
 
 \section*{What does not work yet}
 
 \begin{itemize}
-\item \textbf{The classifiers past the first round are not reproducible.}
-This is the main open problem, not a detail. On both representations,
-two runs reconstruct equally well but agree on almost none of these
-classifiers. Reconstruction quality therefore cannot reveal the failure. A
-classifier that differs on every run cannot be named, and an audit could
-not rely on it. A goal defined in terms of it would no longer refer to the
-same thing once the model is retrained.
-\item \textbf{Categories are named from their extremes.} Descriptions fit
-a category's most typical members, not its ordinary ones. This is a known
-failure of automated description when only the strongest examples are
-shown~\cite{paulo2025}. The deeper rounds cannot yet be named at all,
-though changing them does change the model's output.
-\item \textbf{Swaps do not yet beat arbitrary categories.} On both GPT-2
-and sentence embeddings, swaps between categories made from random
-directions, or from an untrained model, are as specific as swaps between
-learned categories. That leaves reconstruction as the only case for the
-deeper rounds.
-\item \textbf{Steering through the input is not targeted.} On sentence
-embeddings, pushing an input toward one category changes other
-classifiers' choices about as much as a random push of the same size.
-Swaps made on the description itself do not have this problem.
+\item \textbf{Classifiers past the first round are not reproducible across
+seeds.} On both GPT-2 and SONAR, independent runs reach the same
+reconstruction error while agreeing on almost no classifiers after the
+first round. High reconstruction accuracy therefore does not guarantee a
+unique decomposition. Because non-reproducible classifiers cannot be
+stably named, relied upon in an audit, or used to specify a training goal
+that survives retraining, cross-run reproducibility is the primary
+bottleneck of the method, with paired-sentence training providing a
+first, partial mitigation.
+\item \textbf{Automated descriptions capture category extremes rather than
+ordinary members.} As noted in prior work on automated interpretability
+when explanations are generated from top-activating
+examples~\cite{paulo2025}, descriptions match a category's highest-margin
+examples much better than random or boundary members, and categories in
+the fourth and fifth rounds cannot yet be described above chance despite
+having measurable effects on model outputs.
+\item \textbf{Category swaps do not yet outperform arbitrary partitions.}
+On both GPT-2 and SONAR, swaps between random-projection categories or
+categories from an untrained model steer their own cells just as
+specifically as swaps between learned categories, leaving reconstruction
+fidelity as the only demonstrated contribution of the deeper rounds so
+far.
+\item \textbf{Steering through the input disturbs other classifiers.}
+On SONAR embeddings, stepping in input space toward a target category
+flips unrelated classifiers about as often as a random step of equal norm,
+whereas editing the discrete code directly modifies only the chosen
+classifier.
 \end{itemize}
 
 \section*{Next}
 
-Reproducibility comes first: making the classifiers reproducible, or
-identifying the ones that are. Theory shows that reconstructing individual
-inputs cannot, on its own, identify discrete or continuous factors.
-Identifying them requires structural constraints matched to the data, or
-paired views such as adjacent
+Our first priority is establishing cross-run reproducibility across a
+broader set of classifiers. Identifiability theory shows that
+reconstructing marginal inputs alone cannot uniquely recover discrete or
+continuous internal variables without structural constraints matched to
+the data-generating process or paired observations such as adjacent
 sentences~\cite{locatello2019,hillar2015,allman2009,udr2020,pcl2017,slowvae2021,locatello2020,ivae2020,zimmermann2021}.
-On 44.1M consecutive sentence embeddings, a linear predictor from one
-sentence explains only about 10\% of the next sentence's variance
-(unexplained variance 0.896). Adjacent sentences point in similar
-directions (cosine discrimination 0.923), yet existing classifiers switch
-categories on 92.2--98.1\% of adjacent pairs. Directly penalizing category
-changes across adjacent sentences collapses the penalized classifiers to
-0.04--0.09 bits. Rewarding instead a lower bound on how much one
-sentence's category says about the next one's avoids the collapse. After
-three passes over the data, the 38 classifiers it trains keep their
-category across adjacent sentences well above chance (agreement 0.46,
-where 0 is chance, against 0.07 without the reward). Retrained from a
-different random start, they divide the sentences similarly (match score
-0.414, where unrelated divisions score 0.005), while the other 342
-classifiers match at only 0.017. That is one pair of runs of a one-round
-model, and it costs about 2\% in reconstruction error.
+On 44.1M consecutive SONAR sentence embeddings, a linear predictor from
+one sentence explains only 10.4\% of the next sentence's variance
+(unexplained variance 0.896) even though adjacent sentences are strongly
+aligned in cosine similarity (0.923 AUC), and classifiers trained on
+single sentences switch categories on 92.2--98.1\% of adjacent pairs.
+While directly penalizing category switches across adjacent sentences
+collapses the penalized classifiers to 0.04--0.09 bits of entropy,
+maximizing a lower bound on the mutual information between a classifier's
+choices on adjacent sentences prevents collapse: the resulting 38 slow
+classifiers maintain their category across adjacent sentences well above
+chance (Cohen's kappa 0.46 vs.\ 0.07 without the objective) and reproduce
+as a group across three seeds. Immediate next steps are making the slow
+classifiers differ from one another, so that each can be matched across
+runs on its own, extending the objective to sentence triples to test
+three-view identifiability conditions~\cite{allman2009}, characterizing
+what the slow classifiers encode beyond language, and applying the
+paired-view objective to a language model across conversation turns.
 
-The method then needs the AxBench-style test: steering toward externally
-defined concepts~\cite{wu2025axbenchsteeringllmssimple}.
-Difference-of-means vectors from labeled examples, SAE features and the
-method's swaps would each run at their best tuned strength. A judge would
-score each of them for the concept, for staying on task and for fluency,
-and detection would be compared against a linear probe. Initial runs
-toward that evaluation are underway on Gemma~3 1B and Gemma~4 A4B. They
-use mean-squared error with a small uniformity penalty, and a separate
-output projection for each round.
+Second, we plan to run an AxBench-style evaluation~\cite{wu2025axbenchsteeringllmssimple}
+comparing supervised difference-of-means vectors, SAE features, and
+category swaps on externally defined concepts at tuned intervention
+strengths, scoring concept presence, task preservation, and fluency with a
+shared judge and comparing concept detection against linear probes.
+Initial training runs for this evaluation are underway on Gemma~3 1B and
+Gemma~4 A4B using mean-squared error, a small category-uniformity penalty,
+and separate output projections for each round.
 
 \printbibliography
 

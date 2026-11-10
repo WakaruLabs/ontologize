@@ -516,8 +516,8 @@ the entropy pressure and whitening the input each closed in part
 initialization, except the steering-by-layer and head-health measurements
 in Appendix~\ref{sec:steerlayer}.
 
-\paragraph{A discrete code beats $\topk$ SAEs, but not every sparse
-code.} On one
+\paragraph{A discrete code beats $\topk$ SAEs up to 160 latents, but not
+every sparse code.} On one
 frontier of converged SAEs and the single-layer hard variant, all trained
 for about 144k steps (Figure~\ref{fig:pareto}a), the stack's 1900 index
 bits reach $\fvu$ 0.154. Its only continuous numbers are the gains of
@@ -546,7 +546,13 @@ uniformly and has nothing to save. Its rows also vary in length, as the
 number of coefficients each sends varies, and the stack's do not: held to
 1900 bits on every row, the L1 SAE reaches 0.152, level with the stack.
 With every support charged its fixed-length cost the stack leads every
-SAE (0.158 against 0.180). For a hard model the capacity axis is $l\cdot h\log_2 k$ itself:
+SAE (0.158 against 0.180). On the sentence cache a wider $\topk$ SAE
+beats the hard stacks trained there under both accountings: with 256 of
+11{,}264 latents active, entropy-coded, it reaches 0.128 at 1900 bits
+averaged over rows and 0.129 held to 1900 bits on every row, against
+0.161 and 0.164 for the better stack, which leads only if one
+quantization step must fit every row (0.164 against 0.185;
+Appendix~\ref{sec:quantrate}). For a hard model the capacity axis is $l\cdot h\log_2 k$ itself:
 truncating toward the origin only adds mass the
 model was never trained to decode (0.259 at $\nu{=}1$). The stack is less
 efficient per bit than a single layer, $3.08\times$ the Gaussian reference
@@ -704,7 +710,9 @@ process, static marginal objectives do not identify their latent factors
 ~\cite{locatello2019,hillar2015}; Appendix~\ref{sec:seedsdetail} reviews
 the identifiability conditions for discrete views and temporal
 pairs~\cite{allman2009,udr2020,pcl2017,slowvae2021,locatello2020,ivae2020,zimmermann2021}
-and tests next-sentence transition structure on \texttt{mc4\_sent16}.
+and tests next-sentence transition structure on \texttt{mc4\_sent16},
+where a block of heads trained on sentence pairs is the one exception
+(Section~\ref{sec:slowheads}).
 
 \subsubsection{Replication on GPT-2}
 
@@ -759,6 +767,39 @@ and largest atom (Table~\ref{tab:bigatoms}); without it the layer-0 mean
 falls only from 0.080 to 0.070. GPT-2's layer 0 has no such head: every
 head carries a graded tail of large atoms, and agreement is narrowly
 spread.
+
+\subsubsection{The exception: slow heads trained on sentence pairs}
+\label{sec:slowheads}
+
+One block of heads does reproduce, as a block, and it is the block
+trained for it. A one-layer model ($h{=}380$, $k{=}32$) trained on pairs of sentences from
+one document of \texttt{mc4\_sent16} adds to its loss a Fano lower bound
+on each of its first 38 heads' mutual information between the entries it
+gives the two sentences (Appendix~\ref{sec:seedsdetail}). After three
+epochs those slow heads keep their entry across adjacent sentences at
+Cohen's kappa 0.46, against 0.07 for the control's first 38 heads. Three
+seeds' slow blocks carve matching partitions: matched one to one by NMI
+(Eq.~\eqref{eq:headmatch}), each pair of seeds agrees at 0.412--0.414
+against a 0.005 null, each slow head is paired with a slow head of the
+other seed (chance 10\%), and within each of 84 languages they still
+agree at 0.312--0.314 against 0.041. The model's other 342 heads, and the
+control's heads, agree at 0.016--0.017.
+The slow block's code also does what no linear readout can: the 38
+slowest directions of its one-hot code keep a mean held-out correlation
+of 0.727 and 0.718 (seeds 42 and 43) between the two sentences, against
+0.636 for the 38 slowest linear projections of the embedding, and 0.524
+and 0.523 against 0.462 once each language's mean is removed. Two
+qualifications bound the result. It rests on a one-layer model, at a
+1.8--1.9\% cost in $\fvu$. And it holds for the block, not for its heads.
+The slow heads are redundant: each is best explained by the slowest
+linear direction or the second (34 and 29 of the 38 by the slowest), two
+slow heads of one seed agree at NMI 0.40, and any one-to-one pairing of
+two seeds' slow heads scores 0.397--0.399, so the matching adds only
+0.014. The three seeds' matchings compose for 6 of the 38 heads, against
+1 by chance. What reproduces is what the slow heads share with one
+another; no single slow head is yet identified across runs, and how many
+distinct variables the block holds is open
+(Appendix~\ref{sec:seedsdetail}).
 
 \subsection{Heads against a known factor: language, and what they encode instead}
 \label{sec:lang}

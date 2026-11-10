@@ -47,37 +47,39 @@
 % flockpaper sets the abstract in an unbreakable minipage, so it must fit
 % on the page it starts on or it moves to the next one whole
 \small
-Behavioral evaluation cannot settle what a model is trying to do, since a
-model can behave differently when it believes it is being trained or
-evaluated. Settling it means identifying the model's variables, including
-ones no one has named: the ontology identification problem. Supervised
-probes and difference-of-means vectors now beat sparse autoencoder (SAE)
-features at detection and steering, but supervision only confirms concepts
-someone already suspects. We argue that unsupervised methods lose partly
-because of what they return: an SAE latent fires or stays silent, and
-absorption makes its silence uninformative, while the methods that win
-contrast the values of a variable. We propose learning variables
-directly, as competitive classifier heads that give every input one of $k$
-entries whose atoms reconstruct it. Forcing a head to another entry then
-swaps one learned atom for another, a label-free analogue of a
-difference of means, and steering can test a
-discovered variable, though only against arbitrary partitions of the
-same space --- which, on both SONAR and GPT-2, steer their own cells just
-as specifically. Preliminary results on SONAR sentence
-embeddings and GPT-2 residuals: trained heads' atoms are contrast sets; a pure
-1900-bit hard code reconstructs at least 33\% better than a $\topk$ SAE
-held to the same bits, though an entropy-coded L1 SAE does better still;
-on GPT-2 an 800-bit code recovers more of the model's loss than a
-$k_{\mathrm{SAE}}{=}32$ SAE; in the soft code, forced entries steer along
-the supervised difference-of-means direction $0.64\times$ as far as
-supervised steering and $4\times$ as far as probe directions; and
-interventions set on heads compose nearly additively. But the variables are not yet
-identifiable: seeds agree on the error to four digits but share no head
-past the first layer, input-space steps disturb other heads as much as
-random steps of the same length, and weight-only decodes do not describe
-entries. Identifiability, not fidelity, is the binding constraint, for
-auditing and for any goal that must keep pointing at one concept as a
-model is retrained, and it is where the proposed work begins.
+Behavioral evaluation cannot settle what a model is trying to do, because a
+model can behave differently when it detects that it is being trained or
+evaluated. Auditing a model's goals requires identifying its internal
+variables, including concepts no one has thought to name (the ontology
+identification problem). Supervised probes and difference-of-means vectors
+currently outperform sparse autoencoder (SAE) features at concept detection
+and steering, but supervised methods only test concepts an experimenter
+already suspects. Unsupervised SAEs struggle in part because of the form of
+their features: each latent either fires or stays silent, feature absorption
+makes silence uninformative, and effective steering vectors instead contrast
+alternative values of a variable. We propose learning categorical variables
+directly by decomposing a representation space into competitive classifier
+heads, each of which assigns every input to one of $k$ entries associated
+with a learned atom. Forcing a head from one entry to another swaps one
+atom for another, an unsupervised analogue of a difference-of-means vector,
+though swaps between arbitrary partitions of the same space steer their own
+cells just as specifically. In preliminary experiments on SONAR and GPT-2,
+trained heads learn contrastive atoms, a
+1900-bit hard code reduces reconstruction error by at least 33\% relative to
+a 160-latent $\topk$ SAE at the same bit budget (though wider or
+entropy-coded SAEs reach lower error), an 800-bit hard code on GPT-2
+recovers more next-token loss than a $k_{\mathrm{SAE}}{=}32$ SAE, and
+head-level interventions compose nearly additively. However, the learned
+variables are not yet identifiable: independent seeds reach the same
+four-digit reconstruction error while sharing no heads past the first layer,
+and input-space steps flip other heads as often as random steps of the same
+norm. The one exception is a block
+of slow heads trained on adjacent sentence pairs, which reproduces across
+three seeds, though not yet head by head (matched NMI $0.41$
+vs.\ a $0.005$ null). Because an audit or a
+learned objective requires features that remain consistent across retraining,
+identifiability rather than reconstruction fidelity is the binding constraint,
+and our proposed work begins with paired-view objectives.
 \end{abstract}
 
 \input{proposal/sections/introduction.tex}

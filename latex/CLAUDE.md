@@ -60,7 +60,10 @@ All three documents share one framing:
 - steering as a test of a discovered variable, but only against arbitrary partitions of
   the same space (on both SONAR and GPT-2, random-projection and untrained categories
   steer their own cells as specifically as learned ones);
-- run-to-run reproducibility as the binding constraint.
+- run-to-run reproducibility as the binding constraint, and paired views as the first
+  lever that moves it: a Fano pair term's slow heads, trained on sentence pairs, are the
+  only heads that reproduce across seeds (three so far), and they reproduce as a block,
+  not yet head by head.
 
 The findings and the proposal state it in their abstracts. The brief carries it in a
 short unheaded lead, in "What it is for", and in its closing sections, which put

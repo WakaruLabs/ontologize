@@ -2109,6 +2109,39 @@ no model trained on. The stack's gains cost 4.8 bits at a step of two standard d
 expensive kind to entropy-code, and no SAE was trained with quantized
 coefficients, so the curves rank these models, not their architectures.
 
+\paragraph{On the sentence cache.}
+The recipe ladder (\texttt{experiments/recipe-ladder}) trained the hard
+stack ($5\times76$, $k{=}32$) and a direct-atom stack ($5\times54$,
+$k{=}128$, signed atoms) on \texttt{mc4\_sent16} for 50{,}000 steps each.
+Scored the same way beside SAEs on that cache, with all four auxiliary
+loss weights off in both stacks (\texttt{--s-bcossim 0 --s-support 0
+--s-l1f 0 --s-hm 0}), at 1900 bits:
+
+\begin{center}\small\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+code & \stackhead[r]{$\fvu$\\unquantized} & \stackhead[r]{averaged\\over rows} & \stackhead[r]{on every\\row} & \stackhead[r]{one step\\every row fits} \\
+\midrule
+direct-atom stack & 0.1611 & 0.161 & 0.164 & \textbf{0.164} \\
+hard stack & 0.1681 & 0.172 & 0.189 & 0.189 \\
+$\topk$ SAE, $k_{\mathrm{SAE}}{=}256$ & 0.1260 & \textbf{0.128} & \textbf{0.129} & 0.185 \\
+L1 SAE, $s_{\mathrm{L1}}{=}4.64\times10^{-7}$ & 0.0526 & 0.142 & 0.174 & 0.499 \\
+$\topk$ SAE, $k_{\mathrm{SAE}}{=}160$ & 0.1872 & 0.187 & 0.187 & 0.188 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent A $\topk$ SAE with 256 of 11{,}264 latents active beats both
+stacks averaged over rows and held to 1900 bits on every row, each row at
+the least-error step that fits. Its rows vary less in length than the L1
+SAE's (1734 to 2133 bits, 5th to 95th percentile, against 974 to 3359), so
+the per-row budget costs it little. The stacks lead only when one
+quantization step must fit every row, which charges each code for its
+longest row: the $k_{\mathrm{SAE}}{=}256$ SAE's rows then average 1107
+bits, leaving about 800 unspent. The $k_{\mathrm{SAE}}{=}160$ SAE trails
+the direct-atom stack under every accounting, and the hard stack only
+averaged over rows. One seed per code.
+
 \begin{figure}[tp]\centering
 \includegraphics[width=\linewidth]{figures/fig-quantrate.pdf}
 \caption{Operational rate on the evaluation tail: everything each code
@@ -2654,20 +2687,86 @@ at $s_{\mathrm{pair}}{=}10^{-3}$ for three epochs over the 3.9M pairs of
 the first 4M rows (\texttt{long.sh}), the slow heads reach a mean kappa of
 0.463 on adjacent pairs and 0.407 at twelve sentences apart by step
 45{,}000, against 0.067--0.072 for the control's first 38 heads, while
-their usage stays at 4.85 of 5 bits. A second seed (43) follows the same
-trajectory (0.457 at step 45{,}000), and the two seeds' slow heads carve
-similar partitions. Matched one to one by NMI at step 46{,}250
-(\texttt{seedmatch.py}, Eq.~\eqref{eq:headmatch}, last 32{,}768 rows), the
-38 slow heads agree at 0.414 against a 0.005 null, and every one is
-matched to a slow head of the other seed (chance 10\%); the other 342
-heads agree at 0.017, and the control's first 38 at 0.016. Most of the
-agreement is not language: scored within each of 84 languages on
-260{,}453 held-out rows, the slow heads agree at 0.313 against a 0.041
-null, and the control's at 0.069 against 0.051. The cost is 1.8--1.9\% of
+their usage stays at 4.85 of 5 bits. Seeds 43 and 44 follow the same
+trajectory (0.457 and 0.460 at step 45{,}000), and the three seeds' slow
+blocks carve similar partitions. Matched one to one by NMI at step
+46{,}250 (\texttt{seedmatch.py}, Eq.~\eqref{eq:headmatch}, last 32{,}768
+rows), each pair of seeds' 38 slow heads agree at 0.412--0.414 against a
+0.005 null, and in every pair each slow head is matched to a slow head of
+the other seed (chance 10\%); the other 342 heads agree at 0.017, and the
+control's first 38 at 0.016--0.017. Most of the agreement is not
+language: scored within each of 84 languages on 260{,}453 held-out rows,
+the slow heads agree at 0.312--0.314 against a 0.041 null, and the
+control's at 0.069--0.070 against 0.051. The cost is 1.8--1.9\% of
 held-out $\fvu$ (0.4679 against 0.4593 for seed 42, 0.4668 against 0.4586
-for seed 43). This is one seed pair of a one-layer model, and the two
+for seed 43, 0.4685 against 0.4596 for seed 44).
+
+The agreement belongs to the block, not to its heads. Two slow heads of
+one seed already agree with each other at NMI 0.40, so any one-to-one
+pairing of two seeds' slow blocks scores nearly what the best one does:
+
+\begin{center}\small\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+slow heads, NMI & seeds 42, 43 & 42, 44 & 43, 44 \\
+\midrule
+matched one to one & 0.414 & 0.412 & 0.412 \\
+any one-to-one pairing (mean) & 0.399 & 0.398 & 0.397 \\
+two heads of one seed (mean) & 0.400 / 0.398 & 0.400 / 0.396 & 0.398 / 0.396 \\
+best partner over runner-up (median) & 0.004 & 0.003 & 0.003 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent The matches do not compose either: matching seed 42 to 43 and
+43 to 44 lands where matching 42 to 44 does for 6 of the 38 slow heads,
+against 1 expected for unrelated matches (the control's first 38 heads:
+2). What reproduces is what the slow heads share with one another; no
+single slow head is yet identified across runs. The within-language score
+is computed over the same near-arbitrary pairs, so it shows that the
+shared part is not only language without identifying heads. All three
 seeds see the rows in the same order, as the control's seeds do without
-reproducing.
+reproducing, and this is a one-layer model.
+
+\paragraph{Against linear slow features.}
+Linear slow-feature analysis gives the slowest any linear projection of
+the embedding can be on these pairs: the generalized eigenvectors of the
+pair's symmetrized cross-covariance against the pooled covariance, which
+is canonical correlation analysis with one map shared by both sentences.
+Fitted on the expected pairs of the first 4M rows (\texttt{sfa.py}) and
+scored on the held-out tail, its slowest direction keeps a correlation of
+0.935 between two sentences of a document, 31 directions keep more than
+0.5, and the 38 slowest average 0.636; with each language's mean removed,
+the slowest keeps 0.739, 12 directions keep more than 0.5, and the 38
+slowest average 0.462. Language dominates the top of the spectrum: it is
+86\% of what two sentences share along the eight slowest directions and
+54\% along the 38 slowest. The same analysis applied to the slow heads'
+one-hot code ($38\times32$ indicators), fitted on 262{,}144 rows of the
+training prefix and scored on the tail, is slower than the linear optimum
+at every depth:
+
+\begin{center}\small\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lrrrrrr@{}}
+\toprule
+& \multicolumn{3}{c}{\stackhead[c]{mean correlation\\over the slowest}} & \multicolumn{3}{c}{\stackhead[c]{the same, language\\means removed}} \\
+\cmidrule(lr){2-4}\cmidrule(l){5-7}
+directions & 1 & 8 & 38 & 1 & 8 & 38 \\
+\midrule
+linear (the embedding) & 0.935 & 0.847 & 0.636 & 0.739 & 0.636 & 0.462 \\
+slow heads' code, seed 42 & 0.956 & 0.909 & 0.727 & 0.781 & 0.690 & 0.524 \\
+slow heads' code, seed 43 & 0.954 & 0.905 & 0.718 & 0.776 & 0.690 & 0.523 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent The slow heads also carry the linear directions: ridge
+regression from their one-hot code explains 0.76--0.77 of the held-out
+variance of the eight slowest, against 0.39--0.40 for any other block of
+38 heads in either arm and seed, and 0.64 against 0.38--0.40 with language
+means removed; the two seeds agree within 0.04 at every depth. They are
+redundant: each slow head is best explained by the slowest direction or
+the second (34 and 29 of the 38 by the slowest), so the block stacks on
+the top of the spectrum rather than spreading over it.
 
 \subsection{What makes layer 0 reproduce: gain, atoms, and depth}
 \label{sec:l0size}
