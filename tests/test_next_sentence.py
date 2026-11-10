@@ -331,3 +331,115 @@ def test_next_with_residual_layers_is_refused():
         ["--l", "2", "--forward", "labels"]))
     train_next.check(train_next.parser().parse_args(
         ["--l", "2", "--objective", "self"]))
+
+
+def test_pairmatrix_is_the_partner_draw_in_expectation():
+    import sfa as sf
+    from pairs import doc_partners
+    # as in the doc_partners test: doc 0 segments 0 1 3 4, doc 1 0 1,
+    # doc 2 0 5
+    index = np.array([[0, 0, 0], [0, 1, 1], [0, 2, 3], [0, 3, 4],
+                      [1, 0, 0], [1, 1, 1], [2, 0, 0], [2, 1, 5]], np.int32)
+    valid = {0: [2, 3], 1: [2, 3], 2: [0, 1], 3: [0, 1], 6: [7], 7: [6]}
+    P = sf.pairmatrix(index, "doc", 2).toarray()
+    want = np.zeros_like(P)
+    for r, js in valid.items():
+        want[r, js] = 1.0 / len(js)
+    assert np.allclose(P, want)
+    # doc_partners draws each row's partner with these probabilities
+    counts = np.zeros_like(P)
+    for s in range(2000):
+        rows, partners = doc_partners(index, 0, len(index), 2,
+                                      np.random.default_rng(s))
+        np.add.at(counts, (rows, partners), 1.0)
+    assert np.abs(counts / 2000 - P).max() < 0.05
+    A = sf.pairmatrix(index, "adjacent").toarray()
+    assert list(zip(*np.nonzero(A))) == [(0, 1), (2, 3), (4, 5)]
+    with pytest.raises(ValueError):
+        sf.pairmatrix(index, "random")
+
+
+def test_moments_add_up_over_chunks_of_whole_documents():
+    import sfa as sf
+    rng = np.random.default_rng(1)
+    doc = np.repeat(np.arange(40), rng.integers(1, 7, size=40))
+    n = len(doc)
+    start = np.flatnonzero(np.r_[True, doc[1:] != doc[:-1]])
+    pos = np.arange(n) - start[np.searchsorted(start, np.arange(n), "right") - 1]
+    seg = pos + (pos >= 2)                    # every document skips segment 2
+    index = np.stack([doc, pos, seg], 1)
+    X = rng.normal(size=(n, 3))
+    group = doc % 3
+    edges = sf.chunkedges(doc, 25)
+    assert edges[0] == 0 and edges[-1] == n and len(edges) > 3
+    assert all(doc[e] != doc[e - 1] for e in edges[1:-1])
+    assert sf.doc_start(doc, edges[2] - 1) == start[start < edges[2]][-1]
+    for pairs in ("doc", "adjacent"):
+        whole = sf.Moments.zeros(3, 3)
+        whole.add(X, sf.pairmatrix(index, pairs), group)
+        parts = sf.Moments.zeros(3, 3)
+        for a, b in zip(edges[:-1], edges[1:]):
+            parts.add(X[a:b], sf.pairmatrix(index[a:b], pairs), group[a:b])
+        for f in ("w", "s_a", "s_b", "m2", "cross"):
+            assert np.allclose(getattr(whole, f), getattr(parts, f))
+    # a pair across two groups is refused
+    with pytest.raises(ValueError, match="crosses groups"):
+        sf.Moments.zeros(3, 3).add(X, sf.pairmatrix(index, "adjacent"),
+                                   np.arange(n) % 3)
+
+
+def test_sfa_keeps_what_documents_share_and_langc_removes_language():
+    import sfa as sf
+    rng = np.random.default_rng(0)
+    n_docs, per, d = 6000, 6, 5
+    lang = rng.integers(4, size=n_docs)
+    rows = np.arange(n_docs * per)
+    doc = rows // per
+    X = rng.normal(size=(len(rows), d))
+    X[:, 0] += np.array([-2.0, -1.0, 1.0, 2.0])[lang][doc]   # language, var 2.5
+    X[:, 1] += rng.normal(size=n_docs)[doc]                 # a topic, var 1
+    index = np.stack([doc, rows % per, rows % per], 1)
+    group = lang[doc]
+    P = sf.pairmatrix(index, "doc", 2)
+    mom = sf.Moments.zeros(d, 4)
+    mom.add(X, P, group)
+    C, S, means = sf.covariances(mom, False)
+    rho, V = sf.sfa(C, S)
+    assert np.allclose(V.T @ C @ V, np.eye(d), atol=1e-8)
+    assert np.allclose(V.T @ S @ V, np.diag(rho), atol=1e-8)
+    # a document keeps 2.5 / 3.5 of the language axis, 1 / 2 of the topic's
+    assert abs(rho[0] - 2.5 / 3.5) < 0.03 and abs(rho[1] - 0.5) < 0.03
+    assert np.abs(rho[2:]).max() < 0.03
+    # projected, the fitted rows keep exactly rho
+    fit = sf.Fit(rho, V, means)
+    assert np.allclose(sf.pairrho(fit.project(X, group), P, group), rho)
+    # centred within each language, the language axis keeps nothing
+    C, S, means = sf.covariances(mom, True)
+    rho_c, V_c = sf.sfa(C, S)
+    assert means.shape == (4, d)
+    assert abs(rho_c[0] - 0.5) < 0.03 and np.abs(rho_c[1:]).max() < 0.03
+    v = V_c[:, 0] / np.linalg.norm(V_c[:, 0])
+    assert abs(v[1]) > 0.99
+    # a direction C cannot whiten is dropped
+    rho_f, V_f = sf.sfa(np.diag([1.0, 1.0, 0.0]), np.diag([0.5, 0.2, 0.0]))
+    assert V_f.shape == (3, 2) and np.allclose(rho_f, [0.5, 0.2])
+
+
+def test_eta2_and_probe_score_what_a_code_explains():
+    import sfa as sf
+    rng = np.random.default_rng(2)
+    A = rng.integers(8, size=(2, 4000))
+    Z = np.stack([rng.normal(size=8)[A[0]], rng.normal(size=4000)], 1)
+    e = sf.eta2(Z, A[0])
+    assert np.isclose(e[0], 1.0) and e[1] < 0.01
+    F = sf.onehot(A, 8)
+    assert F.shape == (4000, 16) and np.allclose(F.sum(1), 2.0)
+    assert (F[np.arange(4000), A[1] + 8] == 1.0).all()
+    r2 = sf.probe(F[:3000], Z[:3000], F[3000:], Z[3000:])
+    assert r2[0] > 0.999 and abs(r2[1]) < 0.02
+    # columns are standardized over all rows of Z, so a row paired with
+    # itself scores its squared standard score, and independent rows nothing
+    i = np.arange(0, 4000, 2)
+    c = sf.paircorr(Z, {"same": (i, i), "next": (i, i + 1)})
+    assert np.allclose(c["same"], ((Z[i] - Z.mean(0)) ** 2).mean(0) / Z.var(0))
+    assert np.abs(c["next"][1]) < 0.05

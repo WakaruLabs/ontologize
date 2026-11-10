@@ -510,3 +510,203 @@ epoch, then continued to three, with checkpoints every 2,500 steps.
     have them; otherwise autointerp of the slow cells.
   - A third seed.
   - Whether the result holds with a larger slow block, or at matched cost.
+
+## 2026-11-03: the linear slow-feature baseline (`sfa.py`): the slow heads beat it, and stack on its top direction
+
+**Why.** Balestriero & LeCun (2026, Proposition 1) show that a whitened JEPA with a linear encoder,
+trained on pairs, solves an eigenproblem: linear slow-feature analysis, which is CCA with one map
+shared by both sentences. On the pair objective's own pairs, that makes it the slow heads'
+closed-form baseline (`scratch/literature/platonic-jepa.md`, item 2). It answers three questions:
+- How slow can a linear code be?
+- How much of that slowness is language?
+- Do the slow heads carry the slow directions?
+
+**Setup.**
+- **Fit.** Moments over the first 4M rows of `mc4_sent16`, the pair runs' training prefix. The CPU
+  pass took 172 s, so the recipe ladder kept the GPU.
+  - Pairs (`doc`): drawn as `train_pair.py` draws them, a partner from the same document at segment
+    distance ≥ 2, uniform over the valid ones. The moments are the expectation over that draw.
+  - Adjacent pairs are the comparison design.
+  - The input is x/‖x‖, the direction gain-shape classifies.
+- **Two fits per design.**
+  - `plain`.
+  - `langc`: subtracts each mC4 language's mean first. Every sentence of a document shares its
+    language, so `langc` keeps what documents share beyond their language's mean.
+- **Held out.** The last 32,768 rows, with `transitions.py`'s pair types and partners. ρ held is the
+  correlation the design's own pairs keep there.
+- **Heads.** The four long runs at step 46,250, on the last 262,144 rows, all past the training
+  prefix.
+  - Probes are fitted on the rows before the tail's first document and scored on the tail.
+  - Blocks of 38 heads: each run's heads 0–37 (the Fano arm's slow heads) and heads 38–75.
+- **Command and output.** `JAX_PLATFORMS=cpu sfa.py --ckpt` with the four runs of `long/`, written to
+  `data/out/sonar/next-sentence/sfa/` (`summary_dir.json`, and per direction, block and head CSVs).
+
+### The slow spectrum
+
+Held-out correlation by rank, for `doc` pairs:
+
+| Rank | 1 | 2 | 4 | 8 | 16 | 38 | 64 | 128 | 256 |
+|---|---|---|---|---|---|---|---|---|---|
+| `plain`: ρ held | 0.935 | 0.925 | 0.882 | 0.752 | 0.649 | 0.459 | 0.321 | 0.209 | 0.146 |
+| `plain`: corr `d1` | 0.954 | 0.906 | 0.858 | 0.771 | 0.693 | 0.515 | 0.395 | 0.272 | 0.187 |
+| `plain`: corr `d12` | 0.954 | 0.857 | 0.855 | 0.748 | 0.635 | 0.430 | 0.293 | 0.183 | 0.132 |
+| `plain`: corr `lang` | 0.917 | 0.857 | 0.800 | 0.380 | 0.363 | 0.180 | 0.029 | 0.002 | 0.005 |
+| `langc`: ρ held | 0.739 | 0.695 | 0.642 | 0.581 | 0.462 | 0.333 | 0.268 | 0.191 | 0.147 |
+| `langc`: corr `d12` | 0.704 | 0.687 | 0.617 | 0.547 | 0.422 | 0.301 | 0.219 | 0.151 | 0.114 |
+| adjacent `plain`: ρ held | 0.942 | 0.931 | 0.888 | 0.784 | 0.697 | 0.535 | 0.424 | 0.278 | 0.201 |
+| adjacent `langc`: ρ held | 0.800 | 0.761 | 0.712 | 0.653 | 0.549 | 0.413 | 0.355 | 0.259 | 0.209 |
+
+- **How many directions are slow.** Held-out ρ above 0.3 / 0.5 / 0.7:
+
+  | Fit | Above 0.3 | Above 0.5 | Above 0.7 |
+  |---|---|---|---|
+  | `doc` `plain` | 76 | 31 | 12 |
+  | `doc` `langc` | 51 | 12 | 1 |
+  | adjacent `plain` | 114 | 42 | 16 |
+  | adjacent `langc` | 88 | 23 | 4 |
+
+- **Fitted against held out.** The two agree within 0.03 at every rank: 4M rows for 1,024
+  dimensions.
+- **Means over the top 8 and top 38** (`doc`, `plain`, held out):
+
+  | | Top 8 | Top 38 |
+  |---|---|---|
+  | ρ | 0.847 | 0.636 |
+  | corr `d12` | 0.837 | 0.615 |
+  | corr `lang` | 0.723 | 0.335 |
+
+  `langc`'s ρ is 0.636 over the top 8 and 0.462 over the top 38.
+
+### The heads against the slow directions
+
+**R² of the top `doc` directions from a block's one-hot code**, held out, as means over the top
+1 / 8 / 38 / 64 directions. The language label is scored as an 86-value code.
+
+| Block | `plain` 1 | 8 | 38 | 64 | `langc` 1 | 8 | 38 | 64 |
+|---|---|---|---|---|---|---|---|---|
+| language label | 0.907 | 0.729 | 0.339 | 0.231 | −0.005 | −0.004 | −0.003 | −0.002 |
+| Fano slow heads, seed 42 | 0.881 | 0.769 | 0.566 | 0.453 | 0.727 | 0.635 | 0.409 | 0.317 |
+| Fano slow heads, seed 43 | 0.881 | 0.756 | 0.559 | 0.447 | 0.732 | 0.637 | 0.408 | 0.316 |
+| Fano heads 38–75, seed 42 | 0.501 | 0.386 | 0.308 | 0.268 | 0.441 | 0.382 | 0.280 | 0.239 |
+| Fano heads 38–75, seed 43 | 0.525 | 0.390 | 0.313 | 0.275 | 0.464 | 0.395 | 0.288 | 0.244 |
+| control heads 0–37, seed 42 | 0.546 | 0.401 | 0.317 | 0.277 | 0.471 | 0.397 | 0.289 | 0.244 |
+| control heads 0–37, seed 43 | 0.535 | 0.400 | 0.311 | 0.271 | 0.471 | 0.389 | 0.282 | 0.239 |
+| control heads 38–75, seed 42 | 0.513 | 0.394 | 0.312 | 0.271 | 0.450 | 0.387 | 0.282 | 0.240 |
+| control heads 38–75, seed 43 | 0.537 | 0.398 | 0.318 | 0.278 | 0.471 | 0.401 | 0.291 | 0.245 |
+
+**By rank, seed 42.**
+
+| Rank | 1 | 2 | 3 | 4 | 5 | 8 | 12 | 16 | 24 | 38 | 64 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `plain`: Fano slow heads | 0.88 | 0.88 | 0.78 | 0.80 | 0.79 | 0.69 | 0.58 | 0.55 | 0.54 | 0.36 | 0.24 |
+| `plain`: language label | 0.91 | 0.88 | 0.86 | 0.83 | 0.59 | 0.38 | 0.53 | 0.36 | 0.12 | 0.19 | 0.03 |
+| `plain`: control heads 0–37 | 0.55 | 0.48 | 0.34 | 0.38 | 0.49 | 0.39 | 0.27 | 0.28 | 0.30 | 0.22 | 0.22 |
+| `langc`: Fano slow heads | 0.73 | 0.65 | 0.69 | 0.67 | 0.63 | 0.58 | 0.51 | 0.38 | 0.39 | 0.22 | 0.14 |
+| `langc`: control heads 0–37 | 0.47 | 0.41 | 0.47 | 0.44 | 0.34 | 0.38 | 0.32 | 0.30 | 0.27 | 0.21 | 0.16 |
+
+At every rank to 64, the two seeds' slow heads are within 0.04 of each other.
+
+**SFA on each block's own one-hot code**, against SFA on the embedding: held-out ρ over the top 1 / 8 /
+38 directions.
+
+| Code | `plain` 1 | 8 | 38 | `langc` 1 | 8 | 38 |
+|---|---|---|---|---|---|---|
+| the embedding's direction (the fits above) | 0.935 | 0.847 | 0.636 | 0.739 | 0.636 | 0.462 |
+| Fano slow heads, seed 42 | 0.956 | 0.909 | 0.727 | 0.781 | 0.690 | 0.524 |
+| Fano slow heads, seed 43 | 0.954 | 0.905 | 0.718 | 0.776 | 0.690 | 0.523 |
+| the other six blocks of 38 heads | 0.57–0.60 | 0.44–0.46 | 0.25–0.26 | 0.45–0.48 | 0.33–0.34 | 0.19–0.20 |
+
+- The code SFA is fitted on 229,373 rows in up to 1,178 dimensions (1,216 indicators less one per
+  head). Its held-out ρ is within 0.04 of its fitted ρ, mostly below it.
+
+**Each head's η²**, the share of a direction's variance between the head's entries, over the 262,144
+rows:
+
+| | Fano slow heads | Ordinary heads (block means) |
+|---|---|---|
+| Best-explained direction, `plain` | rank 1 for 34 of seed 42's 38 (29 of seed 43's), rank 2 for the rest | |
+| η² of that direction, `plain` | 0.59–0.70 | 0.04 |
+| Best-explained direction, `langc` | rank 1 or 3 for all but one | |
+| η² of that direction, `langc` | 0.29–0.42 | 0.04–0.05 |
+| η² summed over the top 38, `plain` | 6.8–8.0 | 0.60–0.65 |
+
+**Readings.**
+- **The linear slow spectrum is steep, and its top is language.**
+  - Along the top four directions, sentences of other documents in the same language keep
+    0.80–0.92. Two sentences of one document keep 0.85–0.95.
+  - Language's share of what a document keeps, `lang` against `d12`: 86% over the top 8, 54% over
+    the top 38, and almost nothing from rank 64 on (0.03 against 0.29 there).
+  - This is the JEPA paper's Proposition 3 (ii) on these pairs. Two sentences of one document are bad
+    views, language is the nuisance they share, and it takes the top of the spectrum.
+- **Beyond language, documents still share a lot.**
+  - With each language's mean removed, the top direction keeps 0.74, and 0.70 twelve segments apart.
+    Twelve directions keep more than 0.5 and 51 more than 0.3.
+  - Adjacent pairs keep a little more at every rank shown (0.54 against 0.46 at rank 38): what
+    neighbours share beyond the rest of their document.
+- **The slow heads carry the slow subspace, beyond language too, and both seeds carry the same
+  directions.**
+  - **The 38 slow heads** explain 0.76–0.77 of the top 8 directions' variance and 0.56–0.57 of the
+    top 38's. Every other block of 38 heads, in either run and either seed, explains 0.39–0.40 and
+    0.31–0.32.
+  - **Against the language label.** On the language directions (ranks 1–4) the slow heads do about
+    as well as the label (0.78–0.88 against 0.83–0.91). Past them they do far better: 0.54 against
+    0.12 at rank 24.
+  - **Against ordinary heads.** Their lead over the control's heads 0–37 is 0.2 or more to rank 28,
+    and gone by rank 64 (+0.02).
+  - **Beyond language.** On the language-centred directions, which the label cannot explain at all,
+    the slow heads explain 0.64 of the top 8, against 0.38–0.40. Their lead over the control's heads
+    0–37 is about 0.2 through rank 12, about 0.1 to rank 24 and 0.03–0.08 to rank 37. From rank 38
+    it is nothing.
+  - **Both seeds.** Their slow heads explain every direction to within 0.04 of each other.
+  - **What that means for 2026-10-15's seed result.** It holds at the level of the block. Both
+    seeds' slow heads carry the same directions of the data's own linear slow spectrum, to the same
+    degree. The literature predicted agreement at that level (`pair_objective.md`, evaluation 4).
+- **The slow block's code is slower than any linear projection of the embedding.**
+  - **The slow heads.** Over the top 8 and 38 directions of its own SFA, held out, the slow block's
+    code keeps 0.91 and 0.72–0.73, against the embedding's 0.85 and 0.64. Within languages it keeps
+    0.69 and 0.52, against 0.64 and 0.46.
+  - **What that means.** The code is a function of the embedding, so the slow heads found slow
+    structure that is not linear in it. A 32-way partition can name a category, such as a language,
+    site or topic, that no single direction separates.
+  - **Ordinary blocks** keep 0.44–0.46 and 0.25–0.26: far less than the embedding's linear slow
+    subspace. This agrees with the κ tables of 2026-10-13: every head of a reconstruction code holds
+    a little of what documents share.
+- **Every slow head stacks on the same top direction.**
+  - **One direction each.** On its own, each slow head explains 0.59–0.70 of its best direction's
+    variance, and that direction is always direction 1 or 2. Within languages it is direction 1 or
+    3, with one exception.
+  - **But not only that direction.** Each head's partition also explains 6.8–8.0 directions' worth
+    of the top 38's variance, against 0.6 for an ordinary head. The block as a whole explains 0.57 of
+    the top 38, against 0.19 per head.
+  - **The cause.** This is the redundancy `pair_objective.md` warned of. A whitened objective cannot
+    stack its directions, since its outputs are decorrelated. A per-head Fano term rewards every
+    head for the same slowest factor.
+- **Language share.**
+  - **The comparison.** The slow heads' κ on `lang` pairs is 57% of their κ on `d12` pairs (0.231
+    against 0.407 at step 45,000). The top 38 directions' share, from correlations, is 54%.
+  - **The reading.** These are different statistics, but the slow heads have about the language
+    share of the top 38 linear slow directions, not the 86% of the top 8.
+
+**Caveats.**
+- **η²(lang) reads about 0.02 above corr `lang` on slow directions.** A language's 380 or so tail rows
+  come from about 33 documents, so its mean carries document-level noise.
+  - The `lang` pairs, drawn across documents, are the unbiased measure.
+  - The `langc` directions' η² of 0.02–0.03 is that noise. Their corr `lang` is 0.00.
+- **`langc` removes each language's mean**, not any other difference between languages.
+- **The norm changes nothing here.** The raw embeddings (`--input raw`) give the same spectrum: top 8
+  and top 38 means 0.848 and 0.631 (`plain`), 0.633 and 0.459 (`langc`). One numerically degenerate
+  direction is dropped. Output is in `sfa/*_raw.*`.
+- **One checkpoint per run** (46,250), and the four runs share their row order.
+
+**Next.**
+- **Decorrelate the slow block.** A term on the whole block would spread the slow heads over the
+  spectrum instead of stacking them. Candidates:
+  - SFA's own constraint, whitened block outputs;
+  - the between-head dependence penalty restricted to S (`hsic.pairwise_head_cka`), which
+    `pair_objective.md` already lists.
+
+  To watch: the number of distinct best directions (2–3 now), and R² by rank past rank 24.
+- **Good views.** Translation pairs should empty the top of this spectrum of language. SFA on such
+  pairs over the 32,768-row tail is the cheap first check, before training on them.
+- **Block-level agreement, measured directly.** R² of one seed's slow code from the other's, against
+  the head-level Hungarian match.
