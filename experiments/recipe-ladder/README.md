@@ -98,6 +98,20 @@ What to expect:
     under a fixed per-row budget. A top-k code's length varies less.
   - It starts once unit `recipe-ladder` has finished, so the two never
     share the GPU.
+- **`rowbudget.py`** reads SAE codes held to a per-row budget at exact
+  budgets.
+  - **Why.** `quantrate.py`'s `rowbudget.csv` samples budgets on a
+    quarter-octave grid and keeps only the FVU, and its readouts
+    interpolate between grid points.
+  - It recomputes `quantrate.sae_rows`'s per-row lengths and errors and
+    reads them four ways: rate control (each row at its least-error step
+    that fits), each row's longest code that fits, one step for every row
+    at the budget's mean, and the one step at which every row fits.
+  - It also finds the least per-row budget at which rate control reaches
+    each given FVU. Rate control's FVU cannot rise with the budget (the
+    docstring says why), so a bisection over the budgets where it can
+    change finds it exactly.
+  - Tests in `tests/test_rowbudget.py`.
 
 ## Usage
 
@@ -132,7 +146,15 @@ One seed per arm.
       --rows 32765 --coord 837 --models <runs>
   ```
 - **Collapse:** `cossim_k_max` and `KL_m` from each run's `loss.csv`.
-- **The rate:** `quantrate.py`.
+- **The rate:** `quantrate.py`, and `rowbudget.py` for the SAEs at exact
+  per-row budgets, with the stacks' FVUs as targets:
+
+  ```bash
+  JAX_PLATFORMS=cpu JAX_DEFAULT_MATMUL_PRECISION=highest \
+      uv run python experiments/recipe-ladder/rowbudget.py \
+      --runs <sae.py runs> --targets <FVUs> \
+      --out <quantrate.py's out>/rowbudget_exact.json
+  ```
 - **The auxiliary arms:** `auxpull.py --coord 837` and
   `coordtrace.py --coord 837` as well.
 

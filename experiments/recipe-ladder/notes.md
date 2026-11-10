@@ -603,8 +603,9 @@ the L1 1.39e-6.
   standing (next results section).
   - Its code has a fixed length, and it reads 0.1638 at 1,900 nominal bits.
   - Held to that budget on every row (`rowbudget.csv`), the L1 4.64e-7 SAE
-    reads 0.1742 and the k160 0.1867. The L1 SAE needs a budget of 2,011
-    bits to reach 0.1638. (Exact budgets: see the next results section.)
+    reads 0.1742 and the k160 0.1867. The L1 SAE needs a budget of 2,010
+    bits to reach 0.1638. (Exact budgets, from `rowbudget.py`: see the next
+    results section.)
   - The hard stack's gains start at 1,906 nominal bits, so at 1,900 it
     reads its pinned 0.1893, behind both SAEs.
 - **Both stacks are below the k160 at the mean rate:** the direct stack by
@@ -698,8 +699,9 @@ Held-out FVU over the 1023 free coordinates:
 ### The k256 SAE
 
 All at 1,900 bits, from the one `quantrate.py` run, with the stacks at
-seed 42. A stack's fixed per-row reading is its nominal reading, since its
-code has a fixed length.
+seed 42. The SAEs' fixed per-row readings are `rowbudget.py`'s exact ones
+(next subsection). A stack's fixed per-row reading is its nominal reading,
+since its code has a fixed length.
 
 | code | float FVU | mean rate | subset rate | fixed per-row budget |
 |---|---|---|---|---|
@@ -740,22 +742,27 @@ code has a fixed length.
 
 A top-k SAE's budget reading differs from its mean-rate reading, and for
 the k32 and k160 it is below the unquantized FVU. Both come from variable
-quantization. These readings use `quantrate.sae_rows`'s per-row lengths and
-errors, passed through `rate_control` at exactly 1,900 bits. "—" is a
-reading the code cannot give or that was not taken.
+quantization.
+- **Where these come from:** `rowbudget.py`, which reads `quantrate.sae_rows`'s
+  per-row lengths and errors at exactly 1,900 bits.
+  - Output in `data/out/sonar/quantrate_recipe_ladder5/rowbudget_exact.json`,
+    log in `experiments/logs/rowbudget_recipe_ladder5.log`.
+  - The one-step-on-average row is `quantrate.py`'s mean-rate reading
+    instead, interpolated between steps to 1,900 bits.
+  - "—" is a reading the code cannot give.
 
 | at a 1,900-bit budget | k32 | k160 | k256 | L1 4.64e-7 |
 |---|---|---|---|---|
 | float FVU | 0.4180 | 0.1872 | 0.1260 | 0.0526 |
 | one step for all rows, 1,900 bits on average | — | 0.1872 | 0.1282 | 0.1421 |
-| each row at its longest code that fits | 0.4180 | 0.1872 | 0.1291 | — |
+| each row at its longest code that fits | 0.4180 | 0.1872 | 0.1291 | 0.1742 |
 | each row at its lowest-error step that fits | 0.4163 | 0.1867 | 0.1288 | 0.1742 |
 | one step that every row fits | 0.4180 | 0.1879 | 0.1846 | 0.4985 |
 
 - **A fixed k fixes how many latents a row sends, not how many bits they
   cost.** Rare latents and large values cost more.
   - At a mean of 1,887 bits, the k256's rows run from 1,734 to 2,133 (5th
-    to 95th percentile), up to 2,562, and 39% are over 1,900.
+    to 95th percentile), up to 2,562, and 37% are over 1,900.
   - The L1 4.64e-7 SAE's, at a mean of 1,969, run from 974 to 3,359.
 - **The budget column is variable quantization.** Each row picks one of 67
   steps, named in 6.07 bits that count against the budget. The mean-rate
@@ -767,6 +774,9 @@ reading the code cannot give or that was not taken.
   - The rows it picks are also shorter: 363 and 1,615 bits on average.
 - **For the k256, the budget binds, but it costs little.** Forcing long rows
   onto coarser steps adds 0.0008, and the search takes back 0.0003.
+- **For the L1 SAE, the budget is all of it.** The search moves 0.1% of its
+  rows off their longest code, so its 0.1742 is what the cap costs its
+  long rows.
 - **The single-step reading is the one that models lowering the
   coefficients' precision.**
   - One step is a property of the model: the same quantization for every
@@ -778,7 +788,8 @@ reading the code cannot give or that was not taken.
     whitened decoder norm, so latents differ, but rows do not.
 - **A hard cap on top of one step changes the ranking.** The two single-step
   rows differ only in how the bits are charged. One that every row fits gives,
-  with the stacks' fixed-length readings:
+  with the stacks' fixed-length readings (no side bits are charged, since
+  every row shares the step; charging them changes none of these):
   - direct stack, 0.1638;
   - k256, 0.1846;
   - k160, 0.1879;
@@ -802,7 +813,7 @@ reading the code cannot give or that was not taken.
 - **`quantrate.py`'s reading at 1,900 bits is interpolated.** `rowbudget.csv`
   has budgets on a quarter-octave grid, and the reading interpolates between
   1,722 and 2,048. For the k256 it gives 0.1300, against the exact 0.1288.
-  The per-row readings in this section are exact.
+  The per-row readings in this section are `rowbudget.py`'s, which are exact.
 
 ### Between-head support
 
