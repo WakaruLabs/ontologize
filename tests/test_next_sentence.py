@@ -292,6 +292,29 @@ def test_seedmatch_splits_the_match_by_block():
     assert slow_to_slow(M, slow, slow) == 0.5
 
 
+def test_seedmatch_specificity_and_cycle():
+    from seedmatch import cycle_consistency, matching, specificity
+    # A's head i is B's head 2 - i, distinct heads share nothing
+    cross = np.full((3, 3), 0.1)
+    cross[[0, 1, 2], [2, 1, 0]] = 0.9
+    assert matching(cross).tolist() == [2, 1, 0]
+    W = np.full((3, 3), 0.1) + 0.9 * np.eye(3)
+    s = specificity(W, W, cross)
+    assert abs(s["matched"] - 0.9) < 1e-9
+    assert abs(s["all_pairs"] - (0.9 * 3 + 0.1 * 6) / 9) < 1e-9
+    assert abs(s["within_a"] - 0.1) < 1e-9
+    assert abs(s["margin"] - 0.8) < 1e-9
+    # near-copies: any pairing scores about as well as the match
+    flat = np.full((3, 3), 0.4) + 0.01 * np.eye(3)
+    s = specificity(flat, flat, flat)
+    assert s["matched"] - s["all_pairs"] < 0.01
+    assert abs(s["within_a"] - 0.4) < 1e-9
+    # cycle: a->b->c agrees with a->c for every head, then for one
+    ab, bc = np.array([1, 2, 0]), np.array([2, 0, 1])
+    assert cycle_consistency(ab, bc, bc[ab]) == 1.0
+    assert cycle_consistency(ab, bc, np.array([0, 2, 1])) == 1 / 3
+
+
 def test_within_label_nmi_ignores_agreement_through_the_label():
     from seedmatch import nmi, shuffle_within, within_label_nmi
     rng = np.random.default_rng(0)

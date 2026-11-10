@@ -710,3 +710,69 @@ rows:
   pairs over the 32,768-row tail is the cheap first check, before training on them.
 - **Block-level agreement, measured directly.** R² of one seed's slow code from the other's, against
   the head-level Hungarian match.
+
+## 2026-11-10: seed 44: the slow block reproduces in all three pairs, as a block, not head by head
+
+**Runs.** `replica.sh 44` trained seed 44 of both arms of `long.sh` to three epochs (step 46,250), as
+seeds 42 and 43 were. It then ran `seedmatch.py` between seed 44 and each earlier seed. The language
+floor is `--min-rows 1000`, as for 42–43: 84 languages, 260,453 of the last 262,144 rows.
+`seedmatch.py --c` adds the third run and the specificity measures below
+(`seedmatch_{fano_sp1e-3,sp0}_s42_s43_s44.json`).
+
+**Trajectory.** At step 45,000 seed 44's slow heads keep their entry at κ `d1` 0.460 (seeds 42 and
+43: 0.463 and 0.457), and its control's heads 0–37 at 0.067 (`transitions_s44_45000`).
+
+**The pairwise match.** Cache's last 32,768 rows, as on 2026-10-15:
+
+| Arm | Block | 42–43 | 42–44 | 43–44 | Null |
+|---|---|---|---|---|---|
+| Fano | slow (38) | 0.414 | 0.412 | 0.412 | 0.005 |
+| Fano | rest (342) | 0.017 | 0.017 | 0.017 | 0.005 |
+| Fano | slow, within language | 0.313 | 0.312 | 0.314 | 0.041 |
+| control | heads 0–37 | 0.016 | 0.017 | 0.016 | 0.005 |
+| control | heads 0–37, within language | 0.069 | 0.070 | 0.069 | 0.051 |
+
+- **Whole-model assignment.** In the Fano arm, all 38 slow heads pair with slow heads in every pair. In
+  the control, 7.9%, 2.6% and 13.2% of heads 0–37 pair with heads 0–37 (chance 10%).
+- **Cost.** Held-out FVU_w at step 46,250 (`eval_s44_e3.json`): 0.4685 for the Fano arm against
+  0.4596 for the control, 1.9% worse. Seeds 42 and 43 read 1.9% and 1.8%.
+
+**Is the match head by head?** `slow_specificity` and `cycle`, Fano arm (control in brackets):
+
+| | 42–43 | 42–44 | 43–44 |
+|---|---|---|---|
+| matched NMI | 0.414 | 0.412 | 0.412 |
+| any one-to-one pairing (mean of the 38 × 38) | 0.399 | 0.398 | 0.397 |
+| two slow heads of one seed (mean off the diagonal) | 0.400 / 0.398 | 0.400 / 0.396 | 0.398 / 0.396 |
+| best partner over runner-up (median) | 0.004 | 0.003 | 0.003 |
+
+- **Cycle.** Matching 42 → 43 → 44 lands where 42 → 44 does for 15.8% of slow heads (6 of 38), against
+  2.6% for unrelated matches. The control's heads 0–37: 5.3% (2 of 38).
+- **Control.** Matched 0.016–0.017, any pairing 0.015, within one seed 0.015, margin 0.0003.
+
+**Readings.**
+- **The block-level result replicates.** The three pairs agree to within 0.002 on every row of the
+  first table, and the control stays at its 2026-10-15 level.
+- **It is block-level only.**
+  - The Hungarian match gains 0.014 over a random pairing inside the block.
+  - A slow head agrees with the other seed's slow heads as closely as with its own seed's (0.397–0.399
+    against 0.396–0.400).
+  - Its best partner beats the runner-up by 0.003–0.004, and the pairings compose for 6 of 38 heads.
+  - So the seeds share what the slow heads share with each other. What each head adds beyond that
+    does not reproduce in a way the match can find.
+- **This is the 2026-11-03 redundancy, seen from the code.** There every slow head stacked on linear
+  slow direction 1 or 2. Here the 38 heads overlap at NMI 0.40 within one seed.
+- **The within-language score is block-level too.** It is computed over the matched pairs, which are
+  close to arbitrary within the block. It shows that the shared part is not only language. It does
+  not identify heads.
+- **For the documents.** "The slow heads reproduce" has to read "the slow block reproduces as a
+  block". No individual slow head is yet identified across seeds.
+
+**Caveats.**
+- All three seeds share the row order. The control shares it too and does not reproduce.
+- One checkpoint per run (46,250).
+
+**Next.**
+- **Decorrelating the slow block is now a precondition for head-level identifiability**, not only for
+  coverage of the spectrum. The test is this table: the matched-minus-any-pairing gap, the margin and
+  the cycle share should rise, and within-seed NMI should fall, at matched block-level agreement.

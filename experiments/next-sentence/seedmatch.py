@@ -21,6 +21,17 @@ weighted by rows, beside a null that shuffles B's rows within each label.
 Two heads that agree only because both track the label score near that
 null.
 
+`slow_specificity` asks whether the `slow` match is head by head or only
+block by block. A block of near-copies matches well under any pairing, so
+beside the matched NMI it gives a random one-to-one pairing's expected NMI
+(`all_pairs`), the mean NMI between two distinct slow heads of one seed
+(`within_a`, `within_b`), and the median margin of each of A's slow heads'
+best partner over its runner-up (`margin`).
+
+`--c` adds a third run: `slow_specificity` for the pairs (a, c) and (b, c),
+and `cycle`, the share of A's slow heads whose slow-block match into C
+through B is their direct match into C. Chance is one over the block size.
+
     uv run python experiments/next-sentence/seedmatch.py \\
         --a data/out/sonar/next-sentence/long/doc2_fano_sp1e-3_ph38 \\
         --b data/out/sonar/next-sentence/long/doc2_fano_sp1e-3_ph38_s43
@@ -108,6 +119,36 @@ def shuffle_within(b: Int[np.ndarray, "n"], labels: np.ndarray,
     return out
 
 
+def matching(M: Float[np.ndarray, "s s"]) -> Int[np.ndarray, "s"]:
+    """The one-to-one match of a square NMI matrix (Hungarian, maximizing
+    total NMI), as B's head for each of A's heads in order."""
+    r, c = linear_sum_assignment(-M)
+    return c[np.argsort(r)]
+
+
+def cycle_consistency(ab: Int[np.ndarray, "s"], bc: Int[np.ndarray, "s"],
+                      ac: Int[np.ndarray, "s"]) -> float:
+    """Share of A's heads whose match into C through B (`ab`, then `bc`) is
+    their direct match `ac`. Chance for unrelated matches is 1 / s."""
+    return float((bc[ab] == ac).mean())
+
+
+def specificity(within_a: Float[np.ndarray, "s s"],
+                within_b: Float[np.ndarray, "s s"],
+                cross: Float[np.ndarray, "s s"]) -> Dict[str, float]:
+    """How head-specific a block's match between two seeds is. `within_a`
+    and `within_b` are the NMI among one seed's heads of the block, `cross`
+    between the two seeds' heads of the block."""
+    def off(W: Float[np.ndarray, "s s"]) -> float:
+        return float(W[~np.eye(len(W), dtype=bool)].mean())
+    top = np.sort(cross, axis=1)[:, ::-1]
+    return {"matched": float(cross[np.arange(len(cross)),
+                                   matching(cross)].mean()),
+            "all_pairs": float(cross.mean()),
+            "within_a": off(within_a), "within_b": off(within_b),
+            "margin": float(np.median(top[:, 0] - top[:, 1]))}
+
+
 def summarize(v: Float[np.ndarray, "m"], vn: Float[np.ndarray, "m"]
               ) -> Dict[str, float]:
     """Matched NMI and the row-shuffled null of one block."""
@@ -124,6 +165,11 @@ def main() -> None:
     p.add_argument("--b", required=True, help="checkpoint dir")
     p.add_argument("--step-a", type=int, default=0, help="0 = latest")
     p.add_argument("--step-b", type=int, default=0, help="0 = latest")
+    p.add_argument("--c", default=None,
+                   help="a third checkpoint dir: adds the slow block's "
+                        "specificity against it and the matches' cycle "
+                        "consistency")
+    p.add_argument("--step-c", type=int, default=0, help="0 = latest")
     p.add_argument("--slow-heads", type=int, default=38,
                    help="slow heads per layer, the first that many")
     p.add_argument("--cache", default=str(CACHE))
@@ -182,6 +228,36 @@ def main() -> None:
     res["slow_to_slow_chance"] = float(slow_b.mean())
     print(f"  A's slow heads paired with B's slow heads: "
           f"{res['slow_to_slow']:.1%} (chance {res['slow_to_slow_chance']:.1%})")
+
+    SA, SB = A[slow_a], B[slow_b]
+    WA, WB = nmi_matrix(SA, ka, SA, ka), nmi_matrix(SB, kb, SB, kb)
+    AB = M[np.ix_(np.flatnonzero(slow_a), np.flatnonzero(slow_b))]
+
+    def specific(key: str, pair: str, s: Dict[str, float]) -> None:
+        res[key] = s
+        print(f"  slow specificity {pair}: matched {s['matched']:.4f}, "
+              f"any pairing {s['all_pairs']:.4f}, within one seed "
+              f"{s['within_a']:.4f} / {s['within_b']:.4f}; best over "
+              f"runner-up {s['margin']:.4f} (median)")
+    specific("slow_specificity", "a-b", specificity(WA, WB, AB))
+    if cfg.c:
+        C, lc, kc, sc = codes(cfg.c, cfg.step_c, cfg.temperature, X, cfg.batch)
+        slow_c = slow_mask(len(C), len(C) // (int(lc.max()) + 1),
+                           cfg.slow_heads)
+        SC = C[slow_c]
+        WC = nmi_matrix(SC, kc, SC, kc)
+        AC, BC = nmi_matrix(SA, ka, SC, kc), nmi_matrix(SB, kb, SC, kc)
+        res["c"], res["step_c"] = cfg.c, int(sc)
+        print(f"C {Path(cfg.c).name} step {sc}")
+        specific("slow_specificity_ac", "a-c", specificity(WA, WC, AC))
+        specific("slow_specificity_bc", "b-c", specificity(WB, WC, BC))
+        res["cycle"] = {
+            "consistent": cycle_consistency(matching(AB), matching(BC),
+                                            matching(AC)),
+            "chance": 1.0 / len(SA)}
+        print(f"  slow matches a->b->c equal to a->c: "
+              f"{res['cycle']['consistent']:.1%} "
+              f"(chance {res['cycle']['chance']:.1%})")
 
     if cfg.labels:
         assert ka == kb, "within-label NMI needs one k"
