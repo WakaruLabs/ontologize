@@ -1143,7 +1143,9 @@ scoring $0.556$ vs.\ a $0.505$ null). Moreover, even in layer~0 (where
 positional head at $1.3$--$1.8$ bits and two document-level heads), a
 judge-free lookup baseline conditioned solely on current-token identity
 outperforms the LLM judge on single cells ($0.75$ vs.\ $0.69$ on
-concatenated heads, and $0.74$ vs.\ $0.71$ on direct atoms). Conditioning on
+concatenated heads, and $0.74$ vs.\ $0.71$ on direct atoms), as a
+per-token lookup table of mean activations outperformed explanation and
+simulation for GPT-2's neurons~\cite{bills2023}. Conditioning on
 two-head intersections in layer~0 improves balanced accuracy against
 single-head siblings by $+0.10$ on concatenated heads ($0.69 \to 0.78$,
 driven largely by lexical selectivity) and by $+0.01$ on direct atoms

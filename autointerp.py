@@ -1,4 +1,5 @@
-"""Auto-interp description adequacy (Bills et al. style detection scoring),
+"""Auto-interp description adequacy (detection scoring after Paulo et al.;
+Bills et al.'s explain-then-score design, whose own scoring is simulation),
 run identically over Ontologizer tags and SAE latents so the two methods'
 interpretability is directly comparable.
 

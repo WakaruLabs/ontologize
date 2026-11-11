@@ -18,7 +18,13 @@ need not reflect how the model normally computes: a subspace intervention
 optimized for its effect can instead activate a dormant
 pathway~\cite{makelov2023}.
 
-The dominant unsupervised paradigm is the SAE, which approximates a
+Steering vectors can be learned without labels and without a dictionary,
+by training a perturbation of fixed norm to maximize the change it
+produces in a later layer's activations on a single
+prompt~\cite{mack2024melbo}. That work reports its vectors largely
+qualitatively, with neither a quantitative random-direction baseline nor
+a repeat across initializations, each of which, it notes, may reach a
+different stationary point. The dominant unsupervised paradigm is the SAE, which approximates a
 model's hidden state using a few discrete features drawn from an
 overcomplete dictionary, originally with a $\relu$ activation and a
 sparsity penalty~\cite{cunningham2023,bricken2023} and more recently with
@@ -80,7 +86,8 @@ reduce this cost by dividing the feature space across smaller submodules
 Less explored is the effect that the structure imposed by an MoE
 architecture has on the interpretability of feature space. A common
 approach to interpreting features at scale is to have an LLM generate an
-explanation from activating examples and score how well an LLM judge,
+explanation from activating examples~\cite{bills2023} and score how well
+an LLM judge,
 given that explanation alone, distinguishes activating from
 non-activating contexts~\cite{paulo2025}. With an unstructured feature
 space, it quickly becomes intractable to interpret every combination of
