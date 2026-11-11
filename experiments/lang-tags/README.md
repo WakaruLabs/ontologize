@@ -86,6 +86,24 @@ uv run python experiments/lang-tags/norm.py   # after encode; ~5 min, GPU
 
 Writes `norm.json` and `norm_decodes.jsonl` beside the other outputs.
 
+## Head by head (`tagflip.py`)
+
+`compare` reports head agreement under the tag shift as a mean over each
+layer's heads. `tagflip.py` gives it for every head, and for every SAE
+latent active on enough of the changed rows, beside two independent
+random shifts of each row's own size. A unit's excess is its keep rate
+under the random shifts minus its keep rate under the tag, read against
+the noise it would have with no tag effect; each unit's excess is set
+beside how much it knows about language. It also gives the SAEs' support
+Jaccard under a random shift, the control `compare`'s figure lacks.
+
+```bash
+uv run python experiments/lang-tags/tagflip.py   # after encode; GPU
+```
+
+Writes `tagflip/summary.json` and one CSV per Ontologizer beside the
+other outputs. Its statistics are tested in `tests/test_tagflip.py`.
+
 ## Caveats
 
 - The intended tag is `MC4_TO_SONAR`'s. For the five romanized configs

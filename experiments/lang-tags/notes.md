@@ -320,3 +320,101 @@ non-English pages carry English boilerplate (19% of their rows are above
 dictionary trained on a correctly tagged cache would allocate latents
 the same way is untested. (`retag.py english`,
 `data/out/sonar/langtags/english.json`.)
+
+## 2026-11-11: which heads and latents the tag moves (`tagflip.py`)
+
+`compare` found that the tag shift reassigns a hard code's heads about as
+often as a random shift of the same size, as a mean over each layer. This
+asks it head by head and latent by latent, on the same 32,000 changed
+rows, against two independent random shifts of each row's own size
+(median 0.40 of |x|). A unit's excess is its keep rate under the random
+shifts minus its keep rate under the tag; the noise is what the excess
+would scatter by with no tag effect.
+
+```bash
+uv run python experiments/lang-tags/tagflip.py --batch 128
+```
+
+**Heads.** Keep rates and the excess over a layer's heads:
+
+| model | layer | keep, tag | keep, random | mean excess | sd over heads | max | noise |
+|---|---|---|---|---|---|---|---|
+| `ste_h76_init01` | 0 | 0.514 | 0.543 | 0.029 | 0.025 | 0.163 | 0.003 |
+| | 1 | 0.291 | 0.307 | 0.016 | 0.003 | 0.025 | |
+| | 2 | 0.198 | 0.204 | 0.006 | 0.003 | 0.013 | |
+| | 3 | 0.144 | 0.147 | 0.003 | 0.002 | 0.008 | |
+| | 4 | 0.109 | 0.109 | 0.001 | 0.002 | 0.006 | |
+| `ste_l1_h380_i01` | 0 | 0.457 | 0.463 | 0.006 | 0.017 | 0.131 | 0.003 |
+| `ste_k2_h380` | 0 | 0.858 | 0.894 | 0.036 | 0.013 | 0.106 | 0.003 |
+| | 1 | 0.784 | 0.811 | 0.027 | 0.005 | 0.049 | |
+| | 2 | 0.751 | 0.766 | 0.015 | 0.004 | 0.031 | |
+| | 3 | 0.732 | 0.740 | 0.009 | 0.004 | 0.030 | |
+| | 4 | 0.691 | 0.695 | 0.004 | 0.004 | 0.022 | |
+
+The stack's most moved heads are all in layer 0:
+
+| head | keep, tag | keep, random | excess | NMI with language |
+|---|---|---|---|---|
+| 54 (the topic head) | 0.643 | 0.807 | 0.163 | 0.160 |
+| 0 | 0.603 | 0.719 | 0.116 | 0.171 |
+| 18 | 0.551 | 0.634 | 0.083 | 0.061 |
+| 46 | 0.591 | 0.671 | 0.080 | 0.186 |
+| 72 | 0.473 | 0.551 | 0.078 | 0.046 |
+
+Nine of layer 0's 76 heads have an excess above 0.05; the median is
+0.022. Within layer 0 the excess follows a head's NMI with language
+(rank correlation 0.63; 0.40 on the flat arm, whose most moved head, 318
+at 0.131, is its best language head at NMI 0.214). No head anywhere is
+spared: the lowest excess is −0.004 on the stack and −0.010 on the flat
+arm, within three times the noise.
+
+**SAE latents** active on at least 200 changed rows. A latent's rate is,
+of the rows it is active on under the cached tag, the share it stays
+active on.
+
+| SAE | latents scored | support Jaccard, tag | Jaccard, random | mean excess | sd over latents | min | max | noise |
+|---|---|---|---|---|---|---|---|---|
+| `m11264_k32` | 858 | 0.422 | 0.455 | 0.004 | 0.129 | −0.207 | 0.744 | 0.024 |
+| `m11264_k160` | 9,692 | 0.435 | 0.441 | 0.034 | 0.063 | −0.283 | 0.582 | 0.033 |
+
+- On `k32`, 17% of latents are moved by more than three times the noise
+  and 22% are spared by as much.
+- The most moved are language latents that the right tag switches off:
+  8890 stays on 6% of its rows under the tag and 80% under a random shift,
+  and 86% of its rows are one language; 2925, 2342 and 5017 are alike
+  (82–83%, 80%).
+- The most spared hold no language: 139 stays on 89% under the tag and
+  68% under a random shift, with a top language share of 0.06.
+- On `k160`, latent 6882 is active on 4,911 of the changed rows (15%),
+  spread over languages (top share 0.05), and stays on 16% of them under
+  the tag against 74% under a random shift: it fires on text that is not
+  English while tagged as English, and goes out when the tag is right.
+- Latent 3573, the one that fires on French, Spanish and German (the
+  Latin-script languages the cache tagged correctly), is the most spared
+  (86% against 58%).
+
+### Reading
+
+- **The control `compare` lacked for the SAEs.** Their supports survive
+  the tag shift about as well as a random shift of its size (Jaccard
+  0.42 against 0.46, and 0.44 against 0.44). On the mean, then, an SAE
+  is as indifferent to the tag as a hard code is.
+- **Latent by latent it is not.** The tag's effect is concentrated: a
+  minority of latents carry it, some nearly switched off by the right
+  tag, and a comparable number are steadier under the tag than under
+  noise. The spread over latents is five times the noise on `k32`.
+- **Heads spread it.** Every head of the stack's first two layers is
+  moved a little more by the tag than by noise, none is spared, and from
+  layer 2 on a head cannot tell the tag from noise. The spread over heads
+  is small beside the SAEs' except in layer 0.
+- **The head the tag moves most is the topic head**, the one head that
+  recurs across seeds, and the second is head 0, the only other head of
+  that seed with a clear match in the other (NMI 0.19 with the same
+  partner; `experiments/seed-probes`). Both are among the three layer-0
+  heads with the most language information. So part of what those heads
+  partition by depends on the source tag, and the cache gave 80 languages
+  the wrong one. Whether the topic head would form, and recur, on a
+  correctly tagged cache is not something this cache can say.
+
+Limits: the rows are the head of the cache, which every model trained
+on; one seed per model; the random shifts are isotropic, as in `compare`.
