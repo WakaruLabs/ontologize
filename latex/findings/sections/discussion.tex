@@ -195,7 +195,7 @@ higher error than the 800-bit Gaussian reference on \texttt{resid\_nc}
 and nine orders of magnitude higher error on \texttt{softmax\_shm}. By
 contrast, training a straight-through arm with $2.4\times$ as many heads
 makes the discrete code the forward pass itself: with its four per-layer
-gains pinned to their training means, it forms a purely discrete 1900-bit
+gains pinned to their held-out means, it forms a purely discrete 1900-bit
 code at $\fvu = 0.158$. At a matched 1900-bit rate, neither the converged
 $k_{\mathrm{SAE}}{=}160$ $\topk$ SAE nor the single-layer hard variant
 can improve on $\fvu = 0.236$--$0.273$ under any coefficient
@@ -208,11 +208,11 @@ are used nearly uniformly whereas an L1 SAE's latents have skewed firing
 rates. On the sentence-split cache, a wider $\topk$ SAE
 ($k_{\mathrm{SAE}}{=}256$) outperforms the hard stacks under both average
 and per-row bit budgets ($0.128$ and $0.129$ vs.\ $0.161$ and $0.164$;
-Appendix~\ref{sec:quantrate}). Relative to the 1900-bit Gaussian
-rate--distortion bound, the hard code remains $3.1\times$ higher in
-error, reflecting at least the gap to the asymptotic distortion--rate
-limit achievable only by coding long blocks of samples
-jointly~\cite{cover2006}. Training this discrete stack required matching
+Appendix~\ref{sec:quantrate}). The hard code sits $3.1\times$ above the
+Gaussian reference for its rate, and so at least that far from the data's
+distortion--rate function, a limit over long blocks of samples that a
+code describing each sample alone need not be able to
+reach~\cite{cover2006}. Training this discrete stack required matching
 the classifier temperature to the logit scale, applying relative logit
 noise, rescaling the weight on the batch-mean uniformity term
 $\mathrm{KL}_m$, and rescaling dictionary initialization (which alone
@@ -286,7 +286,7 @@ single head. This lack of identifiability is the central limitation for
 our steering framework: a head that does not recur across runs cannot be
 assigned a stable meaning, qualifying every per-head claim in this study.
 The sole exception to date is a block of heads explicitly trained for
-temporal consistency: on adjacent sentence pairs, a Fano mutual-information
+temporal consistency: on pairs of sentences from one document, a Fano mutual-information
 objective causes a block of 38 slow heads to reproduce across three seeds
 (Hungarian-matched NMI of $0.412$--$0.414$ vs.\ a $0.005$ null) while
 varying more slowly across sentences than any linear projection of the
@@ -297,14 +297,15 @@ across runs (Section~\ref{sec:slowheads}).
 \item \textbf{Entries contribute nearly equally except when classifying
 the raw input.} In layers~1--3, entries within each head carry nearly
 equal shares of output contribution (Gini $0.06$--$0.15$, with zero dead
-entries), whereas layer~0 exhibits wide within-head dispersion in atom
-norms (Gini $0.33$--$0.59$) despite near-uniform entry usage. Because the
+entries), whereas layer~0's entries carry unequal shares (Gini
+$0.33$--$0.59$) because its atom norms vary widely within heads, despite
+near-uniform entry usage. Because the
 single-layer hard model exhibits the same dispersion, this inequality
 arises from classifying the unconditioned raw input rather than from
 residual stacking.
 \item \textbf{Learned heads prioritize semantic content over source
 language.} Consistent with SONAR's design as a language-agnostic semantic
-embedding, the highest-variance head partitions inputs by broad topic and
+embedding, the strongest head (by $\eta^2$) partitions inputs by broad topic and
 genre, and is the single head that recurs across random seeds. Source language, the corpus's primary free ground-truth label, served as a
 diagnostic probe rather than an expected single-head variable: language
 identity is distributed across multi-head neighborhoods rather than
@@ -445,7 +446,7 @@ intervention whose steering behavior remains to be measured.
 \item \textbf{Per-layer decoders vs.\ width-matched shared decoders.}
 Early one-epoch direct-atom pilots on GPT-2 showed less than a $0.007$
 improvement in unwhitened $\mathrm{FVU}$ from separate per-layer
-decoders, initially suggesting little benefit. On the 40M-token
+decoders, initially suggesting little benefit. On a twin of the 40M-token
 concatenated-head model (Appendix~\ref{sec:gpt2ablation}), however,
 giving each layer its own decoder reduces held-out $\mathrm{FVU}$ from
 $0.186$ to $0.169$ ($97.3\% \to 97.7\%$ loss recovered) and reduces
@@ -465,8 +466,8 @@ should be evaluated on SONAR against SAEs at matched continuous capacity
 (where rank-1 radial fibers require 160 continuous values per token).
 \item \textbf{Re-evaluating ablations under the rescaled initialization.}
 Our input-space entanglement diagnostics and the gain and blend ablations
-were run under the original dictionary initialization, which started at
-an initial $\fvu$ of $1.84\times10^8$ at step~0 and left 10\% of code
+were run under the original dictionary initialization, which started
+$1.84\times10^8$ off at step~0 and left 10\% of code
 capacity unused; these ablations should be repeated under the rescaled
 initialization.
 \item \textbf{Scaling the steering evaluation.} We have evaluated
@@ -481,16 +482,16 @@ effects, which for SAE features is partially predictable prior to
 intervening~\cite{duan2026}; and weighing the single-layer hard arm's
 near-perfect target realization, halved collateral, and higher cross-seed
 reproducibility against its $1.79\times$ higher reconstruction error.
-Reducing input-space collateral requires increasing classifier margins
-rather than finding better steering directions. Even with multi-layer
+Reducing input-space collateral appears to need larger classifier margins
+more than better steering directions. Even with multi-layer
 residual reclassification excluded, input-space collateral is largely
 direction-blind: linearized within a single layer, stepping along any
 Ontologizer's decoded atom flips other heads at the same rate as a random
 step of equal norm, and in decoded text, ablating a head's contribution
 perturbs outputs no more than a norm-matched random step. Because hard-code classifiers lie close to their decision boundaries (a
 within-layer linearized random step of $0.25\lVert\mathbf{x}\rVert$ flips
-30\% of same-layer heads), increasing boundary margins provides the most
-direct lever. Consistent with this hypothesis, \texttt{ste\_k2\_h380}
+30\% of same-layer heads), distance from the boundary looks like the
+lever. Consistent with this hypothesis, \texttt{ste\_k2\_h380}
 (five layers of 380 binary heads) exhibits substantially lower
 collateral: the same $0.25\lVert\mathbf{x}\rVert$ step is predicted to
 flip 13\% of other heads to first order and empirically flips 17--19\%

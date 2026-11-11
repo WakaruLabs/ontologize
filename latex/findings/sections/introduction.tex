@@ -27,7 +27,7 @@ underlying motivation is to decompile a model into a finite state
 machine, yet such a machine is only as interpretable as an enumeration of
 its states. Even a mixture of two simple processes (one constant and one
 a fair coin) requires infinitely many states to track which component is
-active, because the structure lies in how the components
+active, so the structure lies in how the components
 overlap~\cite{crutchfield2026}. Ideally, mechanistic interpretability
 would provide guarantees about the computational process that a model
 uses, yielding features that are causal, disentangled, and closed-form.
@@ -113,9 +113,9 @@ representation space into a set of such contrastive classifiers. Each
 An input is encoded as one \emph{assignment} per head and reconstructed
 from the atoms that those assignments select across a stack of layers,
 each of which takes as input the residual left unexplained by earlier
-layers. Interpretability then derives from \emph{MoEfication} in an
+layers. Interpretability is then expected from \emph{MoEfication} in an
 extended sense~\cite{zhang2022}: decomposing the representation space
-into small classification tasks, one per head, each interpretable in
+into small classification tasks, one per head, each nameable in
 isolation, where within-head entry swaps act as steering moves.
 Figure~\ref{fig:teaser} summarizes the steering and reconstruction
 behavior of the softmax Ontologizer.
@@ -174,7 +174,7 @@ non-negative code assigns two factors disjoint supports when their joint
 distribution covers a broad enough product range, roughly when every
 combination of their extreme values occurs~\cite{dorrell2025}. Although
 that condition applies to the unknown generative factors of the data, our
-learned codes satisfy the analogous empirical coverage condition: among
+learned codes are consistent with it: among
 entry pairs from two heads that would occur at least ten times under
 independence, at most 0.24\% have zero count in any layer of a SONAR
 model. Without activity regularization, summed models do not partition
@@ -313,8 +313,8 @@ algebra or a measure of off-target collateral.
 
 \paragraph{Routed and mixture-of-experts dictionaries.}
 Switch SAEs~\cite{mudide2025} route each activation to one of several
-expert $\topk$ SAEs to reduce training compute. Because their router
-groups similar inputs together, experts duplicate features (5--10\% of
+expert $\topk$ SAEs to reduce training compute. Their router groups
+similar inputs together, and experts duplicate some features (5--10\% of
 decoder directions have a near-duplicate in another expert), a phenomenon
 that Xu et al.\ characterize as experts collapsing into redundant
 ensembles and mitigate by activating multiple experts per
@@ -417,7 +417,7 @@ without requiring a separately trained inverter. Inverting pooled
 sentence embeddings otherwise requires training a dedicated decoder that
 recovers exact text only by iteratively re-embedding and correcting its
 candidates~\cite{morris2023textembeddingsrevealalmost}, as exact
-training-free inversion is possible only from per-token causal language
+training-free inversion is known only from per-token causal language
 model activations~\cite{nikolaou2025} rather than bidirectional
 mean-pooled embeddings. Because \texttt{textfid.py} and
 \texttt{steerfid.py} decode in a single greedy pass through a generative
@@ -467,8 +467,9 @@ for classifier heads, while activation-containment match fractions
 Wang et al.~\cite{wang2024} similarly measure cross-run consistency via
 each latent's maximum activation correlation with latents from a second
 run relative to model-seed and SAE-seed skylines. Korznikov et
-al.~\cite{korznikov2026} show that SAEs trained with randomly frozen or
-weakly constrained encoders or decoders score within a few percentage
+al.~\cite{korznikov2026} show that SAEs trained with the decoder frozen
+at a random initialization or held near it, or with the encoder frozen at
+random, score within a few percentage
 points of fully trained SAEs on autointerp, single-latent sparse probing,
 and RAVEL; our permutation nulls shuffle a trained model's own entries,
 latents, or sample rows, and therefore do not isolate how much training
@@ -478,8 +479,8 @@ serves as a closed-form instance of dataset-free feature synthesis, an
 approach that struggles even on planted ground-truth triggers, helping
 human evaluators identify triggers less than half the
 time~\cite{casper2023}; parameter-only decodes fail in our setting as
-well. Two elements of our framework have no direct counterpart in prior
-work: treating per-head routing as contrastive classification equipped
+well. Two elements of our framework have, to our knowledge, no close
+counterpart in prior work: treating per-head routing as contrastive classification equipped
 with a direct causal intervention interface, and testing within-head and
 within-group coherence against size-matched random subsets from the same
 dictionary across both weight geometry and LLM-generated descriptions (by

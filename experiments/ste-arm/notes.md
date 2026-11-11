@@ -1806,15 +1806,18 @@ orthogonality measured earlier is the only one the trained models have.
 by construction. `s_support` as a loss term does not produce it either:
 it is satisfied in the decoder's null space (next section).
 
-`resid_nc_hm`, the reference configuration trained 22 times longer, is
-the one model whose heads do anything like avoid each other. Its
+`resid_nc_hm`, close to the reference configuration and trained 22 times
+longer, is the one model whose heads do anything like avoid each other.
+(It differs from `resid_nc` in three settings: `e` 2048 against 4096, the
+batch mean-entropy bonus from the start, and the between-head cosine
+weight; `experiments/coherence-sign/README.md` has the table.) Its
 profiles are sparse (spread 0.13 against 0.52-0.98 elsewhere) and `sigma`
 sits 4% below its null, in four of five layers (0.113 against 0.118).
 That is still not a partition: at `h = 32` one needs spread near 0.03,
 and most of the low `sigma` is the sparsity, which the null shares. Long
 training sparsifies a head's coordinate profile; it barely separates
-heads. `resid_nc`, the same configuration at 372.6k steps, is at its null
-with dense profiles like the rest.
+heads. `resid_nc`, the reference at 372.6k steps (and twice the width), is
+at its null with dense profiles like the rest.
 
 (Both load through `restore_spec`, which infers from the stored weights
 that their layer 0 predates `resid_const`'s coordinate; the reloaded

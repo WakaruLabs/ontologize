@@ -47,16 +47,17 @@ Auditing a model for a hidden objective or an unnamed concept requires
 identifying its internal variables without labels. Supervised probes and
 difference-of-means vectors outperform sparse autoencoder (SAE) features at
 detection and steering, but supervised methods only test concepts that an
-experimenter already suspects. Unsupervised SAEs struggle in part because of
-the form of their features: each latent either fires or stays silent,
+experimenter already suspects. We argue that unsupervised SAEs struggle in
+part because of the form of their features: each latent either fires or stays silent,
 absorption makes silence uninformative, and effective steering vectors
 instead contrast alternative values of a variable. The Ontologizer learns
 categorical variables directly via stacked layers of competitive classifier
 heads, each assigning every input to one of $k$ entries associated with a
 learned atom. Forcing a head to another entry swaps one atom for another, an
-unsupervised analogue of a difference-of-means vector, though swaps between
-arbitrary partitions of the same space steer their own cells just as
-specifically on both SONAR and GPT-2. Once the code is discrete, categorical
+unsupervised analogue of a difference-of-means vector, so steering can test a
+discovered variable, though only against arbitrary partitions of the same
+space, which steer their own cells just as specifically on both SONAR and
+GPT-2. Once the code is discrete, categorical
 structure incurs little distortion: on SONAR sentence embeddings, a pure
 1900-bit hard code reaches $\fvu = 0.158$, whereas a 160-latent $\topk$ SAE
 at the same bit budget cannot beat $0.236$ (though entropy-coded SAEs with
@@ -69,8 +70,8 @@ However, the learned variables are not yet identifiable: independent seeds
 match in error to four digits while sharing no heads past the first layer,
 input-space steps flip other heads as often as random steps of equal norm,
 and parameter-only decodes fail to describe entries. The one exception is a
-block of heads rewarded for maintaining consistent entries across adjacent
-document sentences, which reproduces as a block across three seeds (matched
+block of heads rewarded for maintaining consistent entries across two
+sentences of a document, which reproduces as a block across three seeds (matched
 NMI $0.41$ vs.\ a $0.005$ null), though not yet head by head, and varies
 more slowly than any linear projection of the embedding. Identifiability
 rather than fidelity is therefore the binding constraint for auditing and
@@ -92,8 +93,7 @@ provides the full protocols and defining equations for every evaluation.
 Our main SONAR models are trained on a fixed cache of 4{,}000{,}000
 unit-norm SONAR sentence embeddings ($d{=}1024$) drawn from an interleaved
 86-language mC4 sample, with a ground-truth language label per row and
-source text recoverable by row index. Due to a source-tag bug in the
-original cache, 80 of the 86 languages (93\% of rows) were encoded with
+source text recoverable by row index. In this cache, 80 of the 86 languages (93\% of rows) were encoded with
 SONAR's English source tag rather than their native tag; a companion
 sentence-split cache (\texttt{mc4\_sent16}, 44.1M consecutive segments)
 stores unnormalized embeddings encoded under native language tags

@@ -288,9 +288,10 @@ convergence.
 	the $n$-row mean $\bar{\mathbf{p}}$ (off-diagonal mean $\omega = 0.967$,
 	head $i$ outlined). (e) Head $i$'s atoms on the 48 of $e{=}2048$
 	coordinates where $\boldsymbol{\pi}_i$ is largest (a column subset, not
-	a projection). Each panel sets zero to white, except (d), whose scale
-	starts at the 5th percentile of off-diagonal cosines because $\omega$ is
-	near $1$. Figure~\ref{fig:anatomy-softmax} shows the softmax counterpart.}
+	a projection). Each panel has its own scale with zero set to white,
+	except (d), whose scale starts at the 5th percentile of off-diagonal
+	cosines because $\omega$ is near $1$, so the few cosines below it show as
+	white. Figure~\ref{fig:anatomy-softmax} shows the softmax counterpart.}
 \label{fig:anatomy}
 \end{figure}
 
@@ -346,9 +347,8 @@ penalty can enforce. Dimensionally, such a partition is well within
 capacity: in the softmax configuration (Table~\ref{tab:cfg-softmax}),
 dividing $e{=}2048$ coordinates among $h{=}32$ heads allocates 64
 coordinates per head to represent $k{=}32$ atoms, which need not have
-disjoint supports within a head. Accommodating between-head disjointness
-is the primary motivation for choosing an overcomplete dictionary width
-$e > d$.
+disjoint supports within a head. Room for between-head disjointness is
+most of what an overcomplete dictionary width $e > d$ buys.
 
 Two distinct forms of orthogonality are therefore at play, only the
 between-head one being architectural: disjoint support assigns each head
@@ -356,7 +356,8 @@ its own coordinate block, whereas \emph{within} a head the $k$ atoms act
 as contrastive alternatives spread across that block
 (Figure~\ref{fig:head-simplex}; Section~\ref{sec:prelim-orth}). When
 heads are summed, neither property is guaranteed at convergence because
-$\omega$ acts only as a soft penalty; similarly, in non-negative matrix
+$\omega$ acts only as a soft penalty, and the geometry is built to make a
+support partition the cheap solution rather than to force one; similarly, in non-negative matrix
 factorization, soft overlap penalties reduce coordinate sharing without
 yielding an exact partition, which instead requires hard coordinate
 assignment~\cite{zass2006,pompili2014,asteris2015onmf,charikar2021}.
@@ -595,7 +596,8 @@ cycle-consistent steering (Appendices~\ref{sec:textfid}
 and~\ref{sec:steertext}). Large Concept
 Models~\cite{lcmteam2024largeconceptmodelslanguage} generate sentence
 embeddings directly in SONAR space, making SONAR a natural testbed for
-embedding-level interventions, although SONAR decoding is known to be
+embedding-level interventions (an edit to a SONAR embedding is an edit to
+such a model's context or output), although SONAR decoding is known to be
 sensitive to small embedding
 perturbations~\cite{lcmteam2024largeconceptmodelslanguage}. As a second
 substrate where sparse dictionary learning is well established and

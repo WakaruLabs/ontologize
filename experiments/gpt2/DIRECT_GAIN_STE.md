@@ -119,7 +119,7 @@ with `sae.py` (unwhitened MSE) and evaluated with the same splice code.
   direct entries + gain, the k=64/128 hard codes collapse (FVU 0.75/0.80).
 - Fibers (`fiber_rank r`: a rank-r local basis per entry, coordinates read linearly from the unit residual) recover the
   SAE's FVU advantage and more, but only with an "honesty" mechanism that keeps the discrete base meaningful: fiber
-  dropout keeps the base-only FVU at 0.23–0.30 whatever the rank; a joint group-lasso cap on the fiber norm gives a hard
+  dropout keeps the base-only FVU at 0.27–0.30 at both ranks run (4 and 8); a joint group-lasso cap on the fiber norm gives a hard
   guarantee at the cost of most of the fiber's value; unconstrained fibers take over completely (base-only FVU 10).
 - Seed stability (`seedstab.py`, Hungarian matching of heads by partition NMI): head partitions of the two seeds agree
   only in layer 0 (NMI 0.09 vs 0.05 for unrelated heads within one run) and not at all in layers 1–4. Which labels share a
