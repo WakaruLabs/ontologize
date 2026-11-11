@@ -17,7 +17,8 @@ each pair of seeds:
   that only restates the language scores at that null.
 
 For each model: the mean and largest NMI of a head with the document's
-language, each head's entropy, and the held-out whitened FVU. The
+language beside the mean with the labels shuffled (the NMI's bias at this
+many rows), each head's entropy, and the held-out whitened FVU. The
 sentence models' FVU of the difference is that of x_hat_a - x_hat_b, the
 two sentences' reconstructions, under the differences' weights: what a
 sentence code already gives for a difference, at twice the heads.
@@ -153,12 +154,14 @@ def main() -> None:
                                   cfg.batch)
             C[name] = A
             nl = nmi_matrix(A, k, lang_row, n_lang)[:, 0]
+            nl0 = nmi_matrix(A, k, lang_row[:, perm], n_lang)[:, 0]
             ent = entropy_bits(A, k)
             out = model_outputs(ckpt, step, X, 1.0, 1024).astype(np.float64)
             m = {"ckpt": ckpt, "step": int(step), "k": int(k),
                  "fvu": fvu(out, X.astype(np.float64), w),
                  "nmi_lang_mean": float(nl.mean()),
                  "nmi_lang_max": float(nl.max()),
+                 "nmi_lang_null": float(nl0.mean()),
                  "entropy_bits_mean": float(ent.mean()),
                  "heads_below_1_bit": int((ent < 1.0).sum())}
             if kind == "sentence":
@@ -182,7 +185,8 @@ def main() -> None:
                      f"{m['fvu_of_difference']:.4f})"
                      if kind == "sentence" else "")
                   + f"; NMI(lang) mean {m['nmi_lang_mean']:.4f} max "
-                  f"{m['nmi_lang_max']:.3f}; entropy "
+                  f"{m['nmi_lang_max']:.3f} (labels shuffled "
+                  f"{m['nmi_lang_null']:.4f}); entropy "
                   f"{m['entropy_bits_mean']:.2f} bits, "
                   f"{m['heads_below_1_bit']} heads under 1 bit")
             if kind == "diff":

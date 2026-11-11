@@ -51,7 +51,8 @@ JAX_PLATFORMS=cpu uv run python experiments/pair-diff/evaldiff.py \
   language, so it is read as its margin over that shuffle.
 - **Per model**: held-out whitened FVU (the sentence models' on
   sentences; the difference models' on differences), head entropy, and
-  the mean and largest NMI of a head with the document's language. For a
+  the mean and largest NMI of a head with the document's language,
+  beside the mean with the labels shuffled. For a
   sentence model also the FVU of x_hat_a - x_hat_b as a reconstruction of
   the difference under the differences' weights: what a sentence code
   already gives, at twice the heads.

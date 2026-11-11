@@ -12,7 +12,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "experiments"
                        / "slow-order"))
-from order import diagonal, prefix, trend  # noqa: E402
+from order import by_offset, diagonal, prefix, trend  # noqa: E402
 from orderloss import (OrderedPairHyperparams, head_dependence,  # noqa: E402
                        hsic_u)
 
@@ -118,6 +118,21 @@ def test_diagonal_tells_an_order_from_a_permuted_match():
     moved = diagonal((np.eye(s) + noise)[:, perm])
     assert moved["on_diagonal"] == 0.0 and moved["best_is_own"] == 0.0
     assert moved["same_index"] < 0.1
+
+
+def test_by_offset_separates_a_gradient_from_an_identity():
+    s = 12
+    lvl = np.linspace(1.0, 0.2, s)
+    gradient = np.outer(lvl, lvl)            # shared content falls with index
+    g = by_offset(gradient)
+    assert diagonal(gradient)["index_rank"] > 0.99   # the match follows it
+    assert abs(g["0"] - g["1"]) < 0.02       # yet index i is no closer
+    ident = gradient + 0.5 * np.eye(s)
+    i = by_offset(ident)
+    assert i["0"] > i["1"] + 0.4 and np.isclose(i["1"], g["1"])
+    w = by_offset(ident, within=True)
+    assert "0" not in w and np.isclose(w["1"], g["1"])
+    assert set(g) == {"0", "1", "2", "3-5", "6+"}
 
 
 def test_trend_skips_undefined_heads():

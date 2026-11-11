@@ -66,16 +66,20 @@ On the cache's held-out tail, for two seeds of one arm:
 | `same_index` | the NMI between head i of one seed and head i of the other, with no matching |
 | `on_diagonal`, `best_is_own` | the share of the match, and of best partners, that keep the index; chance is 1/38 |
 | `index_rank` | rank correlation of a head's index with its matched partner's |
+| `offset` | mean NMI between two heads by how far apart their indices are, across the seeds and within one |
 | `kappa_trend`, `lang_trend` | rank correlation of the index with a head's kappa between sentences `--d` apart, and with its NMI with the language label |
 | `prefix` | mean NMI of a head with the heads before it, for each half of the block |
 | `fvu` | held-out whitened FVU of the whole model |
 
 The comparison is three arms at one step: the Fano runs
 (`data/out/sonar/next-sentence/long/doc2_fano_sp1e-3_ph38{,_s43}`),
-symmetric, and ordered. An order that reproduces shows as `same_index`
-near `matched` and both well above `all_pairs`; decorrelation alone shows
-as a low `within` with `matched` no further above `all_pairs` than
-before.
+symmetric, and ordered. Decorrelation alone shows as a low `within` with
+`matched` no further above `all_pairs` than before. An order shows as
+`same_index` near `matched`, both above `all_pairs`, and an `index_rank`
+near 1; but so does a block in which what heads share merely falls with
+the index. `offset` tells the two apart: an identified head is closer to
+the other seed's head of its index (`cross` at 0) than to that seed's
+neighbouring heads (`cross` at 1) or its own seed's (`within` at 1).
 
 `experiments/next-sentence/seedmatch.py` and `transitions.py` take these
 runs unchanged for the block's other statistics.

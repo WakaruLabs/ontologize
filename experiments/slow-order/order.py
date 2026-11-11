@@ -14,6 +14,13 @@ predicts and a decorrelation alone does not:
   partner in B has their index. Chance for both is one over the block.
 - `index_rank`: the rank correlation between a head's index and its
   matched partner's.
+- `offset`: the mean NMI between two heads by how far apart their indices
+  are, across the two seeds (`cross`) and inside one (`within`). If what
+  heads share falls with the index, the match follows the index and
+  `same_index` exceeds any pairing's with no head identified: then the
+  other seed's head i (`cross` at 0) is no closer than a neighbouring
+  head of the same seed (`within` at 1), which the term has pushed apart.
+  A head that is identified is closer to its counterpart than to either.
 - `kappa_trend`, `lang_trend`: the rank correlation of the head index with
   each head's Cohen's kappa between two sentences of a document `--d`
   segments apart (`transitions.kappa`) and with its NMI with the language
@@ -68,6 +75,20 @@ def diagonal(cross: Float[np.ndarray, "s s"]) -> Dict[str, float]:
             "best_is_own": float((cross.argmax(1) == own).mean()),
             "index_rank": float(spearmanr(own, m)[0]),
             "chance": 1.0 / s}
+
+
+def by_offset(M: Float[np.ndarray, "s s"], within: bool = False
+              ) -> Dict[str, float]:
+    """Mean NMI by how far apart two heads' indices are. With `within`
+    (one seed against itself) offset 0 is a head with itself and is left
+    out."""
+    s = len(M)
+    off = np.abs(np.arange(s)[:, None] - np.arange(s)[None, :])
+    bands = {"0": off == 0, "1": off == 1, "2": off == 2,
+             "3-5": (off >= 3) & (off <= 5), "6+": off >= 6}
+    if within:
+        del bands["0"]
+    return {name: float(M[m].mean()) for name, m in bands.items()}
 
 
 def trend(v: Float[np.ndarray, "s"]) -> float:
@@ -157,9 +178,13 @@ def main() -> None:
               f"{r['prefix']['second_half']:.4f} (second)")
 
     AB = nmi_matrix(S["a"], K["a"], S["b"], K["b"])
-    res["specificity"] = specificity(np.asarray(res.pop("a_within")),
-                                     np.asarray(res.pop("b_within")), AB)
+    WA = np.asarray(res.pop("a_within"))
+    WB = np.asarray(res.pop("b_within"))
+    res["specificity"] = specificity(WA, WB, AB)
     res["diagonal"] = diagonal(AB)
+    res["offset"] = {"cross": by_offset(AB),
+                     "within": by_offset(0.5 * (WA + WB), within=True)}
+    res["cross"] = AB.tolist()
     s, d = res["specificity"], res["diagonal"]
     print(f"slow block a-b: matched NMI {s['matched']:.4f}, any pairing "
           f"{s['all_pairs']:.4f}, within one seed {s['within_a']:.4f} / "
@@ -168,6 +193,9 @@ def main() -> None:
           f"{d['on_diagonal']:.1%}, best partner is own index "
           f"{d['best_is_own']:.1%} (chance {d['chance']:.1%}); index rank "
           f"correlation {d['index_rank']:+.3f}")
+    for name, v in res["offset"].items():
+        print(f"  NMI by index offset, {name:>6}: " + "  ".join(
+            f"{b} {x:.4f}" for b, x in v.items()))
     if cfg.out:
         Path(cfg.out).parent.mkdir(parents=True, exist_ok=True)
         Path(cfg.out).write_text(json.dumps(res, indent=1))
