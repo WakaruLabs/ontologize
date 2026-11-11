@@ -282,7 +282,7 @@ any sparse model (\texttt{coordfvu.py}); zeroing $w_{837}$ at evaluation
 changes $\fvu$ by at most $+0.0043$ and leaves all model rankings unchanged.
 A companion sentence-split cache, \texttt{mc4\_sent16}
 (\texttt{experiments/\allowbreak sentence-split/}), segments the first
-4{,}000{,}000 mC4 documents with SaT (\texttt{sat-3l-sm}, capped at 200
+4{,}000{,}000 mC4 documents with SaT~\cite{frohmann2024sat} (\texttt{sat-3l-sm}, capped at 200
 characters; the three-layer model slightly outperforms the twelve-layer
 model on round-trip SONAR chrF2, $0.593$ vs.\ $0.583$, by avoiding
 under-segmented long spans). It encodes up to 16 consecutive segments per
@@ -3105,7 +3105,15 @@ zero, removing the incentive to collapse. Across the 5{,}011-step pilot
 sweep, no slow head collapsed ($5.00$ realized bits at every
 $s_{\mathrm{pair}}$ up to $10^{-2}$), held-out $\fvu$ stayed within
 $0.0002$ of the unregularized control, and adjacent-pair Cohen's kappa on
-the slow heads rose from $0.072$ to at most $0.097$.
+the slow heads rose from $0.072$ to at most $0.097$. Temporal
+SAEs~\cite{bhalla2026temporal} are the nearest SAE counterpart: they add
+a contrastive term between adjacent tokens' codes on a designated block
+of high-level latents, and motivate its negatives as preventing the
+collapse to constant features that our disagreement penalty produced;
+Temporal Feature Analysis~\cite{lubana2025priors} instead splits each
+activation into a part predicted from its context and a novel residual.
+Both work at the level of tokens and report single runs, so neither
+measures whether the slow block reproduces across seeds.
 
 When trained at $s_{\mathrm{pair}}{=}10^{-3}$ for three epochs over the
 3.9M pairs of the first 4M rows (\texttt{long.sh}), the 38 slow heads

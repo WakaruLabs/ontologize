@@ -466,12 +466,20 @@ for classifier heads, while activation-containment match fractions
 (\texttt{splitting.py}) provide a thresholded activation-based analogue.
 Wang et al.~\cite{wang2024} similarly measure cross-run consistency via
 each latent's maximum activation correlation with latents from a second
-run relative to model-seed and SAE-seed skylines. Korznikov et
+run relative to model-seed and SAE-seed skylines. Paulo and
+Belrose~\cite{paulo2025seeds} find that two $\topk$ SAEs trained on the
+same data in the same order from different initializations share only
+42\% of their latents (matched one to one on both encoder and decoder
+directions at cosine $\ge 0.7$), fewer as the dictionary widens, so seed
+dependence is not peculiar to classifier heads. Korznikov et
 al.~\cite{korznikov2026} show that SAEs trained with the decoder frozen
 at a random initialization or held near it, or with the encoder frozen at
 random, score within a few percentage
 points of fully trained SAEs on autointerp, single-latent sparse probing,
-and RAVEL; our permutation nulls shuffle a trained model's own entries,
+and RAVEL, and Heap et al.~\cite{heap2025} find that SAEs on randomly
+re-initialized transformers reach autointerp scores close to those on
+trained ones in the larger models they test, the two being separated
+instead by how token-specific the latents are; our permutation nulls shuffle a trained model's own entries,
 latents, or sample rows, and therefore do not isolate how much training
 improves over random projections in those metrics. Decoding parameter
 vectors through SONAR's text decoder to test weight-only interpretability

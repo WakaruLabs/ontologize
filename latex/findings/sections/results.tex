@@ -366,7 +366,11 @@ targets at strength $0.25$ ($0.67$ at native step size) with $0.31$
 collateral, while the target projection vector, margin gradient, and
 logistic probe each achieve $1.00$ ($0.87$ for difference of means),
 matching the trained flat hard code and outperforming the trained five-layer
-hard stack on both realization and collateral. Evaluated at each method's
+hard stack on both realization and collateral. These arbitrary partitions
+play the role that control tasks play for probes~\cite{hewitt2019}, where
+a probe's accuracy is read as its margin over the same probe trained on
+random labels: a steering score counts here only by its margin over the
+same step into a partition that training did not shape. Evaluated at each method's
 unnormalized native step size, the difference-of-means vector achieves
 higher realization in most models, partly by taking longer steps
 (Appendix~\ref{sec:steersupnative}). Whereas this evaluation tests steering
@@ -886,12 +890,16 @@ heads.
 \subsubsection{The exception: slow heads trained on sentence pairs}
 \label{sec:slowheads}
 
-A designated block of heads does reproduce across seeds, as a collective
-subspace rather than head by head, when trained with an explicit paired-view
-objective. Specifically, we trained a single-layer model ($h{=}380$, $k{=}32$) on pairs of sentences drawn from the same document in
-\texttt{mc4\_sent16}, augmenting the reconstruction loss on the first 38
-``slow'' heads with a Fano lower bound on the mutual information between the
-two sentences' assigned entries (Appendix~\ref{sec:seedsdetail}). After
+A designated block of heads does reproduce across seeds, as a block
+rather than head by head, when trained with an explicit paired-view
+objective. Specifically, we trained a single-layer model ($h{=}380$,
+$k{=}32$) on pairs of sentences drawn from the same document in
+\texttt{mc4\_sent16}, adding to its loss a Fano lower bound on each of
+its first 38 (``slow'') heads' mutual information between the entries it
+assigns the two sentences (Appendix~\ref{sec:seedsdetail}). Temporal
+SAEs~\cite{bhalla2026temporal} apply a contrastive version of the same
+idea to adjacent tokens' codes on a block of SAE latents, without a test
+across seeds. After
 three epochs, these 38 slow heads maintain the same entry across adjacent
 sentences at Cohen's kappa $0.46$, compared to $0.07$ for the first 38 heads
 of an unregularized control. Across three random seeds, the slow blocks

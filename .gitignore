@@ -31,6 +31,7 @@
 **/*.pb
 **/*.pickle
 **/*.pt
+**/.pytest_cache/
 
 **/.venv/
 
