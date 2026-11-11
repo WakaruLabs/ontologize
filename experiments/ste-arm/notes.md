@@ -4202,6 +4202,164 @@ coordinate, or a direct run's atoms.
 uv run python experiments/ste-arm/coordfvu.py
 ```
 
+## Atoms selected together (`coselect.py`): heads of a layer lean the same way
+
+2026-11-11. Costa et al. (2025) report that a matching-pursuit SAE's
+dictionary is more coherent than a standard SAE's while the atoms it
+selects for one input are less so. `coselect.py` asks the same of the
+hard stacks: is the cosine between two heads' decoded atoms lower over
+the pairs a row selects together (`selected`) than over pairs drawn from
+each head's usage independently (`usage`, the null)?
+
+It is not. Within a layer it is higher, in every hard stack and both
+seeds; across layers there is nothing.
+
+Signed cosine between decoded atoms centered on their head's
+usage-weighted mean, in the whitened frame; `usage` is 0.0000–0.0002 in
+every cell of this table and its spread over 5 permutations is at most
+0.0001. SONAR models on 4,096 rows of `mc4_fresh`, GPT-2 models on the
+last 4,096 rows of `gpt2_l8`.
+
+| `selected` | layer 0 | layer 1 | layer 2 | layer 3 | layer 4 | across layers |
+|---|---|---|---|---|---|---|
+| SONAR `ste_h76_init01` | 0.0083 | 0.0043 | 0.0035 | 0.0031 | 0.0027 | 0.0001 |
+| SONAR `ste_h76_i01_s43` | 0.0083 | 0.0043 | 0.0035 | 0.0031 | 0.0027 | 0.0001 |
+| SONAR `resid_nc_hm` (softmax; argmax entries) | 0.0015 | 0.0004 | 0.0001 | −0.0002 | −0.0001 | −0.0036 |
+| GPT-2 `ste_h76` | 0.0144 | 0.0031 | 0.0036 | 0.0039 | 0.0027 | 0.0002 |
+| GPT-2 `ste_h20_cat128` | 0.1311 | 0.0250 | 0.0127 | 0.0083 | 0.0057 | −0.0021 |
+| GPT-2 `ste_h20_cat128-43` | 0.1266 | 0.0253 | 0.0127 | 0.0082 | 0.0057 | −0.0021 |
+
+The two SAEs (`sae_conv/m5120_k32` and its seed 43), over the 32 latents
+active on a row, against sets drawn by firing frequency: signed 0.0331
+against 0.0174, and 0.0345 against 0.0187; absolute 0.0401 against 0.0326
+(dictionary 0.0380), and 0.0411 against 0.0331.
+
+- **Scale.** The sum of h unit vectors with mean pairwise cosine c has
+  squared norm h(1 + (h − 1)c), so the centered atoms a layer-0 row
+  selects add up 1.6 times as large in squared norm as independent heads'
+  would on SONAR (76 heads, c 0.0083), 2.1 times on GPT-2 `ste_h76`, and
+  3.5 times on `ste_h20_cat128` (20 heads, c 0.131). By layer 4 the
+  factors are 1.2, 1.2 and 1.1.
+- **Reading.** Heads of one layer see the same input and choose entries
+  whose atoms point partly the same way: they agree, which is redundancy,
+  where matching pursuit's steps avoid what earlier steps wrote. The
+  agreement is largest where the input has the most shared structure to
+  agree on (layer 0; GPT-2's wide heads) and fades as the residual is
+  used up. It is the within-layer counterpart of the findings' remark
+  that a layer's heads select "without observing one another's errors".
+- **Across layers the stack is close to independent**, slightly negative
+  on GPT-2's concatenated stack and on the softmax model, whose later
+  layers correct earlier ones. Residual forwarding removes what a layer
+  wrote from the next layer's input but does not make the next layer's
+  atoms avoid the earlier selection in direction.
+- **Absolute cosines** tell the same story more weakly: above the null in
+  layer 0 (SONAR 0.0317 against 0.0301; `ste_h20_cat128` 0.141 against
+  0.062) and within 0.0004 of it in SONAR's layers 1–4, where `selected`
+  is in fact a little below (0.0266 against 0.0270 in layer 1). For
+  scale, two random directions in 1,024 dimensions have expected absolute
+  cosine 0.025.
+- **The SAEs' active latents are also more alike than chance**, and by
+  more than SONAR's heads are, so on this measure neither code has the
+  matching-pursuit property.
+- **Uncentered**, the non-negative dictionaries' shared offsets raise
+  every figure and the conclusion is the same (SONAR layer 0: 0.0243
+  against 0.0163).
+
+No dictionary-wide figure in the writeup is overstated by this: the
+interference a row sees within a layer is, if anything, slightly more
+than `support` or `cossim_k` would suggest from usage alone. One seed
+pair per stack; 4,096 rows; the softmax model's entries are its argmax,
+which is not the code it reconstructs with.
+
+```bash
+M=data/out/sonar/multilingual
+uv run python experiments/ste-arm/coselect.py \
+    --cache data/sonar_embeddings/mc4_fresh.npy --rows 4096 --draws 5 \
+    --ckpt $M/ste_h76_init01 $M/ste_h76_i01_s43 $M/resid_nc_hm \
+    --sae data/out/sonar/sae_conv/m5120_k32{,_s43}/params.npz \
+    --out data/out/sonar/coselect/sonar.json
+G=data/out/gpt2_l8
+uv run python experiments/ste-arm/coselect.py \
+    --cache data/activations/gpt2_l8.npy \
+    --mse-weights data/activations/gpt2_l8.mse_weights_matched.npy \
+    --rows 4096 --draws 5 \
+    --ckpt $G/ste_h20_cat128 $G/ste_h20_cat128-43 $G/ste_h76 \
+    --out $G/coselect/gpt2.json
+```
+
+## Atoms conditioned on an earlier head (`condrefit.py`): nothing to gain per head
+
+2026-11-11. Huijben et al. (2024, QINCo) argue that a residual
+quantizer's stage should have a codebook per cell of the stages before
+it, because the residual it sees differs from cell to cell. Before
+building a stack whose atoms depend on earlier choices, `condrefit.py`
+asks whether there is anything to gain on the trained one. With every
+assignment, every gain and the other layers' contributions of
+`ste_h76_init01` held fixed, one layer's 2,432 decoded atoms are refit by
+least squares in the whitened frame: once for all rows (`global`), and
+separately within each of the 32 cells of one head of an earlier layer.
+The null is the same refit within a random partition with the same cell
+sizes, which has the same 32 sets of atoms and knows nothing. Each set is
+pulled toward the trained atoms by a ridge (a multiple of the cell's mean
+diagonal). Fit on the first 1,048,576 rows of `mc4_4M`, which the model
+trained on; scored on all 131,072 rows of `mc4_fresh`. The figure is the
+whole model's whitened FVU, 0.15352 with the trained atoms.
+
+Layer 1 refit, conditioned on layer-0 heads (the three whose cells explain
+most of the layer's target, and three drawn):
+
+| ridge | 1e-4 | 1e-2 | 0.1 | 1 | 10 | 100 |
+|---|---|---|---|---|---|---|
+| global | 0.15178 | 0.15177 | 0.15172 | **0.15164** | 0.15189 | 0.15245 |
+| head 54 | 0.16159 | 0.16131 | 0.15921 | 0.15288 | **0.15158** | 0.15239 |
+| heads 46, 0 | 0.1625–0.1627 | 0.1622–0.1624 | 0.1600–0.1602 | 0.1533–0.1534 | 0.1517 | 0.1524 |
+| drawn heads 47, 38, 63 | 0.1634–0.1636 | 0.1631–0.1633 | 0.1609–0.1610 | 0.1539–0.1540 | 0.1518–0.1519 | 0.1524 |
+| random partition (two draws) | 0.16405 | 0.16375 | 0.16150 | 0.15440 | 0.15199 | 0.15245 |
+
+Layer 4 refit, conditioned on layer-3 heads:
+
+| ridge | 1e-4 | 1 | 10 | 100 |
+|---|---|---|---|---|
+| global | **0.14895** | 0.14949 | 0.15137 | 0.15238 |
+| six heads (three top, three drawn) | 0.1610 | 0.1522 | 0.1514 | 0.1524 |
+| random partition (two draws) | 0.16110 | 0.15225 | 0.15147 | 0.15238 |
+
+- **Layer 0's cells carry a little about layer 1's atoms.** Every
+  layer-0 head beats the random partition at every ridge. Barely
+  regularized, where both pay the same price for 32 times the
+  parameters, head 54 is ahead by 0.0025 and a drawn head by about
+  0.0005. Head 54 is the head the findings single out as the topic head.
+- **It is not enough to be worth having.** At its best ridge the best
+  head reaches 0.15158, where one global set reaches 0.15164: a gain of
+  0.00006, 0.04% of the error. The drawn heads do not beat the global
+  refit at any ridge.
+- **Layer 3's cells carry nothing about layer 4's atoms.** The six heads
+  sit within 0.0001 of the random partition at every ridge, and the best
+  conditional figure is worse than the global one by 0.0025.
+- **A plain refit gains more than conditioning.** One global
+  least-squares set of atoms lowers the model's FVU by 1.2% at layer 1
+  and 3.0% at layer 4 on rows it was not fit to, with nothing else
+  changed. The trained atoms are not at their own optimum given the
+  assignments; the last layer's are furthest from it.
+
+So the arm with atoms conditioned on an earlier head is not built. What
+this does not cover: conditioning on a function of the whole earlier
+reconstruction, which is what QINCo learns, and which a per-head test
+bounds only head by head; more fit rows, under which the weakly
+regularized conditional figures would improve; and a layer whose own
+assignments were free to change. One model and one seed.
+
+```bash
+uv run python experiments/ste-arm/condrefit.py \
+    --ckpt data/out/sonar/multilingual/ste_h76_init01 --layer 1 \
+    --cond-layer 0 --batch 1024 --ridge 1e-4 1e-2 1e-1 1 10 100 \
+    --out data/out/sonar/condrefit/ste_h76_init01_l1_c0.json
+uv run python experiments/ste-arm/condrefit.py \
+    --ckpt data/out/sonar/multilingual/ste_h76_init01 --layer 4 \
+    --cond-layer 3 --batch 1024 --ridge 1e-4 1 10 100 \
+    --out data/out/sonar/condrefit/ste_h76_init01_l4_c3.json
+```
+
 ## Run
 
 See [`README.md`](README.md) for training and scoring commands.

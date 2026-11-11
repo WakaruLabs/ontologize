@@ -107,7 +107,21 @@ uv run python $T --seeds 5 --s-h 0.03 --name sh0.03_x5     # entropy penalty
 uv run python $T --seeds 5 --select ste --p-drop 0 --name ste_pd0_x5      # dropout off
 uv run python $T --seeds 5 --h 8 --select ste --s-hcossim 0.1 --name h8_hc_x5  # head cosine
 uv run python $T --seeds 5 --entropy-target 0.05           # entropy setpoint
+uv run python $T --seeds 5 --gap-target 0.01               # feedback anneal
+uv run python $T --seeds 5 --temperature-end 0.02          # stock schedule, another end point
 ```
+
+The feedback anneal (`--gap-target`) replaces the stepwise temperature
+schedule, after Agustsson et al. (2017): `--gap-warmup` steps at the
+starting temperature, then the package's `DualLoop` on the hardness 1/T,
+which rises whenever the batch's hard-minus-soft FVU gap sits above a
+setpoint that ramps from the gap measured at the warmup's end down to
+the target by `--anneal-steps`. The logit noise keeps the ratio to the
+temperature that the stock schedule gives it at each step. The run is
+evaluated at the temperature the controller ends on, which the report
+prints (`T_eval`). Its control is the stock schedule run to that same
+end temperature, which separates the feedback from the end point.
+Results are in [`notes.md`](notes.md).
 
 The entropy setpoint runs the package's `DualLoop` on the code
 entropy. `update` threads only two per-step coefficients into the

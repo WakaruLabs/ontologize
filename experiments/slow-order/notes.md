@@ -168,10 +168,100 @@ head 18, 0.088 at head 37. Its head 0 matches seed 43's head 0 at NMI
   (`experiments/next-sentence/notes.md`, 2026-11-10); the control was not
   scored at step 45,000 here.
 
-**Caveats.** Two seeds, one weight. A weight large enough to decorrelate
-the first half as well was not tried, and would test whether there is a
-second slow variable for a head to find. The test for an identified head
-compares against index neighbours; a head identified only up to a small
-shift in index would be missed by the exact-index rows and partly by the
-neighbour gap, though the one-seed neighbours (offset 1 within, 0.1473)
-bound it: the other seed's counterpart is 0.0035 above them.
+**Caveats.** Two seeds, one weight. Weights large enough to decorrelate
+the first half as well are in the next entry, at one epoch. The test for
+an identified head compares against index neighbours; a head identified
+only up to a small shift in index would be missed by the exact-index rows
+and partly by the neighbour gap, though the one-seed neighbours (offset 1
+within, 0.1473) bound it: the other seed's counterpart is 0.0035 above
+them.
+
+## 2026-11-11: larger weights, one epoch: head 0 is identified, and it is the only slow head left
+
+**Why larger.** The term is a mean over all 703 pairs of slow heads, so
+head i is pushed off its predecessors with weight `dec` · i / 703 while
+its Fano reward has weight 1/38. At `--dec 1` head 1 feels the term at a
+eighteenth of its reward, which is why the first half of the block stayed
+redundant.
+
+**Runs.** `train_order.py --dec 10` and `--dec 100`, ordered, seeds 42
+and 43, one epoch (`ord_dec{10,100}_sp0.001_ph38_s{42,43}`). The
+`--dec 100` runs were interrupted near step 12,000 by a second machine
+crash and resumed from step 11,500, one seed at a time. `order.py --step
+15000` as before (`eval/order_ord_dec{10,100}.json`), and on the pair
+objective's control, which has no pair term
+(`long/doc2_sp0_ph38{,_s43}`, `eval/order_control.json`), as the
+reference for a head nothing has made slow.
+
+**Per run, the first 38 heads** (seed 42 / seed 43):
+
+| | control | Fano | `--dec 1` | `--dec 10` | `--dec 100` |
+|---|---|---|---|---|---|
+| held-out FVU_w | 0.5199 / 0.5194 | 0.5229 / 0.5223 | 0.5206 / 0.5201 | 0.5234 / 0.5234 | 0.5239 / 0.5241 |
+| κ, mean | 0.067 / 0.065 | 0.195 / 0.194 | 0.125 / 0.124 | 0.061 / 0.059 | 0.051 / 0.049 |
+| κ, head 0 | 0.068 / 0.059 | 0.185 / 0.183 | 0.187 / 0.178 | 0.184 / 0.181 | 0.186 / 0.183 |
+| κ, mean of heads 1–37 | 0.067 / 0.065 | 0.196 / 0.195 | 0.124 / 0.122 | 0.057 / 0.055 | 0.047 / 0.045 |
+| NMI with language, mean | 0.046 / 0.046 | 0.152 / 0.152 | 0.098 / 0.099 | 0.041 / 0.040 | 0.032 / 0.031 |
+| NMI with earlier heads, first / second half | 0.018 / 0.018 | 0.135 / 0.140 | 0.088 / 0.035 | 0.019 / 0.007 | 0.009 / 0.007 |
+
+At `--dec 10` κ still falls over the first heads (seed 42: 0.184, 0.130,
+0.111 for heads 0–2, 0.080 at head 4, 0.063 at head 9); at `--dec 100`
+head 1 is already at 0.052 and heads 1–37 range over 0.038–0.060.
+
+**Seed 42 against seed 43, the first 38 heads:**
+
+| | control | Fano | `--dec 1` | `--dec 10` | `--dec 100` |
+|---|---|---|---|---|---|
+| matched NMI | 0.0186 | 0.1453 | 0.0550 | 0.0134 | 0.0105 |
+| any pairing | 0.0172 | 0.1392 | 0.0446 | 0.0087 | 0.0071 |
+| head 0 against head 0 | 0.0178 | 0.1147 | 0.1147 | 0.1142 | 0.1156 |
+| head 0 against the other seed's heads 1 and up | 0.0176 | 0.1289 | 0.0695 | 0.0183 | 0.0126 |
+| heads 1 and up against each other | 0.0172 | 0.1398 | 0.0432 | 0.0081 | 0.0067 |
+| head i over its index neighbours, heads 1–36 (± s.e.) | −0.0000 ± 0.0002 | +0.0004 ± 0.0016 | −0.0003 ± 0.0009 | −0.0003 ± 0.0002 | −0.0002 ± 0.0002 |
+| seed 42's heads whose best partner in seed 43 is head 0 | 0 of 38 | 0 | 1 | 37 | 38 |
+
+The three head-0 rows are read from the saved `cross` matrices (row and
+column 0); `order.py`'s own statistics leave the block's two end heads
+out of the neighbour gap.
+
+**Readings.**
+- **A large weight identifies one head: head 0.** At `--dec 100` seed
+  42's head 0 shares 0.116 with seed 43's head 0 and 0.013 with seed 43's
+  other slow heads; at `--dec 1` those were 0.115 and 0.070, and in the
+  Fano arm head 0 matched other heads better than its counterpart. Head 0
+  is the one head the ordered term never touches, and its figures are the
+  Fano arm's head 0 at every weight (κ 0.18–0.19, 0.115 across seeds, NMI
+  with language 0.152). The term does not change it. It makes it the only
+  head of its kind.
+- **No second slow variable appears.** The heads after it do not find
+  other slow content when barred from head 0's. They stop being slow:
+  heads 1–37 read κ 0.047 at `--dec 100`, below the 0.067 of the control,
+  which has no pair term at all, and they share less across seeds (0.0067)
+  and with language (0.03) than control heads do (0.0172, 0.046). Being
+  independent of head 0 costs a head the little document-level content an
+  untrained-for head carries anyway.
+- **In between, the gradient of the earlier entries.** At `--dec 10` the
+  first few heads keep decreasing fractions of head 0's content: nearly
+  every head's best partner in the other seed is head 0, and the cross-seed
+  matrix's corner is close to a product (0.114, 0.083, 0.054 along row 0;
+  0.083, 0.057, 0.039 along row 1). Past head 8 the block is at the level
+  of `--dec 100`.
+- **The Fano bound loses 37 of its 38 heads for this.** The block's mean
+  κ is the control's or below at both weights. Reconstruction is 0.001
+  worse than the Fano arm's and 0.004 worse than the control's.
+
+So the answer to the last entry's open question, at one epoch: with
+these pairs and this bound there is one slow thing, and an ordered
+decorrelation at full strength gives it to one head and leaves the rest
+with nothing. That is an identified head, obtained by removing the
+redundancy rather than by finding more variables.
+
+**Caveats.** One epoch and two seeds, where the Fano block takes three
+epochs to form (head 0's κ is 0.47 at step 45,000 at `--dec 1`, and the
+Fano arm's heads average 0.45); whether later heads find slow content of
+their own with
+longer training at these weights is not tested. Head 0's identification
+rests on one head in two seeds. The term scores dependence between
+entries, so a second variable carried jointly with head 0's content would
+have to be separated from it to count; nothing here rules that out.
+

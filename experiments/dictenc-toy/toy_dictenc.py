@@ -163,6 +163,25 @@ def parse_args():
                         "slack through most of training and the projected "
                         "penalty never acts while the partition is still "
                         "forming")
+    t.add_argument("--gap-target", type=float, default=0.0,
+                   help="anneal the temperature by feedback instead of by "
+                        "step count, after Agustsson et al. (2017): after "
+                        "--gap-warmup steps at the starting temperature, "
+                        "raise the hardness 1/T whenever the batch's "
+                        "hard-minus-soft FVU gap sits above a setpoint that "
+                        "ramps from the gap measured at the warmup's end "
+                        "down to this value by --anneal-steps. 0 = off (the "
+                        "stock schedule)")
+    t.add_argument("--gap-warmup", type=int, default=1000,
+                   help="steps of soft training before the controller "
+                        "starts; the gap it starts from is measured there")
+    t.add_argument("--gap-eta", type=float, default=1e-2,
+                   help="controller gain, a step in log(1/T) per unit "
+                        "log-error")
+    t.add_argument("--gap-ema", type=float, default=0.99,
+                   help="EMA horizon for the measured gap")
+    t.add_argument("--gap-tmin", type=float, default=1e-3,
+                   help="lowest temperature the controller may reach")
     t.add_argument("--s-hm", type=float, default=0.0)
     t.add_argument("--s-bcossim", type=float, default=0.0)
     t.add_argument("--s-hcossim", type=float, default=0.0)
@@ -193,6 +212,9 @@ def parse_args():
         # `entropy_loss` on only when `s_H` is nonzero at construction,
         # so the controller needs a nonzero starting value
         cfg.s_h = cfg.s_h or 1e-3
+    if cfg.gap_target > 0 and cfg.no_anneal:
+        p.error("--gap-target replaces the temperature anneal; it cannot "
+                "be combined with --no-anneal")
     if cfg.name is None:
         cfg.name = (f"t{cfg.h_true}x{cfg.k_true}_m{cfg.h}x{cfg.k}_{cfg.select}"
                     + ("_noconst" if cfg.no_const else "")
@@ -202,6 +224,9 @@ def parse_args():
                     + ("_noanneal" if cfg.no_anneal else "")
                     + (f"_eH{cfg.entropy_target:g}"
                        if cfg.entropy_target else "")
+                    + (f"_gap{cfg.gap_target:g}" if cfg.gap_target else "")
+                    + (f"_Te{cfg.temperature_end:g}"
+                       if cfg.temperature_end != 0.03 else "")
                     + (f"_x{cfg.seeds}" if cfg.seeds > 1 else ""))
     return cfg
 
@@ -486,7 +511,44 @@ def sh_now(cfg, sh):
     return sh.s if cfg.entropy_no_project else sh.applied
 
 
-def train(cfg, hyper, state, X_tr, seed):
+def batch_gap(model):
+    """Jitted (params, X, T) -> (soft FVU, hard FVU) of one batch with no
+    training noise: what the gap controller watches."""
+    import jax
+    import jax.numpy as jnp
+
+    def probe(module, X, T):
+        E, _ = module.encode(X, 0.0, None)
+        E = module.constinput(E)
+        de = module.dictencs[0]
+        U, G = de.gainshape_in(E)
+        P = de.dict.cluster(de.classifier(U), T)
+        P_hard = jax.nn.one_hot(jnp.argmax(P, -1), P.shape[-1], dtype=P.dtype)
+        Y = module(X, temperature=T)
+        Y_hard = module.decode(de.gained(de.dict.fwd(P_hard), G))
+        var = ((X - X.mean(0)) ** 2).mean()
+        return (((Y - X) ** 2).mean() / var,
+                ((Y_hard - X) ** 2).mean() / var)
+
+    return jax.jit(lambda params, X, T: model.apply(params, X, T,
+                                                    method=probe))
+
+
+def gap_temperature(cfg, loop, step, gap, T_start):
+    """The temperature the gap controller applies next: the starting one
+    through the warmup, then 1 over the loop's hardness. `gap` is floored
+    so that a batch whose hard code happens to beat its soft one does not
+    read as an unbounded log-error."""
+    if step < cfg.gap_warmup:
+        return T_start
+    loop.step(step, max(gap, 1e-4))
+    return 1.0 / loop.s
+
+
+def train(cfg, hyper, model, state, X_tr, seed):
+    """Returns the trained state and the temperature the last step used,
+    which is the one to evaluate at (the schedule's end, or wherever the
+    gap controller arrived)."""
     import jax
     import jax.numpy as jnp
     from ontologize.training.ontostate import update, schedules, DualLoop
@@ -502,6 +564,14 @@ def train(cfg, hyper, state, X_tr, seed):
     sh = DualLoop(hyper.s_H, cfg.entropy_target, cfg.entropy_eta,
                   cfg.entropy_ema, cfg.entropy_min, cfg.entropy_max,
                   cfg.entropy_ramp or hyper.anneal_steps or cfg.steps, 0)
+    # the same controller on the hardness 1/T, watching the batch's
+    # hard-minus-soft FVU gap. Unprojected: the temperature is a setting,
+    # not a penalty, so there is no "off" for it to be projected to
+    gl = DualLoop(1.0 / hyper.temperature, cfg.gap_target, cfg.gap_eta,
+                  cfg.gap_ema, 1.0 / hyper.temperature, 1.0 / cfg.gap_tmin,
+                  hyper.anneal_steps or cfg.steps, cfg.gap_warmup)
+    gap_fn = batch_gap(model) if gl.on else None
+    T_gap = hyper.temperature
     t0 = time.time()
     for step in range(cfg.steps):
         if step and step % n_batches == 0:
@@ -512,6 +582,10 @@ def train(cfg, hyper, state, X_tr, seed):
             step, hyper.anneal_steps, hyper.temperature,
             hyper.temperature_end, hyper.p_drop, hyper.p_drop_start,
             hyper.sd_K, hyper.sd_K_end)
+        if gl.on:
+            # the logit noise keeps the ratio to the temperature that the
+            # stock schedule gives it at this step
+            sk, T = sk * T_gap / T, T_gap
         rng, r = jax.random.split(rng)
         state, L, _ = update(
             state, hyper.loss, r, Xb, Xb, temperature=T, p_drop=pd,
@@ -521,14 +595,20 @@ def train(cfg, hyper, state, X_tr, seed):
         row = state.last_stats()
         if sh.on:
             sh.step(int(state.step), float(row[5]))
+        if gl.on:
+            soft, hard = gap_fn(state.params, Xb, T)
+            T_gap = gap_temperature(cfg, gl, step + 1, float(hard - soft),
+                                    hyper.temperature)
         if step % 500 == 0 or step == cfg.steps - 1:
             msg = (f"step {step:5d}  loss {float(L):.4f}  "
                    f"MSE {float(row[1]):.4f}  H {float(row[5]):.2f}b  "
-                   f"KL_m {float(row[10]):.3f}b  T {T:.3f}")
+                   f"KL_m {float(row[10]):.3f}b  T {T:.4f}")
             if sh.on:
                 msg += f"  H_tgt {sh.tgt:.3f}b  s_H {sh_now(cfg, sh):.2e}"
+            if gl.on and gl.avg is not None:
+                msg += f"  gap {gl.avg:.4f} (setpoint {gl.tgt:.4f})"
             print(msg + f"  ({time.time() - t0:.0f}s)", flush=True)
-    return state
+    return state, float(T)
 
 
 def print_report(tag, res):
@@ -580,10 +660,14 @@ def replicate(cfg, seed, data_seed, out, first):
         print_report(f"untrained (seed {seed}, data seed {data_seed})",
                      before)
 
-    state = train(cfg, hyper, state, X_tr, seed)
+    state, T_last = train(cfg, hyper, model, state, X_tr, seed)
+    if cfg.gap_target:
+        T_eval = T_last
     after = evaluate(cfg, model, state.params, X_ev, Z_ev, C_ev, atoms,
                      T_eval, nulls)
-    print_report(f"trained (seed {seed}, data seed {data_seed})", after)
+    after["T_eval"] = float(T_eval)
+    print_report(f"trained (seed {seed}, data seed {data_seed}, "
+                 f"T {T_eval:.4f})", after)
 
     with open(out / f"loss_s{seed}.csv", "w", newline="") as f:
         w = csv.writer(f)
@@ -598,7 +682,7 @@ def replicate(cfg, seed, data_seed, out, first):
 
 TALLY_KEYS = ("acc_mean", "nmi_mean", "purity_mean", "atom_cos_mean",
               "entropy_bits", "fvu", "fvu_hard", "fvu_oracle", "KL_m",
-              "dead_entries", "logit_spread_over_T")
+              "dead_entries", "logit_spread_over_T", "T_eval")
 
 
 def tally(results):
@@ -629,7 +713,8 @@ def print_tally(tl):
           f"purity {f('purity_mean')}  atom_cos {f('atom_cos_mean')}  "
           f"H {f('entropy_bits')}b  logit spread/T {f('logit_spread_over_T')}")
     print(f"fvu {f('fvu')}  hard {f('fvu_hard')}  oracle {f('fvu_oracle')}  "
-          f"KL_m {f('KL_m')}b  dead {f('dead_entries')}")
+          f"KL_m {f('KL_m')}b  dead {f('dead_entries')}  "
+          f"T {tl['T_eval']['mean']:.4f}+-{tl['T_eval']['std']:.4f}")
     if "null" in tl:
         n = tl["null"]
         print(f"null: acc {n['acc_mean']:.3f}  nmi {n['nmi_mean']:.3f}  "
