@@ -80,10 +80,10 @@ from assignmap import eff_entries, row_eff
 
 # house palette (latex/figures/make_figs.py, whose module body runs
 # every figure on import, so it is restated rather than imported)
-PINE = "#0B5132"
-INK = "#232329"
-PINE50 = "#86A791"
-INKMUT = "#7B7B80"
+PINKDARK = "#9F0E63"
+INK = "#000000"
+PINK50 = "#FF88CE"
+INKMUT = "#737373"
 FIGDIR = Path(__file__).resolve().parent / "latex" / "figures"
 
 
@@ -258,15 +258,21 @@ def seq_cmap(color, name):
 
 def div_cmap():
     from matplotlib.colors import LinearSegmentedColormap
-    return LinearSegmentedColormap.from_list("inkpine",
-                                             [INK, "#FFFFFF", PINE])
+    return LinearSegmentedColormap.from_list("inkpink",
+                                             [INK, "#FFFFFF", PINKDARK])
 
 
 def draw(z: dict, coords: int, pdf: Path, png: Path):
+    import sys
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     from matplotlib.patches import Rectangle
+
+    # the documents' fonts, from the helper make_figs.py uses
+    sys.path.insert(0, str(FIGDIR))
+    import texfonts
+    texfonts.use()
 
     plt.rcParams.update({
         "font.family": "serif", "font.size": 7.5, "axes.titlesize": 7.5,
@@ -293,7 +299,7 @@ def draw(z: dict, coords: int, pdf: Path, png: Path):
 
     use, reff = eff_entries(Ph[:, None])[0], row_eff(Ph[:, None])[0]
 
-    fig = plt.figure(figsize=(5.4, 6.1))
+    fig = plt.figure(figsize=(6.0, 6.78))
     # top: [p_bar strip over P_h | cb | G_h | cb]
     # bottom: [cos_k | cb | overlap | cb | W_h | cb]
     top = fig.add_gridspec(2, 5, left=0.10, right=0.93, top=0.92,
@@ -363,7 +369,7 @@ def draw(z: dict, coords: int, pdf: Path, png: Path):
     # P_h
     ax_p = fig.add_subplot(top[1, 0])
     im = ax_p.imshow(Pp, aspect="auto", interpolation="nearest",
-                     cmap=seq_cmap(PINE, "pine"), vmin=0, vmax=1)
+                     cmap=seq_cmap(PINKDARK, "pink"), vmin=0, vmax=1)
     ax_p.set_xlabel("entry (by usage)")
     ax_p.set_ylabel(f"held-out row (by argmax entry), n={n}")
     ax_p.set_xticks([0, k - 1])
@@ -397,7 +403,7 @@ def draw(z: dict, coords: int, pdf: Path, png: Path):
         im = ax_c.imshow(Ck, cmap=div_cmap(), vmin=-1, vmax=1,
                          interpolation="nearest")
     else:
-        im = ax_c.imshow(Ck, cmap=seq_cmap(PINE, "pine"), vmin=0, vmax=1,
+        im = ax_c.imshow(Ck, cmap=seq_cmap(PINKDARK, "pink"), vmin=0, vmax=1,
                          interpolation="nearest")
     ax_c.set_xticks([0, k - 1])
     ax_c.set_yticks([0, k - 1])
@@ -427,7 +433,7 @@ def draw(z: dict, coords: int, pdf: Path, png: Path):
                          interpolation="nearest")
         ax_s.add_patch(Rectangle((-0.5, hd - 0.5), h, 1, fill=False,
                                  ec="#FFFFFF" if S[hd].mean() > 0.5
-                                 else PINE, lw=0.9))
+                                 else PINKDARK, lw=0.9))
         ax_s.set_xticks([0, h - 1])
         ax_s.set_yticks([hd])
         ax_s.set_yticklabels([f"i={hd}"])
@@ -446,7 +452,7 @@ def draw(z: dict, coords: int, pdf: Path, png: Path):
         im = ax_w.imshow(Wc, aspect="auto", cmap=div_cmap(), vmin=-vw,
                          vmax=vw, interpolation="nearest")
     else:
-        im = ax_w.imshow(Wc, aspect="auto", cmap=seq_cmap(PINE, "pine"),
+        im = ax_w.imshow(Wc, aspect="auto", cmap=seq_cmap(PINKDARK, "pink"),
                          vmin=0, vmax=float(Wc.max()),
                          interpolation="nearest")
     ax_w.set_xticks([0, len(cols) - 1])

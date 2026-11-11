@@ -1,21 +1,21 @@
 \begin{tikzpicture}[
     font=\footnotesize,
     >={Stealth[round,length=1.8mm,width=1.6mm]},
-    art/.style={draw, rounded corners=2pt, fill=flockwell, rotate=90,
+    art/.style={draw, rounded corners=2pt, fill=wakaruice, rotate=90,
                 anchor=west, minimum height=4.6mm, inner xsep=3pt,
                 font=\scriptsize},
     proc/.style={draw, rounded corners=2pt, fill=white, anchor=west,
                  minimum height=4.8mm, minimum width=22mm, inner xsep=3pt,
                  font=\scriptsize\ttfamily},
-    qn/.style={draw=pine, rounded corners=2pt, fill=pine!8, anchor=west,
+    qn/.style={draw=wakaruiris, rounded corners=2pt, fill=wakarulilac!35, anchor=west,
                minimum height=4.8mm, text width=79mm, align=left, inner xsep=3pt, font=\scriptsize,
-               text=flockink},
+               text=black},
     lab/.style={inner sep=1.5pt, font=\scriptsize, align=center},
-    grp/.style={inner sep=1.5pt, font=\scriptsize\itshape, inkmuted},
+    grp/.style={inner sep=1.5pt, font=\scriptsize\itshape, wakarumuted},
     sig/.style={->, semithick},
     aux/.style={->, densely dashed, semithick, black!45},
-    rd/.style={fill=flockink},
-    opt/.style={draw=flockink, fill=white, semithick},
+    rd/.style={fill=black},
+    opt/.style={draw=black, fill=white, semithick},
   ]
   % Columns x = 0, 0.55, ..., 3.3 are the artifacts a script reads; rows
   % are scripts (y = -0.62 r). A filled mark is a required input, an open
@@ -33,15 +33,15 @@
   \node[art] at (5*\dx, 0.25) {\texttt{sae.py} \texttt{params.npz}};
   \node[art] at (6*\dx, 0.25) {SONAR\,/\,M2M100};
 
-  \draw[flockrule] (-0.2, 2.75) -- (3*\dx+0.2, 2.75);
+  \draw[wakarurule] (-0.2, 2.75) -- (3*\dx+0.2, 2.75);
   \node[grp, anchor=south] at (1.5*\dx, 2.75) {cache + sidecars};
-  \draw[flockrule] (4*\dx-0.2, 2.75) -- (5*\dx+0.2, 2.75);
+  \draw[wakarurule] (4*\dx-0.2, 2.75) -- (5*\dx+0.2, 2.75);
   \node[grp, anchor=south] at (4.5*\dx, 2.75) {models};
   \node[grp, anchor=south] at (6*\dx, 2.75) {frozen};
 
   % faint column guides
   \foreach \c in {0,...,6}
-    \draw[flockrule, very thin] (\c*\dx, 0.15) -- (\c*\dx, -17.5*\dy);
+    \draw[wakarurule, very thin] (\c*\dx, 0.15) -- (\c*\dx, -17.5*\dy);
 
   %% ---- rows: script, inputs, question ---------------------------------
   % #1 row, #2 required columns, #3 optional/alternative columns
@@ -115,7 +115,7 @@
 
   %% ---- theme separators ------------------------------------------------
   \foreach \y in {0.5, 4.5, 8.5, 14.5}
-    \draw[flockrule] (-0.75, -\y*\dy) -- (\qx+8.2, -\y*\dy);
+    \draw[wakarurule] (-0.75, -\y*\dy) -- (\qx+8.2, -\y*\dy);
   \foreach \y/\t in {2.5/reconstruction, 6.5/meaning, 11.5/structure,
                      16/intervention}
     \node[grp, rotate=90] at (-0.5, -\y*\dy) {\t};
@@ -132,13 +132,13 @@
 
   %% ---- key ------------------------------------------------------------
   \begin{scope}[shift={(0,-18.35*\dy)}]
-    \node[draw, rounded corners=2pt, fill=flockwell, minimum width=4mm,
+    \node[draw, rounded corners=2pt, fill=wakaruice, minimum width=4mm,
           minimum height=3mm] at (0,0) {};
     \node[lab, anchor=west] at (0.3,0) {artifact};
     \node[draw, rounded corners=2pt, fill=white, minimum width=4mm,
           minimum height=3mm] at (1.6,0) {};
     \node[lab, anchor=west] at (1.9,0) {evaluation script};
-    \node[draw=pine, rounded corners=2pt, fill=pine!8, minimum width=4mm,
+    \node[draw=wakaruiris, rounded corners=2pt, fill=wakarulilac!35, minimum width=4mm,
           minimum height=3mm] at (4.4,0) {};
     \node[lab, anchor=west] at (4.7,0) {question};
     \fill[rd] (6.2,0) circle (\R);

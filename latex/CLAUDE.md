@@ -17,7 +17,7 @@ one set of macros, one bibliography, and the same diagrams and figures:
   which cites the findings as its working notes. Its sections are in
   `proposal/sections/`; see "The proposal" below.
 
-All three use `flockpaper.sty`, `vars.tex`, `refs.bib`, `tikz/` and `figures/`;
+All three use `wakaru.sty`, `vars.tex`, `refs.bib`, `tikz/` and `figures/`;
 `algorithms/` and `config/` are the findings' alone. There is one copy of each, so a change
 to a shared file reaches every document that uses it.
 
@@ -83,12 +83,25 @@ The final pdflatex runs twice after biber because biblatex asks for a rerun once
 bibliography changes page breaks; cut that back to one and `\ref`s to figures go stale.
 
 Toolchain is **pdflatex + biber/biblatex** (`backend=biber,style=numeric,sorting=none`).
-The house style is `flockpaper.sty`, loaded as `\usepackage[biblatex]{flockpaper}` so it
+The house style is `wakaru.sty`, loaded as `\usepackage[biblatex]{wakaru}` so it
 does not pull in natbib; biblatex must load after it. The style already loads geometry,
 hyperref, xcolor, graphicx, booktabs, amsmath, tikz and the newpx fonts, so do not load
 those again (geometry and hyperref with other options are an option clash) and do not
 add amssymb, whose symbols clash with newpxmath's. It also provides the author block's
 `\mutedlabel` and the optional `\eyebrow` and `\runningtitle`.
+
+`wakaru.sty` is Wakaru's branding (branding kit 0.1.1): its colors, Noto Sans
+for the title, headings and labels (`noto` in `flake.nix`), and the kit's three marks
+drawn in TikZ from the SVG paths (`\wakarulogo`, `\wakaruswords`, `\wakaruwug`), so it is
+one file with no images. Its body, math and typewriter fonts are newpx and Plex Mono,
+with lining figures in text; `[noto]` sets the body and math in Noto Serif and code in
+Noto Sans Mono instead (`notomath`). Its abstract and `\wakarubox` are boxes that do not
+break across pages, so an abstract that does not fit under the title block and the
+frontispiece moves to page 2 whole, as the findings' does; the proposal's fits. The page
+is letter with a 6in by 9in text block (1.25in side margins). `flockpaper.sty`, the
+style the documents used before, is still here and has the same interface (`\eyebrow`, `\runningtitle`, `\imprint`, `\credits`,
+`\mutedlabel`, `\plate`), but no document loads it, and `tikz/evalpipeline.tex` now
+names `wakaru.sty`'s colors.
 A failed run can leave a malformed `build/<document>.bcf` that makes biber refuse every
 later run (`ERROR - build/proposal.bcf is malformed`, say); `make clean` and a rebuild fix
 it, so do not chase the biber error itself.
@@ -112,9 +125,9 @@ plus a begin/end and brace balance check per edited file, and confirm every
 
 After a full build, count problems with `grep -a`: the log contains bytes that make
 `grep` treat it as binary, and without `-a` a count prints nothing rather than 0, which
-reads as clean. `grep -a -c Overfull build/findings.log` is 0, and an edit should keep it
-there. The 5 underfull warnings are the Reproducibility paragraph, set loose under
-`sloppypar` because it is mostly unbreakable script names. A preamble
+reads as clean. `grep -a -c Overfull build/findings.log` is 0, as is the
+underfull count, and an edit should keep both there. The Reproducibility paragraph is set
+loose under `sloppypar` because it is mostly unbreakable script names. A preamble
 `\emergencystretch` gives other paragraphs a third line-breaking pass instead. The brief
 and the proposal build with no overfull or underfull boxes and no undefined references;
 keep them that way.
@@ -126,7 +139,7 @@ tighten a nearly-fitting table with `\setlength{\tabcolsep}{4pt}` inside its gro
 `config/` tables use a ragged-right description column in the shared block and
 `\footnotesize` for the per-run block. A long path in `\texttt` takes an `\allowbreak`
 after a slash, and a display equation too wide for a line goes in `gathered`. The text
-width is 390pt, and `\plate`'s hairline frame adds 0.8pt, so a full-width plate image is
+width is 6in (433.62pt), and `\plate`'s hairline frame adds 0.8pt, so a full-width plate image is
 `\dimexpr\textwidth-0.8pt\relax`.
 
 ## Document structure: the findings
@@ -207,8 +220,20 @@ ones. `lab` carries `align=center` in `dictenc.tex` but not in `ontologizer.tex`
 LaTeX stops with "Paragraph ended before ...".
 
 Result figures are PDFs in `figures/`, drawn by `figures/make_figs.py` from the CSVs in
-`figures/data/`. The proposal uses only `figures/fig-teaser.pdf` and the two plates,
-`frontis-orbit.png` and `end-ridge.png`. The CSVs are copied out of `../data/out` by
+`figures/data/`. Their palette is the kit's pink family and black (`PINK` for plotted
+data, `PINKDARK` for eyebrows, bars and the dark end of sequential scales, their tints,
+`INK`); `../anatomy.py` restates it for the two anatomy figures, which redraw with
+`--replot` from the npz under each run's `anatomy/`. Figures are drawn 6in wide, the
+text width, so `width=\linewidth` includes them unscaled, and in the documents' fonts:
+`figures/texfonts.py` takes TeX Gyre Pagella and IBM Plex Mono from the flake's TeX
+distribution (through `nix develop`, once; converted copies are cached in the untracked
+`figures/preview/fonts/`) and falls back to matplotlib's defaults where it cannot. `overview_diagram.png`, the brief's
+figure, is a raster copied from the `headline` branch's `docs/`, with its blue highlight
+remapped to the kit's iris. The proposal uses only `figures/fig-teaser.pdf` and the two plates,
+which the findings open and close with too: `frontis-orbit-wakaru.png` and
+`end-ridge-wakaru.png`, which are `frontis-orbit.png` and `end-ridge.png` with their two
+colors remapped exactly, pine `#0B5132` to the kit's iris `#6B6DD6` and the paper tint to
+white. The CSVs are copied out of `../data/out` by
 `figures/extract_results.py`, which reads eval-script outputs on CPU, and
 `figures/extract_curves.py`, which scores checkpoints on GPU. Extract a figure's numbers
 rather than retyping them from a table; the teaser and the GPT-2 seed figure are the
@@ -249,9 +274,11 @@ them, and "Against the desiderata" at the end of `results.tex` scores the introd
 three desiderata; keep both in step with the results.
 
 The proposal is meant for arXiv, which runs pdflatex and no biber; that is why the house
-style is pdflatex-only. `flockpaper.sty` replaced an earlier `arxiv.sty` and provides the
-`\eyebrow`, `\runningtitle` and `\imprint` macros `proposal.tex` uses; the author block
-is a plain `\author{...}` set by its `\maketitle` (no `authblk`).
+style is pdflatex-only. `wakaru.sty` provides the `\eyebrow`, `\runningtitle` and
+`\imprint` macros `proposal.tex` uses; the author block is a plain `\author{...}` set by
+its `\maketitle` (no `authblk`). The title block, the frontispiece and the boxed
+abstract share the first page with a few lines to spare; an abstract or title that
+outgrows it moves the abstract to page 2 whole.
 `proposal/SUBMISSION.md` lists the files an arXiv upload needs, including the `.bbl`.
 
 Its notation is the findings' (below): it restates the findings' headline methods, so a
@@ -428,10 +455,10 @@ Code identifiers keep their names (`tags()`, `decode_tags.py`, `forward="labels"
 
 - Run and script names are `\texttt{}` with escaped underscores
   (`\texttt{ste\_h76\_init01}`). Command-line flags are typed as they are
-  (`\texttt{--trained-groups}`): `flockpaper.sty` turns off the `--` ligature in
-  typewriter text, which Plex Mono would otherwise set as an en dash. The same applies to
-  every label the style sets in typewriter (`\mutedlabel`, the plates' captions), so an
-  intended en dash there is written `\textendash{}`.
+  (`\texttt{--trained-groups}`): `wakaru.sty` turns off the `--` ligature in
+  typewriter text, which Plex Mono would otherwise set as an en dash. Labels
+  (`\mutedlabel`, the plates' captions) are set in Noto Sans, where `--` is an en dash
+  again; the sources write `\textendash{}` there, which is right either way.
 - Every comparison states its null or control; a result without a null of the same shape
   is not reported as a result.
 - One seed per cell is said explicitly where it applies.

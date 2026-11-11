@@ -1,8 +1,8 @@
 \documentclass[11pt]{article}
-% flockpaper loads geometry, hyperref, xcolor, graphicx, booktabs, amsmath,
+% wakaru.sty loads geometry, hyperref, xcolor, graphicx, booktabs, amsmath,
 % tikz and the newpx fonts (whose math symbols replace amssymb's); load
 % biblatex after it
-\usepackage[biblatex]{flockpaper}
+\usepackage[biblatex]{wakaru}
 \usetikzlibrary{arrows.meta}
 \usepackage[ruled]{algorithm2e}
 \usepackage{array,longtable}  % the appendix's notation table breaks across pages
@@ -19,7 +19,7 @@
 
 \title{Dictionary Learning as Unsupervised Steering-Vector Generation}
 % two columns, one per affiliation: the mono labels are wide enough that
-% pairing the two longest side by side would overrun the 5.4in measure
+% pairing the two longest side by side would overrun the 6in measure
 \author{%
   \begin{tabular}[t]{@{}l@{\hspace{2em}}l@{}}
     Keira Wiechecki & Lamb Wakefield \\[2pt]
@@ -29,18 +29,18 @@
     \mutedlabel{Wakaru \textperiodcentered{} jadeofnameless@gmail} &
     \mutedlabel{Flock Capital \textperiodcentered{} celeste@linux.com}
   \end{tabular}}
-\date{\today --- working notes, results preliminary}
+\date{\today{} --- working notes, results preliminary}
 
 \begin{document}
 \maketitle
 
 % Frontispiece: decorative, deliberately not a numbered float.
-\noindent\plate{\includegraphics[width=\dimexpr\textwidth-0.8pt\relax]{figures/frontis-orbit.png}}\\[3pt]
+\noindent\plate{\includegraphics[width=\dimexpr\textwidth-0.8pt\relax]{figures/frontis-orbit-wakaru.png}}\\[3pt]
 \mutedlabel{orbit \textperiodcentered{} seed 1024 \textperiodcentered{} floyd\textendash{}steinberg error diffusion}
 \vspace{8pt}
 
 \begin{abstract}
-% flockpaper sets the abstract in an unbreakable minipage, so it must fit
+% wakaru.sty sets the abstract in a box that does not break, so it must fit
 % on the page it starts on or it moves to the next one whole
 \small
 Auditing a model for a hidden objective or an unnamed concept requires
@@ -206,8 +206,11 @@ also printed the plates.
 \printbibliography
 
 \vspace{20pt}
-\noindent\plate{\includegraphics[width=\dimexpr\textwidth-0.8pt\relax]{figures/end-ridge.png}}\\[3pt]
+% a minipage, so that the plate and its label stay on one page
+\noindent\begin{minipage}{\textwidth}
+\plate{\includegraphics[width=\dimexpr\textwidth-0.8pt\relax]{figures/end-ridge-wakaru.png}}\\[3pt]
 \mutedlabel{ridge \textperiodcentered{} seed 32 \textperiodcentered{} the same pipeline, closing the file}
+\end{minipage}
 
 \input{findings/sections/appendix}
 

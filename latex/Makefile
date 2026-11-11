@@ -1,5 +1,5 @@
 FIGURES = $(wildcard figures/*.pdf figures/*.png)
-SHARED = vars.tex refs.bib flockpaper.sty $(FIGURES)
+SHARED = vars.tex refs.bib wakaru.sty $(FIGURES)
 FINDINGS_SRC = findings.tex $(SHARED) $(wildcard findings/sections/*.tex) \
 	$(wildcard tikz/*.tex) $(wildcard algorithms/*.tex) $(wildcard config/*.tex)
 PROPOSAL_SRC = proposal.tex $(SHARED) $(wildcard proposal/sections/*.tex) \

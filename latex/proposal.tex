@@ -3,7 +3,7 @@
 %   the first five lines of the file.
 \documentclass[10pt]{article}
 
-\usepackage[biblatex]{flockpaper}
+\usepackage[biblatex]{wakaru}
 
 \usepackage{subcaption}
 \usepackage{nicefrac}
@@ -39,12 +39,12 @@
 \maketitle
 
 % Frontispiece: decorative, deliberately not a numbered float.
-\noindent\plate{\includegraphics[width=\dimexpr\textwidth-0.8pt\relax]{figures/frontis-orbit.png}}\\[3pt]
+\noindent\plate{\includegraphics[width=\dimexpr\textwidth-0.8pt\relax]{figures/frontis-orbit-wakaru.png}}\\[3pt]
 \mutedlabel{orbit \textperiodcentered{} seed 1024 \textperiodcentered{} floyd\textendash{}steinberg error diffusion}
-\vspace{16pt}
+\vspace{6pt}
 
 \begin{abstract}
-% flockpaper sets the abstract in an unbreakable minipage, so it must fit
+% wakaru.sty sets the abstract in a box that does not break, so it must fit
 % on the page it starts on or it moves to the next one whole
 \small
 Behavioral evaluation cannot settle what a model is trying to do, because a
@@ -98,7 +98,10 @@ also printed the plates.
 \printbibliography
 
 \vspace{20pt}
-\noindent\plate{\includegraphics[width=\dimexpr\textwidth-0.8pt\relax]{figures/end-ridge.png}}\\[3pt]
+% a minipage, so that the plate and its label stay on one page
+\noindent\begin{minipage}{\textwidth}
+\plate{\includegraphics[width=\dimexpr\textwidth-0.8pt\relax]{figures/end-ridge-wakaru.png}}\\[3pt]
 \mutedlabel{ridge \textperiodcentered{} seed 32 \textperiodcentered{} the same pipeline, closing the file}
+\end{minipage}
 
 \end{document}

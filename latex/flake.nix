@@ -15,7 +15,7 @@
               scheme-medium
               algorithm2e ifoddpage relsize
               biblatex biber logreq
-              bera plex
+              bera plex noto notomath
               newpx newtx kastrup fontaxes
               mdframed zref needspace
               titlesec

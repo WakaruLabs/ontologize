@@ -1115,11 +1115,11 @@ weight relative to the rest of $\mathbf{w}$. These closed-form spectra
 agree with dense eigendecompositions to $10^{-14}$.
 
 \paragraph{Assignment maps (\texttt{assignmap.py}).}
-To inspect sample-level assignments directly, \texttt{assignmap.py} draws a
+To inspect sample-level assignments directly, we draw a
 label-stratified sample of evaluation-tail rows (a fixed count per language
 from the cache sidecar, or per coarse token class for GPT-2: word,
 capitalized word, continuation, punctuation, digit, newline, or space) and
-plots their assignment probabilities across each head's $k$ entries, with
+plot their assignment probabilities across each head's $k$ entries, with
 rows grouped by label and sorted within each group by winning entry and
 entries ordered by mean usage. Each head is annotated with its ``use'' and
 ``row'' summary metrics (Figure~\ref{fig:anatomy}). For an SAE, the same

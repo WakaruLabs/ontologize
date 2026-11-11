@@ -8,9 +8,11 @@
 % it means a ground-truth label). Covers both substrates: GPT-2 results come
 % from the headline branch's diagnostics (docs/OVERVIEW.md there), SONAR
 % results from findings.tex; change numbers at their source first.
-\usepackage[biblatex]{flockpaper}
+\usepackage[biblatex]{wakaru}
 \usepackage[backend=biber,style=numeric,sorting=none]{biblatex}
 \addbibresource{refs.bib}
+% a third line-breaking pass for lines that would otherwise overrun
+\setlength{\emergencystretch}{1.5em}
 
 \title{Unsupervised Steering Vectors from Learned Classifiers:\\
 A Summary}
