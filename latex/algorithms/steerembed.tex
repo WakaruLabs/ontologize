@@ -1,12 +1,12 @@
 \begin{algorithm}[tp]
-	\caption{Steering scored in embedding space (\texttt{steerembed.py}).
-	For an Ontologizer a target $j^\star$ is an entry, of some head $i$ in
-	some layer $\ell$, and a choice is
-	a head's argmax; for an SAE with heads a target is a latent and a
-	choice is its head's winner (a top-1 head that abstains counts as its
-	own outcome); for an SAE without heads a target is a latent, it is
-	selected when active, and collateral is the share of the row's other
-	active latents that drop out.}
+	\caption{Embedding-space steering evaluation (\texttt{steerembed.py}).
+	For an Ontologizer, a target $j^\star$ is an entry of head $i$ in layer
+	$\ell$, and each head's choice is its argmax entry. For an SAE with
+	heads, a target is a latent and each head's choice is its winning latent
+	(with abstention in a top-1 head treated as a distinct outcome); for an
+	SAE without heads, a target is a latent that counts as selected when
+	active, and collateral is the fraction of a sample's other active
+	latents that drop out.}
 	\label{alg:steerembed}
 	\DontPrintSemicolon
 

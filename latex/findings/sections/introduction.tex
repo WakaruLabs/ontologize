@@ -1,474 +1,527 @@
 \section{Introduction}
 \label{sec:intro}
 
-Mechanistic interpretability can currently do supervised steering well
-or unsupervised steering poorly. The Google DeepMind mechanistic
+Mechanistic interpretability can currently perform supervised steering
+well or unsupervised steering poorly. The Google DeepMind mechanistic
 interpretability team has pivoted from ambitious reverse-engineering to
-pragmatic interpretability judged on proxy tasks, and has deprioritized
-SAE research: SAE probes did not generalize better out of distribution,
-and SAEs did not beat a steering vector built from one contrastive pair
-of prompts at suppressing a model's awareness of being
-evaluated~\cite{gdmprogress2025}. On current benchmarks the supervised
-difference of means steers better than SAE latents, though worse than
-prompting~\cite{wu2025axbenchsteeringllmssimple}. But a supervised
-method finds only the concepts an experimenter already has labels for,
-and a direction that changes outputs as intended need not be one the
-model computes with: a subspace intervention optimized for its effect
-can instead activate a dormant pathway~\cite{makelov2023}.
+pragmatic interpretability evaluated on proxy tasks, and has deprioritized
+sparse autoencoder (SAE) research: SAE probes did not generalize better
+out of distribution, and SAEs did not outperform a steering vector built
+from a single contrastive pair of prompts at suppressing a model's
+awareness of being evaluated~\cite{gdmprogress2025}. On current
+benchmarks, supervised difference-of-means vectors steer better than SAE
+latents, though still worse than
+prompting~\cite{wu2025axbenchsteeringllmssimple}. However, supervised
+methods only find concepts for which an experimenter already has labeled
+examples, and a direction optimized to produce a desired output change
+need not reflect how the model normally computes: a subspace intervention
+optimized for its effect can instead activate a dormant
+pathway~\cite{makelov2023}.
 
-The dominant unsupervised paradigm is the sparse autoencoder (SAE), which
-approximates a model's hidden state by a few discrete features drawn
-from an overcomplete dictionary, first with a $\relu$ activation and a
-sparsity loss~\cite{cunningham2023,bricken2023} and more recently with a
-$\topk$ activation and no sparsity loss~\cite{gao2024}. The motivation is
-to decompile a model to a finite state machine, and such a machine is
-only as interpretable as an enumeration of its states: even a mixture of
-two structureless processes, one constant and one a fair coin, needs
-infinitely many states to track which component is generating, so the
-structure lives in how the components overlap~\cite{crutchfield2026}.
-Ideally interpretability would give guarantees about the computational
-process a model uses, with features that are causal, disentangled and
-closed-form. SAE features can fail all three, and are expensive besides.
+The dominant unsupervised paradigm is the SAE, which approximates a
+model's hidden state using a few discrete features drawn from an
+overcomplete dictionary, originally with a $\relu$ activation and a
+sparsity penalty~\cite{cunningham2023,bricken2023} and more recently with
+a $\topk$ activation and no explicit sparsity loss~\cite{gao2024}. The
+underlying motivation is to decompile a model into a finite state
+machine, yet such a machine is only as interpretable as an enumeration of
+its states. Even a mixture of two simple processes (one constant and one
+a fair coin) requires infinitely many states to track which component is
+active, because the structure lies in how the components
+overlap~\cite{crutchfield2026}. Ideally, mechanistic interpretability
+would provide guarantees about the computational process that a model
+uses, yielding features that are causal, disentangled, and closed-form.
+Existing SAE features can fail on all three criteria while remaining
+computationally expensive.
 
 \subsection{Problems with SAE features}
 
 \paragraph{Features are not disentangled.}
-A representation is disentangled when a change in one factor of variation
-changes one factor of the representation~\cite{locatello2019}. A
-persistent problem with SAEs is feature absorption~\cite{chanin2025}:
-when one feature implies another, sparsity is better served by folding
-the general feature's direction into the specific feature's latent and
-switching the general latent off there, so a latent that looks
-monosemantic silently fails to fire on some inputs that have its feature
-(a ``starts with S'' latent that is silent on ``short''). A related
-failure, feature composition~\cite{bussmann2025}, merges concepts that
-co-occur into one latent, so neither can be set without the other. Nested
-and hierarchical SAEs reduce both (Section~\ref{sec:background}).
+A representation is disentangled when changing a single underlying factor
+of variation changes a single factor of the
+representation~\cite{locatello2019}. A persistent problem with SAEs is
+feature absorption~\cite{chanin2025}: when a narrow feature implies a
+broader one, sparsity favors folding the broad feature's direction into
+the narrow latent and leaving the broad latent inactive on those inputs,
+so a seemingly monosemantic latent fails to fire on subset cases (for
+instance, a ``starts with S'' latent that remains silent on ``short''). A
+related failure mode, feature composition~\cite{bussmann2025}, merges
+frequently co-occurring concepts into a single latent so that neither can
+be modified independently. Nested and hierarchical SAE variants mitigate
+both issues (Section~\ref{sec:background}).
 
 \paragraph{Features are not cleanly causal.}
 Sparsity trades off against reconstruction fidelity~\cite{gao2024}, and
-steering with an SAE feature is rarely clean: adding its decoder
-direction moves the logits differently in different contexts and
-disturbs unrelated downstream features. How much varies by feature and is
-partly predictable before intervening, from the crowding of its decoder
-direction and its direct effect on the logits, though which predictor
-works differs between models and dictionaries~\cite{duan2026}.
+using SAE features for steering often produces inconsistent,
+context-sensitive effects: adding a decoder direction shifts logits
+differently across contexts and perturbs unrelated downstream features.
+While steerability varies across features and can be partially predicted
+before intervening from decoder-direction crowding and direct logit
+effects, the most predictive metrics vary across models and
+dictionaries~\cite{duan2026}.
 
 \paragraph{Features are not closed-form.}
 A major concern is how well an interpretability technique generalizes out
-of distribution, and ideally behavior could be inferred from the model's
-weights alone. Bilinear MLPs make this partly possible: the interaction
-matrix of any output direction can be eigendecomposed without data,
-although in deep models the output directions to decompose still come
-from data-dependent SAEs~\cite{pearce2025}.
+of distribution; ideally, behavior could be inferred from the model's
+weights alone. Bilinear MLPs make this partly possible because the
+interaction matrix for any output direction can be eigendecomposed
+without data, though in deep networks the target output directions still
+depend on data-driven SAEs~\cite{pearce2025}.
 
 \paragraph{Forward passes are expensive.}
 Although only a handful of features are active for a given input, the
-entire feature space is computed for each
+entire feature space must be evaluated for each
 sample~\cite{gao2024,mudide2025}. Mixture-of-experts (MoE) SAE variants
-cut that cost by dividing the feature space between smaller submodules
+reduce this cost by dividing the feature space across smaller submodules
 (Section~\ref{sec:background}).
 
 \subsection{Contrastive classifiers}
 
-Less explored is the effect of the structure an MoE architecture imposes
-on the interpretability of feature space. A common approach to interpreting
-features at scale is to have an LLM explain each feature from its
-activating examples and score the explanation by how well an LLM judge,
-given only the explanation, separates activating from non-activating
-contexts~\cite{paulo2025}. With an unstructured feature space it quickly
-becomes intractable to interpret every combination of features this way,
-but the same technique applies to expert routings. The ReLU feed-forward
-layers of a trained transformer can themselves be split into experts of
-co-activating neurons, keeping over 95\% of performance with 10--30\% of
-the parameters~\cite{zhang2022}. Language models appear to represent a
-categorical concept as a simplex whose vertices are the vectors of its
-values, with hierarchically related concepts in orthogonal subspaces, so
-that a hierarchy is a direct sum of simplices; differences between value
-vectors are the steering vectors of binary contrasts~\cite{park2025}.
+Less explored is the effect that the structure imposed by an MoE
+architecture has on the interpretability of feature space. A common
+approach to interpreting features at scale is to have an LLM generate an
+explanation from activating examples and score how well an LLM judge,
+given that explanation alone, distinguishes activating from
+non-activating contexts~\cite{paulo2025}. With an unstructured feature
+space, it quickly becomes intractable to interpret every combination of
+features in this manner, whereas structured expert routings can be
+analyzed module by module. The ReLU feed-forward layers of a trained
+transformer can themselves be partitioned into experts of co-activating
+neurons, retaining over 95\% of task performance while activating only
+10--30\% of the parameters~\cite{zhang2022}. Language models also appear
+to represent a categorical concept as a simplex whose vertices correspond
+to category values, with hierarchically related concepts placed in
+orthogonal subspaces so that a hierarchy forms a direct sum of simplices;
+differences between vertex vectors then act as steering vectors for
+binary contrasts~\cite{park2025}.
 
-We conjecture that MoEfying a representation into classifiers can reveal
-such latent contrastive steering vectors, since swapping a classifier's
-choice writes exactly such a difference. Existing MoE SAEs route similar
-inputs to the same expert~\cite{mudide2025} and score an expert as
-specialized when its features resemble each other and not other
-experts'~\cite{xu2025redundancydiversespecializedmultiexpert}.
-Contrastive learning wants the opposite: inputs at opposite ends of a
-shared axis. The Ontologizer\footnote{Gene Ontology terms were a source of
-inspiration for the name, which this work shares with Ontologizer, a tool
-for Gene Ontology term enrichment analysis~\cite{bauer2008}; the two are
-separate projects.} decomposes a representation space into a set of such
-contrastive classifiers. Each \emph{head} is a $k$-way classifier over
-its input, and each of its \emph{entries} writes a representative vector,
-its \emph{atom}. An input is encoded as one \emph{assignment} per head and
-reconstructed from the atoms its assignments select, by a stack of layers
-each of which reads what the layers before it left unexplained.
-Interpretability value is then expected from \emph{MoEfication}, in an
-extended sense of the term~\cite{zhang2022}: a decomposition of the space
-into small classification tasks, one per head, each nameable in
-isolation, whose within-head entry swaps are steering moves.
-Figure~\ref{fig:teaser} shows the soft code's steering primitive, measured.
+We conjecture that MoEfying a representation into classifiers can expose
+such latent contrastive steering vectors, because swapping a classifier's
+selected entry applies the difference between two entry vectors. Existing
+MoE SAEs route similar inputs to the same expert~\cite{mudide2025} and
+score an expert as specialized when its features resemble one another and
+differ from those of other
+experts~\cite{xu2025redundancydiversespecializedmultiexpert}. Contrastive
+learning requires the opposite structure, grouping inputs that lie at
+opposite ends of a shared axis. The Ontologizer\footnote{Gene Ontology
+terms were a source of inspiration for the name, which this work shares
+with Ontologizer, a tool for Gene Ontology term enrichment
+analysis~\cite{bauer2008}; the two are separate projects.} decomposes a
+representation space into a set of such contrastive classifiers. Each
+\emph{head} is a $k$-way classifier over its input, and each of its
+\emph{entries} corresponds to a representative vector, its \emph{atom}.
+An input is encoded as one \emph{assignment} per head and reconstructed
+from the atoms that those assignments select across a stack of layers,
+each of which takes as input the residual left unexplained by earlier
+layers. Interpretability then derives from \emph{MoEfication} in an
+extended sense~\cite{zhang2022}: decomposing the representation space
+into small classification tasks, one per head, each interpretable in
+isolation, where within-head entry swaps act as steering moves.
+Figure~\ref{fig:teaser} summarizes the steering and reconstruction
+behavior of the softmax Ontologizer.
 
 \begin{figure}[tp]\centering
 \includegraphics[width=\linewidth]{figures/fig-teaser.pdf}
-\caption[The steering primitive, measured]{The softmax Ontologizer's
-steering primitive, measured. (a) Forcing an entry moves decodes along
-the supervised difference-of-means direction $0.64\times$ as far as
-supervised steering itself and $4\times$ as far as probe directions
-(\texttt{resid\_nc\_hm}; Table~\ref{tab:steer-overlay}). (b) Joint
-two-head interventions point where the summed single interventions point,
-exactly in the final layer (\texttt{resid\_nc}; Section~\ref{sec:formal}).
-(c) The sparse SAEs' codes lose most text before any intervention
-(round-trip chrF 0.23--0.28 against a 0.18 corpus floor) while the soft
-code keeps it (0.55); the dense \texttt{k5120} keeps more but is not a
-sparse code (Appendix~\ref{sec:textfid}).}
+\caption[Steering and reconstruction in the softmax Ontologizer]{Steering
+and reconstruction in the softmax Ontologizer. (a) Forcing an entry moves
+decodes along the supervised difference-of-means direction $0.64\times$
+as far as supervised steering itself and $4\times$ as far as probe
+directions (\texttt{resid\_nc\_hm}; Table~\ref{tab:steer-overlay}).
+(b) Joint two-head interventions align with the sum of the individual
+interventions, and match it exactly in the final layer
+(\texttt{resid\_nc}; Section~\ref{sec:formal}). (c) Sparse SAE
+reconstructions lose most of the text before any intervention is applied
+(round-trip chrF 0.23--0.28 vs.\ a 0.18 corpus floor), whereas the soft
+code preserves it (0.55); the dense \texttt{k5120} SAE preserves more
+text but is not a sparse code (Appendix~\ref{sec:textfid}).}
 \label{fig:teaser}
 \end{figure}
 
 \subsection{Disjoint support}
 \label{sec:intro-disjoint}
 
-Concatenated heads give each head its own block
-of the dictionary's coordinates, so the atoms of different heads have
-disjoint supports by construction. Disjoint support is the strong form of
+In the concatenated-head variant, each head writes to its own block of
+dictionary coordinates, so atoms from different heads have disjoint
+supports by construction. Disjoint support is a strong form of
 orthogonality: for non-negative atoms the two coincide
-(Eq.~\eqref{eq:disjoint}), while signed vectors can be orthogonal by
-cancellation and share every coordinate. Summed heads can only be asked
-for it, and they do not deliver it: no trained summed model partitions its
-coordinates between heads, and penalizing the overlap on GPT-2 produced a
-partition only by moving atom energy into directions the decoder discards
-or shrinks, where reconstruction cannot see it (Section~\ref{sec:disjoint},
-Appendix~\ref{sec:support}). Disjoint support bears on each of the four
-problems above, though unequally. In each case the guarantee holds between
-the heads of one layer and in the dictionary; what reaches the output
-passes through a shared decoder, which in general maps the heads' blocks
-onto overlapping subspaces.
+(Eq.~\eqref{eq:disjoint}), whereas signed vectors can be orthogonal
+through cancellation while sharing every coordinate. When heads are
+summed across the full dictionary space, disjoint support can only be
+encouraged via a penalty and does not form in practice: no trained summed
+model partitions its dictionary coordinates between heads, and penalizing
+support overlap on GPT-2 yields a coordinate partition only by shifting
+atom energy into directions that the decoder discards or shrinks, where
+it does not affect reconstruction (Section~\ref{sec:disjoint},
+Appendix~\ref{sec:support}). Enforcing disjoint support by concatenation
+affects each of the four SAE failure modes above differently. In every
+case, the guarantee holds between heads within a single layer's
+dictionary space; outputs still pass through a shared linear decoder,
+which in general maps different heads' blocks onto overlapping subspaces.
 
 \paragraph{Disentanglement.}
-Absorption needs two things: a general latent that switches off where a
-specific one fires, and a specific latent whose direction takes over the
-general one's. The head structure removes the first, since every head
-writes on every input, choosing among its entries, and so cannot fall
-silent where its feature applies. Disjoint support removes the second: no entry of one
-head can carry a component of another head's block. Feature composition
-is discouraged rather than excluded. Heads already make the code factorial,
-$k^h$ codes from $hk$ atoms, so concepts that vary independently can take
-separate heads, and theory says when an efficient code would put them
-there. Under a quadratic cost on activity and a bound on the
-weights~\cite{whittington2023,dorrell2025}, a non-negative code gives two
-variables disjoint supports when their joint range is spread enough,
-roughly when every combination of their extreme values
-occurs~\cite{dorrell2025}. That condition concerns the factors that
-generate the data, which are unknown, but the learned codes are
-consistent with it: of the entry pairs of two heads that independence
-predicts at least ten times, at most 0.24\% never occur in any layer of a
-SONAR model. The summed
-models carry no such cost and do not partition
-(Appendix~\ref{sec:support}); concatenation imposes the partition by
-construction. Nothing yet forces a head to hold one concept rather than a
-conjunction of two. Nor can any method that sees only the data recover its
-factors without inductive biases, on the model and on the data, that
-match~\cite{locatello2019}. The heads are such a bias, and
-Section~\ref{sec:seeds} measures how far it reaches.
+Feature absorption requires both a general latent that turns off when a
+more specific latent fires and a specific latent whose direction absorbs
+the general one. Classifier heads prevent the first step because every
+head selects an entry on every input and cannot simply turn off, while
+disjoint dictionary blocks prevent the second step in dictionary space
+because no entry of one head has nonzero weight on another head's
+coordinate block. Feature composition is discouraged rather than ruled
+out. Because $h$ heads of $k$ entries define $k^h$ combined codes from
+$hk$ atoms, independent factors can occupy separate heads, and theory
+characterizes when an efficient code separates them. Under a quadratic
+activity cost and bounded weights~\cite{whittington2023,dorrell2025}, a
+non-negative code assigns two factors disjoint supports when their joint
+distribution covers a broad enough product range, roughly when every
+combination of their extreme values occurs~\cite{dorrell2025}. Although
+that condition applies to the unknown generative factors of the data, our
+learned codes satisfy the analogous empirical coverage condition: among
+entry pairs from two heads that would occur at least ten times under
+independence, at most 0.24\% have zero count in any layer of a SONAR
+model. Without activity regularization, summed models do not partition
+their coordinates (Appendix~\ref{sec:support}), whereas concatenated
+heads enforce the partition by construction. Even so, nothing forces a
+single head to capture one concept rather than a conjunction of two, and
+unsupervised learning from marginal data alone cannot recover underlying
+generative factors without matching inductive biases on both the model
+and the data~\cite{locatello2019}. Head structure provides one such
+architectural bias, and Section~\ref{sec:seeds} measures how far it
+extends.
 
 \paragraph{Causality.}
-An SAE's steering is unclean partly because its decoder directions crowd
-one another~\cite{duan2026}. Between heads, nothing crowds in the
-dictionary. Forcing a head's entry rewrites only that head's block of the
-layer's output, orthogonal to everything the other heads of the layer
-write, so interventions on different heads move the output along
-orthogonal directions and each head's contribution can be read off its
-own block. Summed heads also compose additively, by linearity, but their
-writes overlap, so one head's contribution cannot be read apart from the
-others'. What disjoint support does not govern is how the other heads
-read a stepped input. Measured on the summed models by re-encoding, an
-input-space step moves as many other heads as a random step of its
-length, because the heads sit almost on their decision boundaries and
-downstream layers reclassify a changed residual
-(Section~\ref{sec:entangle}). A disjoint write removes neither cause.
+One source of steering collateral in SAEs is crowding among decoder
+directions~\cite{duan2026}. With concatenated heads, atoms from different
+heads never overlap in dictionary space: forcing a head's entry modifies
+only that head's coordinate block, orthogonal to the outputs of all other
+heads in the same layer, so interventions on different heads shift the
+layer's dictionary representation along orthogonal directions and each
+head's contribution can be isolated directly from its block. Summed heads
+also compose additively by linearity, but because their dictionary writes
+overlap, a single head's contribution cannot be separated from the
+others' in the pooled vector. Disjoint dictionary blocks do not, however,
+govern how other heads respond when an input is perturbed in input space.
+When evaluated on summed models by re-encoding a stepped input, an
+input-space step flips as many other heads as a random step of equal
+norm, both because heads sit close to their decision boundaries and
+because downstream layers reclassify the modified residual
+(Section~\ref{sec:entangle}). Disjoint dictionary writes eliminate
+neither mechanism.
 
 \paragraph{Closed form.}
-A static reading of the dictionary, which interprets a head from its
-atoms without data, needs heads that own disjoint coordinates as a
-property of the weights, for every input rather than on the data measured
-(Section~\ref{sec:disjoint}). In the summed models that premise fails:
-each head's usage covers 52--98\% of the coordinates. Concatenated heads
-supply it, and when each head's decoder block has full column rank, every
-part of a head's atoms reaches the output, unlike the partitions the
-overlap penalty produced (Appendices~\ref{sec:support}
-and~\ref{sec:concatgeom}). It is a premise, not yet a reading:
-decoding atoms through the paired decoder has not described what an entry
-does in the models scored so far, none of them with concatenated heads
-(Section~\ref{sec:autointerp}).
+Statically interpreting a head from its atoms without data requires heads
+to occupy disjoint coordinates as a weight-level property across all
+inputs, rather than merely exhibiting low average overlap on a dataset
+(Section~\ref{sec:disjoint}). Summed models violate this condition, with
+each head's usage spanning 52--98\% of dictionary coordinates.
+Concatenated heads satisfy it by construction, and when each head's
+decoder block has full column rank, every component of a head's atoms
+maps nontrivially to the output, unlike the degenerate partitions
+produced by penalizing overlap (Appendices~\ref{sec:support}
+and~\ref{sec:concatgeom}). However, this structural property is a
+necessary precondition rather than a complete interpretation method:
+decoding atom directions through the paired decoder has not yielded
+usable descriptions of entries in the models evaluated so far, none of
+which used concatenated heads (Section~\ref{sec:autointerp}).
 
 \paragraph{Cost.}
-Disjoint support does least here. Concatenation divides the dictionary
-among the heads, so at matched width $e$ each head stores $k$ atoms of
-$e/h$ coordinates rather than $e$, $h$ times fewer dictionary parameters,
-and a hard code's dictionary step is $h$ lookups that together write one
-$e$-vector. But the classifier still scores all $hk$ entries for every
-input, as an SAE scores all of its latents, so the forward pass is no
-cheaper on the encoder side. Narrow blocks also cost reconstruction. At
-$d_{\mathrm{head}}{=}k{=}32$, where each head's block is just wide enough
-for its non-negative atoms under constant temperature, concatenated heads
-had the worst held-out error of the GPT-2 orthant arms ($\fvu$ $0.416$
-against $0.154$--$0.293$; Table~\ref{tab:orthant}), since orthogonal atoms
-within a head need one coordinate each there
-(Appendix~\ref{sec:concatgeom}); giving each head headroom
-($d_{\mathrm{head}}{=}48 > k{=}32$) and annealing the temperature brings
-concatenated heads to $\fvu$ $0.186$ ($0.164$ at $k{=}64$), ahead of
-direct atoms' $0.195$ (Section~\ref{sec:gpt2hard}).
+Disjoint support does not reduce encoder compute. Concatenating heads
+partitions a dictionary of width $e$ across $h$ heads, so each head
+stores $k$ atoms of $e/h$ coordinates rather than $e$ ($h$ times fewer
+dictionary parameters at matched $e$), and a hard forward pass in the
+dictionary reduces to $h$ slice lookups that assemble a single
+$e$-dimensional vector. However, the classifier still evaluates all $hk$
+logits per input, just as an SAE evaluates all of its latents, leaving
+encoder compute unchanged. Narrow coordinate blocks can also degrade
+reconstruction. At $d_{\mathrm{head}}{=}k{=}32$, where each head's block
+is only as wide as its $k$ non-negative atoms under constant temperature,
+concatenated heads had the highest held-out error among the GPT-2 orthant
+arms ($\fvu = 0.416$ vs.\ $0.154$--$0.293$; Table~\ref{tab:orthant}),
+because $k$ orthogonal non-negative atoms within a head require one
+coordinate each (Appendix~\ref{sec:concatgeom}). Giving each head
+additional dimensions ($d_{\mathrm{head}}{=}48 > k{=}32$) and annealing
+the temperature brings concatenated heads to an unwhitened $\mathrm{FVU}$
+of $0.186$ ($0.164$ at $k{=}64$), outperforming direct atoms at $0.195$
+(Section~\ref{sec:gpt2hard}).
 
 \subsection{This document}
 
-This document is the working record of that program. It compares a
-softmax (soft-code) Ontologizer and a straight-through (hard-code) arm
-against $\topk$ SAEs on SONAR sentence embeddings under the same whitened
-objective, and the hard code on GPT-2 small residuals.
-Section~\ref{sec:background} places the architecture among its nearest
-neighbors and Section~\ref{sec:frame} states what the evaluation asks;
-the architecture follows in Section~\ref{sec:methods} and the results in
-Sections~\ref{sec:results}--\ref{sec:geom}.
+This document serves as the working record of our experimental campaign.
+It compares a softmax (soft-code) Ontologizer and a straight-through
+(hard-code) arm against $\topk$ SAEs on SONAR sentence embeddings under a
+shared whitened reconstruction objective, and evaluates hard-code
+variants on GPT-2 small residual-stream activations.
+Section~\ref{sec:background} situates the architecture relative to prior
+work, Section~\ref{sec:frame} defines our evaluation questions,
+Section~\ref{sec:methods} presents the architecture and training
+objective, and Sections~\ref{sec:results}--\ref{sec:geom} report the
+empirical results.
 
 \section{Background}
 \label{sec:background}
 
-No single line of prior work covers this combination; each commitment has
-a nearest neighbor.
+No single line of prior work combines all elements of this architecture,
+though each design choice has close counterparts in neighboring areas.
 
 \paragraph{Quantizers and discrete latents.}
-A \texttt{DictBlock} layer --- $h$ heads, each a softmax over $k$ entries,
-their atoms summed --- is a soft additive quantizer~\cite{babenko2014}, the
-generalization of product quantization~\cite{jegou2011} in which every
-codebook spans the whole space rather than its own block of coordinates
-(concatenated heads are a product quantizer in the dictionary space).
-Composite quantization~\cite{zhang2014composite} lies between the two: it
-holds the summed inner products between different codebooks' codewords at
-a constant, which product quantization's disjoint blocks fix at zero, and
-optimized product quantization~\cite{ge2014} learns the rotation that sets
-the blocks.
-In dictionary-learning terms a hard head is vector quantization, one atom
-at unit coefficient, and a sum of heads lies between vector quantization
-and free sparse coding, with exactly one unit-coefficient atom per
-codebook; under the gain--shape split (Eq.~\eqref{eq:y_norm}) each layer
-is gain--shape VQ, its one coefficient the residual's measured norm rather
-than a quantized index~\cite{aharon2006}.
-The residual layer stack is a softmax relaxation of residual (multi-stage)
-VQ, the quantizer of neural codecs such as SoundStream~\cite{zeghidour2021},
-which picks each stage's code by nearest neighbor and judges codes only by
-rate and perceived quality, never by what a codeword means; residual VQ has
-also been applied to SONAR space itself, with 64 codebooks of 8192
-entries~\cite{lcmteam2024largeconceptmodelslanguage}. The straight-through
-arm (Section~\ref{sec:ste}) makes the analogy literal: with an argmax
-forward and the softmax's gradient in the backward pass --- the
-straight-through estimator~\cite{bengio2013} in its categorical
-form~\cite{jang2017} --- it is a residual additive quantizer with
-non-negative atoms, whose codewords are picked by learned classifiers
-rather than by nearest-codeword search. Vectors of categorical variables
-trained with straight-through gradients are also the latent state of
-discrete world models~\cite{hafner2021,hafner2023}, which sample each
-categorical from the softmax the backward differentiates rather than take
-its argmax (DreamerV3 also mixes 1\% uniform into it~\cite{hafner2023});
-there the codes are compressed state, never read as features. Codebook Features~\cite{tamkin2023} is the
-closest interpretability ancestor: it finetunes VQ bottlenecks into
-a network, one codebook per attention head ahead of the shared output
-projection (in effect concatenated heads with their shared decoder),
-and steers by substituting codes, including swapping one state's code for
-another's in a synthetic finite-state task. But its codes are chosen by
-cosine similarity to the codes themselves rather than by a classifier,
-read one at a time as present-or-absent features, and scored on their
-target alone, with no defined set of operations and no measure of what
-else an intervention changes.
+A \texttt{DictBlock} layer ($h$ heads, each computing a softmax over $k$
+entries whose atoms are summed) is a soft additive
+quantizer~\cite{babenko2014}, generalizing product
+quantization~\cite{jegou2011} by allowing every codebook to span the full
+space rather than a disjoint block of coordinates (concatenated heads
+recover a product quantizer in dictionary space). Composite
+quantization~\cite{zhang2014composite} lies between the two, holding the
+summed inner products between codewords from different codebooks constant
+(where product quantization's disjoint blocks fix them at zero), while
+optimized product quantization~\cite{ge2014} learns the rotation that
+defines the coordinate blocks. In dictionary-learning terms, a single
+hard head performs vector quantization (VQ) with one unit-coefficient
+atom, and a sum of heads lies between VQ and unconstrained sparse coding,
+selecting exactly one unit-coefficient atom per codebook. Under the
+gain--shape split (Eq.~\eqref{eq:y_norm}), each layer acts as gain--shape
+VQ whose scalar gain is the residual's observed norm rather than a
+quantized index~\cite{aharon2006}. Stacking residual layers yields a
+softmax relaxation of multi-stage residual VQ, the quantizer used in
+neural audio codecs such as SoundStream~\cite{zeghidour2021}, which
+selects each stage's codeword by nearest-neighbor search and evaluates
+codes solely by bitrate and perceptual quality rather than codeword
+interpretability; residual VQ has also been applied directly to SONAR
+embeddings using 64 codebooks of 8192
+entries~\cite{lcmteam2024largeconceptmodelslanguage}. The
+straight-through arm (Section~\ref{sec:ste}) makes this connection
+explicit: using a hard argmax in the forward pass and the softmax
+gradient in the backward pass---the straight-through
+estimator~\cite{bengio2013} in its categorical form~\cite{jang2017}---it
+forms a residual additive quantizer with non-negative atoms whose
+codewords are selected by learned classifiers rather than
+nearest-codeword search. Vectors of categorical variables trained with
+straight-through gradients also serve as the latent state of discrete
+world models~\cite{hafner2021,hafner2023}, which sample each categorical
+variable from the softmax distribution that the backward pass
+differentiates rather than taking its argmax (DreamerV3 additionally
+mixes in a 1\% uniform prior~\cite{hafner2023}). In those models,
+however, the discrete codes serve purely as compressed state and are not
+interpreted as features. Codebook Features~\cite{tamkin2023} is the
+closest ancestor in mechanistic interpretability: it fine-tunes VQ
+bottlenecks into a transformer, placing one codebook per attention head
+before the shared output projection (analogous to concatenated heads with
+a shared decoder), and steers behavior by substituting codewords,
+including swapping one state's codeword for another's on a synthetic
+finite-state task. However, its codewords are selected by cosine
+similarity to the codebook vectors rather than by a separate classifier,
+are interpreted individually as binary present-or-absent features, and
+are evaluated solely on target effect without a structured intervention
+algebra or a measure of off-target collateral.
 
 \paragraph{Routed and mixture-of-experts dictionaries.}
 Switch SAEs~\cite{mudide2025} route each activation to one of several
-expert $\topk$ SAEs to cut training compute;
-routing gathers similar inputs, and experts duplicate some features
-(5--10\% of decoder directions have a near-copy in another expert), which
-Xu et al.\ describe as experts collapsing into redundant ensembles and
-counter by activating several experts per
-input~\cite{xu2025redundancydiversespecializedmultiexpert}. A head layer is
-the dual arrangement --- every head fires, choosing one entry --- and the
-hard stack's heads partition near-independently
-(Figure~\ref{fig:headnmi}), while in the reference softmax model a head's
-trained decode directions repel (Section~\ref{sec:prelim-orth}): measured
-on its atoms, a head there is a contrast set rather than the coherent
-cluster that MoE work counts as a specialized expert. MoEfication~\cite{zhang2022} supplies the frame's name,
-but its experts are found post hoc in already-trained layers and several
-are active per input; a head's entries instead exclude one another, and
-the partition is the training objective's own discovery.
+expert $\topk$ SAEs to reduce training compute. Because their router
+groups similar inputs together, experts duplicate features (5--10\% of
+decoder directions have a near-duplicate in another expert), a phenomenon
+that Xu et al.\ characterize as experts collapsing into redundant
+ensembles and mitigate by activating multiple experts per
+input~\cite{xu2025redundancydiversespecializedmultiexpert}. A classifier
+head layer adopts the dual arrangement, in which every head is active on
+every input and selects a single entry. In the hard-code stack, heads
+partition inputs nearly independently (Figure~\ref{fig:headnmi}), whereas
+in the reference softmax model, within-head decoded directions repel one
+another (Section~\ref{sec:prelim-orth}), so each head forms a contrast
+set rather than the cluster of similar features that MoE methods treat as
+a specialized expert. Although MoEfication~\cite{zhang2022} motivates our
+terminology, its experts are extracted post hoc from pre-trained layers
+and multiple experts fire per input; here, entries within a head are
+mutually exclusive, and the partitions are learned end to end during
+dictionary training.
 
 \paragraph{Deep clustering.}
-Each head is a $k$-way classifier trained without labels, the setting of
-deep clustering, which supplies two of the objective's terms. The
-batch-mean entropy term $\mathrm{KL}_m$ (Eq.~\eqref{eq:KL}) is the
-anti-collapse term of contrastive clustering~\cite{li2021cc} and
-SCAN~\cite{vangansbeke2020scan}, which keeps a clusterer from assigning
-most inputs to a few clusters, and the partition-consensus statistic
+Each head is an unsupervised $k$-way classifier, connecting our training
+objective to deep clustering. Specifically, the batch-mean uniformity
+term $\mathrm{KL}_m$ (Eq.~\eqref{eq:KL}) mirrors the anti-collapse
+regularizer of contrastive clustering~\cite{li2021cc} and
+SCAN~\cite{vangansbeke2020scan}, preventing heads from assigning most
+inputs to a few entries, while the partition-consensus statistic
 $\mathrm{KL}_{\mathrm{pwak}}$ (Eq.~\eqref{eq:stats}) pulls each
-assignment toward a stop-gradient average of its neighbors', in the line
-of DEC's self-training target~\cite{xie2016dec} and SCAN's neighbor
-agreement. Those methods learn one clustering of a learned embedding and
-are judged by agreement with class labels; here many heads partition a
-fixed embedding at once, trained only through reconstruction, and the
-partitions are the code.
+assignment toward a stop-gradient average of its neighbors' assignments,
+analogous to DEC's self-training target~\cite{xie2016dec} and SCAN's
+neighbor-consistency loss. Whereas deep-clustering methods learn a single
+partition of a trainable representation and are evaluated against
+ground-truth labels, the Ontologizer trains many heads simultaneously to
+partition a frozen representation through reconstruction loss alone, with
+the resulting partitions serving directly as the representation code.
 
 \paragraph{Structured SAEs.}
-Sparse autoencoders recover features in superposition~\cite{elhage2022}
-as sparse combinations of directions from an overcomplete
-dictionary~\cite{cunningham2023,bricken2023}; the $\topk$ baselines here
-are k-sparse autoencoders~\cite{makhzani2014} trained as in Gao et
-al.~\cite{gao2024}. The field's main structure axis is nesting by scale:
-Matryoshka SAEs~\cite{bussmann2025} carry the nested loss of Matryoshka
-representation learning~\cite{kusupati2022} into a dictionary to curb
-feature absorption~\cite{chanin2025}, and Tree SAEs~\cite{cao2026} learn
-explicit parent--child pairs by gating each child latent on an assigned
-parent. Grouping is a second axis: subspace-aware SAEs~\cite{dalili2026}
-tie latents into rank-$r$ blocks and sparsify across blocks, so that a
-group is a subspace with free signed coordinates, and block-sparse
-featurizers~\cite{fel2026structuring} derive that prior from a model in
-which an activation is a sum of a few low-dimensional manifolds, on which
-a code that sparsifies single directions instead tiles each manifold with
-many atoms~\cite{bhalla2026manifolds}. A block is the opposite unit to a
-head: it is chosen sparsely and varies continuously inside its subspace,
-where every head is active and names one of $k$ atoms.
-OrtSAEs~\cite{korznikov2025} penalize each decoder direction's cosine with
-its nearest neighbor. Rung 3 (\texttt{k32\_p5}) imports the Matryoshka
-nested-prefix loss into the ladder, with five equal blocks rather than the
-doubling block sizes of~\cite{bussmann2025}, a log spacing that Matryoshka
-representation learning found better than uniform~\cite{kusupati2022}.
-The Ontologizer's axis is instead \emph{partition into exhaustive,
-mutually exclusive heads}, and the geometry such heads ask for has a
-theory: in Elhage et al.'s toy models, a set of features of which only one
-is active at a time shares a subspace with negative interference inside
-it, while separate sets take mutually orthogonal
-subspaces~\cite{elhage2022}. A head imposes the first arrangement by
-construction and asks for the second (Section~\ref{sec:disjoint}).
-Outside dictionary learning, Huang and Hahn~\cite{huang2025decomposing}
-partition a residual stream without supervision into mutually independent
-orthogonal subspaces, on the hypothesis that each holds a group of
-mutually exclusive features; their subspaces carry continuous activations
-where a head names one of $k$ values. Post hoc, co-occurring latents of
-LLM SAEs cluster in decoder space by document genre~\cite{li2024geometry},
-the co-firing structure \texttt{headstruct.py} finds among SONAR SAE
-latents in place of categorical groups (Appendix~\ref{sec:categorical}).
-Each of these asks whether an architectural commitment buys
-interpretability that code density alone does not explain. The autointerp
-results below answer ``not per-latent describability''; the
-description-coherence view is where the partition begins to pay,
-suggestively and on the one Ontologizer it scores.
+Sparse autoencoders aim to recover features in
+superposition~\cite{elhage2022} as sparse linear combinations of
+directions from an overcomplete
+dictionary~\cite{cunningham2023,bricken2023}; our $\topk$ baselines are
+k-sparse autoencoders~\cite{makhzani2014} trained following Gao et
+al.~\cite{gao2024}. One major axis of structural prior in recent SAEs is
+hierarchical scale: Matryoshka SAEs~\cite{bussmann2025} adapt the
+nested-prefix loss of Matryoshka representation
+learning~\cite{kusupati2022} to dictionary learning in order to reduce
+feature absorption~\cite{chanin2025}, while Tree SAEs~\cite{cao2026}
+enforce explicit parent--child structure by gating child latents on
+assigned parents. A second axis is subspace grouping: subspace-aware
+SAEs~\cite{dalili2026} bundle latents into rank-$r$ blocks and enforce
+sparsity across blocks so that each active block spans a continuous
+signed subspace, and block-sparse featurizers~\cite{fel2026structuring}
+motivate this prior by modeling activations as sums of low-dimensional
+manifolds that single-direction sparse codes must otherwise tile with
+many separate atoms~\cite{bhalla2026manifolds}. A block-sparse unit is
+thus the structural opposite of a classifier head: blocks are selected
+sparsely and vary continuously within their subspaces, whereas every head
+is active on every input and selects one of $k$ discrete atoms.
+OrtSAEs~\cite{korznikov2025} instead penalize the cosine similarity
+between each decoder direction and its nearest neighbor. Rung~3 of our
+ablation ladder (\texttt{k32\_p5}) incorporates the Matryoshka
+nested-prefix loss using five equal-width blocks rather than the
+geometrically doubling prefixes of Bussmann et al.~\cite{bussmann2025}, a
+logarithmic spacing that Matryoshka representation learning found
+superior to uniform spacing~\cite{kusupati2022}. By contrast, the
+Ontologizer structures the dictionary by \emph{partitioning features into
+exhaustive, mutually exclusive heads}. This design mirrors the geometry
+observed in toy models of superposition, where mutually exclusive
+features share a low-dimensional subspace with negative internal
+interference while independent feature sets occupy mutually orthogonal
+subspaces~\cite{elhage2022}; a classifier head enforces within-head
+exclusivity by construction and encourages between-head orthogonality
+(Section~\ref{sec:disjoint}). Outside dictionary learning, Huang and
+Hahn~\cite{huang2025decomposing} decompose a residual stream without
+supervision into mutually independent orthogonal subspaces under the
+hypothesis that each subspace holds mutually exclusive features, though
+their subspaces carry continuous activations rather than discrete $k$-way
+selections. Post hoc analyses also show that co-occurring LLM SAE latents
+cluster in decoder space by document genre~\cite{li2024geometry},
+matching the co-firing structure that \texttt{headstruct.py} recovers
+among SONAR SAE latents in place of categorical groups
+(Appendix~\ref{sec:categorical}). Each of these structured approaches
+tests whether architectural inductive biases yield interpretability
+beyond what code density alone explains. In our autointerp evaluations
+below, per-latent describability shows no such gain; head structure only
+shows a suggestive effect in within-head description coherence on the
+single Ontologizer checkpoint evaluated.
 
 \paragraph{Embedding-space substrate.}
-SAEs over dense text embeddings have become an active line of work:
-interpreting and discretizing dense-retrieval
-embeddings~\cite{park2025decodingdenseembeddingssparse} and aligning
+Training SAEs on dense text embeddings has recently attracted growing
+interest, including interpreting and discretizing dense-retrieval
+embeddings~\cite{park2025decodingdenseembeddingssparse}, aligning
 sentence-embedding features with human concepts to steer
-retrieval~\cite{shin2026aligningsentenceembeddingshuman}, while a
-data-analysis toolkit builds interpretable document embeddings from a
-token-level LLM SAE instead~\cite{jiang2026interpretableembeddingssparseautoencoders}.
-All three rely on single-layer SAEs, $\topk$ or its BatchTopK variant, the
-embedding SAEs on English retrieval encoders. None addresses SONAR, where
-the stakes are higher --- Large Concept Models generate directly in SONAR
-space~\cite{lcmteam2024largeconceptmodelslanguage} --- and where the paired
-M2M100 decoder reads reconstructions and interventions back as text
-without a trained inverter. Inverting a pooled sentence embedding
-otherwise needs one, which recovers exact text only by iteratively
-re-embedding and correcting its own
-decodes~\cite{morris2023textembeddingsrevealalmost}; exact training-free
-inversion is known only from a causal language model's per-token
-states~\cite{nikolaou2025}, which a bidirectional, mean-pooled encoder
-such as SONAR's does not provide. \texttt{textfid.py} and
-\texttt{steerfid.py} decode in a single greedy pass through a decoder that
-paraphrases and is fragile to small
-perturbations~\cite{sonar,lcmteam2024largeconceptmodelslanguage}, so their
-text-space numbers are lower bounds (Appendix~\ref{sec:steertext}).
+retrieval~\cite{shin2026aligningsentenceembeddingshuman}, and constructing
+interpretable document embeddings from token-level LLM
+SAEs~\cite{jiang2026interpretableembeddingssparseautoencoders}. All three
+approaches use single-layer $\topk$ or BatchTopK SAEs, with the
+embedding-level studies focusing on English retrieval encoders. None
+examines SONAR, where sequence-level generation models such as Large
+Concept Models operate directly in embedding
+space~\cite{lcmteam2024largeconceptmodelslanguage} and where the paired
+M2M100 decoder maps reconstructions and interventions back into text
+without requiring a separately trained inverter. Inverting pooled
+sentence embeddings otherwise requires training a dedicated decoder that
+recovers exact text only by iteratively re-embedding and correcting its
+candidates~\cite{morris2023textembeddingsrevealalmost}, as exact
+training-free inversion is possible only from per-token causal language
+model activations~\cite{nikolaou2025} rather than bidirectional
+mean-pooled embeddings. Because \texttt{textfid.py} and
+\texttt{steerfid.py} decode in a single greedy pass through a generative
+decoder that paraphrases and is sensitive to small embedding
+perturbations~\cite{sonar,lcmteam2024largeconceptmodelslanguage}, our
+text-space fidelity scores represent conservative lower bounds
+(Appendix~\ref{sec:steertext}).
 
 \paragraph{Evaluation stance.}
-SAEBench~\cite{karvonen2025} motivates judging a dictionary with many
-instruments rather than by reconstruction at fixed sparsity; of its eight
-metrics the battery adapts three to SONAR (a loss-recovered analogue
-through the paired decoder, \texttt{textfid.py}; LLM-judged detection,
-\texttt{autointerp.py}; $k_{\mathrm{probe}}$-sparse probing on 86
-language labels, \texttt{langprobe.py}) and omits absorption, RAVEL,
-unlearning, SCR and TPP. Description scoring uses the detection task of
-the scaled autointerp pipeline~\cite{paulo2025}; unlike that pipeline we
-score positives ranked just below the describing examples and report F1
-rather than balanced accuracy, so our numbers are not on its scale.
-Capacity is compared in bits rather than $\mathrm{L0}$, as
-MDL-SAEs~\cite{ayonrinde2024} argue it should be, since an $\mathrm{L0}$
-axis rewards ever wider dictionaries with ever fewer active latents; their
-description length, summed per-latent usage entropy, is the realized-bits
-estimator applied here to heads (Eq.~\eqref{eq:realized}).
-AxBench~\cite{wu2025axbenchsteeringllmssimple} found that, averaged over
-four Gemma-2 sites, prompting and then finetuning steer better than every
-representation-based method. Among single directions only the difference
-of means beats SAE latents, while a linear probe that ties the best
-detectors steers worse than they do, and SAE latents chosen by their
-autointerp labels also trail at concept detection. Detection and steering
-dissociate, which supports judging a dictionary by what its directions do
---- the niche of \texttt{steerfid.py}'s
-effect-against-collateral design at matched magnitude, which follows
-Cunningham et al.'s scoring of feature edits against edit
-magnitude~\cite{cunningham2023}, where AxBench instead tunes each method's
-strength on held-out prompts. Song et
-al.~\cite{song2025positionmechanisticinterpretabilityprioritize} argue
-that run-to-run feature consistency should be an essential SAE evaluation
-criterion, measured as the mean absolute cosine between decoder directions
-matched one-to-one across seeds; \texttt{partition.py}'s Hungarian-matched
-head NMI is its partition-level analogue for classifier heads, and
-\texttt{splitting.py}'s match fractions a thresholded, activation-based
-one. Wang et al.~\cite{wang2024} measure the same property as each latent's
-maximum activation correlation with any latent of another run, against
-model-seed and SAE-seed skylines. Korznikov et al.~\cite{korznikov2026}
-retrain SAEs with the decoder frozen at a random initialization, or held
-near it, or with the encoder frozen at random, and find them within a few
-points of trained SAEs on autointerp, single-latent sparse probing and
-RAVEL; the nulls here permute a trained model's own entries, latents or
-rows, and do not measure what training adds over random components.
-Decoding parameter directions through the paired decoder, to see whether
-features can name themselves from weights alone, is a closed-form
-instance of dataset-free feature synthesis, whose evaluation against
-implanted ground truth finds that even the best such tools help humans
-identify a planted trigger less than half the time~\cite{casper2023};
-here the weights fail too. Two pieces have, to our knowledge, no close
-analog: reading per-head routing as contrastive classification with a
-causal intervention interface, and per-group coherence tests against
-size-matched draws from the same dictionary, applied to trained heads and
-to judge-written description texts as well as to geometry. Li et
-al.~\cite{li2024geometry} test whole co-occurrence clusterings of SAE
-latents against permuted labels.
+SAEBench~\cite{karvonen2025} motivates evaluating dictionaries across
+diverse downstream criteria rather than solely by reconstruction at fixed
+sparsity. From its eight metrics, our evaluation suite adapts three to SONAR (a
+downstream fidelity analogue through the paired decoder,
+\texttt{textfid.py}; LLM-judged feature detection, \texttt{autointerp.py};
+and $k_{\mathrm{probe}}$-sparse probing over 86 language labels,
+\texttt{langprobe.py}) while omitting absorption, RAVEL, unlearning, SCR,
+and TPP. For automated interpretability, we adopt
+the detection protocol of Paulo et al.~\cite{paulo2025}; however, because
+we evaluate positive examples ranked immediately below the prompt-building
+examples and report F1 rather than balanced accuracy, our numerical
+scores are not directly comparable to theirs. Following
+MDL-SAEs~\cite{ayonrinde2024}, we compare model capacity in bits rather
+than $\mathrm{L0}$, since an $\mathrm{L0}$ axis favors arbitrarily wide
+dictionaries with fewer active latents; their description-length metric
+(summed per-latent usage entropy) corresponds to the realized-bits
+estimator that we apply to heads (Eq.~\eqref{eq:realized}). On
+AxBench~\cite{wu2025axbenchsteeringllmssimple}, prompting and fine-tuning
+outperform all representation-based steering methods across four Gemma-2
+sites. Among single-direction methods, only supervised difference of
+means outperforms SAE latents, whereas linear probes match the strongest
+concept detectors yet steer poorly, and SAE latents selected via
+autointerp descriptions lag behind on concept detection. This dissociation
+between detection and steering motivates evaluating dictionary directions
+directly by their causal effects. Accordingly, \texttt{steerfid.py}
+measures target effect against off-target collateral at matched
+perturbation magnitude, following Cunningham et al.'s evaluation of
+feature edits across intervention magnitudes~\cite{cunningham2023} rather
+than tuning per-method steering strengths on held-out prompts as in
+AxBench. Song et
+al.~\cite{song2025positionmechanisticinterpretabilityprioritize} further
+argue that cross-seed feature consistency should be a core SAE evaluation
+criterion, quantified via the mean absolute cosine similarity of
+one-to-one matched decoder directions across seeds; our Hungarian-matched
+head NMI (\texttt{partition.py}) provides the partition-level analogue
+for classifier heads, while activation-containment match fractions
+(\texttt{splitting.py}) provide a thresholded activation-based analogue.
+Wang et al.~\cite{wang2024} similarly measure cross-run consistency via
+each latent's maximum activation correlation with latents from a second
+run relative to model-seed and SAE-seed skylines. Korznikov et
+al.~\cite{korznikov2026} show that SAEs trained with randomly frozen or
+weakly constrained encoders or decoders score within a few percentage
+points of fully trained SAEs on autointerp, single-latent sparse probing,
+and RAVEL; our permutation nulls shuffle a trained model's own entries,
+latents, or sample rows, and therefore do not isolate how much training
+improves over random projections in those metrics. Decoding parameter
+vectors through SONAR's text decoder to test weight-only interpretability
+serves as a closed-form instance of dataset-free feature synthesis, an
+approach that struggles even on planted ground-truth triggers, helping
+human evaluators identify triggers less than half the
+time~\cite{casper2023}; parameter-only decodes fail in our setting as
+well. Two elements of our framework have no direct counterpart in prior
+work: treating per-head routing as contrastive classification equipped
+with a direct causal intervention interface, and testing within-head and
+within-group coherence against size-matched random subsets from the same
+dictionary across both weight geometry and LLM-generated descriptions (by
+contrast, Li et al.~\cite{li2024geometry} test global co-occurrence
+clusterings of SAE latents against permuted labels).
 
 \section{Evaluation frame}
 \label{sec:frame}
 
-The comparisons below were largely built on SAE-native terms ---
-per-feature monosemanticity, sparse probing, reconstruction at matched
-sparsity --- and we report them unchanged. But the Ontologizer's goal is
-not a monosemantic dictionary. It is an \emph{unsupervised generator of
-steering vectors}: each head is trained only by reconstruction pressure,
-the hope is that a series of such classifiers finds the most natural
-contrastive clusters in the embedding space, and within-head entry swaps
-are the steering primitive (forcing head $i$ from its argmax entry to
-entry $j'$ moves the decode along exactly the dimension head $i$
-classifies).
+Many of the comparisons below follow standard SAE evaluation criteria
+(per-feature monosemanticity, sparse probing, and reconstruction at
+matched sparsity), and we report those measurements unchanged. However,
+the goal of the Ontologizer is not to learn a monosemantic dictionary of
+independent latents, but rather to serve as an \emph{unsupervised
+generator of steering vectors}. Each head is trained solely via
+reconstruction loss with the aim of partitioning the representation space
+into contrastive categories, where within-head entry swaps provide the
+steering primitive: forcing head $i$ from its argmax entry to entry $j'$
+shifts the decoded output along the axis that head $i$ classifies.
 
-Under this frame the evaluation questions are: (a)~what does contrast-set
-structure cost in reconstruction (the Pareto and ladder); (b)~do trained
-heads actually behave as contrastive classifiers (categorical form,
-semantic anti-coherence); (c)~are the learned tasks \emph{natural} ---
-nameable, stable across runs, aligned with generative factors of the data
-(seed reproducibility, language and topic alignment); and (d)~is the
-steering primitive good --- consistent effect, low collateral, at least
-matching supervised diff-of-means vectors and SAE decoder-direction addition
-(steering fidelity). Metrics that ask whether \emph{individual latents}
-are concept-aligned remain informative about the SAE side but are the
-wrong lens for classifier codes, and we flag them as such where they
-appear. Figure~\ref{fig:teaser} shows the softmax Ontologizer on three
-of question (d)'s criteria; the hard code steers less reliably than the
-soft one (Section~\ref{sec:steer}).
+Under this framing, our evaluation addresses four primary questions:
+(a)~what reconstruction penalty contrast-set structure incurs (the Pareto
+frontier and structural ablation ladder);
+(b)~whether trained heads behave as contrastive classifiers in practice
+(categorical selectivity and within-head semantic repulsion);
+(c)~whether the learned partitions capture \emph{natural} factors that
+are interpretable, reproducible across runs, and aligned with generative
+factors of the data (cross-seed reproducibility, language, and topic
+alignment); and
+(d)~whether entry swaps provide effective steering with consistent target
+effects and low collateral, comparable to supervised difference-of-means
+vectors and SAE decoder-direction addition (steering fidelity). Metrics
+that test whether \emph{individual latents} align with isolated concepts
+remain informative for the SAE baselines, but are ill-suited to
+evaluating classifier codes; we note this distinction wherever such
+metrics appear. Figure~\ref{fig:teaser} illustrates the softmax
+Ontologizer on three criteria under question~(d), whereas the hard code
+steers less reliably than the soft code (Section~\ref{sec:steer}).
 
-Question (c) has a prerequisite that the original battery took for
-granted: a head can only be named if it is the same head on every run.
-Section~\ref{sec:seeds} tests that directly and finds it holds only
-partly, and only in the first layer, which conditions every per-head
-result in this document.
+Question~(c) depends on a prerequisite that our initial evaluation
+battery took for granted: an individual head can be assigned a stable
+interpretation only if the same head emerges across independent training
+runs. Section~\ref{sec:seeds} tests cross-seed reproducibility directly
+and finds that it holds only partially, and only in the first layer, a
+limitation that qualifies every per-head result in this document.

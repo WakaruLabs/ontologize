@@ -6,10 +6,10 @@
 \toprule
 \multicolumn{2}{@{}l}{\emph{shared by every \texttt{sae.py} run}} \\
 \midrule
-input & the SONAR cache and eval tail of the Ontologizers, $d{=}1024$ \\
-objective & whitened MSE, as the Ontologizers \\
-architecture & pre-subtracted decoder bias, encoder initialized tied to the decoder, except \texttt{m5120\_k32\_bl}'s two factors, which are random and scaled to the tied encoder's pre-activation size \\
-decoder & unit-norm directions, the columns of $W_{\mathrm{dec}}$, except \texttt{g160softmax}'s, which carry magnitude because its coefficients are bounded \\
+input & same SONAR cache and held-out evaluation tail as the Ontologizers, $d{=}1024$ \\
+objective & whitened MSE, matching the Ontologizers \\
+architecture & pre-subtracted decoder bias; encoder initialized tied to the decoder, except \texttt{m5120\_k32\_bl}, whose two factors are initialized randomly and scaled to match the tied encoder's pre-activation norm \\
+decoder & unit-norm column directions in $W_{\mathrm{dec}}$, except \texttt{g160softmax}, whose columns carry unconstrained norm because its coefficients are bounded \\
 dead latents & \texttt{aux\_k} 512 ($\topk$ and grouped runs) or neuron resampling every 5000 steps (L1 runs) \\
 optimizer & Adam, batch 4096 \\
 \bottomrule
@@ -35,11 +35,11 @@ run & $m$ & sparsity & encoder & structure & lr & steps \\
 \texttt{m5120\_g160softmax} & 5120 & 160 heads, softmax & linear & one-layer soft variant & $4\times10^{-4}$ & 144.3k \\
 \bottomrule
 \end{tabular}}
-\caption{SAE baselines (above the rule) and the single-layer variants
-(below it; Section~\ref{sec:models}). The L1 sweep's five weights
-$s_{\mathrm{L1}}$ are $3\times10^{-6}$, $10^{-5}$, $3\times10^{-5}$, $10^{-4}$
-and $3\times10^{-4}$; $\ast$ is the weight as the run name spells it
-(\texttt{m5120\_l13e-05}). $^\dagger$Not recorded; inferred from the run sharing
-\texttt{m11264\_k32}'s step count.}
+\caption{SAE baselines (above the rule) and single-layer Ontologizer variants
+(below it; Section~\ref{sec:models}). The L1 sweep covers five weights
+$s_{\mathrm{L1}} \in \{3\times10^{-6}, 10^{-5}, 3\times10^{-5}, 10^{-4}, 3\times10^{-4}\}$,
+where $\ast$ denotes the weight string in the run name
+(e.g., \texttt{m5120\_l13e-05}). $^\dagger$Not logged; inferred from the
+step count shared with \texttt{m11264\_k32}.}
 \label{tab:cfg-sae}
 \end{table}

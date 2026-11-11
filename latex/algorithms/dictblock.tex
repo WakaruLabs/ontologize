@@ -1,8 +1,9 @@
 \begin{algorithm}[tp]
-	\caption{$\dictblock$ in training (\texttt{DictBlock.withStats}). At
-	inference the four stochastic steps (revival, winner dropout, head
-	dropout, fiber dropout) and the feature noise are skipped. Every
-	statistic is stop-gradiented unless its loss term is enabled.}
+	\caption{$\dictblock$ training pass (\texttt{DictBlock.withStats}). At
+	inference time, the four stochastic steps (revival, winner dropout, head
+	dropout, and fiber dropout) and feature noise are omitted. Every
+	statistic is stop-gradiented unless its corresponding loss term is
+	enabled.}
 	\label{alg:dictblock}
 	\DontPrintSemicolon
 	\footnotesize

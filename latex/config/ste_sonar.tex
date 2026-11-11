@@ -45,10 +45,10 @@ arm & shape & $k$ & bits & $s_{\mathrm{KL}_m}$ & \stackhead{init\\scale} & other
 \texttt{ste\_k128\_h54\_direct} & $5\times54$ & 128 & 1890 & $10^{-4}$ & 0.1 & signed direct atoms, $s_\omega{=}10^{-6}$$^\ddagger$ & 369.5k \\
 \bottomrule
 \end{tabular}}
-\caption{SONAR straight-through configurations. Init scale is
-\texttt{--dict-init-scale}: each dictionary rescaled at initialization so
-a layer writes that fraction of its input (--- leaves the default
-initialization). $^\dagger$Changed at a resume. $^\ddagger$Trained after
-$\mathrm{cossim}_h$ was retired, so $s_\omega$ takes its place.}
+\caption{SONAR straight-through configurations. Init scale corresponds to
+\texttt{--dict-init-scale}, which rescales each dictionary at initialization
+so that a layer writes that fraction of its input norm (--- denotes the
+default initialization). $^\dagger$Changed at a resume. $^\ddagger$Trained
+after $\mathrm{cossim}_h$ was retired, using $s_\omega$ in its place.}
 \label{tab:cfg-ste-sonar}
 \end{table}

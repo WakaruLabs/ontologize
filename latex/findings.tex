@@ -43,110 +43,119 @@
 % flockpaper sets the abstract in an unbreakable minipage, so it must fit
 % on the page it starts on or it moves to the next one whole
 \small
-Auditing a model for a hidden objective, or for a concept no one thought
-to name, needs interpretability that finds variables without labels.
-Supervised probes and difference-of-means vectors beat sparse autoencoder
-(SAE) features at detection and steering, but supervision only confirms
-concepts someone already suspects. We argue that unsupervised methods
-lose partly because of what they return: an SAE latent fires or stays
-silent, and absorption makes its silence uninformative, while the methods
-that win contrast the values of a variable. The Ontologizer learns
-variables directly: stacked layers of competitive classifier heads, each
-giving every input one of $k$ entries whose atoms reconstruct it. Forcing
-a head to another entry swaps one learned atom for another, a label-free
-analogue of a difference of means, so steering
-can test a discovered variable, though only against arbitrary partitions of
-the same space --- which, on both SONAR and GPT-2, steer their own cells
-just as specifically. On SONAR sentence embeddings and GPT-2
-small residuals, structure costs little once the code is discrete: a pure
-1900-bit hard code reaches $\fvu$ $0.158$, where a $\topk$ SAE with 160
-latents at the same bits cannot beat $0.236$ (entropy-coded SAEs with
-uneven or wider supports do better), and on
-GPT-2 an 800-bit code recovers 97.6\% of the model's loss, more than a
-$k_{\mathrm{SAE}}{=}32$ SAE at nearly the same $\fvu$. In the soft code,
-forced entries steer along the supervised difference-of-means direction,
-$0.64\times$ as far as supervised steering, and compose nearly additively.
-But the variables are not yet identifiable: seeds agree on the error to
-four digits but share no head past the first layer, input-space steps
-disturb other heads as much as random steps of the same length, and
-weight-only decodes do not describe entries. The exception is a block
-trained on sentence pairs: heads rewarded for keeping their entry across
-two sentences of a document reproduce as a block across three seeds
-(matched NMI $0.41$ against $0.005$), though not yet head by head, and
-their code changes more slowly than any linear projection of the
-embedding. Identifiability, not fidelity, is the
-binding constraint, for auditing and for any goal that must keep pointing
-at one concept as a model is retrained; reconstruction cannot see it
-fail, and paired views are the first lever that moves it.
+Auditing a model for a hidden objective or an unnamed concept requires
+identifying its internal variables without labels. Supervised probes and
+difference-of-means vectors outperform sparse autoencoder (SAE) features at
+detection and steering, but supervised methods only test concepts that an
+experimenter already suspects. Unsupervised SAEs struggle in part because of
+the form of their features: each latent either fires or stays silent,
+absorption makes silence uninformative, and effective steering vectors
+instead contrast alternative values of a variable. The Ontologizer learns
+categorical variables directly via stacked layers of competitive classifier
+heads, each assigning every input to one of $k$ entries associated with a
+learned atom. Forcing a head to another entry swaps one atom for another, an
+unsupervised analogue of a difference-of-means vector, though swaps between
+arbitrary partitions of the same space steer their own cells just as
+specifically on both SONAR and GPT-2. Once the code is discrete, categorical
+structure incurs little distortion: on SONAR sentence embeddings, a pure
+1900-bit hard code reaches $\fvu = 0.158$, whereas a 160-latent $\topk$ SAE
+at the same bit budget cannot beat $0.236$ (though entropy-coded SAEs with
+variable or wider supports achieve lower error); on GPT-2 small, an 800-bit
+hard code recovers 97.6\% of next-token loss, surpassing a
+$k_{\mathrm{SAE}}{=}32$ SAE at similar error. In the soft code, forced
+entries steer along the supervised difference-of-means direction
+$0.64\times$ as far as supervised steering and compose nearly additively.
+However, the learned variables are not yet identifiable: independent seeds
+match in error to four digits while sharing no heads past the first layer,
+input-space steps flip other heads as often as random steps of equal norm,
+and parameter-only decodes fail to describe entries. The one exception is a
+block of heads rewarded for maintaining consistent entries across adjacent
+document sentences, which reproduces as a block across three seeds (matched
+NMI $0.41$ vs.\ a $0.005$ null), though not yet head by head, and varies
+more slowly than any linear projection of the embedding. Identifiability
+rather than fidelity is therefore the binding constraint for auditing and
+stable goal specification: reconstruction loss alone does not enforce it,
+and paired-view training is the first objective that improves it.
 \end{abstract}
 
 \input{findings/sections/introduction}
 
 \input{findings/sections/methods}
 
-\subsection{Data, models and evaluation}
+\subsection{Data, models, and evaluation}
 \label{sec:setup}
 
-This section is an overview; Appendix~\ref{app:methods} is the full
-description, with every evaluation's defining equation or algorithm.
+This section summarizes our experimental setup; Appendix~\ref{app:methods}
+provides the full protocols and defining equations for every evaluation.
 
 \paragraph{Data.}
-The SONAR models train on a fixed cache of 4{,}000{,}000 unit-norm SONAR
-sentence embeddings ($d{=}1024$) from an interleaved 86-language mC4
-sample, with a language label per row and text recoverable by row index;
-80 of the 86 languages, 93\% of rows, were encoded under SONAR's English
-source tag rather than their own, and a companion sentence-split cache
-(\texttt{mc4\_sent16}, 44.1M consecutive segments) stores unnormalized
-embeddings under native tags (Appendix~\ref{app:data}).
-Sections~\ref{sec:gpt2} and~\ref{sec:seeds} also use residual-stream
-activations of GPT-2 small~\cite{radford2019} at the output of block 8 of
-12 ($d{=}768$), a substrate where sparse dictionary learning is known to
-work~\cite{gao2024}; Section~\ref{sec:gpt2hard}'s
-separate GPT-2 setup compares only within that section
-(Appendix~\ref{app:data}).
+Our main SONAR models are trained on a fixed cache of 4{,}000{,}000
+unit-norm SONAR sentence embeddings ($d{=}1024$) drawn from an interleaved
+86-language mC4 sample, with a ground-truth language label per row and
+source text recoverable by row index. Due to a source-tag bug in the
+original cache, 80 of the 86 languages (93\% of rows) were encoded with
+SONAR's English source tag rather than their native tag; a companion
+sentence-split cache (\texttt{mc4\_sent16}, 44.1M consecutive segments)
+stores unnormalized embeddings encoded under native language tags
+(Appendix~\ref{app:data}). Sections~\ref{sec:gpt2} and~\ref{sec:seeds}
+additionally evaluate residual-stream activations of GPT-2
+small~\cite{radford2019} leaving block 8 of 12 ($d{=}768$), a standard
+testbed for sparse dictionary learning~\cite{gao2024}, while
+Section~\ref{sec:gpt2hard} uses a separate GPT-2 setup whose results are
+compared only within that section (Appendix~\ref{app:data}).
 
 \paragraph{Objective and score.}
-Every model minimizes the whitened MSE of Eq.~\eqref{eq:mse}, and we
-report whitened FVU (Eq.~\eqref{eq:fvu}) on the final 32{,}768 cache
-rows, which SAEs and straight-through arms never train on (coordinate~837,
-fixed on raw SONAR embeddings by the final LayerNorm hyperplane, reads out
-$1/\lVert\mathbf{x}^{\mathrm{raw}}\rVert$ after L2 normalization and holds
-at most $0.41\%$ of any sparse model's whitened error;
-Appendix~\ref{app:data}). The softmax
-Ontologizers predate that holdout, but their scores move by at most
-0.3\% on freshly encoded rows that no model saw
-(Appendix~\ref{app:data}). Every score uses the run's own final
+All models minimize the whitened MSE of Eq.~\eqref{eq:mse}, and we report
+whitened fraction of variance unexplained ($\fvu$, Eq.~\eqref{eq:fvu}) on
+the final 32{,}768 rows of the cache, which are held out from training for
+all SAEs and straight-through models. Coordinate~837, which is fixed on
+raw SONAR embeddings by the final LayerNorm hyperplane, encodes
+$1/\lVert\mathbf{x}^{\mathrm{raw}}\rVert$ after L2 normalization and
+accounts for at most $0.41\%$ of whitened error in any sparse model
+(Appendix~\ref{app:data}). Although the softmax Ontologizers were trained
+before that holdout split was introduced, re-evaluating them on freshly
+encoded out-of-sample rows changes their $\fvu$ by at most 0.3\%
+(Appendix~\ref{app:data}). Every evaluation uses each run's final training
 temperature.
 
 \paragraph{Models.}
-The reference softmax Ontologizer \texttt{resid\_nc} has $l{=}5$ residual
-layers of $h{=}32$ heads with $k{=}32$ entries; a selection sweep varies
-only its selection rule, and the straight-through arm
-(Section~\ref{sec:ste}) replaces it with hard codes. The SAEs are $\topk$
-SAEs after Gao et al.~\cite{gao2024}, plus a structural-ablation ladder
-that adds one Ontologizer constraint at a time. Two of its rungs,
-\texttt{g160top1} and \texttt{g160softmax} (160 heads of hard or softmax
-competition over a shared decoder), are each a one-layer Ontologizer
-without the bilinear classifier, residual stack or non-negative
-dictionary, \texttt{g160top1} with a router fused into its classifier,
-and are treated as simplified variants rather than baselines
-(Appendix~\ref{sec:models}; configurations in Appendix~\ref{app:configs}).
+The reference softmax Ontologizer (\texttt{resid\_nc}) stacks $l{=}5$
+residual layers of $h{=}32$ heads with $k{=}32$ entries each; a
+selection-rule sweep varies only its per-head selection operator, and the
+straight-through arm (Section~\ref{sec:ste}) replaces soft assignments
+with discrete one-hot codes. Our baselines are $\topk$ SAEs following
+Gao et al.~\cite{gao2024}, alongside a structural-ablation ladder that
+introduces Ontologizer constraints one step at a time. Two rungs of that
+ladder---\texttt{g160top1} and \texttt{g160softmax}, which apply hard or
+softmax competition across 160 heads over a shared decoder
+(\texttt{g160top1} fusing a scalar router into its classifier)---are
+single-layer Ontologizers without bilinear classifiers, residual stacking,
+or non-negative dictionaries, and are treated as simplified model variants
+rather than external baselines (Appendix~\ref{sec:models}; full
+configurations in Appendix~\ref{app:configs}).
 
 \paragraph{Evaluations.}
-Each is a standalone script on the shared eval split
-(Appendix~\ref{app:protocols}): reconstruction against code capacity and
-a Gaussian rate--distortion reference (\texttt{pareto.py}); whether SAE latents form
-exhaustive, exclusive head-like groups (\texttt{headstruct.py}); the
-semantic coherence of a head's atoms against size-matched nulls
-(\texttt{headcoh.py}); feature splitting and cross-seed head matching by
-partition and by contribution (\texttt{splitting.py}, \texttt{partition.py},
-\texttt{headcontrib.py}); text fidelity through the M2M100 decoder
-(\texttt{textfid.py}); language probing by latent and by partition
-(\texttt{langprobe.py}, \texttt{headlang.py}); shrinkage by least-squares
-refitting on a frozen support (\texttt{refit.py}); steering fidelity in
-text and in embedding space (\texttt{steerfid.py}, \texttt{steerembed.py},
-\texttt{steergeom.py}); additivity of paired interventions
-(\texttt{compose.py}); and autointerp (\texttt{autointerp.py}).
+Each evaluation is implemented as a standalone script run on the shared
+evaluation split (Appendix~\ref{app:protocols}):
+\begin{itemize}
+\item reconstruction error against code capacity and a Gaussian
+rate--distortion baseline (\texttt{pareto.py}), and coefficient shrinkage
+via least-squares refitting on frozen active supports (\texttt{refit.py});
+\item post hoc discovery of exhaustive, mutually exclusive latent groups
+in SAEs (\texttt{headstruct.py}), and within-head semantic coherence of
+decoded atoms against size-matched random subsets (\texttt{headcoh.py});
+\item cross-model feature splitting and cross-seed head matching by sample
+partition and by output contribution (\texttt{splitting.py},
+\texttt{partition.py}, \texttt{headcontrib.py});
+\item downstream text fidelity through the M2M100 decoder
+(\texttt{textfid.py}), and language probing by active latents and head
+partitions (\texttt{langprobe.py}, \texttt{headlang.py});
+\item steering efficacy and collateral in decoded text and in embedding
+space (\texttt{steerfid.py}, \texttt{steerembed.py},
+\texttt{steergeom.py}), along with additivity of paired head interventions
+(\texttt{compose.py}); and
+\item automated interpretability detection (\texttt{autointerp.py}).
+\end{itemize}
 
 \input{findings/sections/results}
 
@@ -158,34 +167,35 @@ text and in embedding space (\texttt{steerfid.py}, \texttt{steerembed.py},
 % are set loose (five underfull warnings) rather than into the margin
 \begin{sloppypar}
 All code is available at \texttt{https://github.com/WakaruLabs/ontologize}.
-The evaluation protocols are root-level scripts
+The core evaluation protocols are implemented as root-level scripts
 (\texttt{sae.py}, \texttt{pareto.py}, \texttt{headstruct.py},
 \texttt{headcoh.py}, \texttt{splitting.py}, \texttt{textfid.py},
 \texttt{langprobe.py}, \texttt{refit.py}, \texttt{steerfid.py},
-\texttt{compose.py}, \texttt{autointerp.py}), driven by the
+\texttt{compose.py}, \texttt{autointerp.py}), orchestrated by the
 \texttt{sae\_ladder.sh}, \texttt{sae\_evals.sh}, and
-\texttt{autointerp\_run.sh} runners (idempotent, crash-resumable systemd
-user units; judge calls rate-metered). The straight-through arm and its
-diagnostics live in \texttt{experiments/ste-arm/}
+\texttt{autointerp\_run.sh} runners as idempotent, crash-resumable systemd
+user units with rate-metered judge calls. The straight-through arm and its
+diagnostics reside in \texttt{experiments/ste-arm/}
 (\texttt{train\_ste.py}, \texttt{steerembed.py}, \texttt{blendablate.py},
 \texttt{gainablate.py}, \texttt{inputgeom.py}, \texttt{dictgeom.py},
 \texttt{lastlayer.py}, \texttt{partition.py}, \texttt{headcontrib.py},
 \texttt{entryshare.py}, \texttt{bigatoms.py}, \texttt{headlang.py},
 \texttt{headscript.py}, \texttt{headeta.py}, \texttt{embedgeom.py},
-\texttt{decodehead.py}, \texttt{coordfvu.py}, \texttt{make\_zca.py}); its
-notebook \texttt{experiments/ste-arm/notes.md} records every run's command
-and the superseded readings. The sentence-split cache and next-sentence
-transition probes live in \texttt{experiments/sentence-split/} and
-\texttt{experiments/next-sentence/} (\texttt{eval\_next.py},
-\texttt{transitions.py}, \texttt{train\_pair.py}). The GPT-2 hard-code runs of
-Section~\ref{sec:gpt2hard} live in \texttt{experiments/gpt2/}
-(\texttt{train\_onto.py}, \texttt{diagnose.py}, \texttt{seedstab.py}; notes
-in \texttt{DIRECT\_GAIN\_STE.md} and \texttt{results/README.md}, with the two
-headline runs' configs, diagnostics and loss curves) and need the
-\texttt{headline} branch's code. The curated test suite pins each protocol's
-statistics against planted-structure synthetics. Artifacts live under
-\texttt{data/out/sonar/} and \texttt{data/out/gpt2\_l8/}. At most three
-straight-through runs fit concurrently on one 24\,GB device.
+\texttt{decodehead.py}, \texttt{coordfvu.py}, \texttt{make\_zca.py}), with
+every run's command and superseded analyses recorded in
+\texttt{experiments/ste-arm/notes.md}. The sentence-split cache and
+paired-sentence experiments reside in \texttt{experiments/sentence-split/}
+and \texttt{experiments/next-sentence/} (\texttt{eval\_next.py},
+\texttt{transitions.py}, \texttt{train\_pair.py}). The GPT-2 hard-code
+experiments of Section~\ref{sec:gpt2hard} reside in
+\texttt{experiments/gpt2/} (\texttt{train\_onto.py}, \texttt{diagnose.py},
+\texttt{seedstab.py}, with notes, configurations, diagnostics, and loss
+curves in \texttt{DIRECT\_GAIN\_STE.md} and \texttt{results/README.md})
+and use the \texttt{headline} branch. A curated test suite verifies each
+protocol's statistics on synthetic inputs with planted structure.
+Evaluation artifacts are stored under \texttt{data/out/sonar/} and
+\texttt{data/out/gpt2\_l8/}. At most three straight-through training runs
+fit concurrently on a single 24\,GB GPU.
 \end{sloppypar}
 
 \section*{Acknowledgements}

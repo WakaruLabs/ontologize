@@ -1,9 +1,9 @@
 \begin{algorithm}[tp]
-	\caption{$\ontologizer$ in training (\texttt{Ontologizer.withStats})
-	and the loss it feeds (\texttt{Hyperparams.loss}), for the
-	residual forward (\texttt{forward="resid"}) every configuration here
-	uses. Without an encoder, $\mathrm{enc}$ is the identity; with direct
-	atoms, $\mathrm{dec}$ is.}
+	\caption{$\ontologizer$ training pass (\texttt{Ontologizer.withStats})
+	and total loss computation (\texttt{Hyperparams.loss}) under residual
+	forwarding (\texttt{forward="resid"}), which is used in all reported
+	configurations. When no encoder is used, $\mathrm{enc}$ is the identity;
+	in direct-atom configurations, $\mathrm{dec}$ is also the identity.}
 	\label{alg:ontologizer}
 	\DontPrintSemicolon
 

@@ -1,8 +1,9 @@
 \begin{algorithm}[tp]
-	\caption{$\dictenc$, one layer, in training (\texttt{DictEnc.withStats}).
-	Without the router, $\Gamma$ is all ones and $\mathrm{L1}_S = 0$; without
-	fibers there are no coordinates $\mathsf{C}$; without
-	\texttt{resid\_gain} the input is not split and $g = 1$.}
+	\caption{Single-layer $\dictenc$ training pass (\texttt{DictEnc.withStats}).
+	When the router is disabled, $\Gamma = \mathbf{1}$ and $\mathrm{L1}_S = 0$;
+	when fibers are disabled, the coordinates $\mathsf{C}$ are omitted; and
+	when \texttt{resid\_gain} is disabled, the input is not decomposed into
+	gain and shape and $g_n = 1$.}
 	\label{alg:dictenc}
 	\DontPrintSemicolon
 
