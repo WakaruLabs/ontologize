@@ -286,7 +286,8 @@ selecting exactly one unit-coefficient atom per codebook. Under the
 gain--shape split (Eq.~\eqref{eq:y_norm}), each layer acts as gain--shape
 VQ whose scalar gain is the residual's observed norm rather than a
 quantized index~\cite{aharon2006}. Stacking residual layers yields a
-softmax relaxation of multi-stage residual VQ, the quantizer used in
+softmax relaxation of multi-stage residual
+VQ~\cite{juang1982,barnes1996}, the quantizer used in
 neural audio codecs such as SoundStream~\cite{zeghidour2021}, which
 selects each stage's codeword by nearest-neighbor search and evaluates
 codes solely by bitrate and perceptual quality rather than codeword

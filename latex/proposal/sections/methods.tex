@@ -44,7 +44,8 @@ models do not form a coordinate partition (Section~\ref{sec:disjoint}).
 	$\mathrm{dec}$ is a linear decoder with shape $\mathbb{R}^{d \times e}$,
 	shared by all layers.
 	Deep supervision makes the code a successive refinement, coarse-to-fine
-	in distortion as in residual quantizers~\cite{zeghidour2021} and
+	in distortion as in residual
+	quantizers~\cite{juang1982,barnes1996,zeghidour2021} and
 	nested-prefix SAEs~\cite{bussmann2025}: the component encoded by
 	previous layers is inaccessible to later layers.
 	After $\ell$ layers, $\hat{\mathbf{x}}_\ell = \mathrm{dec}(\mathbf{r}_\ell)$, and
@@ -121,7 +122,8 @@ temperature $t$ annealed during training to sharpen the distributions.
 When trained from scratch with soft assignments, however, the model
 continues to rely on the full probability vector rather than its discrete
 argmax, since the linear decoder can invert a soft relaxation of
-quantization~\cite{vandenoord2017} (Section~\ref{sec:prelim-pareto}). To
+quantization~\cite{agustsson2017,vandenoord2017}
+(Section~\ref{sec:prelim-pareto}). To
 train a genuinely discrete code, the \emph{straight-through} selection
 rule selects the one-hot argmax in the forward pass and uses
 $\mathrm{softmax}(K/t)$ as a surrogate gradient in the backward pass,

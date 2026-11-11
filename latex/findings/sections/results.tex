@@ -47,7 +47,9 @@ budget. Because these truncations are applied post hoc to a model that was
 never trained with truncation, they may overstate the intrinsic cost of
 contrast-set structure: multi-stage residual quantizers similarly degrade
 when truncated without training for it, whereas training with randomized
-truncation depths per example avoids that penalty~\cite{zeghidour2021}.
+truncation depths per example avoids that penalty~\cite{zeghidour2021}, and
+a residual quantizer trained with a loss on every stage can be cut to a
+prefix at almost no cost~\cite{huijben2024}.
 Furthermore, reconstruction information is distributed across heads rather
 than concentrated in a few: retaining whole heads instead of per-head
 deviations performs substantially worse at a matched coefficient count
@@ -66,9 +68,11 @@ distortion--rate function; on a selection-sweep run of the same
 architecture, the gap spans nine orders of magnitude ($\fvu = 8.7\times10^6$
 vs.\ $0.0007$ for the soft code). Consequently, the discrete argmax entries
 forced by interventions on a softmax model do not carry its reconstruction.
-This mirrors the failure mode documented for VQ-VAE when a continuous
-relaxation of quantization is trained from scratch and the decoder learns to
-invert the continuous relaxation~\cite{vandenoord2017}, motivating the
+This mirrors a failure known for soft relaxations of vector quantization:
+annealed too slowly, the network can learn to invert the soft
+assignments~\cite{agustsson2017}, and trained from scratch, the decoder
+inverts the relaxation so that no quantization takes
+place~\cite{vandenoord2017}. It motivates the
 straight-through hard-code arm in Section~\ref{sec:ste}. Notably, the
 Gaussian reference does not imply that 800 bits are insufficient, since
 non-Gaussian data can be compressed below that bound.
@@ -681,7 +685,10 @@ observing one another's errors. Independent selection is benign in product
 quantization, where heads occupy orthogonal subspaces, but degrades
 accuracy when decoded atoms overlap. By contrast, the residual stack acts as
 a multi-stage residual quantizer in which each layer encodes the error left
-by earlier layers~\cite{zeghidour2021}. Because every stack also applies deep
+by earlier layers~\cite{zeghidour2021}. Among SAEs, the matching-pursuit
+SAE has the same structure within a single code: its encoder chooses each
+latent against the residual its predecessors leave~\cite{costa2025}.
+Because every stack also applies deep
 supervision to all intermediate prefixes (which has no counterpart in a
 single layer), whether this improvement requires prefix supervision in
 addition to residual forwarding has not yet been isolated.
