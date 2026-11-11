@@ -185,7 +185,7 @@ $\mathrm{L0}$, $s_{\mathrm{L1}}$, \texttt{aux\_k} & active SAE latents per sampl
 \label{app:data}
 
 \paragraph{Embedding space and data.}
-All main SONAR models are trained on a fixed cache of 4{,}000{,}000
+All main SONAR models are trained on a fixed cache of 3{,}974{,}400
 unit-norm SONAR sentence embeddings ($d{=}1024$) computed from an
 interleaved 86-language mC4 sample, paired with a ground-truth language
 label sidecar. Because the stream order is deterministic, raw source text
@@ -281,15 +281,17 @@ coordinate error and accounting for at most $0.41\%$ of whitened error in
 any sparse model (\texttt{coordfvu.py}); zeroing $w_{837}$ at evaluation
 changes $\fvu$ by at most $+0.0043$ and leaves all model rankings unchanged.
 A companion sentence-split cache, \texttt{mc4\_sent16}
-(\texttt{experiments/\allowbreak sentence-split/}), segments the first
-4{,}000{,}000 mC4 documents with SaT~\cite{frohmann2024sat} (\texttt{sat-3l-sm}, capped at 200
+(\texttt{experiments/\allowbreak sentence-split/}), segments the
+documents of \texttt{mc4\_4M} with SaT~\cite{frohmann2024sat} (\texttt{sat-3l-sm}, capped at 200
 characters; the three-layer model slightly outperforms the twelve-layer
 model on round-trip SONAR chrF2, $0.593$ vs.\ $0.583$, by avoiding
 under-segmented long spans). It encodes up to 16 consecutive segments per
-document ($44{,}104{,}959$ rows from $3{,}974{,}496$ documents: $59.1\%$
+document ($44{,}113{,}823$ rows from $3{,}974{,}400$ documents: $59.1\%$
 full sentences, $21.6\%$ newline-split lines, and $19.4\%$ length-capped
-pieces) under each row's native fastText language tag (83 of 86 languages
-mapped to their own NLLB tag), storing unnormalized float16 embeddings
+pieces) under each row's own SONAR source tag (83 of 86 languages
+mapped to their own NLLB tag), after dropping segments that the fastText
+identifier GlotLID~\cite{kargaran2023} labels non-linguistic, and stores
+unnormalized float32 embeddings
 alongside document-boundary and segment-kind sidecars. Without L2
 normalization, coordinate~837 is nearly constant and receives
 $w_{837} = 837$, or $81.8\%$ of the total inverse-variance weight. In
