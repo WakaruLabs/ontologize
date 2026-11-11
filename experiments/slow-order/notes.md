@@ -259,9 +259,95 @@ redundancy rather than by finding more variables.
 **Caveats.** One epoch and two seeds, where the Fano block takes three
 epochs to form (head 0's κ is 0.47 at step 45,000 at `--dec 1`, and the
 Fano arm's heads average 0.45); whether later heads find slow content of
-their own with
-longer training at these weights is not tested. Head 0's identification
-rests on one head in two seeds. The term scores dependence between
-entries, so a second variable carried jointly with head 0's content would
-have to be separated from it to count; nothing here rules that out.
+their own with longer training is the next entry, for `--dec 100`. Head
+0's identification rests on one head in two seeds. The term scores
+dependence between entries, so a second variable carried jointly with
+head 0's content would have to be separated from it to count; nothing
+here rules that out.
+
+## 2026-11-11: `--dec 100` at three epochs: head 0 becomes a full Fano head, and the other 37 stay empty
+
+**Runs.** Both `--dec 100` runs continued to three epochs
+(`train_order.py --dec 100 --epochs 3` on the same directories, one seed
+at a time; step 46,261). `order.py` at steps 30,000 and 45,000
+(`eval/order_ord_dec100_{30000,45000}.json`), and on the control without
+a pair term at step 45,000 (`eval/order_control_45000.json`), which the
+three-epoch entry above lacked. The Fano and `--dec 1` columns are that
+entry's files.
+
+**Per run at step 45,000, the first 38 heads** (seed 42 / seed 43):
+
+| | control | Fano | `--dec 1` | `--dec 100` |
+|---|---|---|---|---|
+| held-out FVU_w | 0.4589 / 0.4580 | 0.4674 / 0.4662 | 0.4616 / 0.4604 | 0.4672 / 0.4663 |
+| κ, mean | 0.064 / 0.062 | 0.451 / 0.445 | 0.251 / 0.252 | 0.047 / 0.047 |
+| κ, head 0 | 0.066 / 0.058 | 0.469 / 0.444 | 0.466 / 0.441 | 0.467 / 0.446 |
+| κ, mean of heads 1–37 | 0.064 / 0.062 | 0.450 / 0.445 | 0.245 / 0.246 | 0.036 / 0.036 |
+| NMI with language, head 0 | 0.047 / 0.041 | 0.333 / 0.322 | 0.329 / 0.319 | 0.331 / 0.326 |
+| NMI with language, mean of heads 1–37 | 0.044 / 0.043 | 0.321 / 0.318 | 0.182 / 0.185 | 0.020 / 0.019 |
+| NMI with earlier heads, first / second half (seed 42) | 0.015 / 0.015 | 0.391 / 0.394 | 0.269 / 0.074 | 0.006 / 0.005 |
+
+At `--dec 100` heads 1–37 range over κ 0.030–0.051 in seed 42 and
+0.029–0.047 in seed 43.
+
+**Seed 42 against seed 43 at step 45,000, the first 38 heads:**
+
+| | control | Fano | `--dec 1` | `--dec 100` |
+|---|---|---|---|---|
+| matched NMI | 0.0162 | 0.4075 | 0.1557 | 0.0159 |
+| any pairing | 0.0150 | 0.3927 | 0.1101 | 0.0056 |
+| head 0 against head 0 | 0.0155 | 0.3784 | 0.3729 | 0.3856 |
+| head 0 against the other seed's heads 1 and up | 0.0154 | 0.3877 | 0.1881 | 0.0091 |
+| heads 1 and up against each other | 0.0149 | 0.3929 | 0.1057 | 0.0052 |
+| head i over its index neighbours, heads 1–36 (± s.e.) | −0.0000 ± 0.0002 | +0.0013 ± 0.0020 | +0.0013 ± 0.0016 | −0.0001 ± 0.0001 |
+| seed 42's heads whose best partner in seed 43 is head 0 | 0 of 38 | 0 | 4 | 38 |
+
+The largest NMI between head 0 and any other head of the other seed at
+`--dec 100` is 0.015; the largest among heads 1 and up is 0.010.
+
+**`--dec 100` over training:**
+
+| step | 15,000 | 30,000 | 45,000 |
+|---|---|---|---|
+| held-out FVU_w | 0.5239 / 0.5241 | 0.4833 / 0.4828 | 0.4672 / 0.4663 |
+| κ, head 0 | 0.186 / 0.183 | 0.372 / 0.359 | 0.467 / 0.446 |
+| κ, mean of heads 1–37 | 0.047 / 0.045 | 0.040 / 0.039 | 0.036 / 0.036 |
+| head 0 against head 0 | 0.1156 | 0.2828 | 0.3856 |
+| head 0 against the other seed's heads 1 and up | 0.0126 | 0.0104 | 0.0091 |
+| heads 1 and up against each other | 0.0067 | 0.0055 | 0.0052 |
+
+**Readings.**
+- **Head 0 is identified, and at full strength.** It ends as slow as a
+  Fano head (κ 0.467 and 0.446 against the Fano arm's head 0 at 0.469 and
+  0.444), as tied to language (0.33), and it matches the other seed's
+  head 0 at 0.386, where the Fano arm's head 0 pair reads 0.378 and its
+  heads match any head of the other seed about as well (0.39). Against
+  every other head of the other seed it reads 0.009. The one-epoch result
+  was a head that had only begun to form; this is the same head grown.
+- **Longer training gives the other heads nothing.** Heads 1–37 get less
+  slow with training, not more: κ 0.047, 0.040, 0.036 at the three steps,
+  against the control's 0.064 at step 45,000, and they share 0.0052
+  across seeds where control heads share 0.0149. No second slow variable
+  appears between one epoch and three.
+- **One head is as slow as each of the Fano arm's 38.** Head 0's κ and
+  language NMI are a Fano head's own. Whether the Fano block's 38 heads
+  jointly carry more than this one head does is not measured here: they
+  share 0.39 with one another, not 1, so they are not exact copies. The
+  `--dec 1` arm's graded block (κ falling from 0.47 to 0.09 across the
+  index) is the stage between.
+- **Reconstruction is the Fano arm's, not the control's.** FVU 0.4672 and
+  0.4663 against the Fano arm's 0.4674 and 0.4662, the control's 0.4589
+  and 0.4580 and `--dec 1`'s 0.4616 and 0.4604. One slow head and 37
+  heads held independent of it cost what 38 slow heads cost, 0.008 over
+  no pair term at all.
+
+**Caveats.** Two seeds, and the identification is of one head. At this
+weight head 1 feels the term at more than five times its Fano reward
+(100/703 against 1/38), so a head keeps no slow content that depends on
+head 0's entry at all; a variable partly dependent on head 0's would be
+suppressed with it, as the earlier caveat says. `--dec 10`, which left a
+graded corner at one epoch, was not continued. Why the heads after head 0
+cost reconstruction is not examined: whether heads 1–37 reconstruct worse
+than control heads, or head 0 alone accounts for it, would need a
+per-head reading.
 
