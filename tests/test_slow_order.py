@@ -12,7 +12,8 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "experiments"
                        / "slow-order"))
-from order import by_offset, diagonal, prefix, trend  # noqa: E402
+from order import (by_offset, diagonal, neighbour_gap, prefix,  # noqa: E402
+                   trend)
 from orderloss import (OrderedPairHyperparams, head_dependence,  # noqa: E402
                        hsic_u)
 
@@ -133,6 +134,14 @@ def test_by_offset_separates_a_gradient_from_an_identity():
     w = by_offset(ident, within=True)
     assert "0" not in w and np.isclose(w["1"], g["1"])
     assert set(g) == {"0", "1", "2", "3-5", "6+"}
+    # head by head: a linear fall cancels, an identity does not
+    lin = lvl[:, None] + lvl[None, :]
+    assert abs(neighbour_gap(lin)["mean"]) < 1e-12
+    n = neighbour_gap(lin + 0.5 * np.eye(s))
+    assert np.isclose(n["mean"], 0.5) and n["positive"] == 1.0
+    rng = np.random.default_rng(0)
+    noisy = neighbour_gap(lin + 0.1 * rng.normal(size=(s, s)))
+    assert abs(noisy["mean"]) < 3 * noisy["se"]
 
 
 def test_trend_skips_undefined_heads():

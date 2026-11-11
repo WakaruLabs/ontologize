@@ -21,6 +21,9 @@ predicts and a decorrelation alone does not:
   other seed's head i (`cross` at 0) is no closer than a neighbouring
   head of the same seed (`within` at 1), which the term has pushed apart.
   A head that is identified is closer to its counterpart than to either.
+- `neighbour_gap`: the same question head by head, with an error bar: a
+  head's NMI with the other seed's head of its index minus the mean of the
+  four entries one index away, averaged over heads.
 - `kappa_trend`, `lang_trend`: the rank correlation of the head index with
   each head's Cohen's kappa between two sentences of a document `--d`
   segments apart (`transitions.kappa`) and with its NMI with the language
@@ -89,6 +92,22 @@ def by_offset(M: Float[np.ndarray, "s s"], within: bool = False
     if within:
         del bands["0"]
     return {name: float(M[m].mean()) for name, m in bands.items()}
+
+
+def neighbour_gap(cross: Float[np.ndarray, "s s"]) -> Dict[str, float]:
+    """For each interior head, its NMI with the other seed's head of the
+    same index minus the mean of the four entries one index away
+    (`cross[i, i +- 1]`, `cross[i +- 1, i]`), as the mean over heads and
+    its standard error. A smooth fall with the index cancels in the
+    difference; an identified head leaves it positive."""
+    s = len(cross)
+    i = np.arange(1, s - 1)
+    near = 0.25 * (cross[i, i - 1] + cross[i, i + 1]
+                   + cross[i - 1, i] + cross[i + 1, i])
+    gap = cross[i, i] - near
+    return {"mean": float(gap.mean()),
+            "se": float(gap.std(ddof=1) / np.sqrt(len(gap))),
+            "positive": float((gap > 0).mean())}
 
 
 def trend(v: Float[np.ndarray, "s"]) -> float:
@@ -184,6 +203,7 @@ def main() -> None:
     res["diagonal"] = diagonal(AB)
     res["offset"] = {"cross": by_offset(AB),
                      "within": by_offset(0.5 * (WA + WB), within=True)}
+    res["neighbour_gap"] = neighbour_gap(AB)
     res["cross"] = AB.tolist()
     s, d = res["specificity"], res["diagonal"]
     print(f"slow block a-b: matched NMI {s['matched']:.4f}, any pairing "
@@ -196,6 +216,9 @@ def main() -> None:
     for name, v in res["offset"].items():
         print(f"  NMI by index offset, {name:>6}: " + "  ".join(
             f"{b} {x:.4f}" for b, x in v.items()))
+    g = res["neighbour_gap"]
+    print(f"  same index over its index neighbours: {g['mean']:+.4f} "
+          f"(se {g['se']:.4f}; positive for {g['positive']:.0%} of heads)")
     if cfg.out:
         Path(cfg.out).parent.mkdir(parents=True, exist_ok=True)
         Path(cfg.out).write_text(json.dumps(res, indent=1))

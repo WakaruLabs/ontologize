@@ -67,6 +67,7 @@ On the cache's held-out tail, for two seeds of one arm:
 | `on_diagonal`, `best_is_own` | the share of the match, and of best partners, that keep the index; chance is 1/38 |
 | `index_rank` | rank correlation of a head's index with its matched partner's |
 | `offset` | mean NMI between two heads by how far apart their indices are, across the seeds and within one |
+| `neighbour_gap` | a head's NMI with the other seed's head of its index minus the mean of the four entries one index away, as a mean over heads with its standard error |
 | `kappa_trend`, `lang_trend` | rank correlation of the index with a head's kappa between sentences `--d` apart, and with its NMI with the language label |
 | `prefix` | mean NMI of a head with the heads before it, for each half of the block |
 | `fvu` | held-out whitened FVU of the whole model |

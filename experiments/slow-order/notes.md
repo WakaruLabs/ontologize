@@ -90,6 +90,88 @@ within (0.139–0.140 and 0.028–0.029).
 
 **Caveats.** One epoch, one weight (`--dec 1`), two seeds. The slow
 heads are far from independent at this weight (NMI 0.03–0.09 where
-shuffled rows give 0.005), so "decorrelated" overstates both arms. A
-larger `--dec` or the three epochs the baseline block takes to form
-could change the picture; neither was run.
+shuffled rows give 0.005), so "decorrelated" overstates both arms. The
+three epochs the baseline block takes to form are below; a larger
+`--dec` was not run.
+
+## 2026-11-11: the ordered arm at three epochs: a sharper gradient, still no head identified
+
+**Runs.** Both ordered runs continued to three epochs
+(`train_order.py --dec 1 --epochs 3` on the same directories; step
+46,261, checkpoints every 2,500), as the long Fano runs were. `order.py`
+at steps 30,000 and 45,000 for both arms (`eval/order_{ord,fano}_{30000,
+45000}.json`). The symmetric arm was not continued.
+
+**Seed 42 against seed 43, the slow block:**
+
+| | Fano 15k | 30k | 45k | ordered 15k | 30k | 45k |
+|---|---|---|---|---|---|---|
+| matched NMI | 0.145 | 0.309 | 0.408 | 0.055 | 0.112 | 0.156 |
+| any pairing | 0.139 | 0.298 | 0.393 | 0.045 | 0.081 | 0.110 |
+| head i against head i | 0.139 | 0.298 | 0.394 | 0.052 | 0.107 | 0.151 |
+| best partner over runner-up (median) | 0.0014 | 0.0037 | 0.0045 | 0.0037 | 0.0022 | 0.0026 |
+| match keeps the index (chance 2.6%) | 5.3% | 2.6% | 2.6% | 5.3% | 2.6% | 7.9% |
+| index against matched partner's (rank correlation) | −0.15 | +0.37 | +0.25 | +0.89 | +0.94 | +0.94 |
+| head i over its index neighbours (± s.e.) | +0.0004 ± 0.0016 | +0.0009 ± 0.0017 | +0.0013 ± 0.0020 | −0.0003 ± 0.0009 | −0.0000 ± 0.0014 | +0.0013 ± 0.0016 |
+
+The last row is `neighbour_gap`: a head's NMI with the other seed's head
+of its index, minus the mean of the four entries one index away.
+
+**Ordered arm at step 45,000, NMI by index offset:**
+
+| offset | 0 | 1 | 2 | 3–5 | 6+ |
+|---|---|---|---|---|---|
+| across seeds | 0.1508 | 0.1483 | 0.1459 | 0.1425 | 0.0972 |
+| within one seed | | 0.1473 | 0.1466 | 0.1408 | 0.0962 |
+
+The Fano arm is flat at 0.393 at every offset, across seeds and within.
+
+**Per run at step 45,000** (seed 42 / seed 43):
+
+| | Fano | ordered |
+|---|---|---|
+| held-out FVU_w (whole model) | 0.4674 / 0.4662 | 0.4616 / 0.4604 |
+| κ, mean over slow heads | 0.451 / 0.445 | 0.251 / 0.252 |
+| κ against head index (rank correlation) | −0.15 / +0.07 | −0.98 / −0.98 |
+| NMI with language, mean | 0.322 / 0.318 | 0.186 / 0.189 |
+| NMI with earlier heads, first / second half | 0.39 / 0.39 | 0.27 / 0.07 |
+
+Ordered seed 42 by head: κ 0.466 at head 0, 0.419 at head 1, 0.232 at
+head 18, 0.088 at head 37. Its head 0 matches seed 43's head 0 at NMI
+0.373; the Fano arm's head 0 pair is at 0.378.
+
+**Readings.**
+- **Longer training sharpens the gradient and identifies nothing.** The
+  matched partner's index tracks a head's own at rank correlation 0.94
+  and slowness falls with the index at −0.98, but a head is 0.0013 ±
+  0.0016 closer to the other seed's head of its index than to the heads
+  one index away. The Fano arm, which has no order, reads the same
+  +0.0013 ± 0.0020. The exact index is kept for 3 of 38 heads.
+- **The first heads are the baseline's block; the rest thin out.** Head 0
+  is as slow as a Fano head (κ 0.47) and matches across seeds as well
+  (0.37 against 0.38). The first half of the block is still redundant
+  (NMI 0.27 with earlier heads against the baseline's 0.39), and the
+  second half is nearly decorrelated (0.07) and barely slow (κ 0.09 at
+  head 37, where the 15,000-step value was 0.08: the late heads have not
+  found slower content to take).
+- **So the term at this weight rations the one slow thing, it does not
+  find a second.** Each head gets as much of the block's shared content
+  as the heads before it leave, and the amounts reproduce across seeds;
+  no head carries content of its own that the other seed's counterpart
+  has and its neighbours lack. This is the linear picture of 2026-11-03
+  (`experiments/next-sentence/notes.md`) again: every slow head on linear
+  slow direction 1 or 2.
+- **It costs no reconstruction.** FVU 0.461 against the Fano arm's 0.467
+  at the same step: the ordered block takes less from the rest of the
+  model than the Fano block does. For scale, seed 44's control reads
+  0.460 and its Fano arm 0.469 at step 46,250
+  (`experiments/next-sentence/notes.md`, 2026-11-10); the control was not
+  scored at step 45,000 here.
+
+**Caveats.** Two seeds, one weight. A weight large enough to decorrelate
+the first half as well was not tried, and would test whether there is a
+second slow variable for a head to find. The test for an identified head
+compares against index neighbours; a head identified only up to a small
+shift in index would be missed by the exact-index rows and partly by the
+neighbour gap, though the one-seed neighbours (offset 1 within, 0.1473)
+bound it: the other seed's counterpart is 0.0035 above them.
