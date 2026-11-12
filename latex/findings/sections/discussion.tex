@@ -293,7 +293,10 @@ varying more slowly across sentences than any linear projection of the
 embedding. Even there, reproducibility holds at the block level rather
 than for individual heads: two slow heads within the same seed agree at
 NMI $0.40$, so individual slow heads are not yet uniquely identified
-across runs (Section~\ref{sec:slowheads}).
+across runs. An ordered penalty on dependence between the slow heads
+identifies one of them at full weight, but only by stripping the other
+37 of slow content and the block of about half of what it carried
+(Section~\ref{sec:slowheads}).
 \item \textbf{Entries contribute nearly equally except when classifying
 the raw input.} In layers~1--3, entries within each head carry nearly
 equal shares of output contribution (Gini $0.06$--$0.15$, with zero dead
@@ -405,10 +408,14 @@ for penalty weights $s_{\mathrm{pair}} \ge 10^{-4}$. Replacing that
 penalty with a Fano lower bound on each slow head's cross-sentence mutual
 information prevents collapse and yields a 38-head slow block that
 reproduces across three seeds, though not yet head by head
-(Section~\ref{sec:slowheads}). Immediate next steps for paired-view training include decorrelating the
-slow block (whose heads currently concentrate along the top one or two
-linear slow directions and agree with one another nearly as strongly as
-they agree across seeds, preventing single-head identification),
+(Section~\ref{sec:slowheads}). Decorrelating the slow block, whose heads
+agree with one another nearly as strongly as they agree across seeds,
+was the first remedy tried, and independence between heads' partitions
+did not separate them without loss: a weak ordered penalty grades the block
+without identifying a head, and a strong one identifies a single head
+and leaves the others nothing (Appendix~\ref{sec:seedsdetail}).
+Immediate next steps for paired-view training include separating the
+slow heads by a criterion that keeps what the block carries jointly,
 extending the objective to triples of spaced sentences within a document
 to supply the three conditionally independent views required by classical
 rank conditions~\cite{allman2009}, characterizing what the slow heads

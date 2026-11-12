@@ -935,9 +935,18 @@ $0.40$, and an arbitrary bijection between two seeds' slow blocks scores
 $0.397$--$0.399$, so optimal Hungarian matching adds only $0.014$. Moreover,
 pairwise matchings across the three seeds are cycle-consistent for only 6 of
 the 38 heads (compared to 1 expected by chance). What reproduces across runs
-is therefore the shared slow subspace rather than individual slow heads,
-leaving open how many distinct document-level factors the block captures
-(Appendix~\ref{sec:seedsdetail}).
+is therefore the shared slow subspace rather than individual slow heads.
+Penalizing dependence between the slow heads' partitions in a fixed order
+does not separate them without loss. At a small weight the block becomes
+graded and no head is identified. At a large weight exactly one head is:
+over two seeds it agrees with its counterpart at NMI $0.386$ and with any
+other slow head at $0.009$, while the remaining 37 heads lose their slow
+content. The block then explains $0.43$--$0.44$ of the variance of the
+eight slowest linear directions, where the Fano block explains
+$0.76$--$0.77$ and a single slow head $0.38$--$0.43$. The Fano block thus
+carries about twice what one head does, in a form that independence
+between heads does not recover, and how many distinct document-level
+factors it captures remains open (Appendix~\ref{sec:seedsdetail}).
 
 \subsection{Heads against a known factor: language, and what they encode instead}
 \label{sec:lang}

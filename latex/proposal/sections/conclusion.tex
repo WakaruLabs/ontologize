@@ -38,10 +38,12 @@ $s_{\mathrm{pair}} \ge 10^{-4}$. Replacing that penalty with a Fano
 lower bound on each slow head's mutual information across the sentence
 pair prevents collapse and produces a block of slow heads that
 reproduces across three seeds, though not head by head
-(Section~\ref{sec:prelim-slow}). Immediate next steps include:
-decorrelating the slow heads, which now align with the top one or two
-linear slow directions and agree with one another nearly as well as with
-another seed's, so that individual heads can be identified; extending
+(Section~\ref{sec:prelim-slow}). A first attempt to tell the slow heads
+apart, an ordered penalty on dependence between their partitions,
+identifies one head at full weight and strips the rest of their slow
+content. Immediate next steps include: separating the slow heads, which
+agree with one another nearly as well as with another seed's, by a
+criterion that keeps what the block carries jointly; extending
 the objective to sentence triples to test the three-view
 conditional-independence rank conditions on held-out
 data~\cite{allman2009}; characterizing what the slow heads encode beyond

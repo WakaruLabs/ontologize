@@ -154,13 +154,13 @@ head 18, 0.088 at head 37. Its head 0 matches seed 43's head 0 at NMI
   second half is nearly decorrelated (0.07) and barely slow (κ 0.09 at
   head 37, where the 15,000-step value was 0.08: the late heads have not
   found slower content to take).
-- **So the term at this weight rations the one slow thing, it does not
-  find a second.** Each head gets as much of the block's shared content
-  as the heads before it leave, and the amounts reproduce across seeds;
-  no head carries content of its own that the other seed's counterpart
-  has and its neighbours lack. This is the linear picture of 2026-11-03
-  (`experiments/next-sentence/notes.md`) again: every slow head on linear
-  slow direction 1 or 2.
+- **So the term at this weight rations the block's shared content
+  without identifying a head.** Each head gets as much of it as the
+  heads before it leave, and the amounts reproduce across seeds; no head
+  carries content of its own that the other seed's counterpart has and
+  its neighbours lack. How much the block carries jointly is measured in
+  the last entry: more than one head's worth, and this arm's block
+  slightly more than the Fano arm's.
 - **It costs no reconstruction.** FVU 0.461 against the Fano arm's 0.467
   at the same step: the ordered block takes less from the rest of the
   model than the Fano block does. For scale, seed 44's control reads
@@ -250,11 +250,11 @@ out of the neighbour gap.
   κ is the control's or below at both weights. Reconstruction is 0.001
   worse than the Fano arm's and 0.004 worse than the control's.
 
-So the answer to the last entry's open question, at one epoch: with
-these pairs and this bound there is one slow thing, and an ordered
-decorrelation at full strength gives it to one head and leaves the rest
-with nothing. That is an identified head, obtained by removing the
-redundancy rather than by finding more variables.
+So the answer to the last entry's open question, at one epoch: an
+ordered decorrelation at full strength leaves one slow head and nothing
+else slow. That is an identified head, and no further variables. The
+last entry measures what it costs: the block then carries about half of
+what the Fano block carries jointly, so more than redundancy is removed.
 
 **Caveats.** One epoch and two seeds, where the Fano block takes three
 epochs to form (head 0's κ is 0.47 at step 45,000 at `--dec 1`, and the
@@ -330,11 +330,11 @@ The largest NMI between head 0 and any other head of the other seed at
   across seeds where control heads share 0.0149. No second slow variable
   appears between one epoch and three.
 - **One head is as slow as each of the Fano arm's 38.** Head 0's κ and
-  language NMI are a Fano head's own. Whether the Fano block's 38 heads
-  jointly carry more than this one head does is not measured here: they
-  share 0.39 with one another, not 1, so they are not exact copies. The
-  `--dec 1` arm's graded block (κ falling from 0.47 to 0.09 across the
-  index) is the stage between.
+  language NMI are a Fano head's own. The Fano block's 38 heads share
+  0.39 with one another, not 1, so they are not exact copies; the next
+  entry measures what they carry jointly, which is about twice what this
+  one head does. The `--dec 1` arm's graded block (κ falling from 0.47 to
+  0.09 across the index) is the stage between.
 - **Reconstruction is the Fano arm's, not the control's.** FVU 0.4672 and
   0.4663 against the Fano arm's 0.4674 and 0.4662, the control's 0.4589
   and 0.4580 and `--dec 1`'s 0.4616 and 0.4604. One slow head and 37
@@ -350,4 +350,108 @@ graded corner at one epoch, was not continued. Why the heads after head 0
 cost reconstruction is not examined: whether heads 1–37 reconstruct worse
 than control heads, or head 0 alone accounts for it, would need a
 per-head reading.
+
+## 2026-11-11: what each arm's block carries of the linear slow directions: one head is half the block, and `--dec 100` keeps only that half
+
+**Why.** The last entry's head 0 is as slow as a Fano head. Whether one
+such head carries what the Fano block's 38 carry together decides how to
+read it: a block reduced to its one variable, or a block that lost
+content.
+
+**Runs.** `experiments/next-sentence/sfa.py --pairs doc --ckpt` on the
+`--dec 1` and `--dec 100` runs at step 46,250, as the Fano and control
+runs were scored on 2026-11-03 (`experiments/next-sentence/notes.md`;
+the same fit, probe rows and held-out tail): once with blocks of 38
+heads (`data/out/sonar/slow-order/sfa_block/`), and once with
+`--slow-heads 1 --top 16`, which makes head 0 a block of its own and
+head 1 another, with the Fano and control runs included
+(`sfa_head0/`). R² is a ridge probe from the code's one-hot columns to
+the slowest linear directions of `doc` pairs, held out; `langc` removes
+each language's mean first.
+
+**R², mean over the eight slowest linear directions** (seed 42 / seed 43):
+
+| code | control | Fano | `--dec 1` | `--dec 100` |
+|---|---|---|---|---|
+| head 0 alone | 0.030 / 0.020 | 0.406 / 0.380 | 0.400 / 0.376 | 0.405 / 0.387 |
+| head 1 alone | 0.022 / 0.024 | 0.427 / 0.400 | 0.406 / 0.409 | 0.003 / 0.002 |
+| heads 0–37 | 0.401 / 0.400 | 0.769 / 0.756 | 0.810 / 0.801 | 0.442 / 0.427 |
+| heads 0–37, `langc` | 0.397 / 0.389 | 0.635 / 0.637 | 0.704 / 0.705 | 0.323 / 0.298 |
+| heads 38–75 | 0.394 / 0.398 | 0.386 / 0.390 | 0.387 / 0.391 | 0.395 / 0.399 |
+
+**Heads 0–37 over more directions, and the code's own slow directions**
+(seed 42 / seed 43; the embedding's linear optimum is 0.847 and 0.636):
+
+| | control | Fano | `--dec 1` | `--dec 100` |
+|---|---|---|---|---|
+| R², the 38 slowest | 0.317 / 0.311 | 0.566 / 0.559 | 0.637 / 0.631 | 0.256 / 0.244 |
+| code's slow correlation, top 8 | 0.455 / 0.453 | 0.909 / 0.905 | 0.892 / 0.890 | 0.685 / 0.676 |
+| code's slow correlation, top 38 | 0.263 / 0.260 | 0.727 / 0.718 | 0.714 / 0.709 | 0.321 / 0.307 |
+| head 0's code alone, top 8 | 0.099 / 0.076 | 0.679 / 0.663 | 0.677 / 0.666 | 0.682 / 0.674 |
+
+**The direction each slow head tracks best** (η², `plain`):
+
+| | Fano | `--dec 1` | `--dec 100` |
+|---|---|---|---|
+| heads best on direction 1 / 2 / another | 34 / 4 / 0 and 29 / 9 / 0 | 16 / 9 / 13 and 17 / 5 / 16 | 1 / 0 / 37 in both |
+| distinct best directions | 2 | 9 and 10 | 22 |
+| best η², head 0 | 0.69 / 0.65 | 0.68 / 0.64 | 0.69 / 0.65 |
+| best η², mean over the block | 0.64 / 0.64 | 0.32 / 0.33 | 0.023 / 0.022 |
+
+At `--dec 1` the best η² falls with the index, from 0.68 at head 0 to
+about 0.26 at head 24 and 0.05–0.18 from head 26 on, where the best
+direction ranges to rank 29. At `--dec 100` heads 1–37 are at 0.02 or
+below, on directions scattered to rank 63.
+
+**Readings.**
+- **One slow head is about half of the block.** A single Fano head
+  explains 0.38–0.43 of the eight slowest directions and the 38 together
+  0.76–0.77, so the block's heads are redundant pair by pair (NMI 0.39)
+  and still carry jointly about twice what one of them does. "Every slow
+  head on direction 1 or 2" described each head's best direction, not
+  the block's span.
+- **Head 0 is the same head in every arm.** Alone it explains 0.38–0.41
+  under the Fano term, `--dec 1` and `--dec 100` alike, and its code's
+  slow correlation is 0.66–0.68 in all three.
+- **`--dec 100` keeps head 0 and loses the rest of the block's content.**
+  Its 38 heads explain 0.44 and 0.43, which is head 0's 0.40 plus 0.04
+  from the other 37 together, where 38 heads of a model with no pair term
+  explain 0.40 with no slow head among them. Over the 38 slowest
+  directions the block is below the control's (0.25 against 0.31), and
+  its code's own slow correlation (0.68 and 0.31 over the top 8 and 38)
+  is below the embedding's linear optimum (0.85 and 0.64), which the Fano
+  block beats. The identified head was bought with about half of what
+  the block carried.
+- **`--dec 1` carries slightly more than the Fano block.** 0.81 against
+  0.77 of the eight slowest and 0.63 against 0.56 of the 38 slowest
+  (`langc`: 0.70 against 0.64), with the heads' best directions spread
+  over 9–10 where the Fano block's sit on 2, a code nearly as slow (0.89
+  and 0.71 against 0.91 and 0.73), and a third of the reconstruction cost
+  (0.003 over the control against 0.008). It identifies no head (three
+  entries up).
+- **So the two weights fail differently.** A weak ordered term spreads
+  the block without separating its heads; a strong one separates one head
+  by leaving the others nothing. What the Fano block carries beyond one
+  head is evidently not independent of that head's partition, since heads
+  barred from depending on head 0 do not pick it up. A finer division of
+  head 0's own cells would be such content, and the term penalizes it as
+  dependence; that is a guess at the mechanism, not something measured
+  here.
+
+**Caveats.** Two seeds; one probe (a ridge on one-hot columns) and one
+set of targets (linear slow directions of the embedding's direction), so
+"what the block carries" means what is linearly readable of those.
+Weights between 1 and 100 were not run to three epochs. The R² of 38
+control heads (0.40) shows that many weakly informative heads add up
+under this probe, so a block's R² is not a count of variables.
+
+```bash
+S=data/out/sonar/slow-order; N=data/out/sonar/next-sentence/long
+JAX_PLATFORMS=cpu uv run python experiments/next-sentence/sfa.py --pairs doc \
+    --ckpt $S/ord_dec{100,1}_sp0.001_ph38_s{42,43} --out $S/sfa_block
+JAX_PLATFORMS=cpu uv run python experiments/next-sentence/sfa.py --pairs doc \
+    --slow-heads 1 --top 16 --out $S/sfa_head0 \
+    --ckpt $S/ord_dec{100,1}_sp0.001_ph38_s{42,43} \
+    $N/doc2_fano_sp1e-3_ph38{,_s43} $N/doc2_sp0_ph38{,_s43}
+```
 

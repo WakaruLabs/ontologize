@@ -3219,6 +3219,91 @@ direction (with 34 and 29 of the 38 best explained by the single slowest
 direction), indicating that the block concentrates at the top of the slow
 spectrum rather than spreading across distinct slow factors.
 
+\paragraph{Ordered decorrelation of the slow block.}
+To test whether the slow heads can be told apart, we added to the Fano
+term a penalty on dependence between them (\texttt{train\_order.py}): the
+mean, over the 703 pairs of slow heads, of the centered kernel
+alignment~\cite{kornblith2019} between the two heads' partitions of the
+batch under the kernel ``same entry'', estimated with unbiased
+HSIC~\cite{song2012} and weighted by $s_{\mathrm{dec}}$ in units of
+$s_{\mathrm{pair}}$. In each pair the earlier head is stop-gradiented, so
+head $i$ is pushed away from heads $0,\dots,i{-}1$ and head 0 receives no
+penalty, with the aim of an order that a second seed would reproduce.
+Head $i$ feels the penalty at weight $s_{\mathrm{dec}}\,i/703$ against a
+Fano reward of $1/38$: head 1 at an eighteenth of its reward for
+$s_{\mathrm{dec}}{=}1$, and at more than five times it for
+$s_{\mathrm{dec}}{=}100$. Both weights were trained for three epochs at
+seeds 42 and 43, otherwise as the Fano runs. Below, kappa is on
+same-document pairs two sentences apart and NMI is across the two seeds,
+both at step 45{,}000 on the final 32{,}768 rows (\texttt{order.py}),
+with rows for heads 1--37 giving the mean over those heads;
+``explained'' is the share of held-out variance of the eight slowest
+linear directions that the ridge regression above recovers from a code,
+at step 46{,}250.
+
+\begin{center}\small\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+seed 42 / seed 43 & control & Fano & $s_{\mathrm{dec}}{=}1$ & $s_{\mathrm{dec}}{=}100$ \\
+\midrule
+kappa, head 0 & 0.066 / 0.058 & 0.469 / 0.444 & 0.466 / 0.441 & 0.467 / 0.446 \\
+kappa, heads 1--37 & 0.064 / 0.062 & 0.450 / 0.445 & 0.245 / 0.246 & 0.036 / 0.036 \\
+NMI, head 0 with head 0 & 0.016 & 0.378 & 0.373 & 0.386 \\
+NMI, head 0 with heads 1--37 & 0.015 & 0.388 & 0.188 & 0.009 \\
+explained by head 0 alone & 0.03 / 0.02 & 0.41 / 0.38 & 0.40 / 0.38 & 0.41 / 0.39 \\
+explained by all 38 heads & 0.40 / 0.40 & 0.77 / 0.76 & 0.81 / 0.80 & 0.44 / 0.43 \\
+held-out $\fvu$ & 0.4589 / 0.4580 & 0.4674 / 0.4662 & 0.4616 / 0.4604 & 0.4672 / 0.4663 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent At $s_{\mathrm{dec}}{=}1$ the block becomes graded rather than
+separated.
+Kappa falls with the head index (rank correlation $-0.98$ and $-0.97$,
+from $0.47$ at head 0 to $0.09$ at head 37 in seed 42), and a head's
+matched partner in the other seed sits near its own index (rank
+correlation $0.94$). But a head is no closer to the other seed's head of
+its own index than to that seed's heads one index away (a difference of
+$+0.0013 \pm 0.0016$ in NMI, where the Fano arm, which has no order,
+reads $+0.0013 \pm 0.0020$), and the one-to-one matching keeps the exact
+index for 3 of the 38 heads. At $s_{\mathrm{dec}}{=}100$ exactly one head
+is identified:
+head 0 agrees with the other seed's head 0 at NMI $0.386$ and with its
+other slow heads at $0.009$, and every one of seed 42's 38 heads has seed
+43's head 0 as its best partner. This is the one head the penalty never
+touches, and it is the same head in every arm: as slow as a Fano head,
+and explaining $0.38$--$0.41$ of the eight slowest linear directions on
+its own. The other 37 heads find no slow content of their own. Their
+kappa falls over training ($0.047$, $0.040$ and $0.036$ at steps
+15{,}000, 30{,}000 and 45{,}000 in seed 42), to below that of the
+control, which has no pair term.
+
+Identification at $s_{\mathrm{dec}}{=}100$ costs the block about half of
+what it carried. A single slow head explains $0.38$--$0.43$ of the eight slowest
+linear directions where the Fano block's 38 heads together explain
+$0.76$--$0.77$, so those heads, although redundant pair by pair, jointly
+carry about twice what one of them does. At $s_{\mathrm{dec}}{=}100$ the
+38 heads
+together explain $0.43$--$0.44$, which is head 0's share plus $0.04$, and
+the eight slowest directions of the block's own code keep a
+cross-sentence correlation of $0.68$, below the embedding's linear
+optimum of $0.847$ that the Fano block exceeds. At $s_{\mathrm{dec}}{=}1$
+the block
+explains slightly more than the Fano block does ($0.80$--$0.81$), with
+its heads' best-explained directions spread over 9 and 10 linear slow
+directions rather than 2, at a third of the reconstruction cost. Neither
+weight therefore yields a block of individually identified heads: the
+weak penalty spreads the block without separating its heads, and the
+strong one separates a single head by leaving the others nothing. What
+the Fano block holds beyond one head is evidently not independent of
+that head's partition, since heads barred from depending on head 0 do
+not acquire it; a finer division of head 0's own cells would be content
+of that kind, though we have not tested this. Three limits apply: these
+runs use two seeds, weights between 1 and 100 were not trained to three
+epochs, and the ridge regression measures only what is linearly readable
+of linear slow directions (the control's 38 heads, none of them slow,
+reach $0.40$ under it).
+
 \subsection{Gain, atom spread, and depth in layer-0 reproducibility}
 \label{sec:l0size}
 

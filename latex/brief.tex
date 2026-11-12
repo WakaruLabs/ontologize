@@ -390,9 +390,11 @@ maximizing a lower bound on the mutual information between a classifier's
 choices on adjacent sentences prevents collapse: the resulting 38 slow
 classifiers maintain their category across adjacent sentences well above
 chance (Cohen's kappa 0.46 vs.\ 0.07 without the objective) and reproduce
-as a group across three seeds. Immediate next steps are making the slow
-classifiers differ from one another, so that each can be matched across
-runs on its own, extending the objective to sentence triples to test
+as a group across three seeds. Penalizing dependence between the slow
+classifiers, so that each could be matched across runs on its own,
+matches exactly one of them and strips the rest. Immediate next steps
+are separating them without that loss, extending the objective to
+sentence triples to test
 three-view identifiability conditions~\cite{allman2009}, characterizing
 what the slow classifiers encode beyond language, and applying the
 paired-view objective to a language model across conversation turns.

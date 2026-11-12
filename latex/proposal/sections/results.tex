@@ -346,7 +346,14 @@ than for individual heads: two slow heads within one seed already agree
 at NMI $0.40$, any one-to-one pairing of two seeds' slow heads scores
 $0.397$--$0.399$, and the three seeds' pairwise matchings compose for only
 6 of the 38 heads (1 expected by chance), so no individual slow head is
-yet identified across runs. The result is further limited to a one-layer
+yet identified across runs. An ordered penalty on dependence between the
+slow heads' partitions does not repair this without loss: at a small
+weight no head is identified, and at a large weight exactly one is (over
+two seeds, NMI $0.386$ with its counterpart against $0.009$ with any
+other slow head) while the other 37 lose their slow content, and the
+block then explains $0.43$--$0.44$ of the variance of the eight slowest
+linear directions where the Fano block explains $0.76$--$0.77$ and a
+single slow head $0.38$--$0.43$. The result is further limited to a one-layer
 model and costs $1.8$--$1.9\%$ in $\mathrm{FVU}_w$, and the redundant slow
 heads align primarily with the top one or two linear slow directions,
 leaving open how many distinct document-level variables the block
