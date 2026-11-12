@@ -852,8 +852,8 @@ with low collateral.
 
 \paragraph{Language probing (\texttt{langprobe.py}, \texttt{headlang.py},
 \texttt{headscript.py}).}
-Following SAEBench's $k_{\mathrm{probe}}$-sparse probing
-protocol~\cite{karvonen2025}, with the corpus's 86 ground-truth language
+Following the $k_{\mathrm{probe}}$-sparse probing protocol of
+SAEBench~\cite{karvonen2025}, with the corpus's 86 ground-truth language
 labels in place of its balanced tasks, \texttt{langprobe.py} selects
 the top latents per language by two-sample t-statistic on training rows and
 evaluates held-out one-vs-rest F1 at $k_{\mathrm{probe}}{=}1$ (single

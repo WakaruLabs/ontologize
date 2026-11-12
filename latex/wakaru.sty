@@ -16,11 +16,11 @@
 %%     The kit's pixel sizes are scaled by 0.375pt per px, which keeps their
 %%     proportions: 4px -> 1.5pt, 3px -> 1.125pt, 30px -> 11.25pt, 20px ->
 %%     7.5pt.
-%%   - IBM Plex throughout: Plex Serif for the text and for math's letters
-%%     and digits, Plex Sans for the title, headings, labels and chips, and
-%%     Plex Mono for code (option [noto] sets code in Noto Sans Mono
-%%     instead). Math's symbols and Greek are newpx (Palatino). The kit's
-%%     own face, Noto Sans, is the sans only where Plex is missing.
+%%   - IBM Plex for the text: Plex Serif for the body, Plex Sans for the
+%%     title, headings, labels and chips, and Plex Mono for code (option
+%%     [noto] sets code in Noto Sans Mono instead). Math is newpx
+%%     (Palatino, as TeX Gyre Pagella). The kit's own face, Noto Sans, is
+%%     the sans only where Plex is missing.
 %%
 %% Usage: \usepackage{wakaru} on top of \documentclass{article}; with
 %% [biblatex] when the document loads biblatex itself (after this package).
@@ -71,14 +71,15 @@
 % itself, so amssymb after it clashes.
 \RequirePackage{amsmath}
 \RequirePackage{amsthm}
-% The order below decides the math alphabets. newpxmath supplies math's
-% symbols, Greek, delimiters and big operators (Palatino's), and takes
-% \mathsf from the sans and \mathtt from the typewriter as they stand when
-% it loads, so those two load first; newpxtext installs its own sans and
-% typewriter only where none is set. The text face loads after newpxmath,
-% and mathastext, last, sets math's Latin letters, digits and operator
-% names, with \mathrm, \mathit and \mathbf, from the text face. Noto Sans
-% Mono runs wide, so it is set smaller than the text beside it.
+% newpxmath takes its operators, \mathrm, \mathit and \mathbf from the
+% roman face current when it loads, \mathsf from the sans and \mathtt from
+% the typewriter, so the order below decides all of them. The typewriter
+% and the sans load first, and newpxtext, which installs its own sans and
+% typewriter only where none is set, then makes the roman newpx's: so math
+% letters, digits and operators are newpx (Palatino, as TeX Gyre Pagella),
+% \mathsf is the sans and \mathtt the code face. The text face loads after
+% newpxmath, so the math does not take it. Noto Sans Mono runs wide, so it
+% is set smaller than the text beside it.
 \if@wakarunoto
   \RequirePackage[type1,scale=0.8]{noto-mono}
 \else
@@ -93,23 +94,14 @@
   {\RequirePackage[scale=0.9]{noto-sans}}
 \RequirePackage{newpxtext}
 \RequirePackage{newpxmath}
-% The text is IBM Plex Serif. At 0.9 its x-height is near that of newpx's
-% Greek and symbols. newpxtext makes the roman its own again at the end of
-% the preamble, so the text's is put back when the document begins.
-% Without the plex package the text and the math stay newpx's Palatino.
+% The text is IBM Plex Serif. At 0.9 its x-height is near the math
+% letters'. newpxtext makes the roman its own again at the end of the
+% preamble, so the text's is put back when the document begins. Without
+% the plex package the text stays newpx's Palatino.
 \IfFileExists{plex-serif.sty}{%
   \RequirePackage[scale=0.9]{plex-serif}%
   \let\wk@rmdefault\rmdefault
   \AtBeginDocument{\let\rmdefault\wk@rmdefault\normalfont}%
-  % Math's letters are the text's italic and its digits the text's upright.
-  % [basic] leaves signs, punctuation and delimiters to newpx, and
-  % [defaultmathsizes] leaves the class's script sizes alone.
-  \IfFileExists{mathastext.sty}{%
-    \RequirePackage[italic,defaultmathsizes,basic]{mathastext}%
-    % A text italic's f reaches left of its box, as a math italic's does
-    % not, and would touch a comma or a digit before it.
-    \MTsetmathskips{f}{1.5mu}{0mu}%
-  }{}%
 }{}
 
 \RequirePackage[final]{microtype}

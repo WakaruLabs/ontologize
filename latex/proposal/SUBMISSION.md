@@ -12,8 +12,8 @@ upload only the files below and keep their paths: `proposal.tex` inputs
 - refs.bib               (inert on arXiv once the .bbl ships; keep for
                          humans. It is the shared file, so it also holds
                          entries only the findings cite)
-- wakaru.sty, vars.tex   (the style needs the newpx, plex and mathastext
-                         packages, which TeX Live ships; its logos are
+- wakaru.sty, vars.tex   (the style needs the newpx and plex packages,
+                         which TeX Live ships; its logos are
                          drawn in TikZ, so it has no image files)
 - proposal/sections/*.tex
 - tikz/ontologizer.tex, tikz/dictenc.tex, tikz/dict.tex (the three the

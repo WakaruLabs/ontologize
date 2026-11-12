@@ -2,7 +2,7 @@
 
 The palette is the Wakaru branding kit's, as latex/wakaru.sty names it:
 black, the brand pink and its darker shade, and tints of the pink on
-white. Flat, no gridlines, left+bottom spines, Noto Sans text with mono
+white. Flat, no gridlines, left+bottom spines, IBM Plex Sans text with mono
 tick labels and semibold eyebrows over the panels, in the documents' own
 fonts (texfonts.py). Figures are drawn at the
 text width, 6in, so they are included unscaled and their type is at its
@@ -78,7 +78,7 @@ def save(fig, name):
 
 def eyebrow(ax, text, y=1.06):
     """The panel's label, top-left above the axes, in the documents' label
-    face (Noto Sans semibold). In a lettered figure it starts after the
+    face (Plex Sans semibold). In a lettered figure it starts after the
     panel letter (see `letters`)."""
     ax.annotate(text, xy=(0.0, y), xycoords="axes fraction",
                 xytext=(0, 0), textcoords="offset points",
@@ -87,7 +87,7 @@ def eyebrow(ax, text, y=1.06):
 
 
 def letters(axes):
-    """Bold Noto Sans panel letters a, b, ... at the start of each panel's
+    """Bold Plex Sans panel letters a, b, ... at the start of each panel's
     eyebrow line, pushing the eyebrow right, so captions can name panels by
     letter. Call after the eyebrows are drawn."""
     for ch, ax in zip("abcdefgh", axes):

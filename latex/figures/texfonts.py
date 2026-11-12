@@ -1,20 +1,20 @@
 """The documents' fonts for matplotlib figures.
 
-latex/wakaru.sty sets text, headings and labels in Noto Sans, math in
-newpx and code in IBM Plex Mono. Figures take the same faces from the TeX
-distribution that sets the documents (latex/flake.nix): Noto Sans for
+latex/wakaru.sty sets headings and labels in IBM Plex Sans, math in newpx
+and code in IBM Plex Mono. Figures take the same faces from the TeX
+distribution that sets the documents (latex/flake.nix): IBM Plex Sans for
 text, TeX Gyre Pagella (the OpenType Palatino that newpx is built on) for
 mathtext, and IBM Plex Mono. The files are found with kpsewhich, run
 through `nix develop` as the Makefile runs pdflatex, so a figure needs no
 font installed on the system.
 
-Noto Sans ships as TrueType and is copied as it is. Pagella and Plex Mono
-ship as OpenType with CFF outlines, which matplotlib's PDF backend embeds
-under `pdf.fonttype: 42` as if they were TrueType: the file is then
-malformed (poppler warns of a font type mismatch, and stricter viewers
-drop the text). So those two are converted once to TrueType outlines.
-Either way the files land in preview/fonts/ beside the figure previews
-(untracked), and those copies are what matplotlib loads.
+All three ship as OpenType with CFF outlines, which matplotlib's PDF
+backend embeds under `pdf.fonttype: 42` as if they were TrueType: the file
+is then malformed (poppler warns of a font type mismatch, and stricter
+viewers drop the text). So each is converted once to TrueType outlines; a
+face that ships as TrueType would be copied as it is. The files land in
+preview/fonts/ beside the figure previews (untracked), and those copies
+are what matplotlib loads.
 
 `use()` registers the files and points matplotlib's sans-serif, monospace
 and mathtext settings at them; the figure scripts set `font.family` to
@@ -29,12 +29,13 @@ from pathlib import Path
 
 LATEX = Path(__file__).resolve().parent.parent
 CACHE = Path(__file__).resolve().parent / "preview" / "fonts"
-SANS = "Noto Sans"
+SANS = "IBM Plex Sans"
 MATH = "TeX Gyre Pagella"
 MONO = "IBM Plex Mono"
 FILES = [
-    "NotoSans-Regular.ttf", "NotoSans-Italic.ttf",
-    "NotoSans-SemiBold.ttf", "NotoSans-Bold.ttf", "NotoSans-BoldItalic.ttf",
+    "IBMPlexSans-Regular.otf", "IBMPlexSans-Italic.otf",
+    "IBMPlexSans-SemiBold.otf", "IBMPlexSans-Bold.otf",
+    "IBMPlexSans-BoldItalic.otf",
     "texgyrepagella-regular.otf", "texgyrepagella-italic.otf",
     "texgyrepagella-bold.otf", "texgyrepagella-bolditalic.otf",
     "IBMPlexMono-Regular.otf", "IBMPlexMono-Italic.otf",
