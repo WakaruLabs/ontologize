@@ -1,32 +1,35 @@
 %% wakaru.sty — the Wakaru paper style, from branding kit 0.1.1.
 %%
 %% The kit (colors.txt, style-guide.txt, logo.svg, swords.svg, wugaru.svg)
-%% translated to print and to arXiv's constraints:
+%% set for print and for arXiv:
 %%   - pdflatex only, and one file: the three marks are drawn in TikZ from
 %%     the kit's SVG paths, so there is no image to ship or convert.
-%%   - black text on white. Wakaru pink is the brand colour and carries
-%%     the rules, heading numbers and the emblem; the masthead's field is
-%%     the kit's lilac, which sets the pink off; text-sized pink (links,
-%%     labels) takes the darker shade, which stays legible on white.
-%%   - Noto Sans, the kit's face, for the title, headings and labels. The
-%%     body, math and code are flockpaper.sty's: newpx (Palatino lineage,
-%%     with its full math) and IBM Plex Mono, loaded in its order so that
-%%     math sets exactly as it does there. Text figures are lining, to sit
-%%     with the sans headings. Option [noto] sets the body and math in Noto
-%%     Serif and code in Noto Sans Mono instead.
-%%   - the kit's box: a black border on a white field, heavier on the
-%%     bottom and right (a hard drop shadow merged into the border), with
-%%     rounded corners. Its pixel sizes are scaled by 0.375pt per px, which
-%%     keeps their proportions: 4px -> 1.5pt, 3px -> 1.125pt, 30px ->
-%%     11.25pt, 20px -> 7.5pt.
+%%   - black text on white. Wakaru pink is the brand colour: it carries the
+%%     heading numbers, the folio and the emblem. The masthead's field is
+%%     the kit's lilac, which sets the pink off, and text-sized pink (links,
+%%     eyebrows) takes the darker shade, which stays legible on white.
+%%   - the kit's box is the style's one shape: a black border on a field,
+%%     heavier on the bottom and right (a hard drop shadow merged into the
+%%     border), with rounded corners. It holds the masthead, the abstract,
+%%     quotations and the folio; on a black field with white text it is the
+%%     chip that labels figures, tables and the abstract.
+%%     The kit's pixel sizes are scaled by 0.375pt per px, which keeps their
+%%     proportions: 4px -> 1.5pt, 3px -> 1.125pt, 30px -> 11.25pt, 20px ->
+%%     7.5pt.
+%%   - Noto, the kit's family: Noto Sans for the title, headings, labels,
+%%     chips and table column heads, Noto Serif for the text, and notomath
+%%     for the math, with lining figures. Code is set in IBM Plex Mono;
+%%     option [noto] sets it in Noto Sans Mono instead.
 %%
 %% Usage: \usepackage{wakaru} on top of \documentclass{article}; with
 %% [biblatex] when the document loads biblatex itself (after this package).
-%% The document interface is flockpaper.sty's: \eyebrow, \runningtitle,
-%% \imprint, \credits, \mutedlabel, \plate, \maketitle and abstract.
+%% For documents: \eyebrow, \runningtitle and \imprint before \maketitle;
+%% the abstract environment; \mutedlabel and \wakarulabel for small sans
+%% labels; \wakaruchip; \wakarubox and the wakaruframe and wakaruquote
+%% environments.
 
 \NeedsTeXFormat{LaTeX2e}
-\ProvidesPackage{wakaru}[2026/11/11 v0.1 Wakaru paper style (branding kit 0.1.1)]
+\ProvidesPackage{wakaru}[2026/11/11 v0.2 Wakaru paper style (branding kit 0.1.1)]
 
 \newif\if@wakarubiblatex
 \@wakarubiblatexfalse
@@ -51,6 +54,10 @@
 % default arrangement, pink behind the white card.
 \colorlet{wakarumast}{wakarulilac}
 
+% The folio's field: a light tint of the pink, which the black border and
+% numeral sit on more quietly than the full colour.
+\colorlet{wakarufolio}{wakarupink!25}
+
 % Tints of black for secondary text and hairlines; the kit has no grey.
 \colorlet{wakarumuted}{black!62}
 \colorlet{wakarurule}{black!22}
@@ -59,31 +66,26 @@
 
 \RequirePackage[T1]{fontenc}
 \RequirePackage[utf8]{inputenc}
-% amsmath and amsthm must precede the math fonts (newpxmath, or the
-% newtxmath that notomath loads): they supply the AMS symbols themselves,
-% so amssymb after them clashes.
+% amsmath and amsthm must precede the math fonts (the newtxmath that
+% notomath loads): it supplies the AMS symbols itself, so amssymb after it
+% clashes.
 \RequirePackage{amsmath}
 \RequirePackage{amsthm}
-% The math fonts take \mathsf and \mathtt from the sans and typewriter
-% faces current when they load, so the order below decides both.
+% The typewriter face loads first, so that newtxmath takes \mathtt from it
+% and code in math matches code in text. Noto Sans Mono runs wide, so it
+% is set smaller than the text beside it.
 \if@wakarunoto
-  % Noto Sans Mono runs wide, so it is set smaller than the text beside it,
-  % and it loads first so that \mathtt is the same face.
   \RequirePackage[type1,scale=0.8]{noto-mono}
-  \RequirePackage{notomath}
 \else
-  % flockpaper.sty's fonts in flockpaper.sty's order: \mathsf and \mathtt
-  % stay newpx's own companions, and Plex Mono and Noto Sans, loading
-  % after, are the text's typewriter and sans.
-  \RequirePackage{newpxtext}
-  \RequirePackage{newpxmath}
   \IfFileExists{plex-mono.sty}%
     {\RequirePackage[scale=0.82]{plex-mono}}%
     {\RequirePackage[scaled=0.82]{beramono}}
-  \RequirePackage[scale=0.9]{noto-sans}
 \fi
+% notomath loads Noto Serif and Noto Sans at 0.9 of the math's size, and
+% newtxmath with Noto's letters, so text and math are one family
+\RequirePackage{notomath}
 
-\RequirePackage[final,tracking=true]{microtype}
+\RequirePackage[final]{microtype}
 % typewriter text is code and command-line flags, which print as typed
 \DisableLigatures[-]{encoding = *, family = tt*}
 
@@ -98,9 +100,10 @@
   headheight=14pt,
 ]{geometry}
 
-\linespread{1.08}
+% Noto Serif's x-height is tall for its size, so its lines are set open
+\linespread{1.12}
 \setlength{\parskip}{0pt}
-\setlength{\parindent}{1.2em}
+\setlength{\parindent}{1.5em}
 
 %% ---- the marks ----------------------------------------------------------------
 
@@ -369,32 +372,37 @@
   \wk@draw
 }
 
-%% ---- labels -------------------------------------------------------------------
+%% ---- labels and chips -----------------------------------------------------------
 
-% \monolabel{...}: small, letterspaced, uppercase. The name is the shared
-% interface's; the face is Noto Sans, as the kit asks.
-\newcommand{\monolabel}[1]{%
-  {\sffamily\fontseries{sb}\fontsize{6.8}{9}\selectfont
-   \textls[90]{\MakeUppercase{#1}}}%
+% \wakarulabel{...}: small Noto Sans semibold, set as typed.
+\newcommand{\wakarulabel}[1]{%
+  {\sffamily\fontseries{sb}\fontsize{7.5}{9}\selectfont#1}%
 }
-\newcommand{\pinklabel}[1]{{\color{wakarupinkdark}\monolabel{#1}}}
-\newcommand{\mutedlabel}[1]{{\color{wakarumuted}\monolabel{#1}}}
+\newcommand{\mutedlabel}[1]{{\color{wakarumuted}\wakarulabel{#1}}}
+
+% \wakaruchip[fill]{text}: white Noto Sans bold on a small rounded field
+% (black by default), on the baseline. The field reaches 6.6pt above the
+% baseline and 2.2pt below it, inside a line of \small text, so a chip
+% that starts a line does not open the leading.
+\newsavebox{\wk@chip}
+\newcommand{\wakaruchip}[2][black]{%
+  \begingroup
+  \sbox{\wk@chip}{\sffamily\bfseries\fontsize{7.5}{9}\selectfont\color{white}#2}%
+  \edef\wk@cx{\the\dimexpr\wd\wk@chip+3.2pt\relax}%
+  \begin{tikzpicture}[baseline=0pt]
+    \fill[#1, rounded corners=2.4pt] (-3.2pt,-2.2pt) rectangle (\wk@cx,6.6pt);
+    \node[anchor=base west, inner sep=0pt, outer sep=0pt] at (0pt,0pt)
+      {\usebox{\wk@chip}};
+  \end{tikzpicture}%
+  \endgroup
+}
 
 %% ---- title block ----------------------------------------------------------------
 
-% \eyebrow{NOTE 002 . 2026-09-01 . EVALUATIONS}: set opposite the wordmark,
-% with the date under it.
+% \eyebrow{Note 002 · evaluations}: set opposite the wordmark, with the
+% date under it.
 \newcommand{\@wakarueyebrow}{}
 \newcommand{\eyebrow}[1]{\renewcommand{\@wakarueyebrow}{#1}}
-
-% \credits{Names line}{detail line}: a credits block below the author
-% block, labelled CREDITS and distinct from authorship.
-\newcommand{\@wakarucreditnames}{}
-\newcommand{\@wakarucreditdetail}{}
-\newcommand{\credits}[2]{%
-  \renewcommand{\@wakarucreditnames}{#1}%
-  \renewcommand{\@wakarucreditdetail}{#2}%
-}
 
 % The wordmark on the masthead: \wakarulogo by default; a document of the
 % lab's can \renewcommand{\wakarumastmark}{\wakarulabs{13pt}}.
@@ -413,9 +421,9 @@
     \sbox{\@tempboxa}{\wakarumastmark}%
     \noindent\usebox{\@tempboxa}\hfill
     \begin{minipage}[b]{\dimexpr\linewidth-\wd\@tempboxa-2em\relax}
-      \raggedleft\fontsize{6.8}{9.5}\selectfont
-      \ifx\@wakarueyebrow\empty\else\monolabel{\@wakarueyebrow}\par\fi
-      \ifx\@date\empty\else\monolabel{\@date}\par\fi
+      \raggedleft\fontsize{7.5}{10}\selectfont
+      \ifx\@wakarueyebrow\empty\else\wakarulabel{\@wakarueyebrow}\par\fi
+      \ifx\@date\empty\else\wakarulabel{\@date}\par\fi
     \end{minipage}\par
     \vspace{8pt}%
     \noindent
@@ -429,24 +437,17 @@
       \raisebox{-27pt}[0pt]{\wakaruswords{40pt}}\par
       \vspace{10pt}
       {\normalfont\sffamily\normalsize\@author\par}
-      \ifx\@wakarucreditnames\empty\else
-        \vspace{12pt}
-        {\pinklabel{Credits}}\par\vspace{3pt}
-        {\normalfont\sffamily\normalsize\@wakarucreditnames\par}
-        \vspace{3pt}
-        {\mutedlabel{\@wakarucreditdetail}\par}
-      \fi
     }%
   }\par
   \vspace{12pt}
   \endgroup
 }
 
-% Abstract: the kit's box at the small radius.
+% Abstract: the kit's box at the small radius, labelled with a chip.
 \renewenvironment{abstract}{%
   \par\noindent
   \wakaruframe[pad=10pt]%
-    \pinklabel{Abstract}\par\vspace{4pt}%
+    \wakaruchip{Abstract}\par\vspace{5pt}%
     \small\ignorespaces
 }{%
   \endwakaruframe
@@ -476,12 +477,18 @@
   {}{0pt}{}[.]
 \titlespacing*{\subsubsection}{0pt}{12pt plus 2pt}{0.6em}
 
-%% ---- running heads ----------------------------------------------------------------
+% run-in paragraph heads in the heading face, with article's spacing
+\titleformat{\paragraph}[runin]
+  {\sffamily\normalsize\bfseries}
+  {}{0pt}{}
+\titlespacing*{\paragraph}{0pt}{3.25ex plus 1ex minus 0.2ex}{1em}
+
+%% ---- running heads and the folio ------------------------------------------------------
 
 \RequirePackage{fancyhdr}
 
-% First-page imprint line; set per document with \imprint{...}.
-\newcommand{\@wakaruimprint}{Wakaru}
+% \imprint{...}: a line at the foot of the first page, empty by default.
+\newcommand{\@wakaruimprint}{}
 \newcommand{\imprint}[1]{\renewcommand{\@wakaruimprint}{#1}}
 
 \newcommand{\@wakarurunning}{}
@@ -491,53 +498,98 @@
 \newsavebox{\wk@headmark}
 \AtBeginDocument{\sbox{\wk@headmark}{\wakarulogo{6.2pt}}}
 
+% \wakarufolio: the page number on a small kit box -- a field of
+% wakarufolio, the black border and the hard shadow -- at least as wide as
+% three digits, so that the box keeps one size through a document.
+\newcommand{\wakarufolio}{%
+  \begingroup
+  \sbox{\wk@chip}{\sffamily\bfseries\fontsize{7.5}{9}\selectfont\thepage}%
+  \sbox{\@tempboxa}{\sffamily\bfseries\fontsize{7.5}{9}\selectfont 000}%
+  \ifdim\wd\wk@chip>\wd\@tempboxa \sbox{\@tempboxa}{\usebox{\wk@chip}}\fi
+  \edef\wk@fw{\the\dimexpr\wd\@tempboxa+9pt\relax}%
+  \edef\wk@fs{\the\dimexpr\wk@fw+0.9pt\relax}%
+  \begin{tikzpicture}[baseline=0pt]
+    \fill[black, rounded corners=3pt] (0.9pt,-4.4pt) rectangle (\wk@fs,7.6pt);
+    \path[fill=wakarufolio, draw=black, line width=0.75pt, rounded corners=2.6pt]
+      (0.375pt,-3.125pt) rectangle (\the\dimexpr\wk@fw-0.375pt\relax,8.125pt);
+    \node[anchor=base, inner sep=0pt, outer sep=0pt, text=black]
+      at (\the\dimexpr0.5\dimexpr\wk@fw\relax\relax,0pt) {\usebox{\wk@chip}};
+  \end{tikzpicture}%
+  \endgroup
+}
+
 \fancypagestyle{firstpage}{%
   \fancyhf{}%
   \renewcommand{\headrulewidth}{0pt}%
   \fancyfoot[L]{\mutedlabel{\@wakaruimprint}}%
-  \fancyfoot[R]{\mutedlabel{\thepage}}%
+  \fancyfoot[R]{\wakarufolio}%
 }
+% the head: the wordmark, the running title as typed, and under them a
+% rule of the box's border weight
 \fancypagestyle{wakaru}{%
   \fancyhf{}%
-  \renewcommand{\headrulewidth}{0pt}%
+  \renewcommand{\headrulewidth}{1.5pt}%
   \fancyhead[L]{\usebox{\wk@headmark}}%
-  \fancyhead[R]{\mutedlabel{\@wakarurunning}}%
-  \fancyfoot[R]{\mutedlabel{\thepage}}%
+  \fancyhead[R]{{\sffamily\footnotesize\@wakarurunning}}%
+  \fancyfoot[R]{\wakarufolio}%
 }
 \pagestyle{wakaru}
 
 %% ---- figures, tables, captions ------------------------------------------------------
 
 \RequirePackage{graphicx}
+\RequirePackage{array}
 \RequirePackage{booktabs}
+
+% Table column heads in the heading face. array builds every cell through
+% \insert@column (\insert@pcolumn for paragraph columns), so a protected
+% hook put in front of both starts every cell. It sets Noto Sans from a
+% \toprule to the next \midrule or \bottomrule, which is where a booktabs
+% table keeps its column heads, and does nothing elsewhere or in math.
+\newcommand{\wk@cellfont}{}
+\protected\def\wk@cellstyle{\ifmmode\else\wk@cellfont\fi}
+\let\wk@insert@column\insert@column
+\def\insert@column{\wk@cellstyle\wk@insert@column}
+\let\wk@insert@pcolumn\insert@pcolumn
+\def\insert@pcolumn{\wk@cellstyle\wk@insert@pcolumn}
+\newcommand{\wk@headon}{\noalign{\global\let\wk@cellfont\sffamily}}
+\newcommand{\wk@headoff}{\noalign{\global\let\wk@cellfont\@empty}}
+\let\wk@toprule\toprule
+\def\toprule{\wk@headon\wk@toprule}
+\let\wk@midrule\midrule
+\def\midrule{\wk@headoff\wk@midrule}
+\let\wk@bottomrule\bottomrule
+\def\bottomrule{\wk@headoff\wk@bottomrule}
 \RequirePackage[
   format=plain,
-  labelsep=none,
+  font=small,
   justification=raggedright,
   singlelinecheck=false,
 ]{caption}
 
-\DeclareCaptionLabelFormat{wakaru}{\pinklabel{#1~#2}~~{\color{wakarumuted}\textperiodcentered}~}
-\DeclareCaptionTextFormat{wakaru}{\normalfont\small #1}
-\captionsetup{labelformat=wakaru, textformat=wakaru}
+% the label is a chip: "Figure 1" in white on black, then the text
+\DeclareCaptionLabelFormat{wakaru}{\wakaruchip{#1~#2}}
+\DeclareCaptionLabelSeparator{wakaru}{\hspace{0.6em}}
+\captionsetup{labelformat=wakaru, labelsep=wakaru}
 \captionsetup[table]{position=above, skip=7pt}
 
-% Hairline frame for plates; it adds 0.8pt to the image's width.
-\newcommand{\plate}[1]{%
-  {\setlength{\fboxsep}{0pt}\setlength{\fboxrule}{0.4pt}%
-   \textcolor{wakarurule}{\fbox{\normalcolor #1}}}%
-}
+%% ---- quotations: the kit's box on lemon, and these may break across pages -------------
 
-%% ---- quotations: a pink rule at the left, and these may break across pages -----------
-
-\RequirePackage{mdframed}
+% TikZ draws mdframed's rounded corners and shadow; it is a package option,
+% since mdframed loads the method's code in the preamble. mdframed draws
+% its shadow as TikZ's drop shadow, offset by shadowsize minus 2pt, so
+% 3.125pt is the kit's 1.125pt; and the kit's shadow is hard, so shadows
+% are opaque.
+\RequirePackage[framemethod=TikZ]{mdframed}
+\usetikzlibrary{shadows}
+\tikzset{every shadow/.style={opacity=1}}
 \newmdenv[
-  linewidth=0pt,
-  leftline=true, linecolor=wakarupink, linewidth=3pt,
-  topline=false, bottomline=false, rightline=false,
-  innerleftmargin=12pt, innerrightmargin=0pt,
-  innertopmargin=4pt, innerbottommargin=4pt,
-  leftmargin=0pt, skipabove=12pt, skipbelow=12pt,
+  linecolor=black, linewidth=1.5pt, roundcorner=7.5pt,
+  backgroundcolor=wakarulemon,
+  shadow=true, shadowcolor=black, shadowsize=3.125pt,
+  innerleftmargin=10pt, innerrightmargin=10pt,
+  innertopmargin=8pt, innerbottommargin=8pt,
+  leftmargin=0pt, rightmargin=1.125pt, skipabove=12pt, skipbelow=12pt,
 ]{wakaruquote}
 
 %% ---- code: listings, never minted (arXiv: no shell-escape) ----------------------------
@@ -550,8 +602,8 @@
   stringstyle=\color{wakarupinkdeep},
   numberstyle=\tiny\color{wakarumuted},
   backgroundcolor=\color{wakaruice},
-  frame=leftline, framerule=3pt, rulecolor=\color{wakarupink},
-  framexleftmargin=8pt, xleftmargin=12pt,
+  frame=single, framerule=1.125pt, rulecolor=\color{black}, framesep=6pt,
+  xleftmargin=7.125pt, xrightmargin=7.125pt,
   aboveskip=12pt, belowskip=12pt,
   breaklines=true, showstringspaces=false,
   columns=fullflexible, keepspaces=true,
@@ -587,16 +639,8 @@
   linkcolor=wakarupinkdark,
   citecolor=wakarupinkdark,
   urlcolor=wakarupinkdark,
-  pdfcreator={wakaru.sty v0.1},
+  pdfcreator={wakaru.sty v0.2},
 ]{hyperref}
 \urlstyle{tt}
-
-%% ---- the end mark: the wug closes the paper ---------------------------------------------------
-
-\newcommand{\wakaruend}{%
-  \par\vspace{16pt}
-  \noindent\hfill\wakaruwug{24pt}\hfill\null
-  \par
-}
 
 \endinput

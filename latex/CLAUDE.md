@@ -85,27 +85,43 @@ bibliography changes page breaks; cut that back to one and `\ref`s to figures go
 Toolchain is **pdflatex + biber/biblatex** (`backend=biber,style=numeric,sorting=none`).
 The house style is `wakaru.sty`, loaded as `\usepackage[biblatex]{wakaru}` so it
 does not pull in natbib; biblatex must load after it. The style already loads geometry,
-hyperref, xcolor, graphicx, booktabs, amsmath, tikz and the newpx fonts, so do not load
-those again (geometry and hyperref with other options are an option clash) and do not
-add amssymb, whose symbols clash with newpxmath's. It also provides the author block's
-`\mutedlabel` and the optional `\eyebrow` and `\runningtitle`.
+hyperref, xcolor, graphicx, array, booktabs, amsmath, tikz, mdframed, listings, notomath
+(and through it newtxmath) and the Noto fonts, so do not load those again (geometry and
+hyperref with other options are an option clash) and do not add amssymb, whose symbols
+clash with newtxmath's. It also provides the author block's `\mutedlabel` and the
+optional `\eyebrow` and `\runningtitle`.
 
-`wakaru.sty` is Wakaru's branding (branding kit 0.1.1): its colors, Noto Sans
-for the title, headings and labels (`noto` in `flake.nix`), and the kit's three marks
-drawn in TikZ from the SVG paths (`\wakarulogo`, `\wakaruswords`, `\wakaruwug`), so it is
-one file with no images. Its body, math and typewriter fonts are newpx and Plex Mono,
-with lining figures in text; `[noto]` sets the body and math in Noto Serif and code in
-Noto Sans Mono instead (`notomath`). Its abstract and `\wakarubox` are boxes that do not
-break across pages, so an abstract that does not fit under the title block and the
-frontispiece moves to page 2 whole. The proposal's fits. The findings' is about 0.9in too
-tall for the style's page, so `findings.tex` gives its first page alone smaller top and
-bottom margins (`\newgeometry` before `\maketitle`, 0.5in and 0.6in, with the foot 18pt
-below the text; `\restoregeometry` after the abstract, which also starts the Introduction
-on page 2). That leaves about 18pt to spare; an abstract that grows past it moves to
-page 2 again, under margins that would then suit nothing. The page
-is letter with a 6in by 9in text block (1.25in side margins). `flockpaper.sty`, the
-style the documents used before, is still here and has the same interface (`\eyebrow`, `\runningtitle`, `\imprint`, `\credits`,
-`\mutedlabel`, `\plate`), but no document loads it, and `tikz/evalpipeline.tex` now
+`wakaru.sty` is Wakaru's branding (branding kit 0.1.1). It holds:
+- the kit's colors;
+- the kit's three marks drawn in TikZ from the SVG paths (`\wakarulogo`, `\wakaruswords`,
+  `\wakaruwug`), so it is one file with no images;
+- the kit's box (a black border with a hard shadow merged into it, rounded corners) for
+  the masthead, the abstract, `wakaruquote` and the folio.
+
+Its text is Noto Serif, and its headings, labels, chips and table column heads are Noto
+Sans, both at 0.9 of the math's size, with lining figures. Math is notomath, which is
+newtxmath with Noto's letters (`noto` and `notomath` in `flake.nix`). Code is Plex Mono,
+or Noto Sans Mono under `[noto]`. The typewriter face loads before notomath, so `\mathtt`
+(the `\txtop` operators in `vars.tex`) is the same face as `\texttt`.
+
+The column heads are set by a hook on array's cell builder (`\insert@column`): Noto Sans
+from `\toprule` to the next `\midrule` or `\bottomrule`. So a table's head row needs no
+markup, and every booktabs table must have a `\midrule` under its head, or its whole
+body goes into sans.
+
+Labels (`\wakarulabel`, `\mutedlabel`, the eyebrow and the date) are Noto Sans semibold,
+set as typed: write them in sentence case, since nothing uppercases them. The page
+furniture:
+- caption labels are `\wakaruchip`s, white on black;
+- the running head is the wordmark and `\runningtitle` over a 1.5pt black rule;
+- the folio is a small kit box on `wakarufolio`, a 25% tint of the pink.
+
+The abstract and `\wakarubox` are boxes that do not break across pages, so an abstract
+that does not fit under the title block moves to page 2 whole. The findings' and the
+proposal's both fit on page 1. The page is letter with a 6in by 9in text block (1.25in
+side margins), set at `\linespread{1.12}`. `flockpaper.sty`, the style the documents used
+before, is still here, but no document loads it. The two styles now share only the names
+`\eyebrow`, `\runningtitle`, `\imprint` and `\mutedlabel`, and `tikz/evalpipeline.tex`
 names `wakaru.sty`'s colors.
 A failed run can leave a malformed `build/<document>.bcf` that makes biber refuse every
 later run (`ERROR - build/proposal.bcf is malformed`, say); `make clean` and a rebuild fix
@@ -144,8 +160,9 @@ tighten a nearly-fitting table with `\setlength{\tabcolsep}{4pt}` inside its gro
 `config/` tables use a ragged-right description column in the shared block and
 `\footnotesize` for the per-run block. A long path in `\texttt` takes an `\allowbreak`
 after a slash, and a display equation too wide for a line goes in `gathered`. The text
-width is 6in (433.62pt), and `\plate`'s hairline frame adds 0.8pt, so a full-width plate image is
-`\dimexpr\textwidth-0.8pt\relax`.
+width is 6in (433.62pt). A line that runs over or comes up loose against an unbreakable
+script name is fixed by reordering the words around the name; raising
+`\emergencystretch` past 1.5em loosens more paragraphs than it fixes.
 
 ## Document structure: the findings
 
@@ -229,16 +246,26 @@ Result figures are PDFs in `figures/`, drawn by `figures/make_figs.py` from the 
 data, `PINKDARK` for eyebrows, bars and the dark end of sequential scales, their tints,
 `INK`); `../anatomy.py` restates it for the two anatomy figures, which redraw with
 `--replot` from the npz under each run's `anatomy/`. Figures are drawn 6in wide, the
-text width, so `width=\linewidth` includes them unscaled, and in the documents' fonts:
-`figures/texfonts.py` takes TeX Gyre Pagella and IBM Plex Mono from the flake's TeX
-distribution (through `nix develop`, once; converted copies are cached in the untracked
-`figures/preview/fonts/`) and falls back to matplotlib's defaults where it cannot. `overview_diagram.png`, the brief's
-figure, is a raster copied from the `headline` branch's `docs/`, with its blue highlight
-remapped to the kit's iris. The proposal uses only `figures/fig-teaser.pdf` and the two plates,
-which the findings open and close with too: `frontis-orbit-wakaru.png` and
-`end-ridge-wakaru.png`, which are `frontis-orbit.png` and `end-ridge.png` with their two
-colors remapped exactly, pine `#0B5132` to the kit's iris `#6B6DD6` and the paper tint to
-white. The CSVs are copied out of `../data/out` by
+text width, so `width=\linewidth` includes them unscaled, and in the documents' fonts.
+`figures/texfonts.py` takes these from the flake's TeX distribution, through
+`nix develop`, once:
+- Noto Serif for text and for mathtext, as notomath takes Noto Serif's letters (STIX
+  supplies the symbols Noto Serif lacks);
+- Noto Sans for titles, eyebrows and panel letters;
+- IBM Plex Mono.
+
+The Noto files are TrueType and are copied as they are; Plex is converted. Both are
+cached in the untracked `figures/preview/fonts/`. Where the fonts cannot be reached,
+texfonts.py falls back to matplotlib's defaults.
+
+Eyebrows (`eyebrow()` in `make_figs.py`) are set in Noto Sans semibold in `PINKDARK`,
+with no prefix. `letters()` finds them by their `gid` and sets the panel letters in bold
+Noto Sans. `anatomy.py` sets its block titles and panel letters in Noto Sans too. Noto
+Serif has no arrows, so an arrow in figure text is mathtext (`$\to$`), as it would be in
+the documents.
+`overview_diagram.png`, the brief's figure, is a raster copied from the `headline`
+branch's `docs/`, with its blue highlight remapped to the kit's iris. The proposal uses
+only `figures/fig-teaser.pdf`. The CSVs are copied out of `../data/out` by
 `figures/extract_results.py`, which reads eval-script outputs on CPU, and
 `figures/extract_curves.py`, which scores checkpoints on GPU. Extract a figure's numbers
 rather than retyping them from a table; the teaser and the GPT-2 seed figure are the
@@ -258,7 +285,7 @@ diagnostics and secondary analyses belong in the findings. Every number must mat
 findings, and numbers, hyperparameters and architecture claims are checked against the
 code, not invented.
 
-`proposal.tex` holds the preamble, title block, abstract and plates, and inputs the body:
+`proposal.tex` holds the preamble, title block and abstract, and inputs the body:
 
 ```
 proposal.tex
@@ -279,11 +306,11 @@ them, and "Against the desiderata" at the end of `results.tex` scores the introd
 three desiderata; keep both in step with the results.
 
 The proposal is meant for arXiv, which runs pdflatex and no biber; that is why the house
-style is pdflatex-only. `wakaru.sty` provides the `\eyebrow`, `\runningtitle` and
-`\imprint` macros `proposal.tex` uses; the author block is a plain `\author{...}` set by
-its `\maketitle` (no `authblk`). The title block, the frontispiece and the boxed
-abstract share the first page with a few lines to spare; an abstract or title that
-outgrows it moves the abstract to page 2 whole.
+style is pdflatex-only. `wakaru.sty` provides the `\eyebrow` and `\runningtitle`
+macros `proposal.tex` uses; the author block is a plain `\author{...}` set by its
+`\maketitle` (no `authblk`). The title block and the boxed abstract share the first
+page, and the Introduction starts below them; an abstract or title that outgrows the
+page moves the abstract to page 2 whole.
 `proposal/SUBMISSION.md` lists the files an arXiv upload needs, including the `.bbl`.
 
 Its notation is the findings' (below): it restates the findings' headline methods, so a
@@ -462,8 +489,9 @@ Code identifiers keep their names (`tags()`, `decode_tags.py`, `forward="labels"
   (`\texttt{ste\_h76\_init01}`). Command-line flags are typed as they are
   (`\texttt{--trained-groups}`): `wakaru.sty` turns off the `--` ligature in
   typewriter text, which Plex Mono would otherwise set as an en dash. Labels
-  (`\mutedlabel`, the plates' captions) are set in Noto Sans, where `--` is an en dash
-  again; the sources write `\textendash{}` there, which is right either way.
+  (`\mutedlabel`, `\wakarulabel`, `\eyebrow`) are set in Noto Sans, where `--` is an
+  en dash again; write `\textendash{}` there, which is right either way. Labels are
+  set as typed, so write them in sentence case.
 - Every comparison states its null or control; a result without a null of the same shape
   is not reported as a result.
 - One seed per cell is said explicitly where it applies.

@@ -3,7 +3,8 @@
 The palette is the Wakaru branding kit's, as latex/wakaru.sty names it:
 black, the brand pink and its darker shade, and tints of the pink on
 white. Flat, no gridlines, left+bottom spines, serif text with mono tick
-labels, in the documents' own fonts (texfonts.py). Figures are drawn at the
+labels and sans eyebrows over the panels, in the documents' own fonts
+(texfonts.py). Figures are drawn at the
 text width, 6in, so they are included unscaled and their type is at its
 stated size. PINK is the color of plotted data and PINKDARK of eyebrows, bars
 and the dark end of the sequential scales: the darker shade is the one
@@ -76,24 +77,25 @@ def save(fig, name):
 
 
 def eyebrow(ax, text, y=1.06):
-    """The house '//' label, top-left above the axes. In a lettered figure
-    it starts after the panel letter (see `letters`)."""
-    ax.annotate("// " + text, xy=(0.0, y), xycoords="axes fraction",
+    """The panel's label, top-left above the axes, in the documents' label
+    face (Noto Sans semibold). In a lettered figure it starts after the
+    panel letter (see `letters`)."""
+    ax.annotate(text, xy=(0.0, y), xycoords="axes fraction",
                 xytext=(0, 0), textcoords="offset points",
-                fontfamily="monospace", fontsize=7.0, color=PINKDARK,
-                va="bottom")
+                fontfamily="sans-serif", fontweight="semibold",
+                fontsize=7.0, color=PINKDARK, va="bottom", gid="eyebrow")
 
 
 def letters(axes):
-    """Bold panel letters a, b, ... at the start of each panel's eyebrow
-    line, pushing the eyebrow right, so captions can name panels by letter.
-    Call after the eyebrows are drawn."""
+    """Bold Noto Sans panel letters a, b, ... at the start of each panel's
+    eyebrow line, pushing the eyebrow right, so captions can name panels by
+    letter. Call after the eyebrows are drawn."""
     for ch, ax in zip("abcdefgh", axes):
         ax.annotate(ch, xy=(0.0, 1.06), xycoords="axes fraction",
-                    fontsize=9.0, fontweight="bold", color=INK,
-                    ha="left", va="bottom")
+                    fontsize=9.0, fontweight="bold", fontfamily="sans-serif",
+                    color=INK, ha="left", va="bottom")
         for t in ax.texts:
-            if t.get_text().startswith("// ") and t.xy == (0.0, 1.06):
+            if t.get_gid() == "eyebrow" and t.xy == (0.0, 1.06):
                 t.xyann = (10, 0)
 
 
@@ -248,8 +250,10 @@ save(fig, "fig-seed")
 
 VARIANTS = [
     ("diag_baseline_summary.csv", "control", INK, "-"),
-    ("diag_slow_anneal_summary.csv", "anneal 50k→150k", PINK, "-"),
-    ("diag_drop_ramp_summary.csv", "dropout 0.1→0.25", PINK50, (0, (4, 2))),
+    # the arrow is math, as in the documents: Noto Serif has none
+    ("diag_slow_anneal_summary.csv", r"anneal 50k$\to$150k", PINK, "-"),
+    ("diag_drop_ramp_summary.csv", r"dropout 0.1$\to$0.25", PINK50,
+     (0, (4, 2))),
     ("diag_sdk_floor_summary.csv", "noise floor held", INKMUT, (0, (1, 1.5))),
 ]
 fig, ax = plt.subplots(figsize=(6.0, 2.0))

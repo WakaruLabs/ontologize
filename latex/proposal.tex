@@ -12,6 +12,9 @@
 \usepackage[backend=biber]{biblatex}
 \addbibresource{refs.bib}
 \renewcommand*{\bibfont}{\normalfont\small}
+% a third line-breaking pass for paragraphs that would otherwise be overfull;
+% paragraphs that already set within tolerance are unaffected
+\setlength{\emergencystretch}{1.5em}
 
 % allow long URLs in the bibliography to break across lines
 \setcounter{biburlnumpenalty}{9000}
@@ -33,15 +36,10 @@
     \mutedlabel{Flock Capital \textperiodcentered{} celeste@linux.com}
   \end{tabular}}
 \date{\today}
-\eyebrow{proposal \textperiodcentered{} preliminary results \textperiodcentered{} mechanistic interpretability}
+\eyebrow{Proposal \textperiodcentered{} preliminary results \textperiodcentered{} mechanistic interpretability}
 \runningtitle{Dictionary learning is all you need}
 \begin{document}
 \maketitle
-
-% Frontispiece: decorative, deliberately not a numbered float.
-\noindent\plate{\includegraphics[width=\dimexpr\textwidth-0.8pt\relax]{figures/frontis-orbit-wakaru.png}}\\[3pt]
-\mutedlabel{orbit \textperiodcentered{} seed 1024 \textperiodcentered{} floyd\textendash{}steinberg error diffusion}
-\vspace{6pt}
 
 \begin{abstract}
 % wakaru.sty sets the abstract in a box that does not break, so it must fit
@@ -92,16 +90,8 @@ and our proposed work begins with paired-view objectives.
 
 \section*{Acknowledgements}
 Design, typesetting, and editorial production of this preprint are by
-The Flock Capital Research Department, whose error-diffusion pipeline
-also printed the plates.
+The Flock Capital Research Department.
 
 \printbibliography
-
-\vspace{20pt}
-% a minipage, so that the plate and its label stay on one page
-\noindent\begin{minipage}{\textwidth}
-\plate{\includegraphics[width=\dimexpr\textwidth-0.8pt\relax]{figures/end-ridge-wakaru.png}}\\[3pt]
-\mutedlabel{ridge \textperiodcentered{} seed 32 \textperiodcentered{} the same pipeline, closing the file}
-\end{minipage}
 
 \end{document}

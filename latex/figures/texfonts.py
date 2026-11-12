@@ -1,23 +1,25 @@
 """The documents' fonts for matplotlib figures.
 
-latex/wakaru.sty sets body text and math in newpx and code in IBM Plex
-Mono. Figures take the same faces from the TeX distribution that sets the
-documents (latex/flake.nix): TeX Gyre Pagella, the OpenType Palatino that
-newpx is built on, and IBM Plex Mono. The files are found with kpsewhich,
-run through `nix develop` as the Makefile runs pdflatex, so a figure needs
-no font installed on the system.
+latex/wakaru.sty sets text in Noto Serif, headings and labels in Noto
+Sans, math in notomath (Noto Serif's letters) and code in IBM Plex Mono.
+Figures take the same faces from the TeX distribution that sets the
+documents (latex/flake.nix): Noto Serif for text and mathtext, Noto Sans
+for titles, eyebrows and panel letters, and IBM Plex Mono. The files are
+found with kpsewhich, run through `nix develop` as the Makefile runs
+pdflatex, so a figure needs no font installed on the system.
 
-Both ship as OpenType with CFF outlines, which matplotlib's PDF backend
-embeds under `pdf.fonttype: 42` as if they were TrueType: the file is
-then malformed (poppler warns of a font type mismatch, and stricter
-viewers drop the text). So each face is converted once to TrueType
-outlines, into preview/fonts/ beside the figure previews (untracked), and
-the converted files are what matplotlib loads.
+The Noto faces ship as TrueType and are copied as they are. Plex Mono
+ships as OpenType with CFF outlines, which matplotlib's PDF backend embeds
+under `pdf.fonttype: 42` as if they were TrueType: the file is then
+malformed (poppler warns of a font type mismatch, and stricter viewers
+drop the text). So it is converted once to TrueType outlines. Either way
+the files land in preview/fonts/ beside the figure previews (untracked),
+and those copies are what matplotlib loads.
 
-`use()` registers the files and points matplotlib's serif, monospace and
-mathtext settings at them. Where the distribution cannot be reached it
-leaves matplotlib's defaults in place and says so, so a figure script
-still runs.
+`use()` registers the files and points matplotlib's serif, sans-serif,
+monospace and mathtext settings at them. Where the distribution cannot be
+reached it leaves matplotlib's defaults in place and says so, so a figure
+script still runs.
 """
 
 import os
@@ -27,11 +29,13 @@ from pathlib import Path
 
 LATEX = Path(__file__).resolve().parent.parent
 CACHE = Path(__file__).resolve().parent / "preview" / "fonts"
-SERIF = "TeX Gyre Pagella"
+SERIF = "Noto Serif"
+SANS = "Noto Sans"
 MONO = "IBM Plex Mono"
 FILES = [
-    "texgyrepagella-regular.otf", "texgyrepagella-italic.otf",
-    "texgyrepagella-bold.otf", "texgyrepagella-bolditalic.otf",
+    "NotoSerif-Regular.ttf", "NotoSerif-Italic.ttf",
+    "NotoSerif-Bold.ttf", "NotoSerif-BoldItalic.ttf",
+    "NotoSans-Regular.ttf", "NotoSans-SemiBold.ttf", "NotoSans-Bold.ttf",
     "IBMPlexMono-Regular.otf", "IBMPlexMono-Italic.otf",
     "IBMPlexMono-Bold.otf",
 ]
@@ -48,7 +52,7 @@ def find() -> list[str]:
     except (OSError, subprocess.TimeoutExpired):
         return []
     return [p for p in out.split()
-            if p.endswith(".otf") and os.path.exists(p)]
+            if p.endswith((".otf", ".ttf")) and os.path.exists(p)]
 
 
 def to_truetype(src: str, dst: Path) -> None:
@@ -87,12 +91,18 @@ def to_truetype(src: str, dst: Path) -> None:
 
 
 def truetype() -> list[Path]:
-    """The converted faces, converting whichever are missing."""
+    """The cached TrueType faces, copying or converting whichever are
+    missing."""
     want = [CACHE / (Path(f).stem + ".ttf") for f in FILES]
     if not all(p.exists() for p in want):
         for src in find():
             dst = CACHE / (Path(src).stem + ".ttf")
-            if not dst.exists():
+            if dst.exists():
+                continue
+            if src.endswith(".ttf"):
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(src, dst)
+            else:
                 to_truetype(src, dst)
     return [p for p in want if p.exists()]
 
@@ -106,16 +116,20 @@ def use() -> bool:
     for path in truetype():
         font_manager.fontManager.addfont(str(path))
     names = {f.name for f in font_manager.fontManager.ttflist}
-    if SERIF not in names or MONO not in names:
-        print(f"texfonts: {SERIF} / {MONO} not found; "
+    missing = [f for f in (SERIF, SANS, MONO) if f not in names]
+    if missing:
+        print(f"texfonts: {' / '.join(missing)} not found; "
               "figures keep matplotlib's default fonts")
         return False
+    default = matplotlib.rcParamsDefault
     matplotlib.rcParams.update({
         # the generic families keep their defaults as fallbacks, for the
-        # glyphs (Greek, some symbols) the two faces lack
-        "font.serif": [SERIF] + matplotlib.rcParamsDefault["font.serif"],
-        "font.monospace": [MONO]
-        + matplotlib.rcParamsDefault["font.monospace"],
+        # glyphs (Greek, some symbols) the faces lack
+        "font.serif": [SERIF] + default["font.serif"],
+        "font.sans-serif": [SANS] + default["font.sans-serif"],
+        "font.monospace": [MONO] + default["font.monospace"],
+        # math is notomath's in the documents, which takes Noto Serif's
+        # letters; symbols Noto Serif lacks fall back to STIX
         "mathtext.fontset": "custom",
         "mathtext.rm": SERIF,
         "mathtext.it": f"{SERIF}:italic",

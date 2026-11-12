@@ -1,7 +1,7 @@
 \documentclass[11pt]{article}
 % wakaru.sty loads geometry, hyperref, xcolor, graphicx, booktabs, amsmath,
-% tikz and the newpx fonts (whose math symbols replace amssymb's); load
-% biblatex after it
+% tikz, notomath (whose math symbols replace amssymb's) and the Noto fonts;
+% load biblatex after it
 \usepackage[biblatex]{wakaru}
 \usetikzlibrary{arrows.meta}
 \usepackage[ruled]{algorithm2e}
@@ -18,7 +18,7 @@
 \newcommand{\fvu}{\mathrm{FVU}_w}
 
 \title{Dictionary Learning as Unsupervised Steering-Vector Generation}
-% two columns, one per affiliation: the mono labels are wide enough that
+% two columns, one per affiliation: the labels are wide enough that
 % pairing the two longest side by side would overrun the 6in measure
 \author{%
   \begin{tabular}[t]{@{}l@{\hspace{2em}}l@{}}
@@ -32,18 +32,7 @@
 \date{\today{} --- working notes, results preliminary}
 
 \begin{document}
-% The first page alone takes smaller top and bottom margins, so that the
-% title block, the frontispiece and the abstract share it; \restoregeometry
-% after the abstract returns to the style's page. The first page carries no
-% running head, so only its foot moves.
-\newgeometry{textwidth=6in, hcentering, top=0.5in, bottom=0.6in,
-  headheight=14pt, footskip=18pt}
 \maketitle
-
-% Frontispiece: decorative, deliberately not a numbered float.
-\noindent\plate{\includegraphics[width=\dimexpr\textwidth-0.8pt\relax]{figures/frontis-orbit-wakaru.png}}\\[3pt]
-\mutedlabel{orbit \textperiodcentered{} seed 1024 \textperiodcentered{} floyd\textendash{}steinberg error diffusion}
-\vspace{8pt}
 
 \begin{abstract}
 % wakaru.sty sets the abstract in a box that does not break, so it must fit
@@ -84,7 +73,6 @@ rather than fidelity is therefore the binding constraint for auditing and
 stable goal specification: reconstruction loss alone does not enforce it,
 and paired-view training is the first objective that improves it.
 \end{abstract}
-\restoregeometry
 
 \input{findings/sections/introduction}
 
@@ -148,8 +136,8 @@ evaluation split (Appendix~\ref{app:protocols}):
 \item reconstruction error against code capacity and a Gaussian
 rate--distortion baseline (\texttt{pareto.py}), and coefficient shrinkage
 via least-squares refitting on frozen active supports (\texttt{refit.py});
-\item post hoc discovery of exhaustive, mutually exclusive latent groups
-in SAEs (\texttt{headstruct.py}), and within-head semantic coherence of
+\item post hoc discovery (\texttt{headstruct.py}) of exhaustive, mutually
+exclusive latent groups in SAEs, and within-head semantic coherence of
 decoded atoms against size-matched random subsets (\texttt{headcoh.py});
 \item cross-model feature splitting and cross-seed head matching by sample
 partition and by output contribution (\texttt{splitting.py},
@@ -214,17 +202,9 @@ The authors directed the work, reviewed the results, and are responsible for the
 Language models used for the evaluations themselves are described in Appendix~\ref{app:protocols}.
 
 Design \& typesetting are adapted from
-The Flock Capital Research Department, whose error-diffusion pipeline
-also printed the plates, recolored here.
+The Flock Capital Research Department.
 
 \printbibliography
-
-\vspace{20pt}
-% a minipage, so that the plate and its label stay on one page
-\noindent\begin{minipage}{\textwidth}
-\plate{\includegraphics[width=\dimexpr\textwidth-0.8pt\relax]{figures/end-ridge-wakaru.png}}\\[3pt]
-\mutedlabel{ridge \textperiodcentered{} seed 32 \textperiodcentered{} the same pipeline, closing the file}
-\end{minipage}
 
 \input{findings/sections/appendix}
 

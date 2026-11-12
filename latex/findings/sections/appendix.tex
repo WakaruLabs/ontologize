@@ -329,7 +329,7 @@ without a raised batch-mean uniformity weight $s_{\mathrm{KL}_m}$
 
 \paragraph{The straight-through arm.}
 The straight-through trainer (\texttt{train\_ste.py}) imports the
-\texttt{sonar.py} configuration and overrides \texttt{select="ste"},
+configuration of \texttt{sonar.py} and overrides \texttt{select="ste"},
 selecting the one-hot argmax in the forward pass while using
 $\mathrm{softmax}(K/t)$ as a surrogate gradient in the backward pass. Its
 architecture, calibration, and initialization are detailed alongside its
@@ -852,8 +852,8 @@ with low collateral.
 
 \paragraph{Language probing (\texttt{langprobe.py}, \texttt{headlang.py},
 \texttt{headscript.py}).}
-Following the $k_{\mathrm{probe}}$-sparse probing protocol of
-SAEBench~\cite{karvonen2025}, with the corpus's 86 ground-truth language
+Following SAEBench's $k_{\mathrm{probe}}$-sparse probing
+protocol~\cite{karvonen2025}, with the corpus's 86 ground-truth language
 labels in place of its balanced tasks, \texttt{langprobe.py} selects
 the top latents per language by two-sample t-statistic on training rows and
 evaluates held-out one-vs-rest F1 at $k_{\mathrm{probe}}{=}1$ (single
