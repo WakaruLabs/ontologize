@@ -32,6 +32,12 @@
 \date{\today{} --- working notes, results preliminary}
 
 \begin{document}
+% The first page alone takes smaller top and bottom margins, so that the
+% title block, the frontispiece and the abstract share it; \restoregeometry
+% after the abstract returns to the style's page. The first page carries no
+% running head, so only its foot moves.
+\newgeometry{textwidth=6in, hcentering, top=0.5in, bottom=0.6in,
+  headheight=14pt, footskip=18pt}
 \maketitle
 
 % Frontispiece: decorative, deliberately not a numbered float.
@@ -78,6 +84,7 @@ rather than fidelity is therefore the binding constraint for auditing and
 stable goal specification: reconstruction loss alone does not enforce it,
 and paired-view training is the first objective that improves it.
 \end{abstract}
+\restoregeometry
 
 \input{findings/sections/introduction}
 

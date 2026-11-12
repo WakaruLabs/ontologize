@@ -97,7 +97,12 @@ one file with no images. Its body, math and typewriter fonts are newpx and Plex 
 with lining figures in text; `[noto]` sets the body and math in Noto Serif and code in
 Noto Sans Mono instead (`notomath`). Its abstract and `\wakarubox` are boxes that do not
 break across pages, so an abstract that does not fit under the title block and the
-frontispiece moves to page 2 whole, as the findings' does; the proposal's fits. The page
+frontispiece moves to page 2 whole. The proposal's fits. The findings' is about 0.9in too
+tall for the style's page, so `findings.tex` gives its first page alone smaller top and
+bottom margins (`\newgeometry` before `\maketitle`, 0.5in and 0.6in, with the foot 18pt
+below the text; `\restoregeometry` after the abstract, which also starts the Introduction
+on page 2). That leaves about 18pt to spare; an abstract that grows past it moves to
+page 2 again, under margins that would then suit nothing. The page
 is letter with a 6in by 9in text block (1.25in side margins). `flockpaper.sty`, the
 style the documents used before, is still here and has the same interface (`\eyebrow`, `\runningtitle`, `\imprint`, `\credits`,
 `\mutedlabel`, `\plate`), but no document loads it, and `tikz/evalpipeline.tex` now
