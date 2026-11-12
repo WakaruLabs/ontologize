@@ -16,9 +16,10 @@
 %%     The kit's pixel sizes are scaled by 0.375pt per px, which keeps their
 %%     proportions: 4px -> 1.5pt, 3px -> 1.125pt, 30px -> 11.25pt, 20px ->
 %%     7.5pt.
-%%   - Noto Sans, the kit's face, for the text, title, headings, labels and
-%%     chips, with lining figures. Math is newpx (Palatino), and code IBM
-%%     Plex Mono; option [noto] sets code in Noto Sans Mono instead.
+%%   - IBM Plex Serif for the text, and Noto Sans, the kit's face, for the
+%%     title, headings, labels and chips, both with lining figures. Math is
+%%     newpx (Palatino), and code IBM Plex Mono; option [noto] sets code in
+%%     Noto Sans Mono instead.
 %%
 %% Usage: \usepackage{wakaru} on top of \documentclass{article}; with
 %% [biblatex] when the document loads biblatex itself (after this package).
@@ -88,9 +89,16 @@
 \RequirePackage[scale=0.9]{noto-sans}
 \RequirePackage{newpxtext}
 \RequirePackage{newpxmath}
-% The text is Noto Sans. newpxtext set the default family to its roman;
-% at the end of the preamble it leaves a sans default as it is.
-\renewcommand*{\familydefault}{\sfdefault}
+% The text is IBM Plex Serif, at 0.9 for the same reason. It loads after
+% newpxmath, so the math keeps newpx's roman. newpxtext makes the roman
+% its own again at the end of the preamble, so the text's is put back
+% when the document begins. Without the plex package the text stays
+% newpx's Palatino.
+\IfFileExists{plex-serif.sty}{%
+  \RequirePackage[scale=0.9]{plex-serif}%
+  \let\wk@rmdefault\rmdefault
+  \AtBeginDocument{\let\rmdefault\wk@rmdefault\normalfont}%
+}{}
 
 \RequirePackage[final]{microtype}
 % typewriter text is code and command-line flags, which print as typed
@@ -107,7 +115,7 @@
   headheight=14pt,
 ]{geometry}
 
-% Noto Sans's x-height is tall for its size, so its lines are set open
+% Plex Serif's x-height is tall for its size, so its lines are set open
 \linespread{1.12}
 \setlength{\parskip}{0pt}
 \setlength{\parindent}{1.5em}

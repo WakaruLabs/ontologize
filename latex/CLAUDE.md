@@ -85,8 +85,8 @@ bibliography changes page breaks; cut that back to one and `\ref`s to figures go
 Toolchain is **pdflatex + biber/biblatex** (`backend=biber,style=numeric,sorting=none`).
 The house style is `wakaru.sty`, loaded as `\usepackage[biblatex]{wakaru}` so it
 does not pull in natbib; biblatex must load after it. The style already loads geometry,
-hyperref, xcolor, graphicx, booktabs, amsmath, tikz, mdframed, listings, the newpx fonts
-and Noto Sans, so do not load those again (geometry and hyperref with other options are
+hyperref, xcolor, graphicx, booktabs, amsmath, tikz, mdframed, listings, the newpx fonts,
+Noto Sans and IBM Plex Serif, so do not load those again (geometry and hyperref with other options are
 an option clash) and do not add amssymb, whose symbols clash with newpxmath's. It also
 provides the author block's `\mutedlabel` and the optional `\eyebrow` and `\runningtitle`.
 
@@ -97,10 +97,14 @@ provides the author block's `\mutedlabel` and the optional `\eyebrow` and `\runn
 - the kit's box (a black border with a hard shadow merged into it, rounded corners) for
   the masthead, the abstract, `wakaruquote` and the folio.
 
-Its text, headings, labels, chips and table column heads are all Noto Sans (`noto` in
-`flake.nix`), at scale 0.9 with lining figures. Math is newpx, which is Palatino, with
-TeX Gyre Pagella for `\mathrm`, `\mathbf` and the operators. Code is Plex Mono, or Noto
-Sans Mono under `[noto]`.
+Its text is IBM Plex Serif (`plex` in `flake.nix`): paragraphs, the abstract, captions,
+tables and their column heads, footnotes and the bibliography. The title, author block,
+headings, labels, chips, running head, folio and theorem heads are Noto Sans (`noto`).
+Both are at scale 0.9 with lining figures, which puts their x-heights near the math
+letters'. Math is newpx, which is Palatino, with TeX Gyre Pagella for `\mathrm`,
+`\mathbf` and the operators, so a variable is told from the text around it by its face,
+italic text included. A number set in math is Palatino and the same number set as text is
+Plex Serif. Code is Plex Mono, or Noto Sans Mono under `[noto]`.
 
 Load order sets the math alphabets: newpxmath takes `\mathrm`, `\mathit` and `\mathbf`
 from the roman face, `\mathsf` from the sans and `\mathtt` from the typewriter, each as
@@ -109,12 +113,19 @@ it stands when newpxmath loads. The order is:
 2. Noto Sans;
 3. newpxtext, which installs its own sans and typewriter only where none is set, and
    makes the roman Palatino;
-4. newpxmath.
+4. newpxmath;
+5. Plex Serif, after the math has taken its roman.
 
 So `\mathsf` (the rank-3 tensors) is Noto Sans, and `\mathtt` (the `\txtop` operators
-in `vars.tex`) is the same face as `\texttt`. The style then sets `\familydefault` to the
-sans, which newpxtext leaves alone at the end of the preamble. `\rmfamily` remains
-Palatino, but nothing in the documents asks for it.
+in `vars.tex`) is the same face as `\texttt`. newpxtext makes the roman Palatino again
+at the end of the preamble, so loading `plex-serif` alone changes nothing: the style
+saves Plex Serif's `\rmdefault` and puts it back at `\begin{document}`. `\rmfamily` and
+`\normalfont` are therefore Plex Serif, and Palatino appears only in math. Without the
+`plex` package the text falls back to Palatino.
+
+Plex Serif sets wider than Noto Sans did, and a line that ends before an unbreakable
+script name can come up loose where it did not; the fix is the one under "Tables that
+would run wide" below.
 
 Labels (`\wakarulabel`, `\mutedlabel`, the eyebrow and the date) are Noto Sans semibold,
 set as typed: write them in sentence case, since nothing uppercases them. The page

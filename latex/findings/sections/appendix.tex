@@ -3056,10 +3056,12 @@ auxiliary variable conditioning~\cite{ivae2020}, or contrastive alignment
 of conditional distributions~\cite{zimmermann2021}.
 
 To test whether adjacent sentences in \texttt{mc4\_sent16} provide a
-usable temporal signal (\texttt{experiments/\allowbreak next-sentence/}),
+usable temporal signal,
 we first fit a linear ridge predictor of $\mathbf{x}_{t+1}$ from
 $\mathbf{x}_t$ on 500{,}000 training pairs and evaluated it on 8{,}683
-held-out pairs (\texttt{eval\_next.py}, with coordinate~837 masked). The
+held-out pairs (\texttt{eval\_next.py} in
+\texttt{experiments/\allowbreak next-sentence/}, with coordinate~837
+masked). The
 linear baseline achieves $\mathrm{FVU}_{\mathrm{next}} = 0.8962$
 ($\alpha{=}10^3$; predicting $\hat{\mathbf{x}}_{t+1} = \mathbf{x}_t$
 yields $1.418$), indicating that $\mathbf{x}_t$ linearly explains $10.4\%$
