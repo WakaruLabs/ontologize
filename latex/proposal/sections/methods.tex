@@ -181,7 +181,10 @@ whose row $\mathbf{f}_i$ is head $i$'s output,
 \end{equation}
 Atoms are non-negative and assignments lie on the simplex, so features
 are strictly additive and each head's output lies in the convex hull of
-its atoms (Figure~\ref{fig:head-simplex}).
+its atoms (Figure~\ref{fig:head-simplex}). Summed over heads, a layer's
+output ranges over the Minkowski sum of these hulls, the form that the
+Minkowski Representation Hypothesis proposes for transformer
+activations~\cite{fel2026rabbit}.
 
 \begin{figure}[tp]
 \centering

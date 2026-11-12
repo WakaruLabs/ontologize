@@ -16,7 +16,13 @@ methods only find concepts for which an experimenter already has labeled
 examples, and a direction optimized to produce a desired output change
 need not reflect how the model normally computes: a subspace intervention
 optimized for its effect can instead activate a dormant
-pathway~\cite{makelov2023}.
+pathway~\cite{makelov2023}. Labels are also what has made a supervised
+direction divisible. The single direction whose ablation removes a
+model's refusals~\cite{arditi2024} has been split into vectors that each
+disable refusal for one topic, but only with the topics labeled in
+advance and an explicit penalty on each vector's effect on the other
+topics, without which the vectors revert to the shared
+direction~\cite{tong2025meuv}.
 
 Steering vectors can be learned without labels and without a dictionary,
 by training a perturbation of fixed norm to maximize the change it
@@ -377,6 +383,17 @@ many separate atoms~\cite{bhalla2026manifolds}. A block-sparse unit is
 thus the structural opposite of a classifier head: blocks are selected
 sparsely and vary continuously within their subspaces, whereas every head
 is active on every input and selects one of $k$ discrete atoms.
+The data model closest to a layer of heads is the Minkowski
+Representation Hypothesis~\cite{fel2026rabbit}, proposed on preliminary
+evidence from DINOv2 and motivated by multi-head attention, in which each
+head outputs a convex combination of its value vectors: an activation is
+a sum of convex combinations, one from each of a few groups of
+archetypes, so that the activation space is a Minkowski sum of convex
+hulls. Two consequences drawn there bear on what follows. Such a sum does
+not determine its summands, so the groups cannot be recovered uniquely
+from one layer's activations; and steering toward an archetype, unlike
+steering along a direction, saturates on arrival, which is the kind of
+move an entry swap makes.
 OrtSAEs~\cite{korznikov2025} instead penalize the cosine similarity
 between each decoder direction and its nearest neighbor. Rung~3 of our
 ablation ladder (\texttt{k32\_p5}) incorporates the Matryoshka
