@@ -1,25 +1,25 @@
 """The documents' fonts for matplotlib figures.
 
-latex/wakaru.sty sets text in Noto Serif, headings and labels in Noto
-Sans, math in notomath (Noto Serif's letters) and code in IBM Plex Mono.
-Figures take the same faces from the TeX distribution that sets the
-documents (latex/flake.nix): Noto Serif for text and mathtext, Noto Sans
-for titles, eyebrows and panel letters, and IBM Plex Mono. The files are
-found with kpsewhich, run through `nix develop` as the Makefile runs
-pdflatex, so a figure needs no font installed on the system.
+latex/wakaru.sty sets text, headings and labels in Noto Sans, math in
+newpx and code in IBM Plex Mono. Figures take the same faces from the TeX
+distribution that sets the documents (latex/flake.nix): Noto Sans for
+text, TeX Gyre Pagella (the OpenType Palatino that newpx is built on) for
+mathtext, and IBM Plex Mono. The files are found with kpsewhich, run
+through `nix develop` as the Makefile runs pdflatex, so a figure needs no
+font installed on the system.
 
-The Noto faces ship as TrueType and are copied as they are. Plex Mono
-ships as OpenType with CFF outlines, which matplotlib's PDF backend embeds
+Noto Sans ships as TrueType and is copied as it is. Pagella and Plex Mono
+ship as OpenType with CFF outlines, which matplotlib's PDF backend embeds
 under `pdf.fonttype: 42` as if they were TrueType: the file is then
 malformed (poppler warns of a font type mismatch, and stricter viewers
-drop the text). So it is converted once to TrueType outlines. Either way
-the files land in preview/fonts/ beside the figure previews (untracked),
-and those copies are what matplotlib loads.
+drop the text). So those two are converted once to TrueType outlines.
+Either way the files land in preview/fonts/ beside the figure previews
+(untracked), and those copies are what matplotlib loads.
 
-`use()` registers the files and points matplotlib's serif, sans-serif,
-monospace and mathtext settings at them. Where the distribution cannot be
-reached it leaves matplotlib's defaults in place and says so, so a figure
-script still runs.
+`use()` registers the files and points matplotlib's sans-serif, monospace
+and mathtext settings at them; the figure scripts set `font.family` to
+sans-serif. Where the distribution cannot be reached it leaves matplotlib's
+defaults in place and says so, so a figure script still runs.
 """
 
 import os
@@ -29,13 +29,14 @@ from pathlib import Path
 
 LATEX = Path(__file__).resolve().parent.parent
 CACHE = Path(__file__).resolve().parent / "preview" / "fonts"
-SERIF = "Noto Serif"
 SANS = "Noto Sans"
+MATH = "TeX Gyre Pagella"
 MONO = "IBM Plex Mono"
 FILES = [
-    "NotoSerif-Regular.ttf", "NotoSerif-Italic.ttf",
-    "NotoSerif-Bold.ttf", "NotoSerif-BoldItalic.ttf",
-    "NotoSans-Regular.ttf", "NotoSans-SemiBold.ttf", "NotoSans-Bold.ttf",
+    "NotoSans-Regular.ttf", "NotoSans-Italic.ttf",
+    "NotoSans-SemiBold.ttf", "NotoSans-Bold.ttf", "NotoSans-BoldItalic.ttf",
+    "texgyrepagella-regular.otf", "texgyrepagella-italic.otf",
+    "texgyrepagella-bold.otf", "texgyrepagella-bolditalic.otf",
     "IBMPlexMono-Regular.otf", "IBMPlexMono-Italic.otf",
     "IBMPlexMono-Bold.otf",
 ]
@@ -109,14 +110,14 @@ def truetype() -> list[Path]:
 
 def use() -> bool:
     """Select the documents' fonts for every later figure. Returns whether
-    both families were found; call after matplotlib's backend is chosen."""
+    every family was found; call after matplotlib's backend is chosen."""
     import matplotlib
     from matplotlib import font_manager
 
     for path in truetype():
         font_manager.fontManager.addfont(str(path))
     names = {f.name for f in font_manager.fontManager.ttflist}
-    missing = [f for f in (SERIF, SANS, MONO) if f not in names]
+    missing = [f for f in (SANS, MATH, MONO) if f not in names]
     if missing:
         print(f"texfonts: {' / '.join(missing)} not found; "
               "figures keep matplotlib's default fonts")
@@ -125,16 +126,16 @@ def use() -> bool:
     matplotlib.rcParams.update({
         # the generic families keep their defaults as fallbacks, for the
         # glyphs (Greek, some symbols) the faces lack
-        "font.serif": [SERIF] + default["font.serif"],
         "font.sans-serif": [SANS] + default["font.sans-serif"],
+        "font.serif": [MATH] + default["font.serif"],
         "font.monospace": [MONO] + default["font.monospace"],
-        # math is notomath's in the documents, which takes Noto Serif's
-        # letters; symbols Noto Serif lacks fall back to STIX
+        # math is newpx's in the documents, so Palatino's here; symbols
+        # Pagella lacks fall back to STIX
         "mathtext.fontset": "custom",
-        "mathtext.rm": SERIF,
-        "mathtext.it": f"{SERIF}:italic",
-        "mathtext.bf": f"{SERIF}:bold",
-        "mathtext.bfit": f"{SERIF}:bold:italic",
+        "mathtext.rm": MATH,
+        "mathtext.it": f"{MATH}:italic",
+        "mathtext.bf": f"{MATH}:bold",
+        "mathtext.bfit": f"{MATH}:bold:italic",
         "mathtext.tt": MONO,
         "mathtext.fallback": "stix",
     })

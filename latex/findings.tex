@@ -1,6 +1,6 @@
 \documentclass[11pt]{article}
 % wakaru.sty loads geometry, hyperref, xcolor, graphicx, booktabs, amsmath,
-% tikz, notomath (whose math symbols replace amssymb's) and the Noto fonts;
+% tikz, the newpx fonts (whose math symbols replace amssymb's) and Noto Sans;
 % load biblatex after it
 \usepackage[biblatex]{wakaru}
 \usetikzlibrary{arrows.meta}
@@ -147,7 +147,7 @@ partition and by output contribution (\texttt{splitting.py},
 partitions (\texttt{langprobe.py}, \texttt{headlang.py});
 \item steering efficacy and collateral in decoded text and in embedding
 space (\texttt{steerfid.py}, \texttt{steerembed.py},
-\texttt{steergeom.py}), along with additivity of paired head interventions
+\texttt{steergeom.py}), along with the additivity of paired head interventions
 (\texttt{compose.py}); and
 \item automated interpretability detection (\texttt{autointerp.py}).
 \end{itemize}
@@ -159,9 +159,9 @@ space (\texttt{steerfid.py}, \texttt{steerembed.py},
 \section*{Reproducibility}
 
 % sloppypar: the paragraph is mostly unbreakable script names, so its lines
-% are set loose (five underfull warnings) rather than into the margin
+% are set loose rather than into the margin
 \begin{sloppypar}
-All code is available at \texttt{https://github.com/WakaruLabs/ontologize}.
+All of the code is available at \texttt{https://github.com/\allowbreak WakaruLabs/ontologize}.
 The core evaluation protocols are implemented as root-level scripts
 (\texttt{sae.py}, \texttt{pareto.py}, \texttt{headstruct.py},
 \texttt{headcoh.py}, \texttt{splitting.py}, \texttt{textfid.py},

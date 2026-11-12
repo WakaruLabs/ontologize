@@ -2,9 +2,9 @@
 
 The palette is the Wakaru branding kit's, as latex/wakaru.sty names it:
 black, the brand pink and its darker shade, and tints of the pink on
-white. Flat, no gridlines, left+bottom spines, serif text with mono tick
-labels and sans eyebrows over the panels, in the documents' own fonts
-(texfonts.py). Figures are drawn at the
+white. Flat, no gridlines, left+bottom spines, Noto Sans text with mono
+tick labels and semibold eyebrows over the panels, in the documents' own
+fonts (texfonts.py). Figures are drawn at the
 text width, 6in, so they are included unscaled and their type is at its
 stated size. PINK is the color of plotted data and PINKDARK of eyebrows, bars
 and the dark end of the sequential scales: the darker shade is the one
@@ -40,7 +40,7 @@ PREVIEW = os.path.join(os.path.dirname(os.path.abspath(__file__)), "preview")
 os.makedirs(PREVIEW, exist_ok=True)
 
 plt.rcParams.update({
-    "font.family": "serif",
+    "font.family": "sans-serif",
     "font.size": 8.5,
     "axes.labelsize": 8.5,
     "axes.titlesize": 8.5,
@@ -250,7 +250,7 @@ save(fig, "fig-seed")
 
 VARIANTS = [
     ("diag_baseline_summary.csv", "control", INK, "-"),
-    # the arrow is math, as in the documents: Noto Serif has none
+    # the arrow is math, as it is in the documents
     ("diag_slow_anneal_summary.csv", r"anneal 50k$\to$150k", PINK, "-"),
     ("diag_drop_ramp_summary.csv", r"dropout 0.1$\to$0.25", PINK50,
      (0, (4, 2))),
@@ -1082,7 +1082,7 @@ b.set_ylim(0.5, 3.3)
 eyebrow(b, "on each layer's own input")
 for ax in (a, b):
     mono_axes(ax)
-a.tick_params(axis="y", labelfontfamily="serif", labelsize=6.8)
+a.tick_params(axis="y", labelfontfamily="sans-serif", labelsize=6.8)
 handles = [Line2D([], [], ls="none", color=c, marker=m, ms=4.2, **RING)
            for c, m in (MOD_STYLE["Ontologizer"],
                         MOD_STYLE["Matryoshka, trained heads"],

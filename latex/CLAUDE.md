@@ -85,11 +85,10 @@ bibliography changes page breaks; cut that back to one and `\ref`s to figures go
 Toolchain is **pdflatex + biber/biblatex** (`backend=biber,style=numeric,sorting=none`).
 The house style is `wakaru.sty`, loaded as `\usepackage[biblatex]{wakaru}` so it
 does not pull in natbib; biblatex must load after it. The style already loads geometry,
-hyperref, xcolor, graphicx, array, booktabs, amsmath, tikz, mdframed, listings, notomath
-(and through it newtxmath) and the Noto fonts, so do not load those again (geometry and
-hyperref with other options are an option clash) and do not add amssymb, whose symbols
-clash with newtxmath's. It also provides the author block's `\mutedlabel` and the
-optional `\eyebrow` and `\runningtitle`.
+hyperref, xcolor, graphicx, booktabs, amsmath, tikz, mdframed, listings, the newpx fonts
+and Noto Sans, so do not load those again (geometry and hyperref with other options are
+an option clash) and do not add amssymb, whose symbols clash with newpxmath's. It also
+provides the author block's `\mutedlabel` and the optional `\eyebrow` and `\runningtitle`.
 
 `wakaru.sty` is Wakaru's branding (branding kit 0.1.1). It holds:
 - the kit's colors;
@@ -98,16 +97,24 @@ optional `\eyebrow` and `\runningtitle`.
 - the kit's box (a black border with a hard shadow merged into it, rounded corners) for
   the masthead, the abstract, `wakaruquote` and the folio.
 
-Its text is Noto Serif, and its headings, labels, chips and table column heads are Noto
-Sans, both at 0.9 of the math's size, with lining figures. Math is notomath, which is
-newtxmath with Noto's letters (`noto` and `notomath` in `flake.nix`). Code is Plex Mono,
-or Noto Sans Mono under `[noto]`. The typewriter face loads before notomath, so `\mathtt`
-(the `\txtop` operators in `vars.tex`) is the same face as `\texttt`.
+Its text, headings, labels, chips and table column heads are all Noto Sans (`noto` in
+`flake.nix`), at scale 0.9 with lining figures. Math is newpx, which is Palatino, with
+TeX Gyre Pagella for `\mathrm`, `\mathbf` and the operators. Code is Plex Mono, or Noto
+Sans Mono under `[noto]`.
 
-The column heads are set by a hook on array's cell builder (`\insert@column`): Noto Sans
-from `\toprule` to the next `\midrule` or `\bottomrule`. So a table's head row needs no
-markup, and every booktabs table must have a `\midrule` under its head, or its whole
-body goes into sans.
+Load order sets the math alphabets: newpxmath takes `\mathrm`, `\mathit` and `\mathbf`
+from the roman face, `\mathsf` from the sans and `\mathtt` from the typewriter, each as
+it stands when newpxmath loads. The order is:
+1. the typewriter face;
+2. Noto Sans;
+3. newpxtext, which installs its own sans and typewriter only where none is set, and
+   makes the roman Palatino;
+4. newpxmath.
+
+So `\mathsf` (the rank-3 tensors) is Noto Sans, and `\mathtt` (the `\txtop` operators
+in `vars.tex`) is the same face as `\texttt`. The style then sets `\familydefault` to the
+sans, which newpxtext leaves alone at the end of the preamble. `\rmfamily` remains
+Palatino, but nothing in the documents asks for it.
 
 Labels (`\wakarulabel`, `\mutedlabel`, the eyebrow and the date) are Noto Sans semibold,
 set as typed: write them in sentence case, since nothing uppercases them. The page
@@ -249,20 +256,19 @@ data, `PINKDARK` for eyebrows, bars and the dark end of sequential scales, their
 text width, so `width=\linewidth` includes them unscaled, and in the documents' fonts.
 `figures/texfonts.py` takes these from the flake's TeX distribution, through
 `nix develop`, once:
-- Noto Serif for text and for mathtext, as notomath takes Noto Serif's letters (STIX
-  supplies the symbols Noto Serif lacks);
-- Noto Sans for titles, eyebrows and panel letters;
+- Noto Sans for all text: labels, titles, eyebrows and panel letters (`font.family` is
+  sans-serif in both scripts);
+- TeX Gyre Pagella for mathtext, matching newpx's math (STIX supplies the symbols
+  Pagella lacks);
 - IBM Plex Mono.
 
-The Noto files are TrueType and are copied as they are; Plex is converted. Both are
-cached in the untracked `figures/preview/fonts/`. Where the fonts cannot be reached,
+Noto Sans is TrueType and is copied as it is; Pagella and Plex are converted. All of them
+are cached in the untracked `figures/preview/fonts/`. Where the fonts cannot be reached,
 texfonts.py falls back to matplotlib's defaults.
 
 Eyebrows (`eyebrow()` in `make_figs.py`) are set in Noto Sans semibold in `PINKDARK`,
-with no prefix. `letters()` finds them by their `gid` and sets the panel letters in bold
-Noto Sans. `anatomy.py` sets its block titles and panel letters in Noto Sans too. Noto
-Serif has no arrows, so an arrow in figure text is mathtext (`$\to$`), as it would be in
-the documents.
+with no prefix. `letters()` finds them by their `gid` and sets the panel letters in bold.
+An arrow in figure text is mathtext (`$\to$`), as it would be in the documents.
 `overview_diagram.png`, the brief's figure, is a raster copied from the `headline`
 branch's `docs/`, with its blue highlight remapped to the kit's iris. The proposal uses
 only `figures/fig-teaser.pdf`. The CSVs are copied out of `../data/out` by
