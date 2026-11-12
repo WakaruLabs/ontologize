@@ -86,7 +86,7 @@ Toolchain is **pdflatex + biber/biblatex** (`backend=biber,style=numeric,sorting
 The house style is `wakaru.sty`, loaded as `\usepackage[biblatex]{wakaru}` so it
 does not pull in natbib; biblatex must load after it. The style already loads geometry,
 hyperref, xcolor, graphicx, booktabs, amsmath, tikz, mdframed, listings, the newpx fonts,
-Noto Sans and IBM Plex Serif, so do not load those again (geometry and hyperref with other options are
+IBM Plex and mathastext, so do not load those again (geometry and hyperref with other options are
 an option clash) and do not add amssymb, whose symbols clash with newpxmath's. It also
 provides the author block's `\mutedlabel` and the optional `\eyebrow` and `\runningtitle`.
 
@@ -99,35 +99,46 @@ provides the author block's `\mutedlabel` and the optional `\eyebrow` and `\runn
 
 Its text is IBM Plex Serif (`plex` in `flake.nix`): paragraphs, the abstract, captions,
 tables and their column heads, footnotes and the bibliography. The title, author block,
-headings, labels, chips, running head, folio and theorem heads are Noto Sans (`noto`).
-Both are at scale 0.9 with lining figures, which puts their x-heights near the math
-letters'. Math is newpx, which is Palatino, with TeX Gyre Pagella for `\mathrm`,
-`\mathbf` and the operators, so a variable is told from the text around it by its face,
-italic text included. A number set in math is Palatino and the same number set as text is
-Plex Serif. Code is Plex Mono, or Noto Sans Mono under `[noto]`.
+headings, labels, chips, running head, folio and theorem heads are IBM Plex Sans. Both
+are at scale 0.9 with lining figures. Code is Plex Mono, or Noto Sans Mono under
+`[noto]`.
 
-Load order sets the math alphabets: newpxmath takes `\mathrm`, `\mathit` and `\mathbf`
-from the roman face, `\mathsf` from the sans and `\mathtt` from the typewriter, each as
-it stands when newpxmath loads. The order is:
+Math is in two faces. Its Latin letters (the text's italic), digits and operator names,
+with `\mathrm`, `\mathit` and `\mathbf`, are Plex Serif, set by `mathastext` (in
+`flake.nix` by name); a number reads the same in math and in text, and a variable is
+the same letter as the italic text beside it. Its Greek, signs, punctuation, delimiters,
+big operators, `\mathbb` and `\mathcal` are newpx, which is Palatino: pdflatex has no
+Plex math font, so these cannot follow. `\boldsymbol` Greek is Palatino bold. The 0.9
+scale keeps Plex's x-height near the Palatino Greek's.
+
+Load order sets the math alphabets. The order is:
 1. the typewriter face;
-2. Noto Sans;
+2. Plex Sans;
 3. newpxtext, which installs its own sans and typewriter only where none is set, and
    makes the roman Palatino;
-4. newpxmath;
-5. Plex Serif, after the math has taken its roman.
+4. newpxmath, which takes `\mathsf` from the sans and `\mathtt` from the typewriter as
+   they stand;
+5. Plex Serif;
+6. mathastext, as `[italic, defaultmathsizes, basic]`, which takes the letters, digits
+   and upright, italic and bold alphabets from the text face as it stands. `basic`
+   leaves every sign and delimiter to newpx.
 
-So `\mathsf` (the rank-3 tensors) is Noto Sans, and `\mathtt` (the `\txtop` operators
+So `\mathsf` (the rank-3 tensors) is Plex Sans, and `\mathtt` (the `\txtop` operators
 in `vars.tex`) is the same face as `\texttt`. newpxtext makes the roman Palatino again
 at the end of the preamble, so loading `plex-serif` alone changes nothing: the style
 saves Plex Serif's `\rmdefault` and puts it back at `\begin{document}`. `\rmfamily` and
-`\normalfont` are therefore Plex Serif, and Palatino appears only in math. Without the
-`plex` package the text falls back to Palatino.
+`\normalfont` are therefore Plex Serif. Without the `plex` package the text and the math
+fall back to Palatino and the sans to Noto Sans, the kit's own face.
 
-Plex Serif sets wider than Noto Sans did, and a line that ends before an unbreakable
-script name can come up loose where it did not; the fix is the one under "Tables that
-would run wide" below.
+A text italic is not spaced for math. Its `f` reaches left of its box, so the style puts
+1.5mu before every math `f` (`\MTsetmathskips`); a skip after a letter would open a gap
+before its subscript, so there is none. mathastext makes letters active in math to do
+this, which a bare `x_f` survives.
 
-Labels (`\wakarulabel`, `\mutedlabel`, the eyebrow and the date) are Noto Sans semibold,
+Plex Serif sets wider than a sans, and a line that ends before an unbreakable script
+name can come up loose; the fix is the one under "Tables that would run wide" below.
+
+Labels (`\wakarulabel`, `\mutedlabel`, the eyebrow and the date) are Plex Sans semibold,
 set as typed: write them in sentence case, since nothing uppercases them. The page
 furniture:
 - caption labels are `\wakaruchip`s, white on black;
@@ -264,13 +275,13 @@ Result figures are PDFs in `figures/`, drawn by `figures/make_figs.py` from the 
 data, `PINKDARK` for eyebrows, bars and the dark end of sequential scales, their tints,
 `INK`); `../anatomy.py` restates it for the two anatomy figures, which redraw with
 `--replot` from the npz under each run's `anatomy/`. Figures are drawn 6in wide, the
-text width, so `width=\linewidth` includes them unscaled, and in the documents' fonts.
-`figures/texfonts.py` takes these from the flake's TeX distribution, through
-`nix develop`, once:
+text width, so `width=\linewidth` includes them unscaled. Their fonts are the ones the
+documents had before Plex, so a figure's labels are Noto Sans under a Plex caption and
+its math is Pagella. `figures/texfonts.py` takes these from the flake's TeX distribution,
+through `nix develop`, once:
 - Noto Sans for all text: labels, titles, eyebrows and panel letters (`font.family` is
   sans-serif in both scripts);
-- TeX Gyre Pagella for mathtext, matching newpx's math (STIX supplies the symbols
-  Pagella lacks);
+- TeX Gyre Pagella for mathtext (STIX supplies the symbols Pagella lacks);
 - IBM Plex Mono.
 
 Noto Sans is TrueType and is copied as it is; Pagella and Plex are converted. All of them
@@ -506,7 +517,7 @@ Code identifiers keep their names (`tags()`, `decode_tags.py`, `forward="labels"
   (`\texttt{ste\_h76\_init01}`). Command-line flags are typed as they are
   (`\texttt{--trained-groups}`): `wakaru.sty` turns off the `--` ligature in
   typewriter text, which Plex Mono would otherwise set as an en dash. Labels
-  (`\mutedlabel`, `\wakarulabel`, `\eyebrow`) are set in Noto Sans, where `--` is an
+  (`\mutedlabel`, `\wakarulabel`, `\eyebrow`) are set in Plex Sans, where `--` is an
   en dash again; write `\textendash{}` there, which is right either way. Labels are
   set as typed, so write them in sentence case.
 - Every comparison states its null or control; a result without a null of the same shape

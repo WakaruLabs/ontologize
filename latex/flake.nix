@@ -16,7 +16,7 @@
               algorithm2e ifoddpage relsize
               biblatex biber logreq
               bera plex noto notomath
-              newpx newtx kastrup fontaxes
+              newpx newtx kastrup fontaxes mathastext
               mdframed zref needspace
               titlesec
               units
