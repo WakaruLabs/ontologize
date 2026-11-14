@@ -275,7 +275,7 @@ def draw(z: dict, coords: int, pdf: Path, png: Path):
     texfonts.use()
 
     plt.rcParams.update({
-        "font.family": "serif", "font.size": 7.5, "axes.titlesize": 7.5,
+        "font.family": "sans-serif", "font.size": 7.5, "axes.titlesize": 7.5,
         "xtick.labelsize": 6.5, "ytick.labelsize": 6.5,
         "axes.edgecolor": INK, "axes.labelcolor": INK, "text.color": INK,
         "xtick.color": INK, "ytick.color": INK, "axes.linewidth": 0.6,
@@ -349,7 +349,8 @@ def draw(z: dict, coords: int, pdf: Path, png: Path):
             lefts[ax] = min(pos.x0, t[0, 0]) if ax.get_title() else pos.x0
         for ax, ch, row in lettered:
             fig.text(lefts[ax] - 0.01, tops[row], ch, fontsize=9,
-                     fontweight="bold", color=INK, ha="right", va="top")
+                     fontweight="bold", fontfamily="sans-serif", color=INK,
+                     ha="right", va="top")
 
     # p_bar strip
     ax_u = fig.add_subplot(top[0, 0])

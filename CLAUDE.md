@@ -368,7 +368,10 @@ uv run python entrydrift.py -h # (layer, head, entry) x condition heatmap: usage
                                # refuses independent seeds)
 uv run python bilinspec.py -h  # classifier geometry from weights only: |cos(w,v)|,
                                # eigen-spectrum and resid_const odd share per feature,
-                               # per layer and vs step
+                               # per layer and vs step; per head, the share of the
+                               # forms in their head-mean form, which the assignment
+                               # cannot see, and whether centering keeps each
+                               # feature's dominant-eigenvalue sign
 uv run python selection.py -h  # held-out noise2self partition score vs a sweep key
                                # with unpartitioned + size-matched random baselines
                                # drawn; --grid ROW COL = pareto.py's FVU over a grid;

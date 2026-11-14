@@ -3688,6 +3688,21 @@ eigenvalue negative ("neg-dom"), median odd share, median rho_w:
   depends on how inputs align with w_s, which this script does not
   measure. Sign-blindness of `resid_nc`'s rank-1 layers is therefore
   broken by the constant at least for weakly aligned inputs.
+- **The per-feature statistics describe what the assignment sees**
+  (2026-11-14, rerun at the same eight steps; the earlier columns are
+  unchanged). A head's softmax or argmax ignores a form common to all its
+  entries, so the head-mean form never reaches the code. Its share of the
+  entries' squared Frobenius norm is at 1/k = 0.0312 for independent forms:
+  - per-layer medians at the final checkpoint are 0.0313–0.0320 in both
+    stacks, except `resid_nc` layer 0 at 0.0380;
+  - the largest single head is 0.069 (`resid_nc` L0) and 0.067
+    (`ste_h76_init01` L0).
+
+  Centering on it keeps the dominant eigenvalue's sign for 98.9–100% of
+  features. Exact neg-dom at the final checkpoint: `resid_nc` 63.3–98.6%,
+  `ste_h76_init01` 97.9–99.9% (the table rounds). The question comes from
+  Bento (arXiv:2611.12206), whose weights-only invariant of an attention
+  head is likewise blind to a shift common to all logits.
 - One seed per run; weights only, no data.
 
 Outputs: `<run>/bilinspec/` (`bilin_ecdf.png`, `bilin_steps.png`,

@@ -111,6 +111,45 @@ def test_feature_stats_const_split():
     assert abs(st["cos_full"][0, 0]) < 1
 
 
+def test_head_stats_against_dense_forms():
+    # the Gram identity and the factor-span eigenproblem against the
+    # explicit (d x d) forms; d < 2k exercises a span that fills R^d
+    rng = np.random.default_rng(5)
+    for h, k, d in ((2, 4, 9), (1, 6, 7)):
+        Wc = rng.normal(size=(2, h, k, d))
+        st = bilinspec.head_stats(Wc, d)
+        for i in range(h):
+            B = np.stack([sym(Wc[0, i, j], Wc[1, i, j]) for j in range(k)])
+            Bbar = B.mean(0)
+            ref = (Bbar ** 2).sum() / (B ** 2).sum((1, 2)).mean()
+            assert st["common"][i] == pytest.approx(ref, rel=1e-10)
+            want = (bilinspec.dominant_sign(B)
+                    == bilinspec.dominant_sign(B - Bbar))
+            np.testing.assert_array_equal(st["kept"][i], want)
+
+
+def test_head_stats_common_share():
+    rng = np.random.default_rng(6)
+    h, k, d = 3, 16, 400
+    Wc = rng.normal(size=(2, h, k, d))
+    # head 0: every entry is one shared pair plus small noise
+    w0, v0 = rng.normal(size=(2, d))
+    Wc[0, 0] = w0 + 0.05 * Wc[0, 0]
+    Wc[1, 0] = v0 + 0.05 * Wc[1, 0]
+    st = bilinspec.head_stats(Wc, d)
+    assert st["common"][0] > 0.95
+    # independent forms: the mean carries about 1/k of the energy
+    np.testing.assert_allclose(st["common"][1:], 1 / k, rtol=0.2)
+    assert st["kept"][1:].mean() > 0.9
+    # the constant coordinate is excluded, as in feature_stats
+    Wc2 = np.concatenate([Wc, rng.normal(size=(2, h, k, 1)) * 100], -1)
+    np.testing.assert_allclose(bilinspec.head_stats(Wc2, d)["common"],
+                               st["common"])
+    s = bilinspec.summarize_heads(st)
+    assert s["common_max"] == pytest.approx(st["common"][0])
+    assert s["common_med"] == pytest.approx(np.median(st["common"]))
+
+
 def test_pick_steps():
     steps = list(range(10000, 1000001, 10000))
     got = bilinspec.pick_steps(steps, 5)

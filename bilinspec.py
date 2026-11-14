@@ -50,6 +50,18 @@ break sign-blindness, so it is scored separately:
              |t| > rho_w. Data-free; which regime real inputs sit in is
              a question about their alignment with w_s.
 
+Per head, what its assignment can see of these forms. A softmax or
+argmax over a head's k logits is unchanged by adding one form to all k,
+so the head-mean form Bbar = mean_k B_k never reaches the code and only
+B_k - Bbar does. Two statistics test whether the per-feature ones above
+describe a part the code ignores (semantic block):
+  common     ||Bbar||_F^2 / mean_k ||B_k||_F^2: 1/k for independent
+             forms, 1 when every entry has the same form
+  kept       whether the dominant eigenvalue of B_k - Bbar has the sign
+             of B_k's own, per (head, entry)
+The centered forms have rank up to 2k, so they are diagonalized in the
+span of the head's 2k factors, where all of them live.
+
 Eigenvectors live in the classifier-input space (the residual basis for
 layers >= 1); nothing here is projected back to text.
 
@@ -70,7 +82,8 @@ the first and last (0 = every saved step). The last chosen step is the
   bilin_steps.png   median and IQR per layer against step
   bilin_heads.png   layer x head median |cos| and median odd share
   bilinspec.npz     per step: signed cos (semantic and full input), odd
-                    share and |w||v| for every (layer, head, entry)
+                    share, |w||v| and `kept` for every (layer, head,
+                    entry), and `common` for every (layer, head)
   bilinspec.csv     per (step, layer) summary
 --replot redraws from bilinspec.npz without the checkpoint. NOTE:
 Ontologizer checkpoints restore on GPU JAX only.
@@ -197,6 +210,41 @@ def feature_stats(Wc: Float[np.ndarray, "2 h k D"], d_sem: int,
                 "scale": nw * nv}
 
 
+def dominant_sign(C: Float[np.ndarray, "... r r"]) -> Float[np.ndarray, "..."]:
+    """Sign of the largest-|lambda| eigenvalue of each symmetric matrix."""
+    lam = np.linalg.eigvalsh(C)
+    i = np.abs(lam).argmax(-1)
+    return np.sign(np.take_along_axis(lam, i[..., None], -1)[..., 0])
+
+
+def head_stats(Wc: Float[np.ndarray, "2 h k D"], d_sem: int
+               ) -> Dict[str, np.ndarray]:
+    """Per head of one layer, the share of its entries' form energy in the
+    head-mean form (`common`, shape (h,)), and per (head, entry) whether
+    centering on that mean keeps the dominant eigenvalue's sign (`kept`,
+    (h, k), 1.0 or 0.0); see the module docstring. Uses
+    <B_a, B_b>_F = ((w_a.w_b)(v_a.v_b) + (w_a.v_b)(v_a.w_b)) / 2."""
+    W = Wc[0, ..., :d_sem].astype(np.float64)
+    V = Wc[1, ..., :d_sem].astype(np.float64)
+    h, k, _ = W.shape
+    WW = np.einsum("hkd,hjd->hkj", W, W)
+    VV = np.einsum("hkd,hjd->hkj", V, V)
+    WV = np.einsum("hkd,hjd->hkj", W, V)  # [a, b] = w_a . v_b
+    G = (WW * VV + WV * WV.transpose(0, 2, 1)) / 2  # (h, k, k) Gram
+    with np.errstate(invalid="ignore", divide="ignore"):
+        common = G.sum((1, 2)) / (k * np.trace(G, axis1=1, axis2=2))
+    kept = np.empty((h, k))
+    for i in range(h):
+        # orthonormal basis of the head's factors; every B_k and Bbar is
+        # Q C Q' with C (r, r), r <= 2k, and has C's nonzero eigenvalues
+        Q, _ = np.linalg.qr(np.concatenate([W[i], V[i]]).T)
+        A, Bv = W[i] @ Q, V[i] @ Q
+        C = (A[:, :, None] * Bv[:, None, :]
+             + Bv[:, :, None] * A[:, None, :]) / 2
+        kept[i] = dominant_sign(C) == dominant_sign(C - C.mean(0))
+    return {"common": common, "kept": kept}
+
+
 def pick_steps(steps: Sequence[int], n: int) -> List[int]:
     """n of the sorted saved steps, spaced geometrically in step between
     the first and last (each target snaps to the nearest saved step, so
@@ -225,6 +273,15 @@ def summarize(st: Dict[str, Float[np.ndarray, "h k"]]) -> Dict[str, float]:
             "rho_w_med": _nanmed(st["rho_w"]),
             "rho_v_med": _nanmed(st["rho_v"]),
             "abscos_full_med": float(np.median(np.abs(st["cos_full"])))}
+
+
+def summarize_heads(hs: Dict[str, np.ndarray]) -> Dict[str, float]:
+    """One layer's summary of its `head_stats`: the median and largest
+    common share over heads, and the share of features whose dominant
+    eigenvalue keeps its sign when centered."""
+    return {"common_med": _nanmed(hs["common"]),
+            "common_max": float(np.nanmax(hs["common"])),
+            "kept": float(hs["kept"].mean())}
 
 
 # ---------- checkpoint ----------
@@ -455,10 +512,15 @@ def main():
 
     per = [[feature_stats(W, *lay) for W, lay in zip(Ws[st], layout)]
            for st in steps]
+    heads = [[head_stats(W, lay[0]) for W, lay in zip(Ws[st], layout)]
+             for st in steps]
     arr = {key: np.stack([np.stack([f[key] for f in fs]) for fs in per])
            for key in per[0][0]}  # each (s, l, h, k)
+    for key in heads[0][0]:  # common (s, l, h), kept (s, l, h, k)
+        arr[key] = np.stack([np.stack([f[key] for f in fs]) for fs in heads])
     out.mkdir(parents=True, exist_ok=True)
-    rows = [{"step": st, "layer": L, **summarize(per[j][L])}
+    rows = [{"step": st, "layer": L, **summarize(per[j][L]),
+             **summarize_heads(heads[j][L])}
             for j, st in enumerate(steps) for L in range(spec["l"])]
     with open(out / "bilinspec.csv", "w", newline="") as f:
         wr = csv.DictWriter(f, fieldnames=list(rows[0]))
@@ -471,7 +533,10 @@ def main():
               f"neg-dominant {r['frac_negdom']:.0%}, odd share median "
               f"{r['odd_med']:.3f}, rho_w/rho_v median {r['rho_w_med']:.3f}/"
               f"{r['rho_v_med']:.3f}, |cos| over full input "
-              f"{r['abscos_full_med']:.3f}")
+              f"{r['abscos_full_med']:.3f}; head-mean form's share median "
+              f"{r['common_med']:.4f} (max {r['common_max']:.4f}, "
+              f"1/k = {1 / spec['k']:.4f}), sign kept when centered "
+              f"{r['kept']:.4f}")
     z = dict(arr, steps=np.asarray(steps), run=Path(cfg.ckpt).name,
              has_const=np.asarray([c for _, c in layout]),
              d_sem=np.asarray([d for d, _ in layout]))

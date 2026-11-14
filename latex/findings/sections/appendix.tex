@@ -1114,7 +1114,15 @@ coordinate) without requiring input data, reporting per layer the median
 and quartiles of $\lvert\cos\angle\rvert$, the fraction of entries whose
 dominant eigenvalue is negative, and the norm of the constant coordinate's
 weight relative to the rest of $\mathbf{w}$. These closed-form spectra
-agree with dense eigendecompositions to $10^{-14}$.
+agree with dense eigendecompositions to $10^{-14}$. A softmax or argmax
+over a head's $k$ logits is unchanged when the same form is added to all of
+them, so the head-mean form, the mean of its entries' $B$, never reaches
+the assignment. Per head, \texttt{bilinspec.py} also reports that mean's
+share of the entries' squared Frobenius norm ($1/k$ for independent forms,
+$1$ when every entry has the same form), and the fraction of entries whose
+dominant eigenvalue keeps its sign once the mean is subtracted. The
+centered forms are diagonalized in the span of the head's $2k$ factors,
+where all of them lie.
 
 \paragraph{Assignment maps (\texttt{assignmap.py}).}
 To inspect sample-level assignments directly, we draw a
@@ -4168,11 +4176,17 @@ starts at the random floor, with the softmax stack departing between 30k
 and 50k steps as temperature annealing finishes, and the hard-code stack
 departing only after 80k steps in layer 0 and 220k steps in layers 3--4
 (with layers 1--2 exceeding $0.05$ only at the final checkpoint). The
-dominant eigenvalue is negative for 63--98\% of features in the softmax
-stack and 97--99\% in the hard-code stack, meaning that a rank-1 feature
-takes its largest values where the input is orthogonal to $\mathbf{w}$
-rather than aligned with it---implementing the quadratic invariances that
-bilinear layers learn in place of constants~\cite{pearce2025}. Finally, the
+dominant eigenvalue is negative for 63.3--98.6\% of features in the
+softmax stack and 97.9--99.9\% in the hard-code stack, meaning that a
+rank-1 feature takes its largest values where the input is orthogonal to
+$\mathbf{w}$ rather than aligned with it---implementing the quadratic
+invariances that bilinear layers learn in place of
+constants~\cite{pearce2025}. These statistics describe forms the
+assignment uses. The head-mean form, which it cannot see, carries a median
+3.1--3.8\% of the entries' squared Frobenius norm per layer in both stacks,
+against $1/k$, or 3.1\%, for independent forms, and subtracting it leaves
+the dominant eigenvalue's sign unchanged for at least 98.9\% of features.
+Finally, the
 constant coordinate can break the sign symmetry of a rank-1 feature for
 inputs weakly aligned with $\mathbf{w}$: across layers 1--4, its weight
 magnitude equals $0.18$--$0.24$ of the norm of the remaining coordinates of
