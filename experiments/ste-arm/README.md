@@ -62,7 +62,9 @@ does.
 | where the code's capacity goes, per prefix and per head | `codeuse.py` |
 | what the per-layer gain carries outside the code | `gainablate.py` |
 | what the residual cascade contributes (blend toward unpaired references) | `blendablate.py` |
+| where the held-out error sits over the whitened eigenbasis, per layer prefix, beside reverse water-filling at its rate, and what a per-direction rescaling of the reconstruction would remove; SAEs unquantized | `errspectrum.py` |
 | how concentrated each classifier's input is | `inputgeom.py` |
+| whether each head's cells are convex (means of 2, 8, 32 and all of an entry's rows keep the entry) and whether it ignores its input's sign, against random-projection heads | `cellshape.py` |
 | what the final layer contributes | `lastlayer.py` |
 | each model's error per coordinate, on the coordinates the MSE weights most against the median coordinate, and how far each moves between checkpoints; SAEs and Ontologizers | `coordfvu.py` |
 | one coordinate's error over a run's checkpoints, how the parameters that write it move, and its share of the residual each layer classifies | `coordtrace.py` |
@@ -156,6 +158,18 @@ uv run python experiments/ste-arm/logitscale.py \
 uv run python experiments/ste-arm/steerembed.py \
     --model data/out/sonar/multilingual/ste_h76_init01 --step 369500 \
     --temperature 0.00015 --out data/out/sonar/steerembed_null/ste_h76_init01
+
+# the pure code's error over the whitened spectrum against water-filling,
+# with the converged k160 SAE beside it (CPU, about a minute)
+JAX_PLATFORMS=cpu uv run python experiments/ste-arm/errspectrum.py \
+    --ckpt data/out/sonar/multilingual/ste_h76_init01 \
+    --sae data/out/sonar/sae_conv/m11264_k160 --sae-topk 160
+
+# cell convexity and sign-blindness per layer, each checkpoint as
+# dir:temperature (CPU, about five minutes for both)
+JAX_PLATFORMS=cpu uv run python experiments/ste-arm/cellshape.py \
+    --ckpt data/out/sonar/multilingual/ste_h76_init01:0.00015 \
+           data/out/sonar/multilingual/resid_nc:0.03
 ```
 
 Analyses default to the SONAR cache; pass `--cache data/activations/gpt2_l8.npy`

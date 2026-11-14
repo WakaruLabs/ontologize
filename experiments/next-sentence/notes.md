@@ -776,3 +776,73 @@ floor is `--min-rows 1000`, as for 42–43: 84 languages, 260,453 of the last 26
 - **Decorrelating the slow block is now a precondition for head-level identifiability**, not only for
   coverage of the spectrum. The test is this table: the matched-minus-any-pairing gap, the margin and
   the cycle share should rise, and within-seed NMI should fall, at matched block-level agreement.
+
+## 2026-11-14: closure (`closure.py`): the slow heads carry their own future far better than other heads, but are not closed
+
+**Why.** Seed agreement asks whether two runs found the same head. Rosas (2026, *Science Advances*)
+gives a criterion a run's head can meet alone: a coarse-graining is informationally closed when its
+own past predicts its future as well as the micro past does. One step ahead, with the head's entry z
+a function of the sentence embedding x, the gap is I(x_t; z_t+1 | z_t), zero for a closed head.
+
+**Method.** Per head, the held-out cross-entropy of z_t+1 under a transition table on z_t, minus that
+under a softmax probe on z_t and the standardized x_t, started at the table. Per head, the probe's L2
+penalty (1e-4 to 1e-1), or the table alone, is chosen on a document-held-out tenth of the fit pairs.
+- **Fit:** the 321,161 adjacent pairs in rows 4.0M–4.4M of `mc4_sent16`, which no pair run trained on
+  (`train_pair.py --rows` keeps its pairs below 4M).
+- **Test:** the 26,335 adjacent pairs of the held-out tail (32,771 rows snapped to whole documents,
+  2,673 documents). Standard errors from 500 document bootstraps.
+- **Groups:** each run's slow heads (the first 38) and 38 drawn from the rest, at step 46,250; 38
+  random-projection heads with k = 32; and the top 38 SFA directions (`sfa_dir.npz`, `doc_plain`),
+  each cut into 32 equal-count bins.
+
+| Group | Keep | I(z_t; z_t+1) | I(x_t; z_t+1) | Gap (bits) | Gap share |
+|---|---|---|---|---|---|
+| Fano s42, slow | 0.490 | 1.673 | 2.298 | 0.625 ± 0.006 | 27.2% |
+| Fano s43, slow | 0.484 | 1.658 | 2.277 | 0.619 ± 0.006 | 27.2% |
+| Fano s44, slow | 0.487 | 1.661 | 2.287 | 0.626 ± 0.006 | 27.4% |
+| Fano s42 / s43 / s44, rest | 0.095–0.096 | 0.074–0.075 | 0.256–0.257 | 0.181–0.183 | 70.7–71.3% |
+| control, heads 0–37 | 0.097 | 0.076 | 0.264 | 0.188 ± 0.004 | 71.1% |
+| control, rest | 0.095 | 0.071 | 0.250 | 0.178 ± 0.004 | 71.5% |
+| random projection | 0.102 | 0.084 | 0.299 | 0.215 ± 0.004 | 71.9% |
+| SFA top 38, binned | 0.097 | 0.501 | 0.506 | 0.004 ± 0.0003 | 0.8% |
+
+"Gap share" is the gap over I(x_t; z_t+1), summed over the group's heads. Per head, the slow heads'
+shares run 24–31% and every other model group's 66–75%. The informations are lower bounds (held-out
+cross-entropies of fitted predictors). The probe beat the table on validation for every model head;
+the table was kept for 22 of the 38 SFA bins.
+
+**Readings.**
+- **The slow heads are much nearer closure than anything else the models learned.** Their own entry
+  carries 1.66–1.67 bits about the next one, and the embedding adds 0.62–0.63 bits: 27% of what x_t
+  says about z_t+1 is outside z_t. Every other head, in the Fano runs and the control alike, carries
+  0.07–0.08 bits and misses 71%, the same as random projections. The three seeds agree to within
+  0.2 points of share.
+- **They are not closed.** 0.62 bits is a large gap in absolute terms, larger than the fast heads'
+  whole gap. A slow head's next entry depends on more of the sentence than its current entry.
+- **The SFA comparison is not like for like.** Binned SFA directions read almost closed (0.8%), but
+  SFA makes its directions' cross-sentence covariances diagonal, so a linear probe can find almost
+  nothing in the other directions by construction. They also carry far less about their own future
+  (0.50 bits against 1.66), at 32 bins of a continuous variable. What this table shows about SFA is
+  that a probe linear in x is the wrong instrument against it.
+- **Seed agreement and closure part ways here.** The slow block reproduces only as a block
+  (2026-11-10), yet each seed's slow heads are equally far from closure, head by head (per-head
+  shares 24–31%). That is consistent with each seed choosing a different but equally autonomous set
+  of variables, as Rosas's lattice of closed levels allows. It does not show it: a gap of 27% is not a
+  closed level.
+
+**Caveats.**
+- One step of past and future: the closure Rosas defines conditions on the whole past and predicts
+  every horizon.
+- The gap is a lower bound: the probe is linear in x_t, so a nonlinear dependence is missed.
+- The pair runs trained on two sentences of one document at segment distance ≥ 2; this scores adjacent
+  pairs.
+- One checkpoint per run.
+
+```bash
+L=data/out/sonar/next-sentence/long
+uv run python experiments/next-sentence/closure.py --ckpt $L/doc2_fano_sp1e-3_ph38 \
+    $L/doc2_fano_sp1e-3_ph38_s43 $L/doc2_fano_sp1e-3_ph38_s44 $L/doc2_sp0_ph38
+```
+
+Outputs: `data/out/sonar/next-sentence/closure/` (`summary.json` with per-head rows, `run.log`). Under
+a quarter of an hour on the GPU.

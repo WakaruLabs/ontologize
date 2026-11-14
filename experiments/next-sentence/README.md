@@ -61,12 +61,13 @@ reasoning.
 | `replica.sh` | another seed of `long.sh`'s two arms (default 44): waits for an idle GPU, trains one epoch and continues to three as seeds 42 and 43 were, then runs `seedmatch.py` between the new seed and each of 42 and 43 for both arms, with the within-language score. Runs as a systemd unit; the command is in its header |
 | `sfa.py` | linear slow-feature analysis, the slow heads' closed-form baseline: the directions along which two sentences of one document stay correlated. It is fitted on the training prefix's pairs, in expectation over `train_pair.py`'s draw, with and without each language's mean. On the held-out tail it scores each direction on `transitions.py`'s pair types and by language. `--ckpt` adds how much of the top directions each block of heads explains, and SFA on the block's own one-hot code |
 | `seedmatch.py` | cross-seed head matching split by block: `partition.py`'s Hungarian NMI match for the slow heads, the rest and the whole model, against a row-shuffled null; how often the whole-model match pairs slow with slow; whether the slow match is head by head or only block by block (`slow_specificity`: the matched NMI beside any pairing's, two slow heads of one seed, and the best partner's margin over the runner-up); with `--c`, the same against a third run and the share of slow matches that compose (a → b → c equal to a → c); and, with `--labels`, the slow pairs' NMI within each label beside a within-label shuffle |
+| `closure.py` | whether a head is an informationally closed level of the document process (Rosas 2026), one step ahead: per head, the held-out cross-entropy of its next entry given its current one (a transition table) minus that given the current entry and the whole embedding (a softmax probe started at the table), I(x_t; z_t+1 \| z_t). Fitted on adjacent pairs from rows no pair run trained on (4.0M–4.4M), scored on the held-out tail with a document bootstrap; groups: each checkpoint's first `--slow-heads` heads and a sample of the rest, random-projection heads, and the top SFA directions cut into k equal-count bins |
 | `train_next.py` | the trainer: `experiments/ste-arm/train_ste.py`'s flags, checks and setup (`parser`, `finish`, `setup`), with this experiment's defaults and a pair source |
 | `eval_next.py` | held-out FVU_w of each checkpoint against the next sentence and against the input, beside three baselines: the training mean, copying x_t, and ridge regression from x_t |
 | `transitions.py` | two checks a pair objective depends on, on the held-out tail. (1) How often each head of a trained model keeps its entry between two sentences: adjacent, d segments apart in one document, same language in another document, or random (Cohen's kappa, with each head's NMI with language). (2) How much closer adjacent sentences are than other pairs, with no model: whitened distance, cosine, AUC, and retrieval of the successor among negatives |
 
 `ontostate.train` accepts `(input, target)` tuple batches; any other batch is its own target. The
-tests are in `tests/test_next_sentence.py`.
+tests are in `tests/test_next_sentence.py`, and `closure.py`'s in `tests/test_closure.py`.
 
 ## Run
 
@@ -168,3 +169,12 @@ uv run python experiments/next-sentence/train_pair.py --s-pair <s>    # a full r
     0.18 of the time (2 × 0.1 × 0.9: dropout hits exactly one of the two sentences).
   - Under `fano`, that caps a perfectly slow head that uses every entry at about 0.69, not 1.
 - **Held out.** Its held-out counterpart is `transitions.py --slow-heads 38`.
+- **Closure.** `closure.py` asks more of a slow head than keeping its entry: whether its entry
+  predicts the next one as well as the whole embedding does. A run of the three Fano seeds and the
+  control takes about a quarter of an hour on the GPU:
+
+```bash
+L=data/out/sonar/next-sentence/long
+uv run python experiments/next-sentence/closure.py --ckpt $L/doc2_fano_sp1e-3_ph38 \
+    $L/doc2_fano_sp1e-3_ph38_s43 $L/doc2_fano_sp1e-3_ph38_s44 $L/doc2_sp0_ph38
+```

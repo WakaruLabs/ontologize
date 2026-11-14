@@ -796,8 +796,10 @@ where $\mathrm{NMI}(\mathbf{q}, \mathbf{q}') := 2I(\mathbf{q};\mathbf{q}')/
 (H(\mathbf{q})+H(\mathbf{q}'))$ under the empirical row distribution,
 $\bar{\boldsymbol{\phi}}_i$ is the row mean, and $\mathrm{vec}_n[\cdot]$
 concatenates per-row vectors across evaluation samples. Each matrix is
-matched one-to-one via the Hungarian algorithm to maximize summed
-similarity, and we report the mean over matched head pairs. A permutation
+matched one-to-one by the assignment that maximizes summed similarity
+(Hungarian matching~\cite{kuhn1955}, solved with SciPy's
+\texttt{linear\_sum\_assignment}), and we report the mean over matched
+head pairs. A permutation
 null repeats this matching after shuffling run~(2)'s rows, while a positive
 control matches a run against an earlier checkpoint from its own training
 trajectory. In addition, \texttt{headcontrib.py} decomposes each head's

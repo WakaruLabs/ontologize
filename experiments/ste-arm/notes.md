@@ -4360,6 +4360,136 @@ uv run python experiments/ste-arm/condrefit.py \
     --out data/out/sonar/condrefit/ste_h76_init01_l4_c3.json
 ```
 
+## Where the pure code's excess error sits (`errspectrum.py`): evenly, about 3x everywhere
+
+2026-11-14. The findings put the pure 1900-bit code (`ste_h76_init01`
+with every gain pinned to its held-out mean) about 3x above the Gaussian
+reference at its rate. A predictive coder loses most at low rates by
+coding the spectrum below the water level and adding noise there (Kim &
+Ramstad 2003; Andersen & Kleijn 1999), and the literature notes' Wiener
+shrinkage idea assumed that was the cost here. `errspectrum.py` splits the
+held-out error over the eigenbasis of the whitened covariance, each layer
+prefix at its own rate, against reverse water-filling's min(theta, lam_i)
+per direction. Rows: `mc4_4M`'s last 32,768. Gains pinned to their means
+on those rows (1, 0.583, 0.486, 0.413, 0.355).
+
+| prefix | bits | FVU_w | reference | ratio | effective bits | above water | e_i > lam_i | half: as is -> rescaled |
+|---|---|---|---|---|---|---|---|---|
+| layer 0 | 380 | 0.5370 | 0.4208 | 1.28 | 233 (61%) | 664 | 5 | 0.5368 -> 0.5355 |
+| 0-1 | 760 | 0.3748 | 0.2392 | 1.57 | 454 (60%) | 882 | 6 | 0.3746 -> 0.3728 |
+| 0-2 | 1140 | 0.2706 | 0.1408 | 1.92 | 674 (59%) | 976 | 6 | 0.2704 -> 0.2685 |
+| 0-3 | 1520 | 0.2000 | 0.0837 | 2.39 | 887 (58%) | 1007 | 6 | 0.1999 -> 0.1979 |
+| all | 1900 | 0.1582 | 0.0499 | 3.17 | 1056 (56%) | 1016 | 7 | 0.1580 -> 0.1561 |
+| k160 SAE, unquantized | | 0.2585 | | | 706 | | 1 | 0.2585 -> 0.2582 |
+
+"Effective bits" is the rate at which the reference reaches the code's
+FVU. At 1900 bits, by eigen-rank band (shares of the total):
+
+| ranks | variance | error | reference | error / reference | excess over reference |
+|---|---|---|---|---|---|
+| 1-8 | 11.3% | 0.9% | 0.8% | 3.57 | 0.9% |
+| 9-32 | 10.0% | 2.5% | 2.4% | 3.43 | 2.6% |
+| 33-128 | 19.8% | 10.1% | 9.4% | 3.42 | 10.5% |
+| 129-512 | 40.0% | 40.2% | 37.7% | 3.39 | 41.4% |
+| 513-1024 | 18.9% | 46.2% | 49.8% | 2.94 | 44.5% |
+
+Readings:
+- **The excess is spread evenly.** At 1900 bits every band's error is
+  2.9-3.6 times water-filling's, and the excess falls on the bands in the
+  proportions the reference's own error does. The code's error spectrum has
+  the shape water-filling wants, at three times the level.
+- **No noise injection.** Seven of 1024 directions have error above their
+  own variance, all among ranks 513-1024. The diagonal rescaling, fitted on
+  half the rows, takes the other half from 0.1580 to 0.1561 (1.2%), and its
+  median gain is 1.022: the reconstruction is slightly too small, not too
+  noisy. A Wiener post-filter is not worth building.
+- **A constant efficiency per layer.** Each prefix reaches 56-61% of its
+  nominal rate in Gaussian-reference terms; the layers add 233, 221, 220,
+  213 and 169 effective bits. The ratio to the reference rises with depth
+  because the reference curve steepens, not because later layers are
+  worse, except the last, which is.
+- **Low rates differ.** At 380 bits 360 directions are below water, and
+  layer 0 leaves them nearly as water-filling would (error / reference 0.92
+  in ranks 513-1024) while its excess sits in the top directions (3.4x in
+  ranks 1-8). With depth the excess moves down the spectrum.
+- **The SAE.** The converged k160 SAE, unquantized, has relatively less
+  error in ranks 513-1024 (37.6% against the code's 46.2%) and more in
+  129-512. Its rescaling gains nothing (median gain 0.978).
+
+One model, one seed, one cache tail.
+
+```bash
+JAX_PLATFORMS=cpu uv run python experiments/ste-arm/errspectrum.py \
+    --ckpt data/out/sonar/multilingual/ste_h76_init01 \
+    --sae data/out/sonar/sae_conv/m11264_k160 --sae-topk 160
+```
+
+Outputs: `data/out/sonar/errspectrum/` (`summary.json`, `directions.csv`,
+`run.log`).
+
+## Are the cells convex? (`cellshape.py`): the hard stack's are, the soft stack's layer 1 is not
+
+2026-11-14. A head whose logits are affine in its input cuts it into a
+power diagram, whose cells are convex (Aurenhammer 1991, §3.1); the
+random-projection heads of the steering null (`steerembed.py --model lsh`)
+are such heads, and their "own decode" steps between empirical cell
+centroids. The classifier here is bilinear, each logit a product of two
+linear forms of the shaped input, so a boundary is a quadric and a cell
+need not be convex. `cellshape.py` scores each head on its layer's own
+classifier input (the unit shape plus the constant coordinate): the share
+of means of 2, 8 and 32 random rows of an entry, and of all its rows, that
+keep the entry (each mean rescaled to its rows' norm, so on the sphere the
+classifier sees), and the share of rows whose negated shape keeps its
+entry. Rows: `mc4_4M`'s last 32,768; entries used by at least 32 rows; 16
+means of each size per entry. Means over heads; "all" is the share of heads
+that keep every centroid.
+
+| model | layer | entries | 2 rows | 8 | 32 | centroid | all | negation |
+|---|---|---|---|---|---|---|---|---|
+| random projection (76 heads) | | 32.0 | 1.000 | 1.000 | 1.000 | 1.000 | 100% | 0.000 |
+| `ste_h76_init01` | 0 | 32.0 | 0.967 | 0.980 | 0.978 | 0.981 | 62% | 0.011 |
+| | 1 | 32.0 | 0.993 | 1.000 | 1.000 | 1.000 | 100% | 0.001 |
+| | 2 | 32.0 | 0.993 | 1.000 | 1.000 | 1.000 | 100% | 0.002 |
+| | 3 | 32.0 | 0.989 | 1.000 | 1.000 | 1.000 | 100% | 0.003 |
+| | 4 | 32.0 | 0.927 | 0.988 | 0.999 | 0.998 | 95% | 0.041 |
+| `resid_nc` (T 0.03) | 0 | 29.0 | 0.996 | 1.000 | 1.000 | 1.000 | 100% | 1.000 |
+| | 1 | 29.9 | 0.975 | 0.804 | 0.360 | 0.172 | 0% | 0.000 |
+| | 2 | 26.2 | 0.997 | 0.997 | 0.983 | 0.971 | 53% | 0.000 |
+| | 3 | 23.8 | 0.999 | 1.000 | 1.000 | 1.000 | 100% | 0.001 |
+| | 4 | 3.9 | 1.000 | 1.000 | 1.000 | 1.000 | 100% | 0.869 |
+
+Readings:
+- **The hard stack's cells are convex at the scale of a centroid.** In
+  layers 1-3 every centroid and every mean of 8 or 32 rows keeps its entry;
+  layer 0 keeps 98%. Pairs fail more often than larger means (0.93-0.99):
+  a pair's midpoint sits near the boundary when its rows do, and the
+  quadric boundaries bend there. So for the stack in the steering table,
+  the random-projection heads' centroid swaps are a like-for-like null.
+- **The hard stack is not sign-blind.** Negating a row's shape keeps its
+  entry for 0.1-4% of rows; the constant coordinate's terms decide.
+- **The soft stack differs by layer.** Its layer 0 has no constant
+  coordinate (`resid_nc` predates it there; `migrate_spec` infers
+  `const0` false), so its logits are even in the input and every negated
+  row keeps its entry. Its layer 1 cells are
+  convex locally but not at scale: 97.5% of pair midpoints keep their
+  entry, 36% of 32-row means and 17% of centroids. Every row of a cell lies
+  on one side of the cell's first linear form, so these are not two
+  opposite lobes, and a head's entries' forms are nearly orthogonal
+  (median |cos| 0.03), so not bands around one axis either; what shape the
+  cells have is not established. Layer 4 has 3.9 entries in use per head
+  (its frozen heads) and is 87% sign-blind.
+
+One seed per arm, one cache tail.
+
+```bash
+JAX_PLATFORMS=cpu uv run python experiments/ste-arm/cellshape.py \
+    --ckpt data/out/sonar/multilingual/ste_h76_init01:0.00015 \
+           data/out/sonar/multilingual/resid_nc:0.03
+```
+
+Outputs: `data/out/sonar/cellshape/` (`summary.json`, per-head
+`heads.csv`, `run.log`).
+
 ## Run
 
 See [`README.md`](README.md) for training and scoring commands.

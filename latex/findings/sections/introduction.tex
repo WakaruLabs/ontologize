@@ -485,8 +485,9 @@ AxBench. Song et
 al.~\cite{song2025positionmechanisticinterpretabilityprioritize} further
 argue that cross-seed feature consistency should be a core SAE evaluation
 criterion, quantified via the mean absolute cosine similarity of
-one-to-one matched decoder directions across seeds; our Hungarian-matched
-head NMI (\texttt{partition.py}) provides the partition-level analogue
+one-to-one matched decoder directions across seeds; our head NMI under
+Hungarian matching~\cite{kuhn1955} (\texttt{partition.py}) provides the
+partition-level analogue
 for classifier heads, while activation-containment match fractions
 (\texttt{splitting.py}) provide a thresholded activation-based analogue.
 Wang et al.~\cite{wang2024} similarly measure cross-run consistency via

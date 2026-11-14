@@ -292,8 +292,9 @@ floor.}
 \label{sec:prelim-seed}
 Two hard-code runs initialized with different random seeds converge to
 the same held-out error ($\mathrm{FVU}_w = 0.1535$ on both seeds), but
-their individual heads do not match: Hungarian-matched head partitions
-have a mean NMI of $0.012$ (against a $0.005$ permutation null) and
+their individual heads do not match: under Hungarian
+matching~\cite{kuhn1955}, head partitions have a mean NMI of $0.012$
+(against a $0.005$ permutation null) and
 matched head output contributions have a centered cosine similarity of
 $0.007$ (null $0.002$), whereas comparing a single run against an earlier
 checkpoint 19{,}500 steps prior yields $0.38$ partition NMI and
