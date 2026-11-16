@@ -77,6 +77,7 @@ does.
 | whether `ConcatDictBlock` changes the non-negative correlation floor | `concat_floor.py` |
 | whether entries in a layer contribute equally | `entryshare.py` |
 | how a layer's large atoms are spread across its heads | `bigatoms.py` |
+| whether a head spends a used entry on a near-zero atom, an "off" entry for rows it has no category for | `nullentry.py` |
 | whether the atoms a row selects together are less alike than the dictionary, against heads choosing independently; Ontologizers and SAEs | `coselect.py` |
 | whether a layer's atoms would gain from depending on an earlier head's cell: a per-cell least-squares refit against a random partition's | `condrefit.py` |
 | **reproducibility** | |

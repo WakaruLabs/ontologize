@@ -2616,6 +2616,91 @@ uv run python experiments/ste-arm/bigatoms.py \
 #        --mse-weights data/out/sonar/mse_weights.npy (bigatoms: --agree-rows 4096)
 ```
 
+### Does any head spend an entry on nothing? (`nullentry.py`, 2026-11-16)
+
+The radio-head paper's silent phase, and the Potts unit's "off" state,
+are a head that abstains when nothing in context is its category
+(`scratch/literature/peripheral-2026-11-16.md`). A head here writes its
+layer's gain times its selected atom, and the gain is the layer's, so the
+only way for it to write nothing on a row is a learned entry with a
+near-zero atom. **Quiet** below means: a used entry (selected on at least
+1/(4k) of the rows) whose decoded atom is below 0.25 of the head's median
+used atom. Measured within the head, so a layer whose atoms are small
+throughout does not count. 32,768 held-out rows each, at the latest
+checkpoint; the GPT-2 runs on CPU.
+
+| run | heads with a quiet entry | where | the quiet entry's rows |
+|---|---|---|---|
+| GPT-2 concat k=256 (`ste_h20_cat128`, `-43`) | **0** of 100 | -- | smallest used atom ≥ 0.49 of its head's median |
+| SONAR flat 1x380 (`ste_l1_h380_i01`, `_s43`) | 0 of 380 | -- | smallest ≥ 0.55 |
+| SONAR stack shipped init (`ste_h76`, `_s43`) | 0 of 380 | -- | smallest ≥ 0.89 |
+| SONAR stack init 0.1 (`ste_h76_init01`, `_i01_s43`) | 5, 6 of 380 | layer 4 only | ~1/k each |
+| mc4_sent16 hard stack, ladder control and s43 | 2, 4 of 380 | layer 1 | ~1/k each |
+| mc4_sent16 direct k=128, ladder control and s43 | 7, 8 of 270 | layers 3-4 | ~1/k each |
+| GPT-2 stack shipped init (`ste_h76`) | **6** of 380 | 5 in layer 1 | **48-76%** of the head's rows |
+| GPT-2 stack init 0.1 (`ste_h76_init01`, 196.5k steps) | **29** of 380 | 11 in layer 0, 12 in 1, 6 in 2 | **20-98%** |
+
+No atom is exactly zero anywhere, and no quiet atom is below 0.1 of its
+head's median: the smallest is 0.10 (k=128 s43, layer 4), and the
+GPT-2 stacks' are 0.13-0.25.
+
+**Two different things pass the test.** On SONAR and mc4_sent16 the
+quiet entries are a few shrunken atoms used at the uniform rate, mostly
+in the last layer: what the section above called the inert final layer
+(its min/median energy 0.017 is about these atoms' 0.13 squared). They are not
+anyone's default. Only the GPT-2 summed stacks have heads whose most
+used entry is the quiet one: in `ste_h76`'s layer 1, h19 sends 61% of
+rows to an atom 0.15 of its median, and its other entries sit at
+0.68-1.17. Those heads write little on most rows and their full atoms on
+the rest. The quiet entry's rows have the layer's ordinary gain
+(0.99-1.03 of the mean), so these are not rows with nothing left to
+explain.
+
+**Whether the default takes the rows the head has no category for**,
+read from GPT-2 tokens (`--index`): an entry's share of rows on its own
+ten commonest tokens, over that share in as many random rows (1 = the
+corpus mix).
+- `ste_h76_init01`, layer 0: in 5 of the 11 heads the other entries are
+  word classes and the default is the corpus mix. The other entries read
+  1.33-1.85x against the default's 0.78-1.09x. Each head's most
+  token-pure other entry takes, respectively: h9 determiners (" the",
+  "The", " a", " an"), h11 commas and closing brackets, h30 forms of
+  "be", h50 pronouns, h69 prepositions. In 2 more (h31, h66) the other
+  entries take byte-fragment tokens (0.69-0.90x) and the default the
+  ordinary text. That is also "special rows against the rest", but this
+  measure reads it backwards. The remaining four (h4, h8, h20, h40) are
+  mixed: defaults 1.12-1.18x, others 0.94-1.20x.
+- Layer 1 tilts the same way, weakly: other entries 1.08-1.20x, defaults
+  0.89-1.06x.
+- Layer 2's quiet defaults take 93-98% of their heads' rows, and 51 of
+  that layer's 76 heads use a single entry: collapse, not abstention.
+- `ste_h76`: no token signal on either side (0.92-1.08x), so its layer-1
+  defaults are not explained by token class.
+
+So abstention by a learned off entry does occur, but only in the GPT-2
+summed stacks, which the writeup uses as comparisons. It is clearest in
+layer 0 of the init-0.1 arm, where heads act as word-class detectors that
+are quiet elsewhere. Neither the GPT-2 concat model the writeup leans on
+nor any SONAR model has a quiet default. One checkpoint per GPT-2 stack
+arm. The 0.25 threshold is a choice; at 0.1 nothing is quiet. The
+centered ratio (distance from the head's mean write) agrees in direction
+but is biased low for an entry that takes most of its head's rows, since
+the mean sits near it, so the table counts the uncentered one.
+
+```bash
+JAX_PLATFORMS=cpu uv run python experiments/ste-arm/nullentry.py \
+    --index data/activations/gpt2_l8.index.npy --show 40 \
+    --a data/out/gpt2_l8/ste_h76 data/out/gpt2_l8/ste_h76_init01 \
+        data/out/gpt2_l8/ste_h20_cat128 data/out/gpt2_l8/ste_h20_cat128-43
+JAX_PLATFORMS=cpu uv run python experiments/ste-arm/nullentry.py \
+    --cache data/sonar_embeddings/mc4_4M.npy --mse-weights data/out/sonar/mse_weights.npy \
+    --a data/out/sonar/multilingual/{ste_h76_init01,ste_h76_i01_s43,ste_h76,ste_h76_s43,ste_l1_h380_i01,ste_l1_h380_i01_s43}
+JAX_PLATFORMS=cpu uv run python experiments/ste-arm/nullentry.py \
+    --cache data/sonar_embeddings/mc4_sent16.npy \
+    --mse-weights data/out/sonar/sentcache/mse_weights_med837.npy \
+    --a data/out/sonar/recipe_ladder/{ste_h76_init01,ste_k128_h54_direct}_med837_{ctrl,ctrl_s43}
+```
+
 ## Heads against a known factor: language (`headlang.py`)
 
 Language is measured because it is the one factor with free labels, not
