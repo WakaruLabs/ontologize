@@ -55,6 +55,17 @@ The penalty helps if an arm's points sit below the curve the control's
 prefixes trace at the same realized bits. `quantrate.py` prices the gains,
 for the full code, if an arm warrants it.
 
+Between its prefixes, the control can reach lower rates without retraining
+by dropping heads. `headdrop.py` scores each prefix with its last layer's
+heads dropped four at a time: a dropped head sends nothing and writes its
+mean output times the row's gain. Heads go cheapest first, by the FVU each
+adds when dropped alone per realized bit it saves. Two codes can be
+time-shared row by row, so the lower convex hull of the reference run's
+points (the first `--ckpt`) is reachable. Every other run's points are read
+against that hull at the same rate. `headbits.csv` has each head's realized
+bits and entries used, which show whether a run sheds rate by silencing
+heads or by using entries unevenly within them.
+
 ## Usage
 
 ```bash
@@ -66,9 +77,17 @@ systemd-run --user --unit rate-penalty -p Restart=on-failure -p RestartSec=120 \
 
 JAX_PLATFORMS=cpu uv run python experiments/rate-penalty/ratecurve.py \
     --ckpt <run dirs> --out data/out/sonar/rate_penalty/ratecurve
+
+JAX_PLATFORMS=cpu uv run python experiments/rate-penalty/headdrop.py \
+    --ckpt <control run> <arm runs> --out data/out/sonar/rate_penalty/headdrop
 ```
 
+`headdrop.py` takes about 9 minutes of wall time per run on the CPU: each
+layer is scored with every head dropped alone, then with the cumulative
+drops.
+
 `tests/test_ratecurve.py` checks the realized bits of even, constant and
-skewed heads, and the prefix FVU's weighting.
+skewed heads, and the prefix FVU's weighting. `tests/test_headdrop.py`
+checks the drop order, the cumulative masks and the hull.
 
 `notes.md` has the results.
