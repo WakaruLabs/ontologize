@@ -2883,7 +2883,12 @@ its runner-up entry (matching the perturbation applied during winner
 dropout), or another sample's assignment. We then recompute the output
 either \emph{live}, allowing downstream layers to reclassify the modified
 residual, or \emph{frozen}, holding all other head assignments fixed so
-that only the ablated head's contribution changes. We record two whitened
+that only the ablated head's contribution changes. In the terms of causal
+mediation analysis~\cite[Sec.~3.2]{vig2020}, with the replacement as the
+intervention and the later layers' contributions as the mediator, the live
+output gives the ablation's total effect and the frozen output its natural
+direct effect; the difference between them is the part that passes through
+downstream reclassification. We record two whitened
 quantities, each expressed as a fraction of the unablated
 reconstruction's squared error: the excess error introduced by the
 ablation, and the squared distance between the ablated and unablated
@@ -2897,7 +2902,10 @@ the live output moves $19\times$ further from the unablated
 reconstruction than the frozen output does ($31\times$, $19\times$, and
 $7\times$ at layers 1, 2, and 3): rather than restoring the original
 reconstruction, downstream layers re-approximate the input along a
-different path.
+different path. By the excess error, then, the live ablation understates
+what a head carries: compensation of this kind makes an ablated component
+look less important than it is~\cite[Sec.~3.2]{heimersheim2024}, and the
+frozen ablation measures the head's own contribution.
 
 Decoded text shows the same. Evaluating 12 tail rows on the
 two heads per layer whose uniform ablation perturbs the reconstruction

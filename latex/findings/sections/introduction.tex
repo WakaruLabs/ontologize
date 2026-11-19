@@ -476,7 +476,20 @@ means outperforms SAE latents, whereas linear probes match the strongest
 concept detectors yet steer poorly, and SAE latents selected via
 autointerp descriptions lag behind on concept detection. This dissociation
 between detection and steering motivates evaluating dictionary directions
-directly by their causal effects. Accordingly, \texttt{steerfid.py}
+directly by their causal effects. A related dissociation, between variance
+and causal effect, appears in a dictionary that needs no training. Gurnee
+et al.~\cite{gurnee2026verbalizable} average the Jacobian of a language
+model's final residual stream with respect to an earlier layer's over a
+corpus, which gives that layer one direction per vocabulary token. The few
+such directions active at a layer explain at most 10\% more of its
+activations' variance than as many random
+directions~\cite[Sec.~4.2]{gurnee2026verbalizable}, yet the part of a
+concept vector in their sparse non-negative span, a median 6--7\% of its
+variance, carries its swaps: swapping along it moves the target into the
+model's top five outputs on 59\% of trials, against 5\% for the
+remainder~\cite[Sec.~3.1]{gurnee2026verbalizable}. Reconstruction alone
+therefore does not say whether a code's directions are the ones downstream
+computation reads. Accordingly, \texttt{steerfid.py}
 measures target effect against off-target collateral at matched
 perturbation magnitude, following Cunningham et al.'s evaluation of
 feature edits across intervention magnitudes~\cite{cunningham2023} rather
@@ -546,7 +559,13 @@ factors of the data (cross-seed reproducibility, language, and topic
 alignment); and
 (d)~whether entry swaps provide effective steering with consistent target
 effects and low collateral, comparable to supervised difference-of-means
-vectors and SAE decoder-direction addition (steering fidelity). Metrics
+vectors and SAE decoder-direction addition (steering fidelity). A claim of
+interpretability should name its notion~\cite[Sec.~4.2]{lipton2016}, and
+the notion in~(c) is post hoc. An embedding's coordinates are not
+individually interpretable, which rules out decomposability for a model
+that reads them directly~\cite[Sec.~3.1.2]{lipton2016}, so~(c) asks for it
+in the code instead, with each head a variable whose entries admit a plain
+description; (d) then tests whether that description is causal. Metrics
 that test whether \emph{individual latents} align with isolated concepts
 remain informative for the SAE baselines, but are ill-suited to
 evaluating classifier codes; we note this distinction wherever such

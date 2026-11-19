@@ -374,7 +374,12 @@ hard stack on both realization and collateral. These arbitrary partitions
 play the role that control tasks play for probes~\cite{hewitt2019}, where
 a probe's accuracy is read as its margin over the same probe trained on
 random labels: a steering score counts here only by its margin over the
-same step into a partition that training did not shape. Evaluated at each method's
+same step into a partition that training did not shape. Network
+Dissection~\cite[Sec.~3.2]{bau2017} tests a layer's units in the same way,
+against a random rotation of the layer's basis: the rotation leaves what the
+network can discriminate unchanged and cuts the number of distinct concepts
+that single units detect by 80\%. Here the arbitrary partitions do not fall
+behind. Evaluated at each method's
 unnormalized native step size, the difference-of-means vector achieves
 higher realization in most models, partly by taking longer steps
 (Appendix~\ref{sec:steersupnative}). Whereas this evaluation tests steering

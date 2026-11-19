@@ -258,7 +258,11 @@ single layer of 380 random-projection heads ($k{=}32$), empirical
 cell-centroid swaps realize 78\% of targets ($67\%$ at native step size)
 and projection directions, margin gradients, and logistic probes reach
 87--100\% at 30--32\% collateral, matching the trained single-layer hard
-model. On an external ground-truth attribute---language steering under
+model. Network Dissection~\cite[Sec.~3.2]{bau2017} makes the same comparison
+for a layer's units, against a random rotation of the layer's basis, which
+leaves what the network can discriminate unchanged and cuts the number of
+distinct concepts that single units detect by 80\%; here the arbitrary
+partitions do not fall behind. On an external ground-truth attribute---language steering under
 matched intervention budgets (Table~\ref{tab:steer-overlay})---forcing a
 soft-model entry moves decoded text $0.64\times$ as far along the
 supervised difference-of-means axis as supervised steering itself and
