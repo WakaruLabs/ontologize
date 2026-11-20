@@ -845,3 +845,78 @@ coordinate profiles in every layer. Means over the last 1,000 steps.
 - A fixed-width reading of the SAEs, the comparison for a strict bound.
 - `--concat` under the MSE alone, to separate disjoint heads from the
   penalty.
+
+## 2026-11-20: training noise's share of each layer's input
+
+**Short version.** In a stack whose upper layers keep improving the fit (the all-weights-off
+arm), training noise makes up most of the upper layers' input during training: 96% of layer 4's
+input energy, with 82% of its head choices different from the clean forward's. Feature noise is
+the smallest of the three noises; logit noise is the largest. In the control, whose upper layers
+add nothing, the shares are small, and removing feature noise or every noise leaves its prefix
+curve where it was. So the control's idle upper layers are not the noise's doing.
+
+**Method** (`noiseshare.py`, `data/out/sonar/recipe_ladder/noiseshare*/`). The training forward
+is replayed on 8,192 tail rows of `mc4_sent16`, in batches of 256 as in training. Each noise runs
+alone at the run's own value, then all three together, beside the clean forward on the same rows.
+Per layer:
+- **share:** E‖y_noisy − y_clean‖² / E‖y_clean‖² over the input residual;
+- **flip:** the share of heads whose entry changes.
+
+Layer 0's input carries no noise (sd_in is 0); its flips come from its own logit noise and
+dropout.
+
+**Share / flip by layer** (σ_F 0.1, σ_K 0.3, p_drop 0.1):
+
+| arm | noise | L1 | L2 | L3 | L4 |
+|---|---|---|---|---|---|
+| all weights off (`nobcos_nosupp_nol1f_nohm`) | σ_F | 0.003 / 0.07 | 0.048 / 0.24 | 0.179 / 0.43 | 0.379 / 0.59 |
+| | σ_K | 0.138 / 0.43 | 0.350 / 0.60 | 0.590 / 0.71 | 0.827 / 0.79 |
+| | p_drop | 0.074 / 0.35 | 0.260 / 0.54 | 0.498 / 0.67 | 0.745 / 0.76 |
+| | all | 0.193 / 0.51 | 0.444 / 0.66 | 0.707 / 0.76 | 0.957 / 0.82 |
+| control (`ctrl`) | σ_F | 0.009 / 0.11 | 0.025 / 0.18 | 0.030 / 0.20 | 0.035 / 0.21 |
+| | σ_K | 0.098 / 0.40 | 0.130 / 0.43 | 0.139 / 0.43 | 0.149 / 0.44 |
+| | p_drop | 0.054 / 0.33 | 0.086 / 0.38 | 0.095 / 0.39 | 0.103 / 0.40 |
+| | all | 0.144 / 0.49 | 0.184 / 0.52 | 0.194 / 0.52 | 0.205 / 0.53 |
+| feature noise off (`nosdf`), σ_F 0.1 applied | σ_F | 0.010 / 0.12 | 0.026 / 0.19 | 0.031 / 0.20 | 0.036 / 0.21 |
+
+Layer 0's flips are 0.18–0.19 under σ_K, 0.10 under dropout and 0.25–0.26 under all three, in
+every arm.
+
+- **The share grows with depth when the input shrinks.** In the all-off arm each layer removes much
+  of what is left (prefix FVU 0.60, 0.43, 0.31, 0.23, 0.17; `rate-penalty/notes.md`). The noise is
+  sized by earlier layers' outputs (`featvar` scales by each output feature's batch std, and a
+  flipped upstream choice writes a whole atom), so it overtakes the residual.
+- **In the control the residual stays large.** Its auxiliary weights cost most of the fit (prefix
+  FVU 0.64, 0.58, 0.57, 0.58, 0.58 over the free coordinates; `noiseshare_ratecurve/`), so the
+  noise stays a fifth of the input.
+- **Training without feature noise does not change the response to it.** The `nosdf` arm, given
+  σ_F 0.1, reads within 0.002 of the control at every layer.
+
+**Prefix FVU over the free coordinates, gains as computed** (`ratecurve.py`, 32,765 tail rows):
+
+| arm | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|
+| control | 0.6381 | 0.5751 | 0.5745 | 0.5773 | 0.5838 |
+| control, seed 43 | 0.6370 | 0.5769 | 0.5766 | 0.5794 | 0.5859 |
+| no feature noise | 0.6380 | 0.5774 | 0.5771 | 0.5800 | 0.5871 |
+| no noise | 0.6369 | 0.5730 | 0.5728 | 0.5764 | 0.5843 |
+
+In all four, layers 3–5 add nothing or cost a little.
+
+**What this leaves open.** The hypothesis was that noise is why upper heads don't reproduce. It
+needs the all-off arm trained without noise at two seeds, beside its existing seed pair: two GPU
+runs of 50,000 steps. This measurement says such a run would change what the upper layers see in
+training by most of their input.
+
+```bash
+JAX_PLATFORMS=cpu uv run python experiments/recipe-ladder/noiseshare.py \
+    --ckpt data/out/sonar/recipe_ladder/ste_h76_init01_med837_ctrl \
+           data/out/sonar/recipe_ladder/ste_h76_init01_med837_nobcos_nosupp_nol1f_nohm \
+    --out data/out/sonar/recipe_ladder/noiseshare
+JAX_PLATFORMS=cpu uv run python experiments/recipe-ladder/noiseshare.py \
+    --ckpt data/out/sonar/recipe_ladder/ste_h76_init01_med837_nosdf --sd-f 0.1 \
+    --out data/out/sonar/recipe_ladder/noiseshare_nosdf_sdf0.1
+JAX_PLATFORMS=cpu uv run python experiments/rate-penalty/ratecurve.py \
+    --ckpt data/out/sonar/recipe_ladder/ste_h76_init01_med837_{ctrl,ctrl_s43,nosdf,nonoise} \
+    --out data/out/sonar/recipe_ladder/noiseshare_ratecurve
+```
