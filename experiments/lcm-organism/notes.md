@@ -5,8 +5,7 @@
 **Runs.** `train_lcm.py --cache data/sonar_embeddings/mc4_sent16_f16.npy --epochs 1 --seed 42`, then
 `--seed 43`: the default 104.9M-parameter SwiGLU model, 7,216 steps each at TF32, 51 minutes for both.
 The outputs are in `data/out/lcm-organism/lcm_l8_d1024_s{42,43}`. The readings come from `phase1.sh`, into
-`data/out/lcm-organism/phase1/`. Its tail-only harvests are in `/var/tmp/keira/lcm-phase1`, outside the
-repository.
+`data/out/lcm-organism/phase1/`, with its tail-only harvests in `phase1/tail`.
 
 **Gate A: it has learned dynamics.** Held-out next-sentence FVU_w on the 26,335 pairs:
 
