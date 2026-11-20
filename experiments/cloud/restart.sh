@@ -14,9 +14,44 @@
 #                        the boot disk reads too slowly
 #   ONTO_PRECISION=high  JAX matmul precision for jobs that don't set it (high | highest | default)
 #   ONTO_SYNC_EVERY=120  seconds between syncs of a running job
+#   ONTO_DATA_SPARE_GB=10  GiB data/ must keep free after the pull, for the outputs runs write
+#                        (data/out is on the same filesystem)
 #   RESTART_NO_RUN=1     inputs and environment only
 #   RESTART_FORCE=1      start even though runners are already running
+# The pull is refused, before anything is copied, unless what it adds fits:
+#   bash restart.sh --fit-check STAGE_DATA DATA SPARE_GB   that check alone, changing nothing
 set -euo pipefail
+is_gs() { [[ $1 == gs://* ]]; }
+
+# Bytes a pull of stage/data ($1, gs:// or a directory) into data/ ($2) adds:
+# each staged file's size, less the size of the copy data/ already holds.
+# Files data/ holds that the stage doesn't name stay, so they count as used.
+added() {
+  { if is_gs "$1"; then
+      gcloud storage ls -l "$1/**" | awk -v n=$(( ${#1} + 1 )) \
+        '$1 ~ /^[0-9]+$/ && $3 ~ /^gs:/ { u = $0; sub(/^ *[0-9]+ +[^ ]+ +/, "", u); print "S", $1, substr(u, n + 1) }'
+    else
+      find "$1" -type f -printf 'S %s %P\n'
+    fi
+    if [ -d "$2" ]; then find -H "$2" -type f -printf 'L %s %P\n'; fi
+  } | awk '{ k = $0; sub(/^[SL] [0-9]+ /, "", k) }
+           $1 == "L" { have[k] = $2; next }
+           { staged[k] = $2 }
+           END { for (k in staged) { d = staged[k] - have[k]; if (d > 0) s += d }; printf "%d\n", s }'
+}
+# Whether that fits beside $3 GiB kept free for outputs; says how much either way
+fits() {
+  local add avail
+  add=$(added "$1" "$2")
+  avail=$(df -B1 --output=avail "$2/" | tail -1 | tr -d ' ')
+  if [ $(( add + $3 * 1073741824 )) -gt "$avail" ]; then
+    awk -v a="$add" -v f="$avail" -v s="$3" 'BEGIN { printf "stage/data does not fit: the pull adds %.1f GiB (%d bytes), %.1f GiB is free under data/, and %d GiB is kept for outputs (ONTO_DATA_SPARE_GB). Prune stage/data or raise ONTO_RAM_GB\n", a / 2^30, a, f / 2^30, s }'
+    return 1
+  fi
+  awk -v a="$add" -v f="$avail" 'BEGIN { printf "stage/data fits: the pull adds %.1f GiB (%d bytes) of %.1f GiB free\n", a / 2^30, a, f / 2^30 }'
+}
+if [ "${1:-}" = --fit-check ]; then shift; fits "$@"; exit; fi
+
 : "${ONTO_BUCKET:?set ONTO_BUCKET: gs://bucket/prefix, or a local directory}"
 RD=${1:-$HOME/onto}
 REPO=$RD/ontologize
@@ -28,7 +63,6 @@ fi
 # a VM's service account may lack storage.buckets.get, which parallel composite
 # uploads need; they then fail with a 403 after small files have gone through
 command -v gcloud >/dev/null && gcloud config set storage/parallel_composite_upload_enabled False >/dev/null 2>&1 || true
-is_gs() { [[ $1 == gs://* ]]; }
 tree() { mkdir -p "$2"; if is_gs "$1"; then gcloud storage rsync --recursive "$1" "$2"; else rsync -a "$1/" "$2/"; fi; }
 getf() { if is_gs "$1"; then gcloud storage cp "$1" "$2"; else cp "$1" "$2"; fi; }
 
@@ -62,6 +96,8 @@ if [ -n "${ONTO_RAM_GB:-}" ]; then
   fi
 fi
 if is_gs "$S" && gcloud storage ls "$S/data/" >/dev/null 2>&1 || [ -d "$S/data" ]; then
+  mkdir -p "$REPO/data/"
+  fits "$S/data" "$REPO/data" "${ONTO_DATA_SPARE_GB:-10}"
   tree "$S/data" "$REPO/data"
 fi
 

@@ -38,6 +38,11 @@ Results are read from the bucket (`gcloud storage cp -r $ONTO_BUCKET/runs/... da
 on the VM. `start` is idempotent:
 - on a fresh or recreated VM it pulls everything and resumes;
 - with runners already up it does nothing (`RESTART_FORCE=1` overrides);
+- every start pulls all of `stage/data`, so it first adds up what the pull would add: each staged
+  file's size, less the copy the VM already holds. It refuses, before copying anything, unless that
+  leaves `ONTO_DATA_SPARE_GB` (10) free under `data/`. Run outputs (`data/out`) are written to the
+  same filesystem, the tmpfs when `ONTO_RAM_GB` is set. A file the stage no longer names stays on the
+  VM and counts as used. `bash restart.sh --fit-check STAGE_DATA DATA SPARE_GB` runs the check alone;
 - a newer code archive is unpacked only when no runner is running, so new code never changes a
   running job.
 
@@ -155,6 +160,8 @@ Each chip has 16 GiB of HBM.
   restarting it;
 - a failing job is retried, then given up;
 - the per-chip environment and the precision reach the job;
-- the mirror leaves orbax's in-progress directories out.
+- the mirror leaves orbax's in-progress directories out;
+- the restart's fit check counts only what a pull adds, through a symlinked `data/`, and refuses a
+  stage that leaves less free than asked.
 
 It also checks the requirements filter, and that the lock pins jax and jaxlib at one version.

@@ -1,8 +1,8 @@
 # experiments/cloud: the queue runner against a local directory standing in
 # for the bucket (a finished job is skipped; a stopped job's state reaches the
 # bucket and a fresh VM resumes it; a failing job is retried, then given up),
-# the mirror sync, queue parsing, the per-chip environment, and the TPU
-# requirements filter.
+# the mirror sync, queue parsing, the per-chip environment, the TPU
+# requirements filter, and restart.sh's check that a pull of stage/data fits.
 import json
 import signal
 import subprocess
@@ -166,3 +166,34 @@ def test_the_lock_pins_matching_jax_and_jaxlib():
     assert version(lock, "jax") == version(lock, "jaxlib")
     with pytest.raises(KeyError):
         version(lock, "no-such-package")
+
+
+def fit_check(stage, data, spare_gb):
+    return subprocess.run(["bash", str(CLOUD / "restart.sh"), "--fit-check", str(stage),
+                           str(data), str(spare_gb)], capture_output=True, text=True)
+
+
+def test_the_restart_counts_only_what_a_pull_adds(tmp_path):
+    stage, disk = tmp_path / "stage", tmp_path / "disk"
+    for d in (stage / "acts", disk / "acts", disk / "out"):
+        d.mkdir(parents=True)
+    (stage / "acts" / "pulled.npy").write_bytes(b"0" * 3000)
+    (stage / "acts" / "new file.npy").write_bytes(b"0" * 5000)
+    (stage / "acts" / "partial.npy").write_bytes(b"0" * 4000)
+    (disk / "acts" / "pulled.npy").write_bytes(b"0" * 3000)       # adds nothing
+    (disk / "acts" / "partial.npy").write_bytes(b"0" * 1000)      # adds the rest
+    (disk / "out" / "ckpt.bin").write_bytes(b"0" * 9000)          # not staged: stays
+    # data/ as a symlink to another disk, as with ONTO_RAM_GB
+    (tmp_path / "data").symlink_to(disk)
+    r = fit_check(stage, tmp_path / "data", 0)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "(8000 bytes)" in r.stdout and "fits" in r.stdout
+
+
+def test_the_restart_refuses_a_stage_that_leaves_too_little_free(tmp_path):
+    stage, data = tmp_path / "stage", tmp_path / "data"
+    stage.mkdir()
+    data.mkdir()
+    (stage / "x.npy").write_bytes(b"0" * 100)
+    r = fit_check(stage, data, 10 ** 9)           # more spare than any disk has
+    assert r.returncode == 1 and "does not fit" in r.stdout and "(100 bytes)" in r.stdout

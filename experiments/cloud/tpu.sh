@@ -49,9 +49,9 @@ describe() {
 node_state() { describe T describe "$NODE" --format='value(state)'; }
 qr_state() { describe Q describe "$NODE" --format='value(state.state)'; }
 env_for_vm() {
-  printf 'ONTO_BUCKET=%q ONTO_RAM_GB=%q ONTO_PRECISION=%q ONTO_SYNC_EVERY=%q RESTART_NO_RUN=%q RESTART_FORCE=%q' \
-    "$ONTO_BUCKET" "${ONTO_RAM_GB:-}" "${ONTO_PRECISION:-high}" "${ONTO_SYNC_EVERY:-120}" \
-    "${RESTART_NO_RUN:-}" "${RESTART_FORCE:-}"
+  printf 'ONTO_BUCKET=%q ONTO_RAM_GB=%q ONTO_DATA_SPARE_GB=%q ONTO_PRECISION=%q ONTO_SYNC_EVERY=%q RESTART_NO_RUN=%q RESTART_FORCE=%q' \
+    "$ONTO_BUCKET" "${ONTO_RAM_GB:-}" "${ONTO_DATA_SPARE_GB:-10}" "${ONTO_PRECISION:-high}" \
+    "${ONTO_SYNC_EVERY:-120}" "${RESTART_NO_RUN:-}" "${RESTART_FORCE:-}"
 }
 
 cmd=${1:-}; shift || true
