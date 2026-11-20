@@ -106,7 +106,8 @@ the data.
 - **Layers 1–2** agree a little beyond the data in their first 1–16 directions, and not past rank
   32.
 - **Layer 3** agrees with the other seed less than with the data from rank 8 on.
-- **Layer 4's seeds share under half of what each shares with the data**, up to rank 32.
+- **Layer 4's seeds share under half of what each shares with the data** from rank 2 to rank 32
+  (0.39–0.47 of it), and 0.67–0.77 of it at rank 1.
 - The full prefix grid φ(i, j) per layer is in `subspace_stack.npz`.
 
 The two statistics differ (energy of a set of directions, against overlap of covariance
