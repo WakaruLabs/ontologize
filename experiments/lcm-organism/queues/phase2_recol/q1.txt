@@ -1,0 +1,7 @@
+# Phase 2 on a TPU, chip 1: the effective-dimension control, SONAR's rows
+# recoloured to LCM block 4's spectrum (recolour.py), trained as
+# queues/phase2's lcm_b4 arm with only the cache and weights changed. Stage
+# queues/phase2_recol alone (tpu.sh stage jobs replaces the staged queues) and
+# start it with RESTART_FORCE=1 tpu.sh start; queues/phase2_recol_score scores
+# the pair once both have done markers.
+recol_b4_s42	data/out/lcm-organism/phase2_tpu/sonar_recol_b4_doc2_sp0_ph38_s42	python experiments/next-sentence/train_pair.py --cache data/activations/lcm-organism/sonar_recol_b4.npy --mse-weights data/activations/lcm-organism/sonar_recol_b4.mse_weights_matched.npy --epochs 3 --seed 42 --pair-term agree --s-pair 0 --keep-every 46250 --max-to-keep 1 --out data/out/lcm-organism/phase2_tpu/sonar_recol_b4_doc2_sp0_ph38_s42

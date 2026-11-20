@@ -1,0 +1,12 @@
+# Phase 2 on a TPU, chip 0: the LCM arm's third seed (plan.md, "42, 43 (and 44
+# if the result is positive)"), trained as queues/phase2's lcm_b4_s42 with only
+# the seed changed, then the arm scored over all three seeds at matmul
+# precision highest: seedmatch.py with 44 as the third run (specificity and
+# cycle consistency) and within-language NMI on the last 262,144 rows, as the
+# SONAR arm was scored, and eval_next.py's held-out FVU_w for all three. The
+# scoring refuses to start unless seed 44 reached its final step, since runq
+# moves on to the next job after a failed one. Stage
+# this alone (tpu.sh stage jobs replaces the staged queues) and start it with
+# RESTART_FORCE=1 tpu.sh start.
+lcm_b4_s44	data/out/lcm-organism/phase2_tpu/lcm_b4_doc2_sp0_ph38_s44	python experiments/next-sentence/train_pair.py --cache data/activations/lcm-organism/lcm_b4.npy --mse-weights data/activations/lcm-organism/lcm_b4.mse_weights_matched.npy --epochs 3 --seed 44 --pair-term agree --s-pair 0 --keep-every 46250 --max-to-keep 1 --out data/out/lcm-organism/phase2_tpu/lcm_b4_doc2_sp0_ph38_s44
+score_lcm_b4_3seeds	data/out/lcm-organism/phase2_tpu/score_lcm_b4_3seeds	test -d data/out/lcm-organism/phase2_tpu/lcm_b4_doc2_sp0_ph38_s44/46250 && JAX_DEFAULT_MATMUL_PRECISION=highest python experiments/next-sentence/seedmatch.py --a data/out/lcm-organism/phase2_tpu/lcm_b4_doc2_sp0_ph38_s42 --b data/out/lcm-organism/phase2_tpu/lcm_b4_doc2_sp0_ph38_s43 --c data/out/lcm-organism/phase2_tpu/lcm_b4_doc2_sp0_ph38_s44 --cache data/activations/lcm-organism/lcm_b4.npy --labels data/activations/lcm-organism/lcm_b4.langs.npy --label-rows 262144 --min-rows 1000 --out data/out/lcm-organism/phase2_tpu/score_lcm_b4_3seeds/seedmatch.json && JAX_DEFAULT_MATMUL_PRECISION=highest python experiments/next-sentence/eval_next.py --ckpt data/out/lcm-organism/phase2_tpu/lcm_b4_doc2_sp0_ph38_s42 data/out/lcm-organism/phase2_tpu/lcm_b4_doc2_sp0_ph38_s43 data/out/lcm-organism/phase2_tpu/lcm_b4_doc2_sp0_ph38_s44 --cache data/activations/lcm-organism/lcm_b4.npy --mse-weights data/activations/lcm-organism/lcm_b4.mse_weights_matched.npy --out data/out/lcm-organism/phase2_tpu/score_lcm_b4_3seeds/eval.json

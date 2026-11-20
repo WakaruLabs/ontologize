@@ -1,0 +1,10 @@
+# Phase 2 on a TPU: scoring the SONAR arm (queues/phase2's second wave), on
+# chip 3, at matmul precision highest. Stage this alone (tpu.sh stage jobs
+# replaces the staged queues), once sonar_s42, sonar_s43 and sonar_s44 have done
+# markers, then start it with RESTART_FORCE=1 tpu.sh start. seedmatch.py matches
+# seeds 42 and 43 with 44 as the third run (specificity and cycle consistency),
+# with within-language NMI on the last 262,144 rows, as the GPU control's
+# seedmatch_sp0_s42_s43_s44 was scored; then eval_next.py's held-out FVU_w for
+# all three under the control's no837 weights. The GPU runs doc2_sp0_ph38,
+# _s43 and _s44 are the check that the TPU retrain matches.
+score_sonar	data/out/lcm-organism/phase2_tpu/score_sonar	JAX_DEFAULT_MATMUL_PRECISION=highest python experiments/next-sentence/seedmatch.py --a data/out/lcm-organism/phase2_tpu/sonar_doc2_sp0_ph38_s42 --b data/out/lcm-organism/phase2_tpu/sonar_doc2_sp0_ph38_s43 --c data/out/lcm-organism/phase2_tpu/sonar_doc2_sp0_ph38_s44 --cache data/sonar_embeddings/mc4_sent16_f16.npy --labels data/sonar_embeddings/mc4_sent16_f16.langs.npy --label-rows 262144 --min-rows 1000 --out data/out/lcm-organism/phase2_tpu/score_sonar/seedmatch.json && JAX_DEFAULT_MATMUL_PRECISION=highest python experiments/next-sentence/eval_next.py --ckpt data/out/lcm-organism/phase2_tpu/sonar_doc2_sp0_ph38_s42 data/out/lcm-organism/phase2_tpu/sonar_doc2_sp0_ph38_s43 data/out/lcm-organism/phase2_tpu/sonar_doc2_sp0_ph38_s44 --cache data/sonar_embeddings/mc4_sent16_f16.npy --mse-weights data/out/sonar/sentcache/mse_weights_no837.npy --out data/out/lcm-organism/phase2_tpu/score_sonar/eval.json

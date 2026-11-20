@@ -1,0 +1,3 @@
+# Phase 2 on a TPU, chip 2: the effective-dimension control's second seed
+# (q1.txt has the arm's description).
+recol_b4_s43	data/out/lcm-organism/phase2_tpu/sonar_recol_b4_doc2_sp0_ph38_s43	python experiments/next-sentence/train_pair.py --cache data/activations/lcm-organism/sonar_recol_b4.npy --mse-weights data/activations/lcm-organism/sonar_recol_b4.mse_weights_matched.npy --epochs 3 --seed 43 --pair-term agree --s-pair 0 --keep-every 46250 --max-to-keep 1 --out data/out/lcm-organism/phase2_tpu/sonar_recol_b4_doc2_sp0_ph38_s43
