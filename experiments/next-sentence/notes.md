@@ -851,7 +851,7 @@ a quarter of an hour on the GPU.
 
 **Short version.** Read as a 16-dimensional code, the slow block is the same in every seed. The
 other seed's slow block predicts the scores of a block's first 16 code modes at held-out R²
-0.95–0.98, against 0.22–0.34 from an ordinary block of the same model. Agreement falls along the
+0.95–0.98, against 0.22–0.35 from an ordinary block of the same model (both directions). Agreement falls along the
 spectrum (0.61–0.63 over modes 17–64), as Sharma et al.'s soft-mode reading predicts. The heads
 inside that span are not individually identified. The test of that reading's head-level
 prediction is confounded by NMI's scale: more redundant heads match better, but the control's
