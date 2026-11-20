@@ -4678,7 +4678,7 @@ JAX_PLATFORMS=cpu uv run python experiments/ste-arm/steerembed.py \
 # and sweep_softmax_shm at 0.03
 ```
 
-**The `eig` autointerp with the exciting eigenvector (2026-11-20): decoded, not yet scored.**
+**The `eig` autointerp with the exciting eigenvector (2026-11-20): at the null, like the old rule.**
 `data/out/sonar/autointerp_eig/m5120_k32_bl/sae/` is `autointerp_scalefix`'s `k32_bl` campaign
 (the same 75 latents, top rows, negatives and decode scale α, the mean of each latent's ten
 description activations) with `emb_eig` recomputed by the current `sae.eigenfeatures`, as its
@@ -4694,12 +4694,23 @@ latents up to 256, where that campaign has 75. So only the decoded direction cha
   orthogonal to the old one (median cosine 0.001); for the other 10 it is the same. 21 decodes
   coincide with the old ones, since some latents decode to the same template either way. Its
   median cosine with the latent's decoder row is 0.27, against the old direction's 0.08.
-- **Scoring** is the Haiku judge, as in October, plus a null that campaign did not run. It has
-  not been run yet, so the findings' `eig` 0.034 is still the old rule's, as the appendix says:
+- **Scoring** is the Haiku judge, as in October, plus a null that campaign did not run (each
+  latent graded with another latent's `eig` description). All 150 judgements returned:
+
+  | rule | mean F1 | null | latents with F1 > 0 |
+  |---|---|---|---|
+  | exciting eigenvector (this campaign) | 0.025 | 0.009 | 3 / 75 |
+  | top-\|λ\| (October, `autointerp_scalefix`) | 0.034 | — | 5 / 75 |
+
+  The exciting rule's margin over its null is +0.017 (paired s.e. 0.017), and its paired
+  difference from the old rule is −0.009 (s.e. 0.018). Neither direction gives a description the
+  judge can use, against `params` 0.136 on the same latents. The 21 decodes that coincide score 0
+  under both rules, and the nonzero scores are on different latents (3036, 2784, 4553 against
+  4553, 2784, 3704, 1788, 1579). The findings' table and appendix now report this campaign.
 
 ```bash
 uv run python autointerp.py score --dir data/out/sonar/autointerp_eig/m5120_k32_bl/sae \
-    --out data/out/sonar/autointerp --only-modes eig --null --judge haiku
+    --out data/out/sonar/autointerp --only-modes eig --null --judge haiku --jobs 4
 ```
 
 ## Run

@@ -424,7 +424,7 @@ model & density & freq & \texttt{params} & \texttt{eig} & \texttt{acts} & \textt
 \midrule
 onto (resid\_nc)   & 100\%  & 10.80\% & 0.039 & ---   & 0.473 & 0.392 & 225 \\
 k32                & 0.6\%  & 0.61\%  & 0.139 & ---   & 0.645 & 0.603 & 250 \\
-k32\_bl            & 0.6\%  & 2.62\%  & 0.136 & 0.034 & 0.578 & 0.470 & 75 \\
+k32\_bl            & 0.6\%  & 2.62\%  & 0.136 & 0.025 & 0.578 & 0.470 & 75 \\
 g160top1           & 3.1\%  & 5.08\%  & 0.111 & ---   & 0.646 & 0.594 & 150 \\
 g160softmax        & 100\%  & 0.00\%  & 0.086 & ---   & 0.449 & 0.364 & 256 \\
 k5120 (dense ctrl) & 45.5\% & 17.97\% & 0.010 & ---   & 0.470 & 0.332 & 256 \\
@@ -436,8 +436,8 @@ an indiscriminate description that matches every item achieves the
 always-match baseline of ${\sim}0.67$, inflating scores for overly generic
 summaries. Density denotes nominal code density, and \texttt{freq} denotes
 the empirical firing rate above the $2/k$ threshold. For \texttt{k32\_bl},
-the evaluated pool is only 75 live features; no null control was
-recorded for this campaign.}
+the evaluated pool is only 75 live features, and only the \texttt{eig}
+column has a null control ($0.009$).}
 \label{tab:autointerp}
 \end{table}
 
@@ -500,12 +500,12 @@ Generating descriptions by decoding parameter vectors alone without
 activating examples fails across all models. Parameter-only decodes
 (\texttt{params}) achieve at most $0.14$ F1 (on the linear and bilinear
 SAEs) and $0.04$ on the reference Ontologizer, compared to $0.45$--$0.65$
-for activation-based descriptions of the same features. Bilinear
-eigenfeature decodes (\texttt{eig}) score $0.034$, but that protocol decodes
-the top-$|\lambda|$ eigenvector (which for most latents in the bilinear SAE
-is an inhibitory rather than excitatory direction;
-Appendix~\ref{sec:models}) and thus does not properly test excitatory
-eigenfeatures. An Ontologizer's parameter decodes are further hindered by
+for activation-based descriptions of the same features. Decoding each
+bilinear latent's exciting eigenvector, the direction along which its
+pre-activation grows (\texttt{eig}; Appendix~\ref{sec:models}), scores
+$0.025$ against a $0.009$ null that grades each latent with another
+latent's description; the judge detects only 3 of the 75 latents at all.
+An Ontologizer's parameter decodes are further hindered by
 shared within-head offsets: in the hard-code stack's topic head, an atom
 has a mean cosine similarity of $0.849$ with its head's mean atom, so raw atom decodes produce a single template
 sentence with minor variations. Subtracting the origin decode makes the

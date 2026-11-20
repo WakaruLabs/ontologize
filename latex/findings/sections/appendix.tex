@@ -439,8 +439,11 @@ the pre-activation grows. The other eigenvalue is the larger in magnitude
 whenever the two factor vectors are negatively correlated, as holds for
 90\% of \texttt{k32\_bl}'s latents, and the quadratic form falls along its
 eigenvector (suppressing the latent). \texttt{sae.eigenfeatures} returns the
-positive-eigenvalue eigenvector; the \texttt{eig} autointerp scores reported
-here were measured with the top-$|\lambda|$ one.
+positive-eigenvalue eigenvector, which the \texttt{eig} autointerp mode
+decodes. On the same 75 latents, decoding the larger-magnitude eigenvector
+instead scores $0.034$, a paired difference of $-0.009$ (standard error
+$0.018$) from the exciting one, so neither direction yields a description
+the judge can use.
 Under our steering evaluation, the simplified head-based variants provide
 the primary structural comparison: \texttt{g160softmax} isolates the
 hypothesis of parallel softmax classifiers from the residual stack,
@@ -1055,8 +1058,8 @@ decode of a parameter-derived embedding (for Ontologizer entries, the
 origin $\mathbf{o}$ with one head forced one-hot; for SAE latents,
 $\mathbf{b}_{\mathrm{dec}} + \alpha\,\mathbf{w}^{\mathrm{dec}}_j$);
 \texttt{pdev}, the M2M100 decode obtained after subtracting the pure-origin
-embedding decode; \texttt{eig}, the M2M100 decode of the bilinear
-eigenfeature; \texttt{acts}, an LLM summary of top-activating text
+embedding decode; \texttt{eig}, the M2M100 decode of a bilinear latent's
+exciting eigenvector; \texttt{acts}, an LLM summary of top-activating text
 snippets; and \texttt{cacts}, a \emph{contrastive} summary in which the LLM
 receives top-activating snippets alongside random corpus draws and is
 prompted to state what distinguishes them, preventing the degenerate
