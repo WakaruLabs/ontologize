@@ -261,8 +261,8 @@ class SAE(Sparse):
         return jnp.cumsum(parts, 0) + self.decoder.bias.astype(self.dtype)
 
     def eigenfeatures(self) -> Float[Array, "m d"]:
-        """Each latent's closed-form top eigenvector (bilinear encoders
-        only); see the module-level `eigenfeatures`."""
+        """Each latent's closed-form exciting eigenvector (bilinear
+        encoders only); see the module-level `eigenfeatures`."""
         if self.enc != "bilinear":
             raise ValueError("eigenfeatures need a bilinear encoder")
         W1, W2 = self.encoder.weight_ubind()

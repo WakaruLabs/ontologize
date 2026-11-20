@@ -4678,6 +4678,30 @@ JAX_PLATFORMS=cpu uv run python experiments/ste-arm/steerembed.py \
 # and sweep_softmax_shm at 0.03
 ```
 
+**The `eig` autointerp with the exciting eigenvector (2026-11-20): decoded, not yet scored.**
+`data/out/sonar/autointerp_eig/m5120_k32_bl/sae/` is `autointerp_scalefix`'s `k32_bl` campaign
+(the same 75 latents, top rows, negatives and decode scale α, the mean of each latent's ten
+description activations) with `emb_eig` recomputed by the current `sae.eigenfeatures`, as its
+`meta.json` records. Its checkpoint, `sae_conv/m5120_k32_bl`, reproduces the stored `emb`
+exactly and, under the old rule, the stored `emb_eig` to 3e-8. A fresh harvest was not used:
+run on CPU it reorders the October GPU harvest's near-tied top rows and moves its negatives (top
+activations differ by up to 0.049), and the stratified sampler now tops a sample of mostly dead
+latents up to 256, where that campaign has 75. So only the decoded direction changes.
+
+- **The decode is reproducible.** From the old embeddings, the current `describe --mode eig`
+  gives the October descriptions word for word (75 of 75).
+- **The new direction.** For the 65 of 75 latents whose factors correlate negatively it is
+  orthogonal to the old one (median cosine 0.001); for the other 10 it is the same. 21 decodes
+  coincide with the old ones, since some latents decode to the same template either way. Its
+  median cosine with the latent's decoder row is 0.27, against the old direction's 0.08.
+- **Scoring** is the Haiku judge, as in October, plus a null that campaign did not run. It has
+  not been run yet, so the findings' `eig` 0.034 is still the old rule's, as the appendix says:
+
+```bash
+uv run python autointerp.py score --dir data/out/sonar/autointerp_eig/m5120_k32_bl/sae \
+    --out data/out/sonar/autointerp --only-modes eig --null --judge haiku
+```
+
 ## Run
 
 See [`README.md`](README.md) for training and scoring commands.
