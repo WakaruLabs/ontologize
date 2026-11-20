@@ -65,12 +65,13 @@ if is_gs "$S" && gcloud storage ls "$S/data/" >/dev/null 2>&1 || [ -d "$S/data" 
   tree "$S/data" "$REPO/data"
 fi
 
-# queues
+# queues, which only starting runners needs: a smoke test may have none
 rm -rf "$RD/jobs"
-tree "$S/jobs" "$RD/jobs"
+if is_gs "$S" && gcloud storage ls "$S/jobs/" >/dev/null 2>&1 || [ -d "$S/jobs" ]; then
+  tree "$S/jobs" "$RD/jobs"
+fi
 shopt -s nullglob
 QS=("$RD"/jobs/q*.txt)
-[ ${#QS[@]} -gt 0 ] || { echo "no queues in $S/jobs (tpu.sh stage jobs)"; exit 1; }
 if [ -e "$RD/jobs/q.txt" ] && [ ${#QS[@]} -gt 1 ]; then
   echo "q.txt (the whole VM) and per-chip queues would share chips; stage one or the other"; exit 1
 fi
@@ -79,6 +80,7 @@ cd "$REPO"
 if [ ! -f experiments/cloud/env.sh ]; then bash experiments/cloud/bootstrap.sh; fi
 source experiments/cloud/env.sh
 if [ -n "${RESTART_NO_RUN:-}" ]; then echo "RESTART_READY (inputs and environment; no runners)"; exit 0; fi
+[ ${#QS[@]} -gt 0 ] || { echo "no queues in $S/jobs (tpu.sh stage jobs)"; exit 1; }
 mkdir -p experiments/logs/cloud
 for q in "${QS[@]}"; do
   base=$(basename "$q" .txt)

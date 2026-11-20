@@ -38,7 +38,8 @@ if [ "$BACKEND" = tpu ]; then
     -f https://storage.googleapis.com/jax-releases/libtpu_releases.html
 fi
 uv pip install --python "$PY" "torch==$TORCH" --index-url https://download.pytorch.org/whl/cpu
-uv pip install --python "$PY" --no-deps -e .
+# the project itself is not installed, as `uv sync` doesn't install it: pyproject.toml
+# has no build system, and the scripts and tests/conftest.py put the root on sys.path
 rm -rf "$REQ"
 cat > experiments/cloud/env.sh <<ENV
 export ONTO_PY=$PY
