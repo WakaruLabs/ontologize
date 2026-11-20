@@ -31,9 +31,13 @@ def test_unpartitioned_is_plain_kernel_smoother():
     K = np.exp((En @ En.T - 1) / tau)
     np.fill_diagonal(K, 0)
     G = K / K.sum(1, keepdims=True)
+    # depth 2 re-zeroes the self-edge G^2 readmits (DEWAKSS)
+    G2 = G @ G
+    np.fill_diagonal(G2, 0)
+    G2 /= G2.sum(1, keepdims=True)
     spread = ((En - En.mean(0)) ** 2).mean()
     want = [((En - G @ En) ** 2).mean() / spread,
-            ((En - G @ G @ En) ** 2).mean() / spread]
+            ((En - G2 @ En) ** 2).mean() / spread]
     np.testing.assert_allclose(np.asarray(got), want, rtol=1e-4)
     # and it is pwak_l2 with a single one-cell head
     one = jnp.ones((E.shape[0], 1, 1))

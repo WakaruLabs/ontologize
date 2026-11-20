@@ -8,7 +8,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from ontologize.fns.pwak import diffuse, pwak_l2
+from ontologize.fns.pwak import affinity, diffuse, pwak_l2, wak, walk
 from ontologize.ontologizer import Ontologizer
 from ontologize.training.config import Hyperparams
 from ontologize.training.ontostate import update
@@ -67,10 +67,15 @@ def test_depth_punishes_only_leaky_partitions(clustered):
 
 
 def test_scrambled_approaches_the_batch_mean(clustered):
-    # 1.0 is the anchor: the graph does no better than predicting every
-    # sample by the batch mean
+    # 1.0 is the anchor: predicting every sample by the batch mean. Each
+    # scrambled cell holds 4 rows of every cluster, so its mean is the batch
+    # mean, and a leave-one-out walk predicts a row by its n-1 cell-mates,
+    # (n mu - x)/(n-1), so it scores (n/(n-1))^2 once the walk is deep
+    # enough to forget the kernel's own-cluster preference
     E, _, bad = clustered
-    assert float(pwak_l2(bad, E, 4, 4.0)) == pytest.approx(1.0, abs=0.02)
+    n = 16
+    assert float(pwak_l2(bad, E, 4, 4.0)) == pytest.approx(
+        (n / (n - 1)) ** 2, abs=0.02)
 
 
 def test_scale_free(clustered):
@@ -87,6 +92,32 @@ def test_diffusion_preserves_constants(clustered):
     E, good, _ = clustered
     C = jnp.ones((E.shape[0], 3))
     assert jnp.allclose(diffuse(good, C, 3, 1.0), C, atol=1e-5)
+
+
+def test_depth_keeps_the_self_edge_out():
+    # hard cells of n under a flat kernel (parallel rows: every cosine is 1).
+    # A plain G^2 puts 1/(n-1) on the self-edge and its error is the s=1
+    # error times ((n-2)/(n-1))^2, which rewards small cells; re-zeroed at
+    # every step (DEWAKSS) the walk stays G, so every depth scores as s=1
+    n, c, d, tau = 64, 3, 5, 0.2
+    rng = np.random.default_rng(0)
+    v = rng.normal(size=d)
+    E = jnp.asarray(rng.uniform(0.5, 2.0, size=(n * c, 1)) * v, jnp.float32)
+    P = jnp.asarray(np.eye(c, dtype=np.float32)[np.repeat(np.arange(c), n)][:, None])
+    e1 = float(pwak_l2(P, E, 1, tau))
+    for s in (2, 3, 4):
+        assert float(pwak_l2(P, E, s, tau)) == pytest.approx(e1, rel=1e-5), s
+    G = wak(jnp.einsum("ihc,jhc->ij", P, P) * affinity(E, tau))
+    assert jnp.allclose(jnp.diag(G @ G), 1.0 / (n - 1), rtol=1e-5)
+    spread = float(jnp.mean((E - E.mean(0)) ** 2))
+    plain = float(jnp.mean((E - G @ G @ E) ** 2)) / spread
+    assert plain / e1 == pytest.approx(((n - 2) / (n - 1)) ** 2, rel=1e-4)
+    # the walk itself: zero diagonal and row-stochastic at every depth
+    A = G
+    for _ in range(3):
+        A = walk(G, A)
+        assert jnp.allclose(jnp.diag(A), 0.0)
+        assert jnp.allclose(A.sum(-1), 1.0, atol=1e-5)
 
 
 def l2p_sum(model, **kw):

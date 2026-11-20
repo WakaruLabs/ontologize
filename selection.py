@@ -142,7 +142,7 @@ import jax.numpy as jnp
 from jaxtyping import Array, Float, Int
 
 from assignmap import read_hyper, temperature_at
-from ontologize.fns.pwak import affinity, wak
+from ontologize.fns.pwak import affinity, wak, walk
 
 STATS = ("partition", "partition_p10", "partition_p90", "joint",
          "random", "random_sd", "random_joint", "random_joint_sd",
@@ -287,15 +287,17 @@ def sort_values(vals):
 def n2s_score(gate: Float[Array, "b b"], D: Float[Array, "b b"],
               E: Float[Array, "b d"], ss: Sequence[int]) -> Float[Array, "S"]:
     """`pwak.pwak_l2` at each depth in `ss` from one walk: with
-    G = wak(gate . D), l2(E, G^s E) / l2(E, mean E). `D` carries the
-    zeroed diagonal (`pwak.affinity`)."""
+    G = wak(gate . D), l2(E, A_s E) / l2(E, mean E), where A_s is
+    `pwak.walk`'s s-step operator, re-zeroed at every step. `D` carries
+    the zeroed diagonal (`pwak.affinity`)."""
     G = wak(gate * D)
     spread = jnp.mean((E - E.mean(0, keepdims=True)) ** 2)
-    out, Y = [], E
+    out, A = [], G
     for s in range(1, max(ss) + 1):
-        Y = G @ Y
+        if s > 1:
+            A = walk(G, A)
         if s in ss:
-            out.append(jnp.mean((E - Y) ** 2))
+            out.append(jnp.mean((E - A @ E) ** 2))
     return jnp.stack(out) / (spread + jnp.finfo(E.dtype).eps)
 
 

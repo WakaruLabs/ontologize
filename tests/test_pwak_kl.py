@@ -56,6 +56,22 @@ def test_diffusion_preserves_the_simplex():
         assert jnp.all(Q >= 0), s
 
 
+def test_traced_depth_rezeroes_every_step():
+    # the fori_loop path is DEWAKSS's walk: at s=2 it applies wak(G G - diag)
+    # per head, not G G, whose diagonal readmits each sample's own belief
+    E = jax.random.normal(jax.random.PRNGKey(0), (B, D))
+    P = _P()
+    G = wak(jnp.einsum("ihc,jhc->hij", P, P) * affinity(E, 0.2))
+    A = wak((G @ G) * (1.0 - jnp.eye(B)))
+    Q = jnp.einsum("hij,jhk->ihk", A, P)
+    want = Q / Q.sum(-1, keepdims=True)
+    got = jax.jit(diffuse_kl)(P, E, jnp.asarray(2))
+    assert jnp.allclose(got, want, atol=1e-5)
+    assert not jnp.allclose(jnp.einsum("hij,jhk->ihk", G @ G, P)
+                            / jnp.einsum("hij,jhk->ihk", G @ G, P).sum(-1, keepdims=True),
+                            want, atol=1e-5)
+
+
 def test_s0_is_exactly_inert():
     # the term must cost nothing before the schedule ramps
     E = jax.random.normal(jax.random.PRNGKey(0), (B, D))

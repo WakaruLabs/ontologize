@@ -29,9 +29,11 @@ BEHAVIOUR). The construction itself: within a head, the batch's
 classifications P are a soft partition
 matrix PP^T -- exactly `partitionmat` with the indicators relaxed. Gate the
 input affinity with it, zero the diagonal, row-normalize (the WAK function),
-and diffuse the labels s steps:
+and diffuse the labels s steps, re-zeroing the diagonal of each power as
+DEWAKSS does (its Eqs. 6-9, `walk`):
 
-    G = wak((D . PP^T) - diag),    P^(s) = G^s P
+    G = wak((D . PP^T) - diag),    A_1 = G,    A_{t+1} = wak(A_t G - diag),
+    P^(s) = A_s P
 
 Each sample's classification becomes the consensus of its co-clustered
 semantic neighbours. Two properties temperature lacks:
@@ -44,10 +46,11 @@ semantic neighbours. Two properties temperature lacks:
      still sets its weights, through its classification (the gate) and
      through the affinity. For a hard per-head code it is no target at all:
      a sample's neighbours are its cell-mates, which carry its own one-hot,
-     so the target equals P and the KL is identically 0. And G has a zero
-     diagonal but G^2 does not, so even-length walks readmit the self-edge
-     (damped) at the s=2-4 actually used; DEWAKSS re-zeroes the diagonal
-     at every step instead.
+     so the target equals P and the KL is identically 0. G has a zero
+     diagonal but G^2 does not: a plain G^s would readmit the self-edge at
+     every s >= 2 (with weight 1/(n-1) in a hard cell of n under a flat
+     kernel) and reward small cells, which is why `walk` re-zeroes each
+     power.
 
 P^(s) also stays in the convex hull of the neighbourhood's classifications,
 so it cannot manufacture confidence the data does not support.
@@ -111,10 +114,27 @@ def affinity(E: Float[Array, "b d"], tau: float) -> Float[Array, "b b"]:
     D = jnp.exp((U @ U.T - 1.0) / tau)
     return D * (1.0 - jnp.eye(D.shape[0], dtype=D.dtype))
 
+def rezero(M: Float[Array, "... n n"]) -> Float[Array, "... n n"]:
+    """DEWAKSS's s(.): drop the self-edge and row-normalize (`wak`)."""
+    return wak(M * (1.0 - jnp.eye(M.shape[-1], dtype=M.dtype)))
+
+def walk(G: Float[Array, "... n n"], A: Float[Array, "... n n"]
+         ) -> Float[Array, "... n n"]:
+    """One more step of the leave-one-out walk: `rezero(A @ G)`. From
+    A = I it gives G itself, and A_{t+1} = s(A_t G) is DEWAKSS's per-step
+    re-zeroing, so the s-step operator never puts weight on the point
+    being estimated. A plain G^s does: for a hard cell of n under a flat
+    kernel its s=2 error is the s=1 error times ((n-2)/(n-1))^2, which
+    rewards small cells; re-zeroed, it equals the s=1 error. The price is
+    an (n, n) product per step, where G^s E costs (n, d)."""
+    return rezero(A @ G)
+
 def diffuse(P: Float[Array, "b h k"], E: Float[Array, "b d"],
             s: int, tau: float = 0.2) -> Float[Array, "b d"]:
     """s steps of partition-gated diffusion of `E` itself: each sample's
-    value becomes the graph-weighted average of its neighbours' values.
+    value becomes the graph-weighted average of its neighbours' values,
+    through `walk`'s s-step operator, which keeps every sample out of its
+    own estimate at every depth.
 
     The gate is the JOINT co-assignment `sum_h sum_c p_ihc p_jhc` -- the
     expected number of heads that agree -- so there is one (b, b)
@@ -130,19 +150,25 @@ def diffuse(P: Float[Array, "b h k"], E: Float[Array, "b d"],
     which keeps this reverse-differentiable so it can carry a loss term
     (`jax.lax.fori_loop` with a traced bound lowers to a `while_loop`,
     which cannot be differentiated in reverse mode)."""
+    if s == 0:
+        return E
     G = wak(jnp.einsum("ihc,jhc->ij", P, P) * affinity(E, tau))
-    for _ in range(s):
-        E = G @ E
-    return E
+    A = G
+    for _ in range(s - 1):
+        A = walk(G, A)
+    return A @ E
 
 def pwak_l2(P: Float[Array, "... h k"], E: Float[Array, "... d"],
             s: int, tau: float = 0.2) -> Float[Array, ""]:
     """Leave-one-out reconstruction error of a layer's input from its
     partition-gated neighbourhood (noise2self-style; see `affinity`), as a
     fraction of the batch's own
-    spread: `l2(E, G^s E) / l2(E, mean(E))`. Reads as a fraction of
+    spread: `l2(E, A_s E) / l2(E, mean(E))`, with A_s `walk`'s s-step
+    operator. Reads as a fraction of
     variance: 0 when neighbours predict a sample exactly, 1 when the
-    graph does no better than the batch mean. Exactly 0 at s=0 (diffusion
+    graph does no better than the batch mean (cells of n that carry no
+    information read (n/(n-1))^2, since a sample is predicted by its
+    cell-mates alone). Exactly 0 at s=0 (diffusion
     is the identity), so the term is inert until the schedule ramps.
 
     `E` is stop-gradiented, which is the whole point: it is the external
@@ -171,19 +197,20 @@ def pwak_l2(P: Float[Array, "... h k"], E: Float[Array, "... d"],
 
 def diffuse_kl(P: Float[Array, "b h k"], E: Float[Array, "b d"],
             s: int, tau: float = 0.2) -> Float[Array, "b h k"]:
-    """s steps of partition-gated diffusion of the classifications.
-    `s` may be traced (the schedule ramps it); the loop is a `fori_loop`,
-    which is fine because callers stop-gradient the result."""
+    """s steps of partition-gated diffusion of the classifications, per
+    head, through `walk`'s s-step operator (one (h, b, b) product per
+    step). `s` may be traced (the schedule ramps it); the loop is a
+    `fori_loop`, which is fine because callers stop-gradient the result."""
     D = affinity(E, tau)
     # soft co-assignment per head: (PP^T)_ij = sum_c p_ic p_jc
     G = wak(jnp.einsum("ihc,jhc->hij", P, P) * D)
-    # renormalize each step: G is row-stochastic so the simplex is preserved
-    # in exact arithmetic, but TF32 matmuls drift ~1e-3 per step and the KL
-    # target has to be an actual distribution
-    def step(_, Q):
-        Q = jnp.einsum("hij,jhk->ihk", G, Q)
-        return Q / (Q.sum(-1, keepdims=True) + jnp.finfo(Q.dtype).eps)
-    return jax.lax.fori_loop(0, s, step, P)
+    A = jax.lax.fori_loop(0, s, lambda _, A: walk(G, A),
+                          jnp.broadcast_to(jnp.eye(G.shape[-1], dtype=G.dtype),
+                                           G.shape))
+    Q = jnp.einsum("hij,jhk->ihk", A, P)
+    # A is row-stochastic, so the simplex is preserved in exact arithmetic,
+    # but TF32 matmuls drift and the KL target has to be a distribution
+    return Q / (Q.sum(-1, keepdims=True) + jnp.finfo(Q.dtype).eps)
 
 def pwak_kl(P_0: Float[Array, "... h k"], E: Float[Array, "... d"],
             s: int, tau: float = 0.2, isloss: bool = False
