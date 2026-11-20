@@ -422,9 +422,27 @@ def test_eigenfeatures_closed_form_matches_eigh():
         v = np.asarray(params["W_enc2"])[:, j]
         B = (np.outer(u, v) + np.outer(v, u)) / 2
         vals, vecs = np.linalg.eigh(B)
-        top = vecs[:, np.argmax(np.abs(vals))][:D]
+        # the exciting eigenvector: the positive eigenvalue's, even where
+        # the negative one is larger in magnitude (u.v < 0)
+        top = vecs[:, np.argmax(vals)][:D]
         top /= np.linalg.norm(top)
         assert abs(abs(top @ E[j]) - 1.0) < 1e-4, j
+
+
+def test_eigenfeatures_excite_a_latent_whose_form_is_negative_dominated():
+    # u.v < 0 makes the negative eigenvalue the larger in magnitude; the
+    # eigenfeature must still be a direction along which the form grows
+    rng = np.random.default_rng(9)
+    u = rng.normal(size=D + 1)
+    v = -u + 0.3 * rng.normal(size=D + 1)
+    params = {"W_enc1": jnp.asarray(u[:, None], jnp.float32),
+              "W_enc2": jnp.asarray(v[:, None], jnp.float32),
+              "W_dec": jnp.asarray(rng.normal(size=(1, D)), jnp.float32)}
+    B = (np.outer(u, v) + np.outer(v, u)) / 2
+    vals = np.linalg.eigvalsh(B)
+    assert abs(vals.min()) > vals.max() > 0
+    e = np.append(np.asarray(sae.eigenfeatures(params))[0], 0.0)
+    assert e @ B @ e > 0
 
 
 def test_bilinear_topk_sae_trains(tmp_path):

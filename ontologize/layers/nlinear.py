@@ -32,6 +32,24 @@ def orient(V: Float[Array, "... d"], lam: Float[Array, "... 1"]
     return V * s.astype(V.dtype)
 
 
+def excite(W: Float[Array, "... d"], V: Float[Array, "... d"]
+           ) -> Tuple[Float[Array, "... d"], Float[Array, "... 1"]]:
+    """Each form `sym(w v^T)`'s positive-eigenvalue eigenvector (unit) and
+    that eigenvalue, in closed form.
+
+    The form has rank at most 2: its eigenvalues are |w||v|(cos +- 1)/2,
+    on w/|w| +- v/|v|. Along w/|w| + v/|v| the form grows; along the other
+    eigenvector it shrinks, and that one has the larger magnitude whenever
+    w.v < 0, so a top-|eigenvalue| rule returns a direction that switches
+    the output off. Where w = -cv the form is negative semidefinite, no
+    direction excites it, and the vector is zero."""
+    nw = jnp.linalg.norm(W, axis=-1, keepdims=True)
+    nv = jnp.linalg.norm(V, axis=-1, keepdims=True)
+    U = W / (nw + 1e-12) + V / (nv + 1e-12)
+    lam = 0.5 * (nw * nv + (W * V).sum(-1, keepdims=True))
+    return U / jnp.maximum(jnp.linalg.norm(U, axis=-1, keepdims=True), 1e-12), lam
+
+
 class NLinear(Sparse):
     """Generalization of `Bilinear` to arbitrary `n`. Like `Linear`, has `fwd`
     methods for computing ghost gradients. Unlike `Linear` and `Bilinear, 
@@ -44,7 +62,8 @@ class NLinear(Sparse):
     activation: str = "none"
     gate: str = "none"
     dtype_str: str = "bfloat16"
-    dtype_p_str: str = "bfloat16"
+    # float32 master weights: in bfloat16 an Adam step below |w|/256 rounds away
+    dtype_p_str: str = "float32"
 
     def setup(self):
         super().setup()
@@ -146,13 +165,12 @@ class Bilinear(NLinear):
         return eigenvals, eigenvecs
 
     def rev(self, Y: Float[Array, "... d_out"]) -> Float[Array, "... d_in"]:
-        """Approximate reverse pass using only the `top1` eigenvalues."""
-        vals, vecs = self.decompose()
-        top1 = jnp.argmax(jnp.abs(vals), axis=1)
-        # eigh returns eigenvectors as columns: v[:, i] pairs with vals[i]
-        vecs_top1 = jax.vmap(lambda v, i: v[:, i])(vecs, top1)
-        lam = jnp.take_along_axis(vals, top1[:, None], axis=1)
-        return jnp.dot(Y.astype(self.dtype), orient(vecs_top1, lam))
+        """Approximate reverse pass: each output's exciting direction, the
+        positive-eigenvalue eigenvector of its form (`excite`), weighted by
+        `Y`. The sign is `orient`'s convention."""
+        W, V = self.weight.astype(jnp.float32)
+        vecs, lam = excite(W, V)
+        return jnp.dot(Y.astype(self.dtype), orient(vecs, lam))
 
     def project(self, Y_0: Float[Array, "... d_out"]
                 ) -> Tuple[Float[Array, "... d_out d_in"], 
@@ -173,7 +191,8 @@ class NLinearBlock(Sparse):
     activation: str = "none"
     gate: str = "none"
     dtype_str: str = "bfloat16"
-    dtype_p_str: str = "bfloat16"
+    # float32 master weights: in bfloat16 an Adam step below |w|/256 rounds away
+    dtype_p_str: str = "float32"
 
     def setup(self):
         super().setup()
@@ -301,11 +320,7 @@ class BilinearBlock(NLinearBlock):
 
     def rev(self, Y: Float[Array, " ... h d_out"]) -> Float[Array, "... d_in"]:
         """As `Bilinear.rev`, but broadcast over the `h` axis and summed over heads."""
-        vals, vecs = self.decompose()
-        top1 = jnp.argmax(jnp.abs(vals), axis=-1)         # (h, d_out)
-        # eigh returns eigenvectors as columns: gather v[..., :, top1]
-        vecs_top1 = jnp.take_along_axis(
-            vecs, top1[..., None, None], axis=-1).squeeze(-1)  # (h, d_out, d_in)
-        lam = jnp.take_along_axis(vals, top1[..., None], axis=-1)
+        W, V = self.weight.astype(jnp.float32)            # each (h, d_out, d_in)
+        vecs, lam = excite(W, V)
         return jnp.einsum("...hk, hkd -> ...d", Y.astype(self.dtype),
-                          orient(vecs_top1, lam))
+                          orient(vecs, lam))

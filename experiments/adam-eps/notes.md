@@ -124,3 +124,39 @@ SD at initialization is 0.0026. The original's step-371,900 row comes from the e
     (`experiments/layer4-freeze`).
 - **Every GPT-2 Ontologizer result to date was trained under this throttle**, the writeup's
   included.
+
+## 2026-11-19: the step each block takes relative to its size
+
+`throttle.py` now prints, beside each block's median step share, the realized relative step: the
+run's learning rate times |m̂/(√v̂ + ε)| over the block's norm, from the checkpoint's parameters and
+both of Adam's moments. It is the fraction by which one step changes the block, so it puts arms
+with different ε, or different parameter norms, on one scale. The arithmetic is tested against
+optax's own last update (`tests/test_adam_eps.py`).
+
+| run | step | classifiers, layers 0-4 | dictionaries, layers 0-4 |
+|---|---|---|---|
+| ε 1e-8 | 30,750 | 9.6e-6 4.5e-6 2.3e-6 1.7e-6 9.7e-7 | 3.6e-3 3.9e-3 3.7e-3 3.0e-3 2.5e-3 |
+| ε 1e-15 | 30,750 | 3.9e-5 4.0e-5 4.4e-5 5.0e-5 6.4e-5 | 3.7e-3 3.0e-3 2.8e-3 2.4e-3 2.3e-3 |
+| original | 371,900 | 4.8e-6 3.4e-6 2.0e-6 1.6e-6 8.5e-7 | 5.3e-4 4.1e-4 3.7e-4 3.3e-4 3.3e-4 |
+
+The step shares printed beside them reproduce the table of 2026-10-24 exactly.
+
+- **The control's classifiers move 4 to 66 times slower than the 1e-15 arm's, not 1,000 times.**
+  The ratio is 4.1, 8.9, 19, 29 and 66 from layer 0 to layer 4. The median share is a per-element
+  statistic, and most elements are throttled; the relative step is a norm over the block, which
+  the elements whose gradients stand well above ε dominate, and those take nearly full steps under
+  either ε.
+- **The gap widens with depth**, as the shares' did: layer 4's classifiers under the default ε
+  change by under one part in a million per step.
+- **The dictionaries move at the same rate in both arms** (2.3e-3 to 3.9e-3), so at this length
+  the arms differ in the classifiers' speed alone, which the shares already suggested.
+- **The SAE's relative step is per unit learning rate.** `m12160_k32` reads W_dec 6.4, W_enc 5.7,
+  b_dec 0.091 and b_enc 0.75 per unit lr, beside shares of 0.995-1.000. Its `meta.json` has no
+  learning rate; `sae.py` records `lr` there from now on, and `throttle.py` then reads the step at
+  the run's own rate.
+
+```bash
+JAX_PLATFORMS=cpu uv run python experiments/adam-eps/throttle.py \
+    data/out/gpt2_l8/adam_eps/ste_h76_eps1e-8:30750 data/out/gpt2_l8/adam_eps/ste_h76_eps1e-15:30750 \
+    data/out/gpt2_l8/ste_h76:371900 data/out/gpt2_l8/sae/m12160_k32
+```

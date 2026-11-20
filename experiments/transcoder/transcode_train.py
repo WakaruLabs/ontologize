@@ -48,7 +48,7 @@ import grain.python as gp
 EXP_DIR = Path(__file__).resolve().parent
 
 
-def parse_args():
+def parse_args(argv=None):
     p = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -88,7 +88,9 @@ def parse_args():
     # regularizers (sonar.py live values)
     p.add_argument("--s-l1f", type=float, default=1e-9)
     p.add_argument("--s-bcossim", type=float, default=1e-5)
-    p.add_argument("--s-hcossim", type=float, default=1e-6)
+    p.add_argument("--s-support", type=float, default=1e-6,
+                   help="between-head support overlap (DictBlock.support_"
+                        "overlap), the term that replaced s_hcossim")
     p.add_argument("--s-hm", type=float, default=1e-6)
     # eval
     p.add_argument("--eval-rows", type=int, default=32768,
@@ -100,7 +102,7 @@ def parse_args():
     p.add_argument("--eval-only", action="store_true",
                    help="skip training; evaluate the latest checkpoint in "
                         "--out plus the ridge baseline")
-    return p.parse_args()
+    return p.parse_args(argv)
 
 
 class PairedNpySource(gp.RandomAccessDataSource):
@@ -175,32 +177,40 @@ def model_fvu(cfg, model, params, src, w):
     return fvu(np.concatenate(preds), np.concatenate(Ys), w)
 
 
-def train(cfg, src):
-    from tqdm import tqdm
-    from ontologize.training.config import Hyperparams, Metadata, log_env
-    from ontologize.training.ontostate import (update, schedules,
-                                               load_params)
-    from ontologize.data.loaders import SampleLoader
-
-    out = Path(cfg.out)
-    d_x, d_y = src.d_x, src.d_y
+def build(cfg, d_x, d_y):
+    """The Hyperparams and the d_x -> d_y Ontologizer the flags describe."""
+    from ontologize.training.config import Hyperparams
     hyper = Hyperparams(
         d_x, d_y, cfg.b, cfg.epochs, cfg.lr, 0.0, cfg.temperature,
         "batchnorm", "normal", "featvar", 0.0, cfg.sd_k, cfg.sd_f,
         s_g=0.0, s_L1K=0.0, s_L1F=cfg.s_l1f, s_H=0.0,
-        s_bcossim=cfg.s_bcossim, s_hcossim=cfg.s_hcossim, s_Hm=cfg.s_hm,
+        s_bcossim=cfg.s_bcossim, s_support=cfg.s_support, s_Hm=cfg.s_hm,
         p_drop=cfg.p_drop, p_drop_start=0.0,
         mse_weights=cfg.mse_weights or None,
         temperature_end=cfg.temperature_end, anneal_steps=cfg.anneal_steps,
         sd_K_end=0.2 * cfg.temperature_end,
         ghost=False, seed=cfg.seed)
 
-    # labels forwarding only; see the module docstring / DESIGN.md 2d
+    # labels forwarding only; see the module docstring / DESIGN.md 2d. A
+    # labels-forwarded layer hands the next a probability vector, which has
+    # no magnitude for gain-shape coding to separate, so resid_gain is off
     model = hyper.ontologizer(
         d_x, d_y, cfg.e_dec, cfg.k, cfg.h, cfg.l, n=2, gate="none",
         scaled=False, encoded=False,
-        forward="labels", deepsup=cfg.deepsup,
+        forward="labels", resid_gain=False, deepsup=cfg.deepsup,
         dtype_str="float32", dtype_p_str="float32")
+    return hyper, model
+
+
+def train(cfg, src):
+    from tqdm import tqdm
+    from ontologize.training.config import Metadata, log_env
+    from ontologize.training.ontostate import (update, schedules,
+                                               load_params)
+    from ontologize.data.loaders import SampleLoader
+
+    out = Path(cfg.out)
+    hyper, model = build(cfg, src.d_x, src.d_y)
 
     meta = Metadata("embedding", None, out_path=out, threads=0,
                     save_each=cfg.save_each,
@@ -229,7 +239,7 @@ def train(cfg, src):
         with tqdm(loader, desc=f"Transcoding {cfg.epochs} epochs") as pbar:
             for batch in pbar:
                 X, Y = batch["x"], batch["y"]
-                T, pd, sk = schedules(
+                T, pd, sk, _ = schedules(
                     int(state.step), cfg.anneal_steps,
                     cfg.temperature, cfg.temperature_end,
                     cfg.p_drop, 0.0, cfg.sd_k, 0.2 * cfg.temperature_end)

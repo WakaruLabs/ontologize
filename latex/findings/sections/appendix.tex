@@ -428,17 +428,19 @@ PCA-like~\cite{gao2024}). A second-seed replica (\texttt{k32\_s43}) is
 trained for cross-seed stability analysis. Latents of the bilinear encoder
 admit closed-form eigenfeature analysis: each latent's symmetric
 interaction matrix $\mathrm{sym}(\mathbf{w}_1 \mathbf{w}_2^\top)$
-(Pearce et al.~\cite{pearce2025}) has rank at most 2, and its dominant
-(top-$|\lambda|$) eigenvector is
+(Pearce et al.~\cite{pearce2025}) has rank at most 2, with eigenvalues
+$\lVert\mathbf{w}_1\rVert\lVert\mathbf{w}_2\rVert
+(\cos\angle(\mathbf{w}_1,\mathbf{w}_2) \pm 1)/2$ on
 $\mathbf{w}_1/\lVert\mathbf{w}_1\rVert \pm
-\mathbf{w}_2/\lVert\mathbf{w}_2\rVert$, taking the sign of
-$\mathbf{w}_1\cdot\mathbf{w}_2$. When the two factor vectors are negatively
-correlated, as holds for 90\% of \texttt{k32\_bl}'s latents, this dominant
-eigenvalue is negative: the quadratic form decreases along that eigenvector
-(suppressing the latent), whereas the positive-eigenvalue eigenvector
-$\mathbf{w}_1/\lVert\mathbf{w}_1\rVert + \mathbf{w}_2/\lVert\mathbf{w}_2\rVert$
-increases the pre-activation. The \texttt{eig} autointerp mode
-(\texttt{sae.eigenfeatures}) uses the top-$|\lambda|$ eigenvector.
+\mathbf{w}_2/\lVert\mathbf{w}_2\rVert$. Along the positive-eigenvalue
+eigenvector,
+$\mathbf{w}_1/\lVert\mathbf{w}_1\rVert + \mathbf{w}_2/\lVert\mathbf{w}_2\rVert$,
+the pre-activation grows. The other eigenvalue is the larger in magnitude
+whenever the two factor vectors are negatively correlated, as holds for
+90\% of \texttt{k32\_bl}'s latents, and the quadratic form falls along its
+eigenvector (suppressing the latent). \texttt{sae.eigenfeatures} returns the
+positive-eigenvalue eigenvector; the \texttt{eig} autointerp scores reported
+here were measured with the top-$|\lambda|$ one.
 Under our steering evaluation, the simplified head-based variants provide
 the primary structural comparison: \texttt{g160softmax} isolates the
 hypothesis of parallel softmax classifiers from the residual stack,
@@ -947,7 +949,8 @@ fraction of the \emph{other} heads change their winning entry
 (the output delta produced by forcing the target entry), \texttt{grad} (the
 input gradient of the target logit), \texttt{margin} (the input gradient of
 the target entry's logit margin over the head's incumbent winner),
-\texttt{adjoint} (the bilinear classifier's dominant eigenvector via
+\texttt{adjoint} (the eigenvector of the target entry's bilinear form with
+its positive eigenvalue, the direction along which the form grows, via
 \texttt{BilinearBlock.rev}), and \texttt{random}. Step strength $\alpha$ is
 specified as a fraction of each sample's norm. We also evaluate each
 model's \emph{native} step size: the output delta of forcing the entry in
@@ -957,26 +960,37 @@ procedure.
 
 \input{algorithms/steerembed}
 
-\paragraph{Eigenvector orientation.}
+\paragraph{Which eigenvector, and its sign.}
 \label{sec:eigorient}
-The adjoint direction of a bilinear classifier is an eigenvector of its
-symmetric interaction matrix, which \texttt{eigh} determines only up to
-sign because a bilinear eigenvector enters the quadratic form through the
-square of its projection~\cite{pearce2025}. Orienting each eigenvector by
-the sign of its eigenvalue with a leading-coordinate tie-break
-(\texttt{nlinear.orient}) realizes $0.427$ of targets on the softmax model
-at strength $0.25$, compared to $0.224$ under the arbitrary sign returned
-by \texttt{eigh} and $0.446$ when oriented per sample. On isotropic inputs,
-a purely weight-based sign convention could not improve over chance: a step
-of size $\alpha$ along $\mathbf{v}$ changes $\mathbf{x}^\top B\mathbf{x}$
-to first order by $2\alpha\lambda(\mathbf{x}\cdot\mathbf{v})$, whose sign
-depends on the sample (increasing the logit on roughly half of isotropic
-Gaussian draws). Weight-only orientation succeeds on SONAR because the
-embedding cloud is uncentered and anisotropic, so $\mathbf{x}\cdot\mathbf{v}$
-is dominated by $\bar{\mathbf{x}}\cdot\mathbf{v}$, which has a consistent
-sign across the corpus. On the hard-code Ontologizer, however, the oriented
-eigendirection remains below the random-direction baseline at every step
-strength.
+The adjoint direction of a bilinear classifier is an eigenvector of each
+entry's symmetric interaction matrix $\mathrm{sym}(\mathbf{w}\mathbf{v}^\top)$,
+which has rank at most two: its eigenvalues are
+$\lVert\mathbf{w}\rVert\lVert\mathbf{v}\rVert
+(\cos\angle(\mathbf{w},\mathbf{v}) \pm 1)/2$, on
+$\mathbf{w}/\lVert\mathbf{w}\rVert \pm \mathbf{v}/\lVert\mathbf{v}\rVert$
+(Appendix~\ref{sec:bilinspec}). The entry's logit grows along the
+positive-eigenvalue eigenvector and falls along the other, and
+\texttt{BilinearBlock.rev} takes the positive one, in closed form. The
+eigenvector of largest $\lvert\lambda\rvert$ is the falling one whenever
+$\mathbf{w}\cdot\mathbf{v} < 0$, which holds for 97.9--99.9\% of the
+hard-code stack's entries and 63.3--98.6\% of the softmax stack's. Under
+that rule the adjoint realizes $0.001$ of targets on the hard code at
+strength $0.25$, below the random direction, and $0.38$ on the softmax
+model; under the positive-eigenvalue rule it realizes $0.48$ and $0.71$
+(Table~\ref{tab:steerembed}).
+
+The eigenvector's sign is still free, since the form is even, and a step of
+size $\alpha$ along $\mathbf{v}$ changes $\mathbf{x}^\top B\mathbf{x}$ to
+first order by $2\alpha\lambda(\mathbf{x}\cdot\mathbf{v})$, whose sign
+depends on the sample. \texttt{nlinear.orient} fixes it by a
+leading-coordinate tie-break, so that \texttt{rev} is reproducible; on
+isotropic Gaussian inputs such a weight-only sign raises the logit on
+roughly half of the draws. On SONAR it does better, because the embedding
+cloud is uncentered and anisotropic, so $\mathbf{x}\cdot\mathbf{v}$ is
+dominated by $\bar{\mathbf{x}}\cdot\mathbf{v}$, which has a consistent sign
+across the corpus. Orienting each step per sample instead raises
+realization at strength $0.25$ from $0.71$ to $0.77$ on the softmax model
+and from $0.48$ to $0.57$ on the hard code.
 
 \paragraph{Linearized collateral (\texttt{steergeom.py}).}
 To separate the direct within-layer effect of an input perturbation on
@@ -2686,27 +2700,32 @@ aggregate ranking of steering directions:
 \toprule
 layer & decode & grad & margin & adjoint & random \\
 \midrule
-0 & 0.216 & \textbf{0.583} & 0.547 & 0.237 & 0.034 \\
-1 & 0.464 & 0.089 & 0.367 & 0.000 & 0.023 \\
-2 & 0.742 & 0.130 & 0.216 & 0.000 & 0.055 \\
-3 & \textbf{0.966} & 0.130 & 0.091 & 0.000 & 0.034 \\
-4 & 0.362 & 0.047 & 0.036 & 0.005 & 0.047 \\
+0 & 0.203 & \textbf{0.589} & 0.549 & 0.461 & 0.034 \\
+1 & 0.451 & 0.099 & 0.409 & \textbf{0.547} & 0.008 \\
+2 & \textbf{0.753} & 0.125 & 0.188 & 0.500 & 0.026 \\
+3 & \textbf{0.997} & 0.094 & 0.112 & 0.500 & 0.036 \\
+4 & 0.331 & 0.044 & 0.049 & \textbf{0.581} & 0.026 \\
 \bottomrule
 \end{tabular}
 \end{center}
 
 At layer 0, where the input perturbation reaches the classifier directly,
-directions derived from the classifier's own geometry (\texttt{grad} and
-\texttt{margin}) outperform \texttt{decode} three- to tenfold. At deeper
-layers, however, classifier-local directions fail: a gradient computed
-with respect to layer $\ell$'s residual input is valid only locally, and
-an input-space perturbation arrives at layer $\ell$ only after earlier
-layers have re-encoded and subtracted from it. By contrast, the
-\texttt{decode} direction shifts the input toward the vector emitted when
-the target entry is active, remaining self-consistent across the residual
-cascade. Layer 4 is difficult to steer along any direction because its
-residual is nearly exhausted. Practically, layer 0 is best steered via
-classifier gradients and layers 1--3 via decoded atoms.
+the gradient directions derived from the classifier (\texttt{grad} and
+\texttt{margin}) outperform \texttt{decode} nearly threefold. At deeper
+layers they fail: a gradient computed with respect to layer $\ell$'s
+residual input is valid only locally, and an input-space perturbation
+arrives at layer $\ell$ only after earlier layers have re-encoded and
+subtracted from it. By contrast, the \texttt{decode} direction shifts the
+input toward the vector emitted when the target entry is active, remaining
+self-consistent across the residual cascade, and leads at layers 2 and 3.
+The \texttt{adjoint}, the eigenvector along which the target entry's
+bilinear form grows, is the one classifier-derived direction that holds at
+every depth, realizing $0.46$--$0.58$ in each layer ($0.55$--$0.67$ oriented
+per sample); at layer 4, where every other direction realizes at most
+$0.33$, it realizes $0.58$. Practically, layer 0 is best steered via
+classifier gradients, layers 2--3 via decoded atoms, and layers 1 and 4 via
+the adjoint. The table is the shipped initialization's stack
+(\texttt{ste\_h76}); one seed.
 
 \paragraph{Head-health levers and steering.} We tried three training
 levers on the shipped stack. First, \emph{batch-mean uniformity pressure from
@@ -2722,10 +2741,11 @@ penalties based on HSIC/CKA optimized finite-sample estimator bias rather
 than genuine dependence} (Section~\ref{sec:hsic}). Third, \emph{a
 row-collinearity setpoint is the one lever that improved steerability}: capping
 within-head atom cosine at $0.5$ (compared to $0.774$ in the uncontrolled
-run) increases embedding-space realization across every steering direction
-(\texttt{decode} $+15\%$, \texttt{grad} $+17\%$, \texttt{margin} $+52\%$,
-and oriented \texttt{adjoint} $+122\%$) while reducing collateral
-($0.591 \to 0.552$) and slightly improving held-out $\fvu$ ($0.2157$ vs.\
+run) raises embedding-space realization at strength $0.25$ for the
+gradient directions (\texttt{grad} $+17\%$, \texttt{margin} $+49\%$) and
+by $6\%$ for \texttt{decode}, leaves the \texttt{adjoint} about unchanged
+($-3\%$, and $+7\%$ oriented per sample), and reduces collateral
+($0.588 \to 0.552$) while slightly improving held-out $\fvu$ ($0.2157$ vs.\
 $0.2293$). The setpoint controller acts only transiently during early
 training (Figure~\ref{fig:kcos}): as the maximum within-head atom cosine
 across heads and layers climbs past $0.8$, the multiplier
@@ -2839,9 +2859,10 @@ hard-code flat  & 0.367 & 0.315 & 0.309 & 0.521 & 0.328 & 0.274 \\
 \end{center}
 
 Compared to the covariance-shaped random controls, the softmax stack's
-\texttt{decode} direction flips $0.14$ more unrelated heads, and its
-gradient, margin, and adjoint directions flip $0.15$--$0.20$ more, though
-all remain within $0.07$ of the isotropic baseline. In the five-layer
+\texttt{decode} direction flips $0.14$ more unrelated heads, its gradient
+and margin directions $0.15$--$0.20$ more, and its adjoint $0.23$ more; the
+gradient directions remain within $0.07$ of the isotropic baseline, and the
+adjoint sits $0.10$ above it. In the five-layer
 hard-code stack, every steering direction stays within $0.025$ of the
 data-shaped controls. In the single-layer flat arm, the \texttt{decode}
 direction and the difference of means remain within $0.041$ of the

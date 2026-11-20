@@ -55,15 +55,64 @@ def test_sae_medians_reads_sae_state(tmp_path):
         _, opt = tx.update({k: jnp.full(v.shape, g[k]) for k, v in params.items()},
                            opt, params)
     sae.save_state(tmp_path / "state.npz", params, opt, 3, np.zeros(6, np.int64))
-    eps, step, count, med = sae_medians(tmp_path)
+    eps, step, count, med, _, at_lr = sae_medians(tmp_path)
     assert (eps, step, count) == (1e-8, 3, 3)  # no meta.json: optax's eps
     assert list(med) == [f"leaf_{i}" for i in range(4)]  # no params.npz yet
+    assert not at_lr  # no learning rate recorded: the step is per unit lr
     (tmp_path / "meta.json").write_text(json.dumps({"adam_eps": 1e-9}))
     np.savez(tmp_path / "params.npz", **params)
-    eps, _, _, med = sae_medians(tmp_path)
+    eps, _, _, med, _, _ = sae_medians(tmp_path)
     assert eps == 1e-9
     for k in params:
         assert med[k] == pytest.approx(g[k] / (g[k] + 1e-9), rel=1e-4)
+
+
+def test_relative_step_is_adams_step_over_the_norm():
+    # the moments a step leaves are the ones that step used, so the
+    # relative step read back from them is that update over the block's norm
+    import numpy as np
+    import optax
+    from throttle import relative_step
+    theta = jnp.asarray(np.random.default_rng(0).normal(size=40), jnp.float32)
+    lr, eps = 1e-3, 1e-8
+    tx = optax.adam(lr, eps=eps)
+    opt = tx.init(theta)
+    rng = np.random.default_rng(1)
+    for _ in range(5):
+        u, opt = tx.update(jnp.asarray(rng.normal(size=40) * 1e-4, jnp.float32), opt, theta)
+    adam = opt[0]
+    got = relative_step(theta, adam.mu, adam.nu, int(adam.count), eps, lr)
+    want = float(jnp.linalg.norm(u) / jnp.linalg.norm(theta))
+    assert got == pytest.approx(want, rel=1e-4)
+    # eps throttles it: an eps far above the gradient's scale shrinks the step
+    assert relative_step(theta, adam.mu, adam.nu, int(adam.count), 1e-2, lr) < got / 10
+
+
+def test_sae_relative_step_takes_the_recorded_learning_rate(tmp_path):
+    import json
+    import numpy as np
+    import optax
+    import sae
+    from throttle import sae_medians
+    params = {"W_dec": jnp.ones((6, 4)), "W_enc": jnp.ones((4, 6)),
+              "b_dec": jnp.ones(4), "b_enc": jnp.ones(6)}
+    tx = optax.adam(1e-3)
+    opt = tx.init(params)
+    for _ in range(3):
+        _, opt = tx.update({k: jnp.full(v.shape, 1e-5) for k, v in params.items()},
+                           opt, params)
+    sae.save_state(tmp_path / "state.npz", params, opt, 3, np.zeros(6, np.int64))
+    np.savez(tmp_path / "params.npz", **params)
+    _, _, _, _, per_unit, at_lr = sae_medians(tmp_path)
+    assert not at_lr
+    (tmp_path / "meta.json").write_text(json.dumps({"lr": 1e-3}))
+    _, _, _, _, rel, at_lr = sae_medians(tmp_path)
+    assert at_lr
+    for k in params:
+        # a constant gradient well above eps: every entry steps by lr, and
+        # the parameters are ones, so the relative step is lr itself
+        assert rel[k] == pytest.approx(1e-3, rel=1e-3)
+        assert per_unit[k] == pytest.approx(1.0, rel=1e-3)
 
 
 def test_on_the_init_scale_class():

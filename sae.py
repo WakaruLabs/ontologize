@@ -62,8 +62,9 @@ gains to specific structure rather than to the whole architecture):
       coordinate gives the quadratic form linear terms, the same
       sign-blindness fix as sonar.py's resid_const. Latents then admit
       parameter-based "eigenfeature" analysis: eigenfeatures() returns
-      each latent's closed-form top eigenvector (the rank-2 symmetric
-      form sym(w1 w2^T) needs no eigh), which autointerp.py decodes
+      each latent's closed-form exciting eigenvector, the one with the
+      positive eigenvalue (the rank-2 symmetric form sym(w1 w2^T) needs
+      no eigh), which autointerp.py decodes
       through M2M100 as a third description mode ("eig") next to the
       W_dec row ("params") and top activations ("acts"). Composes with
       any activation rule; expect to need a lower --lr.
@@ -330,8 +331,8 @@ def preacts(params, X, block=0):
 
 
 def eigenfeatures(params):
-    """Each bilinear latent's closed-form top eigenvector, (m, d)
-    (`ontologize.sae.eigenfeatures`)."""
+    """Each bilinear latent's closed-form exciting (positive-eigenvalue)
+    eigenvector, (m, d) (`ontologize.sae.eigenfeatures`)."""
     return _eigenfeatures(params["W_enc1"].T, params["W_enc2"].T,
                           params["W_dec"])
 
@@ -655,7 +656,7 @@ def train(cfg):
         {"m": cfg.m, "topk": cfg.topk, "l1": cfg.l1, "groups": cfg.groups,
          "group_fn": cfg.group_fn, "prefixes": cfg.prefixes,
          "enc": cfg.enc, "resample_every": cfg.resample_every,
-         "block": cfg.block, "adam_eps": cfg.adam_eps,
+         "block": cfg.block, "adam_eps": cfg.adam_eps, "lr": cfg.lr,
          "sd_pre": cfg.sd_pre, "p_drop": cfg.p_drop, "sd_out": cfg.sd_out}))
 
     mm = np.load(cfg.cache, mmap_mode="r")

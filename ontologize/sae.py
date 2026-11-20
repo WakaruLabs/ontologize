@@ -64,19 +64,19 @@ def topk_relu(pre: Float[Array, "... m"], topk: int) -> Float[Array, "... m"]:
 
 def eigenfeatures(W1: Float[Array, "m d1"], W2: Float[Array, "m d1"],
                   W_dec: Float[Array, "m d"]) -> Float[Array, "m d"]:
-    """Input-space top eigenvector of each bilinear latent's symmetric form
-    `sym(w1 w2^T)`. The form has rank at most 2, so the top-|eigenvalue|
-    eigenvector is closed-form, `w1/|w1| + sign(w1.w2) w2/|w2|`, with no
-    `eigh`. When w1.w2 < 0 its eigenvalue is negative: the form falls along
-    it, so it is a direction the latent rejects, and the positive-eigenvalue
-    eigenvector `w1/|w1| + w2/|w2|` is the one that excites it. The
+    """Input-space exciting eigenvector of each bilinear latent's symmetric
+    form `sym(w1 w2^T)`: the eigenvector of its positive eigenvalue, along
+    which the pre-activation grows. The form has rank at most 2, so this is
+    closed-form, `w1/|w1| + w2/|w2|`, with no `eigh` (`nlinear.excite`).
+    The other eigenvector, `w1/|w1| - w2/|w2|`, has the larger eigenvalue
+    in magnitude whenever w1.w2 < 0, but that eigenvalue is negative: the
+    form falls along it, so it is a direction the latent rejects. The
     constant coordinate is dropped and the result unit-normalized and
     sign-aligned to the latent's decoder row (the form is even, so its sign
     is otherwise arbitrary)."""
     Un = W1 / (jnp.linalg.norm(W1, axis=-1, keepdims=True) + 1e-9)
     Vn = W2 / (jnp.linalg.norm(W2, axis=-1, keepdims=True) + 1e-9)
-    c = jnp.where((W1 * W2).sum(-1, keepdims=True) >= 0, 1.0, -1.0)
-    E = (Un + c * Vn)[:, :-1]
+    E = (Un + Vn)[:, :-1]
     E = E / (jnp.linalg.norm(E, axis=-1, keepdims=True) + 1e-9)
     s = (E * W_dec).sum(-1, keepdims=True)
     return E * jnp.where(s >= 0, 1.0, -1.0)

@@ -4,6 +4,7 @@
 # classified as matches rather than children.
 import numpy as np
 import jax.numpy as jnp
+import pytest
 
 import splitting
 
@@ -86,3 +87,50 @@ def test_absorption_candidates():
     nb = np.full(3, 100.0)
     got = splitting.absorption_candidates(cos, pa, nb, min_fires=10)
     assert got[0] == 1 and got[1] == 0
+
+
+def unit_rows(W):
+    return W / np.linalg.norm(W, axis=1, keepdims=True)
+
+
+def test_decoder_shares_read_a_reseeded_copy_as_shared():
+    # B is A's decoder permuted and slightly perturbed: every latent has a
+    # near twin; an unrelated random decoder in 64 dimensions has none
+    rng = np.random.default_rng(1)
+    A = unit_rows(rng.normal(size=(20, 64)))
+    B = unit_rows(A[rng.permutation(20)] + 0.05 * rng.normal(size=(20, 64)))
+    live = np.ones(20, bool)
+    shares = splitting.decoder_shares(A @ B.T, live, live, [0.7, 0.9])
+    assert shares[0.7] == (1.0, 1.0) and shares[0.9] == (1.0, 1.0)
+    R = unit_rows(rng.normal(size=(20, 64)))
+    assert splitting.decoder_shares(A @ R.T, live, live, [0.7])[0.7] == (0.0, 0.0)
+    # dead latents are left out on both sides: A's live half all have twins,
+    # but only half of B's latents have a twin among them
+    half = np.arange(20) < 10
+    assert splitting.decoder_shares(A @ B.T, half, live, [0.7])[0.7] == (1.0, 0.5)
+
+
+def test_pw_mcc_is_one_for_a_signed_permutation_and_low_for_random():
+    rng = np.random.default_rng(2)
+    A = unit_rows(rng.normal(size=(30, 64)))
+    perm = rng.permutation(30)
+    sign = np.where(rng.random(30) < 0.5, -1.0, 1.0)[:, None]
+    mcc, matched = splitting.pw_mcc(A @ (sign * A[perm]).T)
+    assert mcc == pytest.approx(1.0) and len(matched) == 30
+    R = unit_rows(rng.normal(size=(30, 64)))
+    assert splitting.pw_mcc(A @ R.T)[0] < 0.5
+
+
+def test_max_corr_from_running_sums():
+    # B's latent 0 copies A's latent 1 up to scale and shift; B's latent 1
+    # is independent noise; A's latent 2 never varies (no correlation)
+    rng = np.random.default_rng(3)
+    n = 4000
+    Aa = np.stack([rng.random(n), rng.random(n), np.full(n, 0.5)], 1)
+    Ab = np.stack([3.0 * Aa[:, 1] + 1.0, rng.random(n)], 1)
+    best_a, best_b = splitting.max_corr(n, Aa.sum(0), Ab.sum(0), (Aa ** 2).sum(0),
+                                        (Ab ** 2).sum(0), Aa.T @ Ab)
+    assert best_a[1] == pytest.approx(1.0) and best_b[0] == pytest.approx(1.0)
+    assert abs(best_a[0]) < 0.1 and np.isnan(best_a[2])
+    np.testing.assert_allclose(best_a[:2], [max(np.corrcoef(Aa[:, 0], Ab[:, j])[0, 1]
+                                                for j in range(2)), 1.0], atol=1e-9)

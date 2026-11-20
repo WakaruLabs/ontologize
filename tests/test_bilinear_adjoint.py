@@ -56,9 +56,11 @@ def test_dictenc_uses_bilinear_block():
     assert isinstance(cl1, NLinearBlock) and not isinstance(cl1, BilinearBlock)
 
 
-def test_rev_uses_genuine_top_eigenvectors(block):
+def test_rev_uses_genuine_exciting_eigenvectors(block):
     # for each (head, entry): the vector rev maps that logit to must be a
-    # unit eigenvector of its bilinear tensor with the largest-|.| eigenvalue
+    # unit eigenvector of its bilinear tensor with the largest (signed)
+    # eigenvalue, the direction along which the logit grows, which eigh
+    # confirms against the closed form
     blk, params, _ = block
     Bt = blk.apply(params, method=BilinearBlock.bilinearTensor)
     vals, vecs = blk.apply(params, method=BilinearBlock.decompose)
@@ -66,11 +68,30 @@ def test_rev_uses_genuine_top_eigenvectors(block):
         for k in range(K):
             onehot = jnp.zeros((1, H, K)).at[0, h, k].set(1.0)
             v = blk.apply(params, onehot, method=BilinearBlock.rev)[0]
-            lam = vals[h, k, jnp.argmax(jnp.abs(vals[h, k]))]
+            lam = vals[h, k].max()
+            assert lam >= 0.0
             assert jnp.allclose(jnp.linalg.norm(v), 1.0, atol=1e-5)
             assert jnp.allclose(Bt[h, k] @ v, lam * v, atol=1e-5)
-            assert jnp.allclose(jnp.abs(v @ Bt[h, k] @ v),
-                                jnp.abs(vals[h, k]).max(), atol=1e-5)
+            assert jnp.allclose(v @ Bt[h, k] @ v, lam, atol=1e-5)
+
+
+def test_rev_excites_where_the_negative_eigenvalue_dominates():
+    # the case the old top-|eigenvalue| rule got wrong: with W.V < 0 the
+    # negative eigenvalue is the larger, and its eigenvector switches the
+    # logit off; rev must return the direction that raises it instead
+    d_in, d_out = 6, 3
+    lay = Bilinear(d_in=d_in, d_out=d_out, biased=False,
+                   dtype_str="float32", dtype_p_str="float32")
+    p = lay.init(jax.random.PRNGKey(7), jnp.zeros((1, d_in)))
+    W = jax.random.normal(jax.random.PRNGKey(8), (d_out, d_in))
+    V = -W + 0.3 * jax.random.normal(jax.random.PRNGKey(9), (d_out, d_in))
+    p = dict(params=dict(p["params"], weight=jnp.stack([W, V])))
+    Bt = lay.apply(p, method=Bilinear.bilinearTensor)
+    vals = jnp.linalg.eigvalsh(Bt)
+    assert bool((jnp.abs(vals.min(-1)) > vals.max(-1)).all())
+    out = lay.apply(p, jnp.eye(d_out), method=Bilinear.rev)
+    for k in range(d_out):
+        assert float(out[k] @ Bt[k] @ out[k]) > 0.0
 
 
 def test_rev_is_linear(block):

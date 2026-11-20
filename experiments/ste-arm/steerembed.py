@@ -32,11 +32,12 @@ only the first:
             is x'Bx, whose derivative is 2Bx, so this is the classifier's
             own Jacobian at the sample: (V.u)W + (W.u)V differenced
             between the two entries. Needs no eigendecomposition.
-  adjoint   `Ontologizer.intervene`'s path, via `BilinearBlock.rev`'s
-            top-1 eigenvector. Note that selects on |eigenvalue| and
-            drops its sign, while ascent direction depends on it; and an
-            eigenvector is the dominant QUADRATIC direction, not the
-            first-order one, so it is only the right answer near x = 0.
+  adjoint   `Ontologizer.intervene`'s path, via `BilinearBlock.rev`:
+            each entry's exciting direction, the eigenvector of its
+            form's positive eigenvalue (`nlinear.excite`). An eigenvector
+            is the dominant QUADRATIC direction, not the first-order one,
+            so it is only the right answer near x = 0, and which way along
+            it raises the logit depends on the sample (x.v).
   random    an isotropic random unit direction, the control curve.
 
 A unit step in raw coordinates is long or short in the data's own metric
@@ -149,7 +150,6 @@ from jaxtyping import Array, Bool, Float, Int, PyTree
 
 import sae
 from initscale import InitScaleHyperparams
-from ontologize.layers.nlinear import orient
 from ontologize.ontologizer import Ontologizer
 from ontologize.training.serialize import restore_spec
 from pareto import load_onto, parse_sae_name
@@ -391,13 +391,9 @@ def main_onto(cfg: argparse.Namespace) -> None:
 
     def adjoint_dir(module, X: Float[Array, "b d_in"], li: int, hi: int,
                     ki: int) -> Float[Array, "b d_out"]:
-        """Input-space direction that would cause head hi to select ki.
-
-        `Ontologizer.intervene` reverses the whole classification delta
-        through `BilinearBlock.rev`, which eigendecomposes every head:
-        (h, k, d, d) is 10GB at this size and will not run. The delta is
-        nonzero only at the target head, so only that head's bilinear
-        form is needed, which is (k, d, d)."""
+        """Input-space direction that would cause head hi to select ki:
+        `Ontologizer.intervene`'s reverse of the classification delta,
+        through the classifier's own `BilinearBlock.rev`."""
         E, _ = module.encode(X, 0.0, None)
         R = module.resid(E)
         Ein = module.constinput(E)
@@ -410,17 +406,10 @@ def main_onto(cfg: argparse.Namespace) -> None:
         de = module.dictencs[li]
         U, _ = de.gainshape_in(Ein)
         P = de.dict.cluster(de.classifier(U), T)
-        dP = (P.at[:, hi, :].set(0.0).at[:, hi, ki].set(1.0) - P)[:, hi, :]
-        W, V = de.classifier.weight_ubind()
-        B = jnp.einsum("ke,kf->kef", W[hi], V[hi])
-        vals, vecs = jnp.linalg.eigh(0.5 * (B + jnp.swapaxes(B, -1, -2)))
-        top = jnp.argmax(jnp.abs(vals), -1)
-        vtop = jnp.take_along_axis(vecs, top[:, None, None], -1).squeeze(-1)
-        # the package's convention, so this path reflects what
-        # `BilinearBlock.rev` now returns (it cannot run at this h: it
-        # decomposes every head, a 10GB tensor)
-        vtop = orient(vtop, jnp.take_along_axis(vals, top[:, None], -1))
-        D = dP @ vtop                                   # (b, d_in)
+        # the delta is nonzero only at the target head
+        dP = P.at[:, hi, :].set(0.0).at[:, hi, ki].set(1.0) - P
+        dP = jnp.zeros_like(P).at[:, hi, :].set(dP[:, hi, :])
+        D = de.classifier.rev(dP)                       # (b, d_in)
         return D[..., :module.d_out]                    # drop const/code tail
 
     def adjoint_oriented_dir(module, X: Float[Array, "b d_in"], li: int,

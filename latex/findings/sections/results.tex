@@ -228,34 +228,48 @@ head's argmax on only 11--13\% of rows (Appendix~\ref{sec:steertext}).
 \toprule
 direction & hard code @0.25 / 1.0 & softmax @0.25 / 1.0 \\
 \midrule
-decode                       & 0.364 / 0.607 & \textbf{0.824} / 0.569 \\
-grad                         & 0.304 / 0.103 & 0.453 / 0.477 \\
-margin                       & 0.158 / 0.275 & --- \\
-adjoint, oriented            & 0.001 / 0.001 & 0.427 / 0.501 \\
-adjoint, oriented per sample & ---           & 0.446 / 0.512 \\
-random                       & 0.018 / 0.024 & 0.020 / 0.037 \\
+decode                       & 0.353 / 0.608 & \textbf{0.785} / 0.573 \\
+grad                         & 0.293 / 0.103 & 0.415 / 0.453 \\
+margin                       & 0.146 / 0.282 & 0.143 / 0.253 \\
+adjoint                      & 0.476 / 0.509 & 0.707 / 0.904 \\
+adjoint, oriented per sample & 0.566 / 0.629 & 0.772 / \textbf{0.963} \\
+random                       & 0.020 / 0.023 & 0.013 / 0.029 \\
 \midrule
-collateral                   & 0.66 / 0.88   & 0.58 / --- \\
+collateral                   & 0.66 / 0.88   & 0.54--0.64 / 0.86--0.89 \\
 \bottomrule
 \end{tabular}
 \caption{Realization rate (target entry newly selected) by steering
-direction and step strength across 60--64 entries $\times$ 32 held-out rows
-(chance $0.031$). Because collateral varies by at most $0.01$ across
-directions at a fixed step strength, rows within a column compare methods at
-matched collateral. Hard code denotes the $5\times76$ stack, whose seed-43
-replica agrees within $0.015$ across every decode, grad, and random
-condition. Orientation of the adjoint direction is detailed in
-Appendix~\ref{sec:eigorient}.}
+direction and step strength across 60 entries $\times$ 32 held-out rows
+(chance $0.031$). On the hard code, collateral varies by at most $0.01$
+across directions at a fixed step strength, so its rows compare methods at
+matched collateral; on the softmax model the adjoint and gradient directions
+disturb more at strength $0.25$ ($0.64$ and $0.61$, against $0.55$ for
+decode), and all directions agree within $0.03$ at strength $1.0$. Hard code
+denotes the $5\times76$ stack, whose seed-43 replica agrees within $0.02$ on
+decode, grad and random, within $0.04$ on the adjoint directions and within
+$0.06$ on margin. The adjoint is each target entry's exciting eigenvector
+(Appendix~\ref{sec:eigorient}).}
 \label{tab:steerembed}
 \end{table}
 
 In embedding space, soft-model steering reliably realizes target entries: at
 step strength $0.25$, stepping along a target entry's decode direction
-selects that entry on 82\% of rows in the softmax model
+selects that entry on 79\% of rows in the softmax model
 (Table~\ref{tab:steerembed}). The hard-code stack is substantially less
-steerable, realizing 36\% of targets at strength $0.25$ while already
-disturbing a larger fraction of other heads ($0.66$ vs.\ $0.58$), as discrete
-argmax selection requires crossing finite decision margins. As step strength
+steerable, realizing 35\% of targets at strength $0.25$ while already
+disturbing a larger fraction of other heads ($0.66$ vs.\ $0.55$), as discrete
+argmax selection requires crossing finite decision margins.
+
+The classifier's own weights supply a direction as good as the decode step.
+Each entry's bilinear form has rank at most two, and the eigenvector of its
+positive eigenvalue is the direction along which the entry's logit grows
+(Appendix~\ref{sec:eigorient}). On the softmax model, stepping along it
+realizes $0.71$ of targets at strength $0.25$ and $0.90$ at $1.0$, where
+the decode step has fallen to $0.57$; oriented per sample it reaches $0.96$,
+the highest realization in the table, at slightly higher collateral than
+decode's. On the hard code it realizes $0.48$ at strength $0.25$ and, oriented
+per sample, $0.57$ to $0.68$ across strengths, above the decode direction at
+every one. As step strength
 increases, the hard stack's decode realization saturates near $0.65$
 (Figure~\ref{fig:steer-curves}b), leaving roughly a third of its interventions
 unrealized at any step size, and surpasses the soft model only once
@@ -821,10 +835,18 @@ across seeds at NMI $0.41$, compared to a median of $0.01$ across all other
 heads. Cross-seed reproducibility is equally low in the softmax Ontologizer,
 where a matched seed replica aligns on at most 0.1\% of entries compared to
 3--31\% for the $k_{\mathrm{SAE}}{=}32$ SAE seed pair
-(Figure~\ref{fig:softseed}); note that this thresholded
-activation-containment metric is stricter than the decoder-cosine~\cite{song2025positionmechanisticinterpretabilityprioritize}
-and activation-correlation~\cite{wang2024} metrics under which
-language-model SAEs typically report cross-seed agreement near $0.8$.
+(Figure~\ref{fig:softseed}). The SAE pair's own agreement is low under
+lenient metrics too, so the gap to language-model SAEs is not this
+thresholded containment metric's doing. A third of its latents (0.33) have
+a decoder-cosine twin above $0.7$ in the other seed, against 94\% for
+same-size GPT-2 SAEs~\cite{leask2025}; its Hungarian-matched decoder
+cosine is $0.51$ (random directions $0.12$), against $0.79$--$0.82$ for
+$\topk$ SAEs on Pythia and Gemma~\cite{song2025positionmechanisticinterpretabilityprioritize};
+and its latents' best activation correlation with the other seed averages
+$0.38$, against $0.81$ across SAE seeds on Pythia~\cite{wang2024}. This SAE
+leaves half the variance unexplained ($\fvu$ $0.499$), so whether the gap
+comes from SONAR or from the fit is open; a seed pair of GPT-2 SAEs trained
+here would separate the two.
 Theoretically, static marginal reconstruction objectives cannot identify
 latent factors without auxiliary side information or structural assumptions
 matched to the data-generating process~\cite{locatello2019,hillar2015},

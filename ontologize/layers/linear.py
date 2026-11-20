@@ -22,7 +22,8 @@ class Linear(Sparse):
     noise: str = "none"
     sd: float = 0.0
     dtype_str: str = "bfloat16"
-    dtype_p_str: str = "bfloat16"
+    # float32 master weights: in bfloat16 an Adam step below |w|/256 rounds away
+    dtype_p_str: str = "float32"
 
     def setup(self):
         """Initialize model parameters. Fetch `self.fn`, `self.dtype`,

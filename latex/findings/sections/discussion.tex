@@ -258,14 +258,17 @@ that \texttt{resid\_nc}'s lack of a depth advantage was
 checkpoint-specific.
 \item \textbf{Steering succeeds in embedding space, whereas text
 round-tripping obscures it.} Stepping along a decoded atom at strength
-$0.25$ realizes the target entry on 82\% of rows in the softmax model
+$0.25$ realizes the target entry on 79\% of rows in the softmax model
 (vs.\ a 3\% chance rate), whereas decoding and re-encoding through text
 preserves unsteered entries on at most ${\sim}13\%$ of inputs, bounding
 how often exact interventions remain observable after round-tripping. At
 low collateral, the soft code is more steerable than the hard code.
-Steerability does not track reconstruction error, and the classifier's
-input gradient provides an effective steering direction only in layer~0,
-where the raw input enters the classifier directly.
+Steerability does not track reconstruction error. The classifier's input
+gradient provides an effective steering direction only in layer~0, where
+the raw input enters the classifier directly, but the eigenvector along
+which each entry's bilinear form grows steers at every depth, and on the
+softmax model it realizes 90\% of targets at strength $1.0$, more than any
+other direction.
 \item \textbf{Individual heads beyond layer~0 do not reproduce across
 seeds, and layer~0 reproduces only partially.} Independent seeds converge
 to identical held-out reconstruction error to four decimal places while

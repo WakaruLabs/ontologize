@@ -757,7 +757,7 @@ def harvest(cfg):
         emb = (np.asarray(sae_params["b_dec"])
                + alpha * np.asarray(sae_params["W_dec"])[sel])
         if "W_enc2" in sae_params:
-            # bilinear encoder: each latent's closed-form top eigenvector
+            # bilinear encoder: each latent's closed-form exciting eigenvector
             # is an input-space direction, decodable exactly like a W_dec
             # row -- the "eig" description mode
             import sae as sae_mod

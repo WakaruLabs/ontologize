@@ -4590,6 +4590,94 @@ JAX_PLATFORMS=cpu uv run python experiments/ste-arm/cellshape.py \
 Outputs: `data/out/sonar/cellshape/` (`summary.json`, per-head
 `heads.csv`, `run.log`).
 
+## The adjoint takes the exciting eigenvector (2026-11-19): it steers, at every depth
+
+`BilinearBlock.rev` took each entry's eigenvector of largest |eigenvalue|. An entry's form
+sym(w v^T) has rank two, with eigenvalues |w||v|(cos ± 1)/2 on w/|w| ± v/|v|: the logit grows
+along the positive one's eigenvector and falls along the other, and the falling one is the larger
+whenever w.v < 0, which `bilinspec.py` finds for 97.9-99.9% of the hard stack's entries. So the
+adjoint was stepping along directions that switch the target off. `rev` now takes the
+positive-eigenvalue eigenvector, in closed form (`nlinear.excite`; `sae.eigenfeatures` the same),
+and `steerembed.py`'s adjoint now goes through `rev` itself rather than its own `eigh`, which the
+closed form makes affordable. Every steering run that reports the adjoint was rerun on CPU into
+`data/out/sonar/steerembed_excite/`, with the defaults (60 entries, 32 rows each, seed 42).
+
+**At strength 0.25 / 1.0:**
+
+| direction | `ste_h76_init01` | its seed 43 | `sweep_softmax_shm` |
+|---|---|---|---|
+| decode | 0.353 / 0.608 | 0.371 / 0.593 | 0.785 / 0.573 |
+| grad | 0.293 / 0.103 | 0.302 / 0.106 | 0.415 / 0.453 |
+| margin | 0.146 / 0.282 | 0.112 / 0.226 | 0.143 / 0.253 |
+| adjoint, old rule | 0.001 / 0.001 | 0.000 / 0.000 | 0.379 / 0.412 |
+| adjoint | **0.476 / 0.509** | 0.472 / 0.491 | **0.707 / 0.904** |
+| adjoint, oriented per sample | **0.566 / 0.629** | 0.539 / 0.607 | **0.772 / 0.963** |
+| random | 0.020 / 0.023 | 0.022 / 0.029 | 0.013 / 0.029 |
+| collateral | 0.658 / 0.877 | 0.657 / 0.877 | 0.539-0.641 / 0.860-0.887 |
+
+The old-rule row is the October run's; every other row is the rerun's.
+
+- **The dead adjoint was the rule, not the code's geometry.** On the hard stack it goes from
+  0.001 to 0.48 at strength 0.25, and oriented per sample to 0.57-0.68 across strengths, above
+  the decode direction at every strength (decode: 0.35-0.65). The seed-43 twin agrees within 0.04.
+- **On the softmax model the adjoint is the best direction past the smallest step.** 0.90 at
+  strength 1.0 against decode's 0.57, and 0.96 oriented per sample. It disturbs more of the other
+  heads at 0.25 (0.64 against decode's 0.55); by 1.0 all directions are within 0.03 of each other.
+- **Orientation per sample adds little** (0.71 to 0.77 on softmax, 0.48 to 0.57 on the hard stack
+  at 0.25): the leading-coordinate sign works on SONAR for the reason given above (x.v is
+  dominated by the mean's).
+- **The other rows moved by up to 0.015 on the hard stack and 0.04 on softmax** against the
+  October runs. `steerembed.py` has since added controls that change which rows it draws, so
+  these are new samples; the tables in the writeup now take every row from the reruns.
+
+**By target layer, on `ste_h76` at strength 1.0** (12 entries per layer):
+
+| layer | decode | grad | margin | adjoint | oriented per sample | random |
+|---|---|---|---|---|---|---|
+| 0 | 0.203 | **0.589** | 0.549 | 0.461 | 0.549 | 0.034 |
+| 1 | 0.451 | 0.099 | 0.409 | 0.547 | **0.604** | 0.008 |
+| 2 | **0.753** | 0.125 | 0.188 | 0.500 | 0.607 | 0.026 |
+| 3 | **0.997** | 0.094 | 0.112 | 0.500 | 0.672 | 0.036 |
+| 4 | 0.331 | 0.044 | 0.049 | 0.581 | **0.602** | 0.026 |
+
+- **The adjoint holds at every depth (0.46-0.58), where the gradient directions fail past layer
+  0.** At layer 4, which no other direction steers (at most 0.33), it realizes 0.58. The layer
+  table under "The aggregate hides a reversal" reads 0.000-0.237 for the adjoint under the old
+  rule. Why a classifier-derived direction survives the residual cascade when the gradients do
+  not is open: the eigenvector is a property of the form alone, the gradient one of the form at
+  the current input.
+- **The softmax model's layers agree.** At strength 1.0 the adjoint realizes 1.000, 0.833,
+  0.844, 0.992 and 0.849 from layer 0 to layer 4, where decode reads 0.339, 0.005, 1.000, 1.000
+  and 0.521 and grad 0.000, 0.000, 0.974, 0.924 and 0.365 (`sweep_softmax_shm`).
+
+**The row-collinearity setpoint, rerun** (`ste_h76` at 369,500 against `ste_h76_kcos` at
+377,300, strength 0.25):
+
+| direction | `ste_h76` | `+ kcos` | change |
+|---|---|---|---|
+| decode | 0.328 | 0.347 | +6% |
+| grad | 0.320 | 0.375 | +17% |
+| margin | 0.177 | 0.263 | +49% |
+| adjoint | 0.432 | 0.419 | -3% |
+| adjoint, oriented per sample | 0.522 | 0.561 | +7% |
+| random | 0.021 | 0.024 | -- |
+| collateral (decode) | 0.588 | 0.552 | lower |
+
+- **The setpoint helps the gradient directions, not the adjoint.** The old table's +91% and
+  +122% for the adjoint were gains on a direction that barely steered (0.03-0.11); with the
+  exciting eigenvector the adjoint starts at 0.43 and the setpoint leaves it there. The decode
+  gain is +6%, not +15%: `ste_h76`'s new sample reads 0.328 where the October one read 0.280.
+  The account under the setpoint's own section, that the gain is largest for the
+  classifier-geometry directions, now holds for grad and margin only.
+
+```bash
+JAX_PLATFORMS=cpu uv run python experiments/ste-arm/steerembed.py \
+    --model data/out/sonar/multilingual/ste_h76_init01 --temperature 0.00015 --step 369500 \
+    --out data/out/sonar/steerembed_excite/ste_h76_init01_369500
+# likewise ste_h76_i01_s43, ste_h76 (369500) and ste_h76_kcos (377300) at 0.00015,
+# and sweep_softmax_shm at 0.03
+```
+
 ## Run
 
 See [`README.md`](README.md) for training and scoring commands.
