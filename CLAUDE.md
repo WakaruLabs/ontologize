@@ -378,7 +378,12 @@ uv run python sae.py           # train a field-standard top-k SAE on the same
                                # output noise) to a flat linear top-k SAE; they
                                # apply only in training (SAE.loss with an rng)
 uv run python pareto.py        # reconstruction-vs-code-capacity Pareto table:
-                               # Ontologizer top-m deviation codes vs trained SAEs
+                               # Ontologizer top-m deviation codes vs trained SAEs;
+                               # a model whose selection is not softmax also gets
+                               # a softmax(K/t) row (under ste its "soft" row is
+                               # the argmax); --surrogate gaussian[_unit] scores
+                               # every model on Gaussian rows with the tail's
+                               # mean and covariance instead of the tail
 uv run python autointerp.py -h # auto-interp pipeline (harvest/texts/describe/
                                # score) over Ontologizer tags & SAE latents;
                                # `language` stratifies detection by how many

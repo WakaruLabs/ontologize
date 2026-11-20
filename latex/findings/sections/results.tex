@@ -527,10 +527,14 @@ would provide the matched output-side evaluation.
 Because taking the discrete argmax of the softmax model fails to reconstruct
 the input (Section~\ref{sec:pareto}), the discrete entries targeted by
 interventions do not carry its representations. Under straight-through
-selection, the forward pass uses the discrete argmax directly, preventing
-any mismatch between training and discrete evaluation: at every evaluated
-checkpoint, hard-forward and soft-forward reconstructions agree to four
-decimal places.
+selection, the forward pass is the discrete argmax itself, so training and
+discrete evaluation see the same code. The dense relaxation that the
+straight-through gradient stands in for, $\mathrm{softmax}_k(K/t)$ at the trained
+temperature, reconstructs better than the code does ($\fvu = 0.118$ against
+$0.154$ for \texttt{ste\_h76\_init01}, and $0.117$ against $0.154$ for its
+seed replica), although it sends $12{,}160$ continuous coefficients where
+the code sends $1{,}900$ bits: the classifiers' logits carry information
+that the argmax discards.
 
 \subsection{Capacity, and why the head count rises}
 

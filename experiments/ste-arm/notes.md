@@ -15,7 +15,8 @@ argmax row for `sweep_softmax_shm` is whitened FVU 8,690,470, against
 `decode.py`'s interventions and `decode_tags.py` read is not what
 carries the embedding. Under `select="ste"` the forward *is* the
 argmax, so no such gap can open, and the first checkpoint confirmed it:
-the `hard (argmax)` and full-soft rows agree to four decimals.
+the `hard (argmax)` and full-soft rows agree to four decimals. (They
+agree by construction; see the correction of 2026-11-20 under "Result".)
 
 **800 bits cannot reconstruct SONAR.** A hard code transmits exactly
 `l*h*log2(k)` bits. Reverse water-filling on the whitened eval tail's
@@ -156,6 +157,27 @@ the model rather than a lossy reading of it, so the entry assignment the
 interventions and `decode_tags.py` operate on is the thing that
 reconstructs. The live softmax model's two rows differ by nine orders
 of magnitude.
+
+*Correction, 2026-11-20.* The two rows agree by construction, not by
+measurement: `pareto.py`'s soft row runs `dict.cluster`, which under
+`select="ste"` is the argmax. `pareto.py` now adds a `softmax(K/t)` row
+for any model whose selection rule is not softmax: the dense relaxation
+at the trained temperature, which the straight-through gradient stands in
+for. It reconstructs better than the code on every hard arm scored
+(`data/out/sonar/pareto_softmax/`, t = 0.00015, `--ms 0`):
+
+| run | step | hard (= "soft") | softmax(K/t) |
+|---|---|---|---|
+| `ste_h76` | 369500 | 0.2293 | 0.1860 |
+| `ste_h76_init01` | 369500 | 0.1536 | 0.1176 |
+| `ste_h76_i01_s43` | 369500 | 0.1535 | 0.1171 |
+| `ste_h76_kcos` | 377300 | 0.2157 | 0.1716 |
+
+So the logits carry information the argmax discards, a fifth to a quarter
+of the error. The relaxation sends 12,160 continuous coefficients, not
+1,900 bits, so this says nothing against the code at its own rate. The
+point of the arm stands: the code the interventions read is the one that
+reconstructs.
 
 **A purely discrete code beats sparse linear ones that also send
 coefficients.** At 1900 bits, with four per-layer gains as its only
@@ -4711,6 +4733,40 @@ latents up to 256, where that campaign has 75. So only the decoded direction cha
 ```bash
 uv run python autointerp.py score --dir data/out/sonar/autointerp_eig/m5120_k32_bl/sae \
     --out data/out/sonar/autointerp --only-modes eig --null --judge haiku --jobs 4
+```
+
+**The random-vector health check (2026-11-20): the hard stack is mostly a second-moment
+quantizer; the sparse SAEs are less so.** `pareto.py --surrogate` scores every model on 32,768 rows
+drawn from the Gaussian with the tail's mean and covariance (`gaussian`), and on the same rows
+scaled to unit norm, as `mc4_4M`'s are (`gaussian_unit`). Whitened FVU, `--ms 0`
+(`data/out/sonar/pareto_surrogate/`):
+
+| model | tail | Gaussian | unit-norm Gaussian | rise (unit) |
+|---|---|---|---|---|
+| `ste_h76_init01` (369500), hard | 0.1536 | 0.1791 | 0.1805 | +18% |
+| the same, softmax(K/t) | 0.1176 | 0.1358 | 0.1372 | +17% |
+| `resid_nc` (372600), soft | 0.0054 | 0.0054 | 0.0052 | −4% |
+| SAE `m5120_k32` | 0.4994 | 0.7305 | 0.7301 | +46% |
+| SAE `m5120_k32_bl` | 0.6019 | 0.7456 | 0.7483 | +24% |
+| SAE `m11264_k160` | 0.2585 | 0.3791 | 0.3777 | +46% |
+| grouped `m5120_g160top1` | 0.2741 | 0.3338 | 0.3334 | +22% |
+| dense control `m11264_k5120` | 0.0001 | 0.0003 | 0.0001 | — |
+
+- **The sparse SAEs lean most on the data's non-Gaussian structure.** The top-k rungs lose almost
+  half again on the surrogate.
+- **The hard stack loses a sixth.** Most of its fit is what a quantizer of the tail's second
+  moments would get. On the surrogate it still reads below the k160 SAE on real rows (0.181
+  against 0.259), and far above the Gaussian rate floor at its 1,900 bits (0.05, "Result" above).
+- **The dense codes are blind to it.** `resid_nc`'s 5,120 soft coefficients and the dense SAE
+  reconstruct either set almost exactly.
+- **Matching norms changes nothing.** The unit-norm surrogate reads within 0.003 of the plain one
+  everywhere.
+
+```bash
+uv run python pareto.py --ckpt data/out/sonar/multilingual/ste_h76_init01 --step 369500 \
+    --temperature 0.00015 --ms 0 --surrogate gaussian_unit \
+    --sae data/out/sonar/sae_conv/{m5120_k32,m5120_k32_bl,m11264_k160,m11264_k5120,m5120_g160top1}/params.npz \
+    --out data/out/sonar/pareto_surrogate/hard_gaussian_unit
 ```
 
 ## Run

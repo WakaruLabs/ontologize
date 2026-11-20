@@ -2,7 +2,8 @@
 # the Ontologizer's side of the capacity-Pareto curve, the SAE run-name
 # parsing and index-bit count that pair each point with its capacity, and
 # the Gaussian reference (reverse water-filling) the hard codes are
-# compared against.
+# compared against, and the Gaussian surrogate the codes are scored on in
+# place of the tail.
 import math
 
 import jax.numpy as jnp
@@ -153,3 +154,21 @@ def test_whitened_spectrum_matches_the_fvu_base():
     assert np.all(np.diff(lam) <= 0) and lam.min() >= 0
     # main() divides by mean(var * w), which is the spectrum's mean
     assert np.isclose(lam.sum() / len(lam), (X.var(0) * w).mean(), rtol=1e-6)
+
+
+def test_gaussian_surrogate_keeps_the_moments():
+    # a skewed, correlated, non-Gaussian source with one constant column
+    rng = np.random.default_rng(0)
+    X = rng.exponential(size=(40000, 5)) @ rng.normal(size=(5, 5)) + 3.0
+    X = np.hstack([X, np.full((len(X), 1), 0.5)]).astype(np.float32)
+    G = pareto.gaussian_surrogate(X, seed=1)
+    assert G.shape == X.shape and np.isfinite(G).all()
+    assert np.allclose(G.mean(0), X.mean(0), atol=0.05)
+    assert np.allclose(np.cov(G, rowvar=False), np.cov(X, rowvar=False),
+                       rtol=0.03, atol=0.05)
+    # Gaussian, so its skew is gone where the source's was not
+    skew = lambda A: (((A - A.mean(0)) / (A.std(0) + 1e-9)) ** 3).mean(0)
+    assert np.abs(skew(G)[:5]).max() < 0.05 < np.abs(skew(X)[:5]).max()
+    assert (pareto.gaussian_surrogate(X, seed=1) == G).all()
+    U = pareto.gaussian_surrogate(X, seed=1, unit=True)
+    assert np.allclose(np.linalg.norm(U, axis=1), 1.0, atol=1e-5)

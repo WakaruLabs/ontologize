@@ -26,7 +26,12 @@ length of a code uniform over the subsets of that size, not r * log2(n).
   resid_nc probes showed it decodes to the corpus mean while the uniform
   code lands off-manifold). m=0 is the input-independent origin point;
   full m is the exact soft model; "hard" is end-to-end argmax (0
-  coefficients, l*h*log2(k) bits) -- the discrete-ontology reading.
+  coefficients, l*h*log2(k) bits) -- the discrete-ontology reading. The
+  "soft" row runs the model's own selection rule, which for `ste`,
+  `argmax` and `top<k>` is not softmax(K/t): under `ste` its forward IS the
+  argmax, so soft and hard agree by construction. For such models a
+  "softmax(K/t)" row gives the dense relaxation at the same temperature,
+  the forward the straight-through gradient stands in for.
 
   SAE: coefficients = measured eval L0 (= topk for top-k runs), index bits
   = `sae_index_bits`: log2 C(m, L0) for L0 of m latents, which groups fire
@@ -36,6 +41,13 @@ length of a code uniform over the subsets of that size, not r * log2(n).
   pass --sae paths to params.npz); m, topk, the grouping and the block
   size come from each run's meta.json, or for older runs are parsed from
   the m{m}_k{topk} / m{m}_l1{l1} run-directory names sae.py writes.
+
+  --surrogate replaces the tail with as many rows from the Gaussian with
+  its mean and covariance (`gaussian_surrogate`; gaussian_unit scales each
+  to unit norm, as mc4_4M's rows are), and every model is scored on them
+  the same way. A code that reconstructs the surrogate about as well as
+  the tail is a generic quantizer of the second moments; the gap is what
+  it takes from the data's non-Gaussian structure.
 
 Caveats for the writeup: the top-m points are post-hoc truncations of a
 model never trained to truncate, while each SAE was trained at exactly its
@@ -95,6 +107,12 @@ def parse_args():
     p.add_argument("--eval-rows", type=int, default=32768,
                    help="cache tail rows; must match the sae.py eval split")
     p.add_argument("--b", type=int, default=4096)
+    p.add_argument("--surrogate", choices=["none", "gaussian", "gaussian_unit"],
+                   default="none",
+                   help="score every model on Gaussian rows with the tail's "
+                        "mean and covariance instead of the tail itself "
+                        "(gaussian_unit: each row scaled to unit norm)")
+    p.add_argument("--surrogate-seed", type=int, default=0)
     p.add_argument("--out", default="data/out/sonar/pareto")
     p.add_argument("--plot", action="store_true",
                    help="write pareto.png (log-log FVU vs coefficients)")
@@ -261,6 +279,8 @@ def onto_points(cfg, X_eval, w, base_w):
             K = dictenc.classifier(U)
             if hard:
                 P = jax.nn.one_hot(jnp.argmax(K, -1), k, dtype=K.dtype)
+            elif code == "softmax":
+                P = jax.nn.softmax(K / T, -1)
             elif code == "dev":
                 P = topdev(dictenc.dict.cluster(K, T), origin[i], m, k)
             else:
@@ -332,6 +352,9 @@ def onto_points(cfg, X_eval, w, base_w):
             points.append((f"onto heads={m}/{h}", l * m * k,
                            round(l * log2_choose(h, m)), fvu(m, code="head")))
     points.append((f"onto m={k} (soft)", l * h * k, 0, fvu(k)))
+    if model.select.lower() != "softmax":
+        points.append(("onto softmax(K/t)", l * h * k, 0,
+                       fvu(0, code="softmax")))
     return points
 
 
@@ -361,6 +384,23 @@ def sae_points(cfg, X_eval, w_sqrt, base_w):
     return points
 
 
+def gaussian_surrogate(X: Float[np.ndarray, "n d"], seed: int,
+                       unit: bool = False) -> Float[np.ndarray, "n d"]:
+    """As many rows as `X`, drawn from the Gaussian with `X`'s mean and
+    covariance (sampled through its eigendecomposition, which tolerates the
+    near-singular directions SONAR has), and each scaled to unit norm when
+    `unit`, to match a cache of unit rows."""
+    X64 = X.astype(np.float64)
+    mu = X64.mean(0)
+    lam, V = np.linalg.eigh(np.cov(X64, rowvar=False))
+    A = V * np.sqrt(np.clip(lam, 0.0, None))
+    Z = np.random.default_rng(seed).standard_normal(X.shape)
+    G = Z @ A.T + mu
+    if unit:
+        G /= np.linalg.norm(G, axis=1, keepdims=True)
+    return G.astype(np.float32)
+
+
 def main():
     cfg = parse_args()
     out = Path(cfg.out)
@@ -368,6 +408,11 @@ def main():
 
     mm = np.load(cfg.cache, mmap_mode="r")
     X_eval = np.asarray(mm[-cfg.eval_rows:], dtype=np.float32)
+    if cfg.surrogate != "none":
+        X_eval = gaussian_surrogate(X_eval, cfg.surrogate_seed,
+                                    unit=cfg.surrogate == "gaussian_unit")
+        print(f"eval rows: a {cfg.surrogate} surrogate of the tail "
+              f"(seed {cfg.surrogate_seed})")
     w = np.load(cfg.mse_weights) if cfg.mse_weights else np.ones(mm.shape[1])
     base_w = (X_eval.var(0) * w).mean()
 
