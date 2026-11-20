@@ -54,3 +54,72 @@ JAX_PLATFORMS=cpu uv run python splitting.py \
     --b data/out/sonar/sae_conv/m5120_k32_s43/params.npz \
     --out data/out/sonar/splitting/m5120_k32__m5120_k32_s43
 ```
+
+## 2026-11-20: subspaces, against the data's own (`subspace.py`)
+
+**Short version.** The SAE pair's unmatched latents span a subspace that the other seed
+reproduces almost to the optimum and about twice as well as the data's principal directions. The
+hard stack's layers 0 and 3 agree with each other no more than each agrees with the data, and
+layers 1–2 only slightly more in their first few directions. At layer 4 the seeds pick different
+data-aligned subspaces. The old notes' rank-8 table (ste-arm, "Subspaces, and why their agreement
+is not the architecture's") is φ(8)/chance and reproduces here within 20%, on 32,768 rows. Its
+text's "25x to 33x" did not match it, and nor did the appendix's.
+
+**SAE pair** (`sae_conv/m5120_k32`, `_s43`; whitened frame, 32,768 tail rows of `mc4_4M`). Of
+5,120 and 5,118 live latents, 33.0% and 33.3% have a match at decoder cosine ≥ 0.7 in the other
+seed (Gerasimov et al.: 0.746 on GPT-2). Energy share of seed 42's set inside each subspace, mean
+over 10 size-matched draws (`seed_subspace/sae_k32/`):
+
+| set | r | own (ceiling) | other seed's | data's top-r | data's bottom-r | chance |
+|---|---|---|---|---|---|---|
+| unmatched (3,413) | 8 | 0.078 | 0.075 | 0.031 | 0.0002 | 0.008 |
+| | 64 | 0.355 | 0.342 | 0.172 | 0.002 | 0.063 |
+| | 128 | 0.564 | 0.547 | 0.306 | 0.007 | 0.125 |
+| | 512 | 0.951 | 0.931 | 0.877 | 0.123 | 0.500 |
+| matched (1,690) | 8 | 0.081 | 0.079 | 0.061 | 0.0003 | 0.008 |
+| | 64 | 0.301 | 0.291 | 0.254 | 0.007 | 0.063 |
+| | 128 | 0.457 | 0.439 | 0.383 | 0.019 | 0.125 |
+
+- **The other seed captures 96–97% of the optimum at every rank**, for both sets.
+- **The data's own top-r captures about half as much for the unmatched set**, and nearly as much
+  for the matched set: matched latents lie more along the data's principal directions.
+- So Gerasimov et al.'s "reproducible subspaces" survives the control that removed the stack's
+  layer agreement. The SAE's unstable latents re-express a subspace both seeds share beyond the
+  data's second moments.
+
+**Hard stack** (`ste_h76_init01`, `ste_h76_i01_s43`, step 369500; each layer's contribution
+x̂_{ℓ+1} − x̂_ℓ, whitened and centered; `seed_subspace/ste_h76_init01/`). φ(r, r) over chance
+(r/1024), seeds against each other | seed 42 against the data | seed 43 against the data:
+
+| layer | r = 1 | 8 | 32 | 128 |
+|---|---|---|---|---|
+| 0 | 1023 \| 1021 \| 1021 | 126.9 \| 123.2 \| 120.5 | 31.4 \| 30.2 \| 30.1 | 7.5 \| 7.2 \| 7.2 |
+| 1 | 979 \| 683 \| 553 | 121.8 \| 103.7 \| 104.5 | 27.5 \| 26.2 \| 26.0 | 6.2 \| 6.3 \| 6.4 |
+| 2 | 842 \| 636 \| 463 | 106.9 \| 97.6 \| 97.1 | 22.6 \| 23.0 \| 23.5 | 4.8 \| 5.5 \| 5.5 |
+| 3 | 779 \| 670 \| 645 | 82.1 \| 85.5 \| 86.0 | 13.0 \| 17.3 \| 17.3 | 3.2 \| 4.2 \| 4.2 |
+| 4 | 204 \| 266 \| 306 | 10.6 \| 26.9 \| 25.7 | 3.1 \| 6.7 \| 6.8 | 1.7 \| 2.6 \| 2.6 |
+
+The ceiling is d/r: 1024 at r = 1, 128 at 8, 32 at 32, 8 at 128. In raw φ, the top direction is
+shared at 0.999 in layer 0, and at 0.96 and 0.82 between seeds in layers 1–2 against 0.45–0.67 with
+the data.
+- **Layer 0** is the data's principal subspace in both seeds (φ ≥ 0.93 to r = 128).
+- **Layers 1–2** agree a little beyond the data in their first 1–16 directions, and not past rank
+  32.
+- **Layer 3** agrees with the other seed less than with the data from rank 8 on.
+- **Layer 4's seeds share under half of what each shares with the data**, up to rank 32.
+- The full prefix grid φ(i, j) per layer is in `subspace_stack.npz`.
+
+The two statistics differ (energy of a set of directions, against overlap of covariance
+eigenbases), so the SAE and the stack are compared by reading, not number to number. The
+findings' appendix now gives the stack's φ with its formula, and the SAE's transfer beside it.
+
+```bash
+uv run python experiments/seed-stability/subspace.py --mode sae \
+    --a data/out/sonar/sae_conv/m5120_k32/params.npz \
+    --b data/out/sonar/sae_conv/m5120_k32_s43/params.npz \
+    --out data/out/sonar/seed_subspace/sae_k32
+uv run python experiments/seed-stability/subspace.py --mode stack \
+    --a data/out/sonar/multilingual/ste_h76_init01 \
+    --b data/out/sonar/multilingual/ste_h76_i01_s43 --step 369500 \
+    --out data/out/sonar/seed_subspace/ste_h76_init01
+```

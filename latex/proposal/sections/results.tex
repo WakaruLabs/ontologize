@@ -354,7 +354,10 @@ than for individual heads: two slow heads within one seed already agree
 at NMI $0.40$, any one-to-one pairing of two seeds' slow heads scores
 $0.397$--$0.399$, and the three seeds' pairwise matchings compose for only
 6 of the 38 heads (1 expected by chance), so no individual slow head is
-yet identified across runs. An ordered penalty on dependence between the
+yet identified across runs. The shared subspace has about 16 dimensions:
+the other seed's slow block explains $0.95$--$0.98$ of the held-out
+variance of a block's first 16 code modes, against $0.22$--$0.35$ for an
+ordinary block of 38 heads of the same model. An ordered penalty on dependence between the
 slow heads' partitions does not repair this without loss: at a small
 weight no head is identified, and at a large weight exactly one is (over
 two seeds, NMI $0.386$ with its counterpart against $0.009$ with any

@@ -78,6 +78,39 @@ low entry containment) supports "the head's task reproduces, its entry
 vectors do not" — the partition-level claim. Low head_sim near the null
 would say the partition itself is seed-noise.
 
+## Subspaces (`subspace.py`)
+
+Seed agreement one level up from heads and latents: do two seeds span
+the same subspaces, and do they agree with each other more than each
+agrees with the data? Everything is in the loss's whitened frame, with
+the whitened data's top-r and bottom-r principal subspaces and chance
+(r/d) as the references.
+
+- `--mode sae` is Gerasimov et al.'s subspace transfer. It splits each
+  SAE's live latents into those with a match at decoder cosine 0.7 in
+  the other seed and those without, size-matched. Per set it gives the
+  energy share in its own top-r subspace (the ceiling), in the other
+  seed's subspace for the same kind of set, and in the references.
+- `--mode stack` is LoRA's normalized projection similarity
+  φ(i, j) = ||A_iᵀ B_j||²_F / min(i, j) between the eigenbases of each
+  layer's contribution x̂_{ℓ+1} − x̂_ℓ in the two seeds, and between each
+  seed and the data. Chance is r/d on the diagonal, so rank 8 in 1,024
+  dimensions tops out at 128× chance.
+
+```bash
+uv run python experiments/seed-stability/subspace.py --mode sae \
+    --a data/out/sonar/sae_conv/m5120_k32/params.npz \
+    --b data/out/sonar/sae_conv/m5120_k32_s43/params.npz \
+    --out data/out/sonar/seed_subspace/sae_k32
+uv run python experiments/seed-stability/subspace.py --mode stack \
+    --a data/out/sonar/multilingual/ste_h76_init01 \
+    --b data/out/sonar/multilingual/ste_h76_i01_s43 --step 369500 \
+    --out data/out/sonar/seed_subspace/ste_h76_init01
+```
+
+`tests/test_subspace.py` checks φ on nested, orthogonal and random
+subspaces, the energy share, and the transfer curves on planted sets.
+
 ## Cost
 
 - `train_seed43.py`: **a full training run** — identical cost to the

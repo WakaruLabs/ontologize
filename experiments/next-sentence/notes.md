@@ -846,3 +846,72 @@ uv run python experiments/next-sentence/closure.py --ckpt $L/doc2_fano_sp1e-3_ph
 
 Outputs: `data/out/sonar/next-sentence/closure/` (`summary.json` with per-head rows, `run.log`). Under
 a quarter of an hour on the GPU.
+
+## 2026-11-20: mode by mode (`modeagree.py`): the slow block's first 16 modes reproduce almost exactly; no head is singled out
+
+**Short version.** Read as a 16-dimensional code, the slow block is the same in every seed. The
+other seed's slow block predicts the scores of a block's first 16 code modes at held-out R²
+0.95–0.98, against 0.22–0.34 from an ordinary block of the same model. Agreement falls along the
+spectrum (0.61–0.63 over modes 17–64), as Sharma et al.'s soft-mode reading predicts. The heads
+inside that span are not individually identified. The test of that reading's head-level
+prediction is confounded by NMI's scale: more redundant heads match better, but the control's
+heads show the same correlation.
+
+**Method.**
+- **Codes.** Each run's code is `partition.codes` on the tail's last 32,768 rows at the latest step
+  (46,250).
+- **Modes.** A block's modes are the eigenvectors of its centered one-hot code's covariance (38 heads
+  × 32 entries), fitted on the first 16,384 rows.
+- **Agreement.** A ridge map from the other seed's block code to the mode scores is fitted on the
+  same rows and scored on the last 16,384. In document order these are mostly other documents.
+- **Nulls.** The other seed's heads 38–75, and its slow block with rows shuffled. The shuffled
+  floor, −0.08, is the overfitting of 1,216 features on 16,384 rows.
+
+**Held-out R² of A's mode scores** (mean over the modes in each band; both directions agree within
+0.02):
+
+| pair | modes 1–4 | 5–16 | 17–64 | from B's heads 38–75 (1–4 / 5–16 / 17–64) |
+|---|---|---|---|---|
+| Fano s42 ← s43 | 0.981 | 0.950 | 0.613 | 0.332 / 0.236 / 0.051 |
+| Fano s42 ← s44 | 0.981 | 0.950 | 0.628 | 0.330 / 0.233 / 0.048 |
+| Fano s43 ← s44 | 0.981 | 0.951 | 0.619 | 0.334 / 0.233 / 0.045 |
+| control s42 ← s43, heads 0–37 | 0.544 | 0.192 | −0.008 | 0.549 / 0.198 / −0.004 |
+
+- **The leading modes are also the block's variance.** The first four modes of a Fano slow block hold
+  4.5% of its code variance each, against 0.4% in the control's heads 0–37.
+- **The control has no block.** Its heads 0–37 predict another seed's modes no better than its
+  heads 38–75 do. So the Fano block's lead over any 38 heads is the pair term's.
+
+**Heads** (per slow head of A; min / median / max over the 38, the three Fano pairs alike):
+
+| statistic | Fano | control heads 0–37 |
+|---|---|---|
+| R² of its one-hot from the block's other heads (VIF analogue) | 0.40–0.52, median 0.47 | −0.05 to −0.03 |
+| largest NMI with another head of its own seed | 0.39–0.45 | 0.016–0.023 |
+| NMI with its Hungarian partner in the other seed | 0.36–0.46, median 0.41 | 0.011–0.022 |
+| best partner's NMI over the runner-up's | 0.000–0.019, median 0.003–0.004 | 0.000–0.002 |
+
+- **Each slow head is half predicted by the others.** That is the redundancy the block reading needs.
+- **No head has a partner.** The margin over the runner-up is a few thousandths of an NMI of 0.41.
+- **Redundancy and seed match correlate positively, not negatively.** Spearman ρ of the VIF R²
+  against the matched NMI is +0.74, +0.73 and +0.64 over the three pairs (permutation p < 0.001),
+  and of the in-seed NMI +0.67 to +0.73.
+- **The control's heads show the same correlation** (+0.76) with almost nothing to share. So it is
+  NMI's scale: a head whose partition carries more of what the code carries scores higher against
+  every head, inside its seed and outside it.
+- **Against the margin** the correlation is +0.52 in one pair and −0.04 to +0.21 in the other two.
+  So the soft-mode reading's head-level prediction is not supported, and nothing here contradicts
+  it either.
+
+**Reading.** "Reproduces as a block, not head by head" now has a size: about 16 code dimensions
+that the other seed reproduces to R² 0.95 or better, inside which the 38 heads are interchangeable.
+
+```bash
+L=data/out/sonar/next-sentence/long
+uv run python experiments/next-sentence/modeagree.py --a $L/doc2_fano_sp1e-3_ph38 \
+    --b $L/doc2_fano_sp1e-3_ph38_s43 --out $L/modeagree_fano_sp1e-3_ph38_vs__s43
+# likewise s42/s44, s43/s44, and doc2_sp0_ph38 against doc2_sp0_ph38_s43
+```
+
+Outputs: `modes.csv`, `heads.csv`, `summary.json` under each `modeagree_*` directory. A few minutes
+per pair.

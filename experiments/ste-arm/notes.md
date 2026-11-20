@@ -2214,6 +2214,14 @@ architecture. Layer 4 fails the other way: each model tracks the data
 about 23x above chance while agreeing with the other only 9x, so the
 two seeds pick *different* data-aligned directions.
 
+*Correction, 2026-11-20.* The table is φ(8, 8) over chance (r/d), whose
+ceiling at rank 8 is 128x; the "25x to 33x" above does not describe it.
+`experiments/seed-stability/subspace.py` now computes it with a written
+formula and reproduces the table within 20% (127/123/121 at layer 0
+down to 11/27/26 at layer 4, on 32,768 tail rows). It also finds that layers 1–2 agree a little beyond
+the data in their first few directions. See
+`experiments/seed-stability/notes.md`, 2026-11-20.
+
 **Atom Grams reproduce, but there is almost nothing in them to
 reproduce.** Per-layer row collinearity agrees to four digits across
 seeds (0.2880/0.2891 at layer 0 down to 0.1226/0.1233 at layer 4), and

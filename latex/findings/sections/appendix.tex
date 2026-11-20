@@ -3065,16 +3065,32 @@ standardized re-implementation in \texttt{headcontrib.py}
 although the exact script configuration of the earlier $0.0074$ readout
 was not recorded, the qualitative conclusion is identical under both.
 
-\emph{Subspaces.} The top-8 eigenspaces of per-layer head contributions
-align $25$--$33\times$ above chance across seeds, yet each seed aligns to
-the same extent with the \emph{cache's own} principal subspace (for
-example, at layer 1: $123.7\times$ between seeds vs.\ $101.3\times$ and
-$101.2\times$ between each seed and the data), showing that subspace
-agreement reflects shared data variance rather than architectural
-identifiability. At layer 4, each seed aligns with the data ${\sim}23\times$
-above chance while agreeing with the other seed at only $9\times$ chance,
-indicating that different seeds select \emph{different} data-aligned
-subspaces.
+\emph{Subspaces.} For two orthonormal bases ordered by variance, the
+normalized projection similarity of their first $r$ columns,
+$\phi(r) = \lVert A_r^\top B_r\rVert_F^2/r$~\cite{hu2021}, is 1 for equal
+subspaces and $r/d$ in expectation for random ones, so at $r{=}8$ it can
+reach $128\times$ chance. Between the two seeds' per-layer contributions
+(whitened and centered, on the evaluation tail; \texttt{subspace.py}), the
+top-8 eigenspaces align $107$--$127\times$ above chance in layers 0--2 and
+$82\times$ in layer 3, yet each seed aligns almost as well with the
+\emph{cache's own} principal subspace ($97$--$123\times$ in layers 0--2,
+$86\times$ in layer 3), so the agreement is mostly shared data variance
+rather than architectural identifiability. Layers 1 and 2 keep a little
+more in their leading directions ($\phi(1) = 0.96$ and $0.82$ between
+seeds against $0.45$--$0.67$ with the data). At layer 4, each seed aligns
+with the data $26$--$27\times$ above chance while agreeing with the other
+seed at only $11\times$, so different seeds select \emph{different}
+data-aligned subspaces. The $\topk$ SAE pair's decoder directions behave
+otherwise. Following Gerasimov et al.~\cite{gerasimov2026}, in the loss's
+whitened frame, the two thirds of each seed's live latents with no match
+at decoder cosine $0.7$ in the other seed span a subspace that the other
+seed's unmatched latents reproduce: that seed's top-64 subspace holds
+$0.342$ of their energy, against $0.355$ for their own top-64 (the
+optimum), $0.172$ for the data's top-64 principal subspace and $0.063$ by
+chance, in the same order at every rank from 8 to 512. The SAE's unstable
+latents thus re-express a subspace that both seeds share beyond the data's
+principal directions, which the stack's layers do only in layers 1--2's
+first few directions.
 
 \emph{Atom Gram matrices.} Evaluating within-head atom Gram structure
 (\texttt{atomgram.py}), per-layer mean row collinearity agrees to four
@@ -3251,6 +3267,45 @@ beyond language without establishing head-level identifiability. Note
 that all three seeds traverse the training rows in the same order (as do
 the unregularized control seeds, which fail to reproduce), and that this
 experiment uses a single-layer model.
+
+\paragraph{Mode by mode.}
+\label{sec:slowmodes}
+The block that reproduces has a size. A block's code is its 38 heads'
+one-hot assignments on the evaluation tail, centered; its modes are the
+eigenvectors of that code's covariance, fitted on the tail's first
+16{,}384 rows. A ridge map from the other seed's slow block to a mode's
+score, fitted on the same rows, explains on the last 16{,}384 rows the
+share of the score's variance below (\texttt{modeagree.py}; mean over the
+modes in each band, ranges over both directions of each pair; the control
+rows are one direction of one pair):
+
+\begin{center}\small\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+predicting a block's modes from & 1--4 & 5--16 & 17--64 \\
+\midrule
+the other seed's slow block (three pairs) & 0.980--0.981 & 0.949--0.951 & 0.613--0.632 \\
+the other seed's heads 38--75 & 0.330--0.345 & 0.221--0.238 & 0.045--0.052 \\
+control: the other seed's heads 0--37 & 0.544 & 0.192 & $-0.008$ \\
+control: the other seed's heads 38--75 & 0.549 & 0.198 & $-0.004$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent With the rows shuffled the map explains $-0.08$, the
+overfitting of 1{,}216 features on 16{,}384 rows. About 16 code dimensions
+reproduce almost exactly, and agreement falls along the rest of the
+spectrum, which is the reading of a stiff span with soft directions inside
+it. The control's first 38 heads predict another seed's modes no better
+than its next 38 do, so the slow block's lead over any block of the same
+size comes from the pair term. Inside that span each slow head is about
+half predicted by the block's other heads (held-out, from their one-hot
+codes: $0.40$--$0.52$ of the variance, against none in the control). Heads
+that are more redundant in this sense match the other seed better
+(Spearman $0.64$--$0.74$ over the three pairs), but the control's heads
+show the same correlation ($0.76$), which makes it a property of NMI's
+scale rather than of the block, and a head's margin over its runner-up
+stays near zero whatever its redundancy.
 
 \paragraph{Against linear slow features.}
 Linear slow-feature analysis (SFA) characterizes the highest
