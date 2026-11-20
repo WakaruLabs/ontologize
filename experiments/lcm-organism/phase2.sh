@@ -20,7 +20,14 @@
 #   next-sentence, 2026-11-10), the same for the SONAR control's seeds 42
 #   and 43, and eval_next.py's held-out FVU_w.
 # Every step skips what it has already written, and a run that stopped
-# resumes from its checkpoint, so a stage can be rerun.
+# resumes from its checkpoint, so a stage can be rerun, and the stages can
+# run as a systemd unit with Restart=on-failure.
+#
+# Before each run and before scoring, it waits for the GPU (where nvidia-smi
+# exists): utilization at most 10% and at least GPU_FREE_MIB (default 8192)
+# MiB free, at three checks GPU_WAIT_S (default 60) seconds apart. The memory
+# matters as much as the load: the trainers allocate on demand, so another
+# process's idle server can end a run with an out-of-memory error.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 stage=${1:?usage: phase2.sh harvest|train|score [HARVEST_DIR]}
@@ -33,6 +40,21 @@ mkdir -p "$H" "$D"
 py() { uv run python -u "$@"; }
 step_of() { [ "$1" = init ] && echo 0 || echo -1; }
 run_of() { echo "$D/${1}_b4_doc2_sp0_ph38_s$2"; }
+wait_gpu() {
+  command -v nvidia-smi > /dev/null || return 0
+  local calm=0 u f
+  while [ "$calm" -lt 3 ]; do
+    u=$(nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits | head -1)
+    f=$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits | head -1)
+    if [ "$u" -le 10 ] && [ "$f" -ge "${GPU_FREE_MIB:-8192}" ]; then
+      calm=$((calm + 1))
+    else
+      calm=0
+      echo "$(date '+%F %T') waiting for the GPU: ${u}% busy, ${f} MiB free"
+    fi
+    if [ "$calm" -lt 3 ]; then sleep "${GPU_WAIT_S:-60}"; fi
+  done
+}
 
 case $stage in
   harvest)
@@ -46,6 +68,7 @@ case $stage in
       for s in 42 43; do
         out=$(run_of $arm $s)
         [ -e "$out.done_e3" ] && continue
+        wait_gpu
         py experiments/next-sentence/train_pair.py --cache "$H/${arm}_b4.npy" \
           --mse-weights "$H/${arm}_b4.mse_weights_matched.npy" --epochs 3 --seed $s \
           --pair-term agree --s-pair 0 --keep-every 46250 --max-to-keep 1 --out "$out" \
@@ -54,6 +77,7 @@ case $stage in
       done
     done ;;
   score)
+    wait_gpu
     match() {   # name, a, b, cache, labels
       [ -e "$D/seedmatch_$1.json" ] && return 0
       py experiments/next-sentence/seedmatch.py --a "$2" --b "$3" --cache "$4" \
