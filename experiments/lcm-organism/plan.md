@@ -1,7 +1,7 @@
 # An LCM as model organism (plan)
 
-**Status:** plan (2026-11-18). Only the float16 copy of the cache is built and written (2026-11-19,
-`notes.md`).
+**Status:** plan (2026-11-18). Phase 0 is built and tested on CPU, and the float16 copy of the cache is
+written (2026-11-19, `notes.md`). No LCM has been trained at full size. `README.md` covers the code.
 
 ## The question
 
@@ -67,14 +67,16 @@ dictionary's heads reproduce across training seeds, the constraint the writeup c
 
 ## Phase 0: build
 
+All of it is built (2026-11-19). `README.md` records where the code departs from this table.
+
 | File | What it does |
 |---|---|
 | `lcm.py` | The Base-LCM in Flax: a robust scaler (per-dimension median and IQR, fitted on a sample of training rows; the paper's Eq. 4), PreNet, a causal decoder-only transformer and PostNet. Shapes are fixed: each document is padded to 16 rows, with a mask. `states(…, block)` returns a block's residual output |
 | `train_lcm.py` | Trains on mc4_sent16 documents outside the scoring tail. The loss is the MSE between the PostNet output at position n and x_{n+1}, in SONAR space (Eqs. 5–6). Saves orbax checkpoints and logs held-out FVU_w as `eval_next.py` computes it |
 | `harvest_lcm.py` | Runs a checkpoint, or an untrained init, over the harvest rows. Writes `data/activations/lcm_<run>_b<block>.npy` with these sidecars: `.index.npy`, `.docstart.npy` and `.langs.npy`, sliced from mc4_sent16's; `.mse_weights.npy` (inverse variance); a copy of the weights rescaled the way `gpt2_l8.matched_weights` does it, against the control's weights on mc4_sent16, so the recipe's loss weights transfer; and `meta.json`, which records the source rows |
-| `stateagree.py` | Compares two LCMs' states on the same rows: linear CKA, the orthogonal Procrustes residual after whitening, and ridge R² in each direction (an invertible linear map). Two untrained inits give the floor |
-| `f16cache.py` (built) | Writes the cache's float16 copy for the upload, links its sidecars under the copy's stem, and records in `meta.json` what rounding cost. `--bulk` puts the array on another disk behind a symlink |
-| `tests/test_lcm_organism.py` | Covers `f16cache.py` now. To come: checks causality (a state at n doesn't change with rows after n), no leakage between padded documents, the scaler's round trip, and that the harvest's sidecars stay aligned row for row with the cache |
+| `stateagree.py` | Compares two LCMs' states on the same rows: linear CKA, the orthogonal Procrustes residual (each side scaled to unit total variance: identity up to rotation), the same after whitening each side, and ridge R² in each direction (both of these last two test an invertible linear map, since whitening absorbs one). Two untrained inits give the floor |
+| `f16cache.py` | Writes the cache's float16 copy for the upload, links its sidecars under the copy's stem, and records in `meta.json` what rounding cost. `--bulk` puts the array on another disk behind a symlink |
+| `tests/test_lcm_organism.py` | Checks causality (a state at n doesn't change with rows after n), no leakage from padding or other documents, the scaler's round trip, that the LCM learns a planted dynamic that x_t alone can't predict, stop and resume, and that the harvest's sidecars stay aligned row for row with the cache |
 
 **Choices, and why:**
 - **JAX, not the LCM repository.** JAX keeps the project's stack and fixed shapes, avoids the
@@ -134,13 +136,15 @@ dictionary's heads reproduce across training seeds, the constraint the writeup c
      x_t plus the mean of the run's earlier rows, a cheap linear context baseline.
    - If it doesn't beat the context baseline by more than its seed spread, grow the model or train
      longer before going on.
+   - The baselines, measured on the 26,335 held-out pairs (2026-11-19, `notes.md`): the ridge from x_t
+     reads 0.898 and the context ridge 0.870. So 0.870 is the bar.
 3. **Gate B: is the state more than its input?**
    - Fit a ridge to the block's state from x_n alone, and from x_n together with the prefix mean.
    - If x_n alone explains nearly all of it, a dictionary on the state is a dictionary on SONAR with
      extra steps, so move to a later block.
 4. **Is the representation identified before any dictionary?** Run `stateagree.py` between the two
-   seeds, against two untrained inits. Read loosely from the theory, ridge R² (the linear-map test)
-   should be high, with Procrustes worse.
+   seeds, against two untrained inits. Read loosely from the theory, ridge R² and whitened Procrustes
+   (the linear-map tests) should be high, with plain Procrustes (the rotation test) worse.
 
 ## Phase 2: dictionaries on the states (the main test)
 
