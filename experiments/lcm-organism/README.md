@@ -8,7 +8,7 @@ arms. Results go in `notes.md`.
 
 | File | What it does |
 |---|---|
-| `lcm.py` | The Base-LCM (LCM team 2024, Sec. 2.3.1) in Flax: robust scaler, PreNet, a causal pre-norm transformer (RoPE, RMSNorm, SwiGLU, dropout), PostNet. `states(..., block)` is the residual stream after a block. Also the document batches: `doc_spans`, `gather`, `batches` |
+| `lcm.py` | The Base-LCM (LCM team 2024, Sec. 2.3.1) in Flax: robust scaler, PreNet, a causal pre-norm transformer (RoPE, RMSNorm, a gated MLP, dropout), PostNet. `states(..., block)` is the residual stream after a block. Also the document batches: `doc_spans`, `gather`, `batches` |
 | `train_lcm.py` | Trains it on the cache's documents outside the last 262,144 rows. Logs held-out next-sentence FVU_w and Gate A's baselines |
 | `harvest_lcm.py` | Writes a checkpoint's states, or its untrained init's (`--step 0`), as a cache the dictionary tools read |
 | `stateagree.py` | Two harvests of the same rows compared before any dictionary: CKA, Procrustes (rotation), whitened Procrustes and ridge R² (linear map) |
@@ -57,6 +57,13 @@ expired node loses only what had not reached the bucket.
 - **The scaler** is fitted on 131,072 training rows drawn with seed 0, whatever `--seed` is. So every
   run on one cache normalizes alike, and seeds differ only in the init and the data order.
 - **Step 0 is kept.** It is the untrained init that the untrained arm harvests, at the same scaler.
+- **The MLP** (`GLU`) is built from the package's layers. Its up-projection is `NLinear` with n = 2:
+  one weight of shape (2, d_ff, d), gated on the first slice. The down projection is a `Linear`.
+  - `--gate silu`, the default, is the paper's SwiGLU.
+  - `--gate none` makes the up-projection a `Bilinear` holding the same weight. Its interaction tensor
+    and eigendecomposition (Pearce et al. 2025) then read the trained LCM. Such a run is named
+    `..._bilinear_s<seed>`.
+  - Both layers default to bfloat16 for parameters and compute, so `lcm.F32` sets float32.
 - **Optimizer.** AdamW, with β2 0.95 and weight decay 0.1 on weight matrices only. Linear warmup, then
   cosine decay to a tenth of the peak. Dropout 0.1, the paper's rate, on each residual branch; the
   paper doesn't say where it applies its dropout.

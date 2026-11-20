@@ -76,7 +76,7 @@ CACHE = ROOT / "data" / "sonar_embeddings" / "mc4_sent16.npy"
 WEIGHTS = ROOT / "data" / "out" / "sonar" / "sentcache" / "mse_weights_no837.npy"
 OUT = ROOT / "data" / "out" / "lcm-organism"
 STOPPED = 75                     # the exit status after a SIGTERM save
-MODEL_KEYS = ("d_model", "layers", "heads", "d_ff", "dropout")
+MODEL_KEYS = ("d_model", "layers", "heads", "d_ff", "dropout", "gate")
 
 
 def parser() -> argparse.ArgumentParser:
@@ -94,6 +94,8 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--heads", type=int, default=16)
     p.add_argument("--d-ff", type=int, default=2816)
     p.add_argument("--dropout", type=float, default=0.1)
+    p.add_argument("--gate", default="silu",
+                   help="the MLP's gate, an activation key: silu is SwiGLU, none a bilinear MLP")
     p.add_argument("--lr", type=float, default=3e-4)
     p.add_argument("--lr-end", type=float, default=0.1, help="final lr, as a share of --lr")
     p.add_argument("--warmup", type=int, default=1000)
@@ -121,12 +123,14 @@ def parser() -> argparse.ArgumentParser:
 
 
 def tag(cfg: argparse.Namespace) -> str:
-    return f"lcm_l{cfg.layers}_d{cfg.d_model}_s{cfg.seed}"
+    """The run's name; a gate other than SwiGLU's is named in it."""
+    gate = "" if cfg.gate == "silu" else ("_bilinear" if cfg.gate == "none" else f"_g{cfg.gate}")
+    return f"lcm_l{cfg.layers}_d{cfg.d_model}{gate}_s{cfg.seed}"
 
 
 def build(cfg, d_sonar: int) -> BaseLCM:
     return BaseLCM(d_sonar=d_sonar, d_model=cfg.d_model, layers=cfg.layers,
-                   heads=cfg.heads, d_ff=cfg.d_ff, dropout=cfg.dropout)
+                   heads=cfg.heads, d_ff=cfg.d_ff, dropout=cfg.dropout, gate=cfg.gate)
 
 
 # ---------------------------------------------------------------- the split

@@ -174,6 +174,40 @@ def test_the_scaler_round_trips_and_floors_a_constant_dimension():
     np.testing.assert_allclose(back, x, rtol=1e-5, atol=1e-5)
 
 
+def test_the_mlp_is_swiglu_from_the_package_layers_in_float32():
+    m, v, x, pos = tiny()
+    p = v["params"]["blocks_0"]["mlp"]
+    W, D = np.asarray(p["up"]["weight"]), np.asarray(p["down"]["weights"])
+    h = np.random.default_rng(4).standard_normal((3, 6, 16)).astype(np.float32)
+    y = np.asarray(lcm.GLU(16, 32).apply({"params": p}, h))
+    a, b = h @ W[0].T, h @ W[1].T
+    np.testing.assert_allclose(y, (a / (1 + np.exp(-a)) * b) @ D.T, rtol=1e-5, atol=1e-6)
+    assert {leaf.dtype for leaf in jax.tree.leaves(v["params"])} == {np.dtype("float32")}
+    full = jax.eval_shape(lambda: lcm.BaseLCM().init(
+        jax.random.PRNGKey(0), jnp.zeros((1, 16, 1024)), jnp.zeros((1, 16), jnp.int32),
+        jnp.ones((1, 16), bool)))
+    assert sum(int(np.prod(a.shape)) for a in jax.tree.leaves(full["params"])) == 104_877_056
+
+
+def test_a_bilinear_mlp_loads_into_bilinear_for_its_analysis():
+    from ontologize.layers.nlinear import Bilinear
+    m = lcm.BaseLCM(**{**TINY, "gate": "none"})
+    r = np.random.default_rng(3)
+    x = r.standard_normal((2, 5, 8)).astype(np.float32)
+    v = m.init(jax.random.PRNGKey(1), x, np.tile(np.arange(5, dtype=np.int32), (2, 1)),
+               np.ones((2, 5), bool))
+    up = v["params"]["blocks_1"]["mlp"]["up"]
+    h = r.standard_normal((7, 16)).astype(np.float32)
+    layer = Bilinear(d_in=16, d_out=32, n=2, biased=False, **lcm.F32)
+    out = np.asarray(layer.apply({"params": up}, h))
+    W = np.asarray(up["weight"])
+    np.testing.assert_allclose(out, (h @ W[0].T) * (h @ W[1].T), rtol=1e-5, atol=1e-6)
+    B = np.asarray(layer.apply({"params": up}, method=Bilinear.bilinearTensor))
+    np.testing.assert_allclose(np.einsum("nd,ked,ne->nk", h, B, h), out, rtol=1e-4, atol=1e-5)
+    assert train_lcm.tag(train_lcm.parser().parse_args(["--gate", "none"])) == "lcm_l8_d1024_bilinear_s42"
+    assert train_lcm.tag(train_lcm.parser().parse_args([])) == "lcm_l8_d1024_s42"
+
+
 def test_only_the_next_segment_is_a_target():
     index = np.array([[0, 0, 1], [0, 1, 2], [0, 2, 4], [0, 3, 5],   # a gap after row 1
                       [1, 0, 1], [1, 1, 2]], np.int32)

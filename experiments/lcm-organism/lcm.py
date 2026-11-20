@@ -9,7 +9,8 @@ position n, the embedding at n + 1:
 - **PreNet**: a linear map from the normalized embedding to d_model (Eq. 1);
 - **blocks**: a causal decoder-only transformer, pre-normalized with
   RMSNorm, with rotary position embeddings over the row's position in its
-  run, SwiGLU, and dropout on each residual branch;
+  run, a gated MLP (`GLU`: SwiGLU by default, bilinear with `gate="none"`),
+  and dropout on each residual branch;
 - **PostNet**: RMSNorm, a linear map back to SONAR's width, then
   `denormalize` (Eq. 2), so the prediction is in SONAR space and the loss
   (Eqs. 5-6) is the squared error there.
@@ -29,7 +30,11 @@ import jax.numpy as jnp
 import numpy as np
 from jaxtyping import Array, Bool, Float, Int
 
+from ontologize.layers.linear import Linear
+from ontologize.layers.nlinear import Bilinear, NLinear
+
 NEG = -1e30          # the attention score of a key a query may not see
+F32 = dict(dtype_str="float32", dtype_p_str="float32")   # the layers default to bfloat16
 
 
 def rope(x: Float[Array, "b t h k"], pos: Int[Array, "b t"],
@@ -78,15 +83,23 @@ class Attention(nn.Module):
         return nn.Dense(self.d, use_bias=False, name="out")(o)
 
 
-class SwiGLU(nn.Module):
+class GLU(nn.Module):
+    """The gated MLP, `gate(x W_0) * (x W_1)` and then a down projection,
+    from the package's layers: `NLinear` with n = 2 (one weight of shape
+    (2, d_ff, d), `gate` on its first slice) and `Linear`, both in float32.
+    `gate="silu"` is the paper's SwiGLU. `gate="none"` is a bilinear MLP,
+    built as `Bilinear` (the same weight), so its interaction tensor and
+    eigendecomposition (Pearce et al. 2025) read the trained weights."""
     d: int
     d_ff: int
+    gate: str = "silu"
 
     @nn.compact
     def __call__(self, x: Float[Array, "b t d"]) -> Float[Array, "b t d"]:
-        gate = nn.Dense(self.d_ff, use_bias=False, name="gate")(x)
-        up = nn.Dense(self.d_ff, use_bias=False, name="up")(x)
-        return nn.Dense(self.d, use_bias=False, name="down")(nn.silu(gate) * up)
+        up = (Bilinear if self.gate == "none" else NLinear)(
+            d_in=self.d, d_out=self.d_ff, n=2, biased=False, gate=self.gate, **F32, name="up")
+        down = Linear(d_in=self.d_ff, d_out=self.d, biased=False, **F32, name="down")
+        return down(up(x))
 
 
 class Block(nn.Module):
@@ -94,13 +107,14 @@ class Block(nn.Module):
     heads: int
     d_ff: int
     dropout: float
+    gate: str = "silu"
 
     @nn.compact
     def __call__(self, h: Float[Array, "b t d"], pos: Int[Array, "b t"],
                  allow: Bool[Array, "b t t"], train: bool) -> Float[Array, "b t d"]:
         a = Attention(self.d, self.heads, name="attn")(RMSNorm(name="norm_attn")(h), pos, allow)
         h = h + nn.Dropout(self.dropout)(a, deterministic=not train)
-        f = SwiGLU(self.d, self.d_ff, name="mlp")(RMSNorm(name="norm_mlp")(h))
+        f = GLU(self.d, self.d_ff, self.gate, name="mlp")(RMSNorm(name="norm_mlp")(h))
         return h + nn.Dropout(self.dropout)(f, deterministic=not train)
 
 
@@ -111,12 +125,13 @@ class BaseLCM(nn.Module):
     heads: int = 16
     d_ff: int = 2816
     dropout: float = 0.1
+    gate: str = "silu"
 
     def setup(self):
         self.median = self.variable("scaler", "median", jnp.zeros, (self.d_sonar,))
         self.iqr = self.variable("scaler", "iqr", jnp.ones, (self.d_sonar,))
         self.pre = nn.Dense(self.d_model)
-        self.blocks = [Block(self.d_model, self.heads, self.d_ff, self.dropout)
+        self.blocks = [Block(self.d_model, self.heads, self.d_ff, self.dropout, self.gate)
                        for _ in range(self.layers)]
         self.norm = RMSNorm()
         self.post = nn.Dense(self.d_sonar)

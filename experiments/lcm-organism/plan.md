@@ -235,6 +235,9 @@ That comes to about $25–50 on demand, or $15–30 under Flex-start, plus stora
   - **The LCM** needs about 2.8e16 FLOPs per epoch (6 × 105M parameters × 44M rows). That is roughly
     ten minutes on one v5e chip at 30% of its bfloat16 peak, which is a guess. Setup, the pilot,
     harvests and the time the TPU sits up but idle cost more than the epochs themselves.
+  - **Measured on the 3090 (2026-11-19, `notes.md`):** 23 minutes per epoch, at TF32 and 27 TFLOP/s
+    counting padding. The guess above leaves out the three bfloat16 passes of precision `high`, and
+    the 26% of each batch that is padding.
   - **Each dictionary run** is costed at the 3090's figure, about an hour: seed 43's two arms took
     2¼ hours for three epochs, evaluations included (2026-10-15). `high` precision makes matmuls
     slower than the default.
