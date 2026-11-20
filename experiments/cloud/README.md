@@ -46,7 +46,7 @@ on the VM. `start` is idempotent:
 | Path | Written by | What |
 |---|---|---|
 | `stage/code/ontologize-<sha>-<time>.tar.gz` | `tpu.sh stage code` | `git archive HEAD`; the VM unpacks the newest |
-| `stage/data/<path>` | `tpu.sh stage data` | becomes `data/<path>` on the VM |
+| `stage/data/<path>` | `tpu.sh stage data` | becomes `data/<path>` on the VM; a symlink under `data/` is uploaded as the file it points to |
 | `stage/jobs/q*.txt` | `tpu.sh stage jobs` | the queues |
 | `runs/<out>` | `runq.py` | each job's output directory, mirrored every `ONTO_SYNC_EVERY` seconds and at exit |
 | `logs/<job>.log` | `runq.py` | each job's output |

@@ -1,6 +1,7 @@
 # An LCM as model organism (plan)
 
-**Status:** plan only. Nothing is built or run (2026-11-18).
+**Status:** plan (2026-11-18). Only the float16 copy of the cache is built and written (2026-11-19,
+`notes.md`).
 
 ## The question
 
@@ -72,7 +73,8 @@ dictionary's heads reproduce across training seeds, the constraint the writeup c
 | `train_lcm.py` | Trains on mc4_sent16 documents outside the scoring tail. The loss is the MSE between the PostNet output at position n and x_{n+1}, in SONAR space (Eqs. 5–6). Saves orbax checkpoints and logs held-out FVU_w as `eval_next.py` computes it |
 | `harvest_lcm.py` | Runs a checkpoint, or an untrained init, over the harvest rows. Writes `data/activations/lcm_<run>_b<block>.npy` with these sidecars: `.index.npy`, `.docstart.npy` and `.langs.npy`, sliced from mc4_sent16's; `.mse_weights.npy` (inverse variance); a copy of the weights rescaled the way `gpt2_l8.matched_weights` does it, against the control's weights on mc4_sent16, so the recipe's loss weights transfer; and `meta.json`, which records the source rows |
 | `stateagree.py` | Compares two LCMs' states on the same rows: linear CKA, the orthogonal Procrustes residual after whitening, and ridge R² in each direction (an invertible linear map). Two untrained inits give the floor |
-| `tests/test_lcm_organism.py` | Checks causality (a state at n doesn't change with rows after n), no leakage between padded documents, the scaler's round trip, and that the harvest's sidecars stay aligned row for row with the cache |
+| `f16cache.py` (built) | Writes the cache's float16 copy for the upload, links its sidecars under the copy's stem, and records in `meta.json` what rounding cost. `--bulk` puts the array on another disk behind a symlink |
+| `tests/test_lcm_organism.py` | Covers `f16cache.py` now. To come: checks causality (a state at n doesn't change with rows after n), no leakage between padded documents, the scaler's round trip, and that the harvest's sidecars stay aligned row for row with the cache |
 
 **Choices, and why:**
 - **JAX, not the LCM repository.** JAX keeps the project's stack and fixed shapes, avoids the
@@ -109,8 +111,10 @@ dictionary's heads reproduce across training seeds, the constraint the writeup c
       average.
   - **bfloat16 is ten times coarser.** In one entry it reaches 17% of the standard deviation of
     dimension 837, the near-constant dimension that the `no837` weights drop.
-  - **Still to check:** whether `StackedPairSource` and `seedmatch.py` read a float16 cache as it
-    stands.
+  - **The readers (checked 2026-11-19).** `StackedPairSource`, which `train_pair.py` trains from, and
+    `seedmatch.py` convert rows to float32 as they read them, so both take the float16 copy as it is.
+    `NpyDataSource`, the stock trainer's source, returns rows in the dtype they're stored in, so a run
+    through it would get float16 batches.
   - **The earlier precision failure was a different one.** SONAR itself was run in bfloat16 (see the
     comment in `sonar.py`: "reducing precision breaks the embeddings"). SONAR runs only where the
     cache was built, at float32.
@@ -235,7 +239,8 @@ That comes to about $25–50 on demand, or $15–30 under Flex-start, plus stora
 - **Before starting.**
   - The new project needs billing, the TPU API, and preemptible v5e quota in us-west4. The laptop's
     gcloud needs updating for Flex-start (`gcloud components update`).
-  - The float16 copy of the cache, and the harvests' float16 path, don't exist yet.
+  - The float16 copy of the cache exists (2026-11-19, `notes.md`). The harvests' float16 path
+    doesn't yet.
   - The upload is 84 GiB, about 2 hours at 100 Mbit/s.
   - The code is written to be TPU-compatible. Budget a short shakedown run anyway.
 - **Text evaluations** (`textfid.py`, `steerfid.py`) run SONAR's decoder in torch. They stay on the

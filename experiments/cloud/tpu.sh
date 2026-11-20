@@ -71,9 +71,11 @@ case $cmd in
         cd "$REPO"
         [ $# -gt 0 ] || { echo "usage: tpu.sh stage data PATH..."; exit 2; }
         for p in "$@"; do
-          rel=$(realpath --relative-to="$REPO/data" "$p")
+          # -s and --no-ignore-symlinks: a file under data/ may be a symlink to
+          # another disk (f16cache.py --bulk); what it points to is uploaded
+          rel=$(realpath -s --relative-to="$REPO/data" "$p")
           [[ $rel != ..* && $rel != /* ]] || { echo "$p is not under data/"; exit 2; }
-          if [ -d "$p" ]; then gcloud storage rsync --recursive "$p" "$ONTO_BUCKET/stage/data/$rel"
+          if [ -d "$p" ]; then gcloud storage rsync --recursive --no-ignore-symlinks "$p" "$ONTO_BUCKET/stage/data/$rel"
           else gcloud storage cp "$p" "$ONTO_BUCKET/stage/data/$rel"; fi
         done ;;
       jobs)
