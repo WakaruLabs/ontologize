@@ -117,6 +117,8 @@ import jax.numpy as jnp  # noqa: E402
 
 import harvest_lcm  # noqa: E402
 import lcm  # noqa: E402
+import recolour  # noqa: E402
+import spectrum  # noqa: E402
 import stateagree  # noqa: E402
 import train_lcm  # noqa: E402
 
@@ -388,3 +390,61 @@ def test_agreement_tells_a_rotation_from_a_linear_map_from_nothing():
     assert lin["procrustes_whitened"] < 1e-2 and lin["procrustes"] > 0.05 and lin["cka"] < 0.99
     assert ind["cka"] < 0.05 and ind["r2_a_to_b"] < 0.05 and ind["procrustes_whitened"] > 1.5
     assert ind["cka_shuffled"] < 0.05
+
+
+def test_the_spectrum_reads_planted_eigenvalues_in_the_weighted_frame():
+    r = np.random.default_rng(3)
+    n, d = 60000, 8
+    lam = np.array([8.0, 4, 2, 1, 1, 1, 1, 1])
+    Q = np.linalg.qr(r.standard_normal((d, d)))[0]
+    w = r.uniform(0.5, 2, d)
+    lab = r.integers(0, 3, n)
+    means = 3 * r.standard_normal((3, d))
+    shaped = r.standard_normal((n, d)) * np.sqrt(lam) @ Q.T + means[lab]
+    labels = np.array(["a", "b", "c"])[lab]
+    # a label too rare for the within-language covariance, with a variance
+    # that would show in it
+    shaped[:5] = 100 * r.standard_normal((5, d))
+    labels[:5] = "z"
+    x = shaped / np.sqrt(w)
+    res, lam_t, lam_w = spectrum.measure(x, w, labels, np.arange(n), 1000, [4.0])
+    assert res["labels"] == 3 and res["label_rows"] == n - 5
+    np.testing.assert_allclose(lam_w, lam, rtol=0.05)
+    pr = lam.sum() ** 2 / (lam ** 2).sum()
+    assert abs(res["within"]["participation"] - pr) < 0.05 * pr
+    assert res["within"]["k_share"]["0.5"] == 2 and res["within"]["k_share"]["0.99"] == 8
+    keep = slice(5, None)
+    between = np.cov(means[lab][keep].T, bias=True).trace()
+    total = np.cov(shaped.T, bias=True).trace()
+    assert abs(res["language_share"] - (1 - (np.trace(np.cov(shaped[keep].T, bias=True))
+                                             - between) / total)) < 0.02
+    assert np.isclose(lam_t.sum(), total)
+
+
+def test_the_spectrum_reads_a_harvest_at_the_cache_rows_it_keeps():
+    m = (5, 100)
+    np.testing.assert_array_equal(spectrum.file_rows(np.array([0, 4, 100, 102]), m),
+                                  [0, 4, 5, 7])
+    np.testing.assert_array_equal(spectrum.file_rows(np.array([3, 50]), None), [3, 50])
+    with pytest.raises(SystemExit):
+        spectrum.file_rows(np.array([50]), m)
+
+
+def test_recolouring_gives_the_target_spectrum_with_even_coordinates():
+    r = np.random.default_rng(4)
+    d = 64
+    rot = lambda: np.linalg.qr(r.standard_normal((d, d)))[0]  # noqa: E731
+    lam_s = np.r_[np.linspace(3, 1, d - 1), 0.0]      # one direction the weights zero
+    lam_t = np.geomspace(50, 0.01, d)
+    U, V = rot(), rot()
+    C_s, C_t = (U * lam_s) @ U.T, (V * lam_t) @ V.T
+    A, info = recolour.recolour_map(C_s, C_t, seed=0)
+    C_o = A @ C_s @ A.T
+    got = np.linalg.eigvalsh(C_o)[::-1]
+    want = np.r_[lam_t[:-1], 0.0] * info["scale"] ** 2
+    np.testing.assert_allclose(got, want, rtol=1e-6, atol=1e-9 * want.max())
+    assert info["zeroed"] == 1 and np.isclose(info["unmatched_target_share"],
+                                              lam_t[-1] / lam_t.sum())
+    assert np.isclose(np.diag(C_o).mean(), 1.0)
+    # a random rotation spreads a concentrated spectrum over every coordinate
+    assert np.diag(C_o).std() < 0.5 and np.diag(C_o).min() > 0.1

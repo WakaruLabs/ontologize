@@ -15,8 +15,10 @@ arms. Results go in `notes.md`.
 | `stateinput.py` | Gate B: the share of a block's state on the scored tail that a ridge explains from x_n, from x_n with the run's earlier mean, and from the model's own state for x_n read alone (everything it computes from x_n without context) |
 | `f16cache.py` | The float16 copy of the cache, for the TPU upload |
 | `phase1.sh` | Phase 1's readings once both seeds have trained: Gate B on blocks 4 and 8, tail-only harvests of each seed and its untrained init, and `stateagree.py` between the seeds and between the inits |
+| `spectrum.py` | Each arm's covariance spectrum in the frame its loss weighs, on the same prefix and tail rows of every arm: participation ratio, effective rank, directions per share of the variance, `pareto.gaussian_reference`'s FVU at given rates, and the share of the variance between languages, of the total and of the pooled within-language covariance |
+| `recolour.py` | The effective-dimension control: SONAR's rows through one linear map that gives them a harvest's spectrum, laid out as that harvest |
 
-`tests/test_lcm_organism.py` covers the six Python files.
+`tests/test_lcm_organism.py` covers the eight Python files.
 
 ## Run
 
@@ -38,6 +40,10 @@ uv run python experiments/lcm-organism/stateagree.py --a data/activations/lcm_l8
 uv run python experiments/next-sentence/train_pair.py --cache data/activations/lcm_l8_d1024_s42_b4.npy \
     --mse-weights data/activations/lcm_l8_d1024_s42_b4.mse_weights_matched.npy \
     --epochs 3 --seed 42 --keep-every 2500 --pair-term agree --s-pair 0 --out <dir>
+# each Phase 2 arm's spectrum (default arms: lcm_b4, init_b4, sonar; --arm NAME CACHE WEIGHTS)
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/spectrum.py
+# SONAR recoloured to block 4's spectrum, then trained and scored as an arm
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/recolour.py
 ```
 
 On a TPU (`experiments/cloud`), stage the float16 cache with the sidecars the scripts read
@@ -84,3 +90,15 @@ expired node loses only what had not reached the bucket.
   any invertible linear map, though, so whitened Procrustes tests the same thing as the ridge.
   `stateagree.py` reports both: `procrustes` scales each side to unit total variance and tests rotation;
   `procrustes_whitened` tests the linear map.
+- **The weighted frame.** Each row is scaled by the square root of the MSE weights its dictionary
+  trains under, so the eigenvalues are what FVU_w divides by. A harvest's weights are inverse
+  variance, so its spectrum there reflects correlation, not each coordinate's scale.
+- **Recolouring** (`recolour.py`).
+  - **The map.** In SONAR's weighted frame, each principal direction is rescaled so its variance is
+    the harvest's at the same rank. A random rotation then spreads the variance over every coordinate,
+    because the inverse-variance weights the trainer applies would otherwise flatten the spectrum
+    again. A last constant brings each coordinate's variance to about 1, inside float16's precision.
+  - **What it keeps.** The map is linear and has no offset. So each row keeps what its sentence's
+    embedding carries, except the direction SONAR's weights zero, and depends on no other row.
+  - **What it doesn't match.** It matches the total spectrum only. The split between variance
+    across languages and within them, and the mean's share of a row's norm, stay SONAR's.
