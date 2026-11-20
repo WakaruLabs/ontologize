@@ -12,9 +12,10 @@ arms. Results go in `notes.md`.
 | `train_lcm.py` | Trains it on the cache's documents outside the last 262,144 rows. Logs held-out next-sentence FVU_w and Gate A's baselines |
 | `harvest_lcm.py` | Writes a checkpoint's states, or its untrained init's (`--step 0`), as a cache the dictionary tools read |
 | `stateagree.py` | Two harvests of the same rows compared before any dictionary: CKA, Procrustes (rotation), whitened Procrustes and ridge R² (linear map) |
+| `stateinput.py` | Gate B: the share of a block's state on the scored tail that a ridge explains from x_n, from x_n with the run's earlier mean, and from the model's own state for x_n read alone (everything it computes from x_n without context) |
 | `f16cache.py` | The float16 copy of the cache, for the TPU upload |
 
-`tests/test_lcm_organism.py` covers all five.
+`tests/test_lcm_organism.py` covers all six.
 
 ## Run
 
@@ -26,7 +27,10 @@ uv run python experiments/lcm-organism/train_lcm.py --seed 42 --epochs 1
 # block 4 of the trained model, and of its untrained init
 uv run python experiments/lcm-organism/harvest_lcm.py --run data/out/lcm-organism/lcm_l8_d1024_s42 --block 4
 uv run python experiments/lcm-organism/harvest_lcm.py --run data/out/lcm-organism/lcm_l8_d1024_s42 --block 4 --step 0
-# two seeds' states; two untrained inits give the floor
+# Gate B: how much of each block's state its own row explains
+uv run python experiments/lcm-organism/stateinput.py --run data/out/lcm-organism/lcm_l8_d1024_s42 --blocks 4 8
+# two seeds' states; two untrained inits give the floor. --prefix-rows 0 harvests the tail alone
+uv run python experiments/lcm-organism/harvest_lcm.py --run <run> --block 4 --prefix-rows 0 --out <tail>.npy
 uv run python experiments/lcm-organism/stateagree.py --a data/activations/lcm_l8_d1024_s42_b4.npy \
     --b data/activations/lcm_l8_d1024_s43_b4.npy
 # the control recipe on a harvest (plan.md, Phase 2)

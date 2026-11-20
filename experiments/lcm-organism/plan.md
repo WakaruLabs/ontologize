@@ -142,6 +142,10 @@ All of it is built (2026-11-19). `README.md` records where the code departs from
    - Fit a ridge to the block's state from x_n alone, and from x_n together with the prefix mean.
    - If x_n alone explains nearly all of it, a dictionary on the state is a dictionary on SONAR with
      extra steps, so move to a later block.
+   - `stateinput.py` (2026-11-19) adds a third reading. It is the ridge from the model's own state for
+     x_n read alone, as a one-row document. The two ridges from x_n are linear, so they would count
+     whatever the block computes nonlinearly from x_n as context. The `alone` reading counts all of
+     that as x_n's.
 4. **Is the representation identified before any dictionary?** Run `stateagree.py` between the two
    seeds, against two untrained inits. Read loosely from the theory, ridge R² and whitened Procrustes
    (the linear-map tests) should be high, with plain Procrustes (the rotation test) worse.

@@ -342,6 +342,38 @@ def test_the_harvest_keeps_row_numbers_and_aligned_sidecars(trained):
     assert not dst.with_name("s_b1.npy.partial").exists()
 
 
+def test_a_tail_only_harvest_has_no_weights(trained):
+    tmp, c, out, _ = trained
+    dst = tmp / "h" / "tail_b2.npy"
+    harvest_lcm.main(["--run", str(out), "--block", "2", "--prefix-rows", "0", "--out", str(dst)])
+    meta = json.loads(dst.with_name("tail_b2.meta.json").read_text())
+    assert meta["rows"]["prefix"] == [0, 0] and meta["n"] == len(np.load(c)) - meta["rows"]["tail"][0]
+    assert meta["mse_weights"] is None and not dst.with_name("tail_b2.mse_weights.npy").exists()
+
+
+def test_gate_b_tells_a_contextless_state_from_one_that_reads_the_context(trained):
+    import stateinput
+    tmp, c, out, _ = trained
+    model, v, _, spec = train_lcm.load_run(out)
+    arr, index, ds = np.load(c), np.load(tmp / "s.index.npy"), np.load(tmp / "s.docstart.npy")
+    sp = spec["split"]
+    fit = lcm.doc_spans(ds, sp["n"], 0, sp["train_hi"])
+    test = lcm.doc_spans(ds, sp["n"], sp["eval_lo"], sp["n"])
+    trained_r = stateinput.measure(stateinput.States(model, v, [1, 2]), arr, index, fit, test,
+                                   32, 16, 1e-3)
+    # with every attention output zeroed, a state is a function of its own row
+    p = jax.tree.map(np.array, v["params"])
+    for k in p:
+        if k.startswith("blocks_"):
+            p[k]["attn"]["out"]["kernel"][:] = 0
+    blind = stateinput.measure(stateinput.States(model, {"params": p, "scaler": v["scaler"]}, [1, 2]),
+                               arr, index, fit, test, 32, 16, 1e-3)
+    for k in (1, 2):
+        assert blind[k]["r2_alone"] > 0.999
+        assert trained_r[k]["rows_test"] == blind[k]["rows_test"] == sp["n"] - sp["eval_lo"]
+    assert trained_r[2]["r2_alone"] < 0.99       # the trained model carries x_{n-1}
+
+
 def test_agreement_tells_a_rotation_from_a_linear_map_from_nothing():
     r = np.random.default_rng(2)
     a = r.standard_normal((4000, 12)) @ np.diag(np.linspace(0.5, 3, 12))

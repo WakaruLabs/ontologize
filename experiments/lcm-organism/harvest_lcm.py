@@ -10,6 +10,10 @@
 - the tail `[T, n)`, the rows the LCM never trained on (`train_lcm.py
   --tail-rows`, snapped the same way): where everything is scored.
 
+`--prefix-rows 0` harvests the tail alone, which is all `stateagree.py`
+needs (about 0.5 GB at 1024 wide). Such a harvest has no MSE weights, since
+there are no training rows to weight by.
+
 Harvest row i is cache row i for i < P, and cache row T + (i - P) after,
 so `--rows 4000000`, `--fit-rows 4000000:4400000` and "the last 32,768
 rows" mean on the harvest what they mean on the cache. Each row's state is
@@ -202,11 +206,14 @@ def main(argv=None) -> Path:
     np.save(stem(".docstart.npy"), first_rows(doc))
 
     h = np.load(part, mmap_mode="r")
-    w = inverse_variance(h, P)
-    np.save(stem(".mse_weights.npy"), w.astype(np.float32))
     matched: Optional[float] = None
+    w = inverse_variance(h, P) if P else None
+    if w is not None:
+        np.save(stem(".mse_weights.npy"), w.astype(np.float32))
     mcache = Path(cfg.match_cache or cache)
-    if mcache.exists() and Path(cfg.match_weights).exists():
+    if w is None:
+        print("--prefix-rows 0, the tail alone: no prefix to weight by, so no MSE weights")
+    elif mcache.exists() and Path(cfg.match_weights).exists():
         matched = (whitened_base(np.load(mcache, mmap_mode="r"), np.load(cfg.match_weights))
                    / whitened_base(h, w))
         np.save(stem(".mse_weights_matched.npy"), (w * matched).astype(np.float32))
@@ -227,7 +234,8 @@ def main(argv=None) -> Path:
                      "note": "harvest row i is cache row i below P, cache row T + i - P after"},
             "holdout": held,
             "conversion": stats,
-            "mse_weights": {"rows": P, "max": float(w.max()), "median": float(np.median(w))},
+            "mse_weights": None if w is None else
+            {"rows": P, "max": float(w.max()), "median": float(np.median(w))},
             "mse_weights_matched_scale": matched}
     stem(".meta.json").write_text(json.dumps(meta, indent=2) + "\n")
     print(json.dumps({"out": str(dst), **{k: meta[k] for k in ("n", "rows", "conversion")}},
