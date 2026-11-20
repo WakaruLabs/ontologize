@@ -401,10 +401,14 @@ into a model's own cells, Appendix~\ref{sec:steeroverlay} evaluates
 steering toward an external ground-truth attribute---source
 language---against supervised vectors fitted to language labels.
 
-Individual entries can nonetheless induce coherent semantic or linguistic
-changes on a single seed: in the reference softmax model, forcing entry 17
-of head 8 in layer 1 consistently translates decoded text into Burmese while
-preserving semantic content.
+No single entry changes the language of decoded text. An interactive
+observation that forcing one entry of the reference softmax model turns
+decoded text into Burmese does not reproduce over held-out rows: none of its
+forced decodes is Burmese, against 17--20\% of Burmese rows decoded the same
+way. In a hard-code stack trained on correctly tagged sentences, the
+layer-0 entries that Burmese inputs select move a forced output at most a
+sixth of the way toward Burmese under a language probe
+(Appendix~\ref{sec:entryforce}).
 
 \subsection{Description specificity (autointerp)}
 \label{sec:autointerp}
@@ -820,8 +824,8 @@ while differing in the features that implement
 it~\cite{chughtai2023}; here, however, identical $\fvu$ arises from
 substantially different reconstructions in both the flat arm and the
 stack, so the residual cascade does not cause the cross-seed divergence. Consequently, qualitative and steering
-findings for specific heads (including the Burmese entry and per-head
-steering tables) characterize a single seed. Note also that dictionary
+findings for specific heads (including per-head steering tables)
+characterize a single seed. Note also that dictionary
 non-negativity and shared per-layer gains induce substantial baseline
 alignment, causing uncentered contribution cosines and raw subspace overlaps
 to appear spuriously high unless compared against structure-matched nulls.
@@ -952,6 +956,9 @@ the discrete slow block achieve a mean held-out cross-sentence correlation
 of $0.727$ and $0.718$ (seeds 42 and 43), exceeding the top 38 linear
 slow-feature projections of the embedding's unit direction ($0.636$), and maintain that
 lead after removing per-language means ($0.524$ and $0.523$ vs.\ $0.462$).
+The code of any other block of 38 heads, in the Fano arm or the control,
+reaches only $0.25$--$0.26$ ($0.19$--$0.20$ without language means), so
+the lead comes from the pair term, not from one-hot coding.
 
 Two important caveats bound this result. First, it has been demonstrated
 only in a single-layer architecture and incurs a $1.8$--$1.9\%$ increase in

@@ -235,10 +235,11 @@ assignments, two-head edits compose nearly additively in decode space,
 with a median cosine of at least $0.95$ between the joint decode change
 and the sum of the individual changes across all layers (and exact
 equality in the final layer, where no downstream layers reclassify the
-residual). In \texttt{resid\_nc}, forcing a single layer-0 entry
-consistently translates decoded text into Burmese while preserving
-semantic content, providing a concrete existence proof of a causal
-steering entry on one seed.
+residual). No single entry changes the language of decoded text: an
+earlier observation that one entry of \texttt{resid\_nc} turns decodes
+into Burmese does not reproduce over held-out rows, and in a hard-code
+stack trained on correctly tagged sentences the entries Burmese inputs
+select move a forced output at most a sixth of the way toward Burmese.
 
 When we compare decoded-atom steps against supervised vectors fitted to
 the model's own entry partitions at step size
@@ -346,7 +347,9 @@ control model's heads match at only $0.016$--$0.017$. Moreover, the top 38 slow 
 one-hot slow-head code achieve a higher held-out cross-sentence
 correlation than the top 38 linear slow-feature directions of the raw
 embedding ($0.72$--$0.73$ vs.\ $0.636$ overall, and $0.52$ vs.\ $0.46$
-after demeaning each language). The agreement holds for the block rather
+after demeaning each language), while the code of any other block of 38
+heads reaches only $0.25$--$0.26$, so the lead comes from the pair term
+rather than from one-hot coding. The agreement holds for the block rather
 than for individual heads: two slow heads within one seed already agree
 at NMI $0.40$, any one-to-one pairing of two seeds' slow heads scores
 $0.397$--$0.399$, and the three seeds' pairwise matchings compose for only

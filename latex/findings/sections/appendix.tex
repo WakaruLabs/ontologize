@@ -1564,8 +1564,7 @@ expected, since a soft head encodes a factor in its \emph{assignment}
 distribution rather than in any single entry's scalar probability.
 Consistent with this view, partition-level analysis of \texttt{resid\_nc}
 identified layer-1 heads whose partitions carry mutual information with
-script and language family, including one entry (entry 17 of head 8 in
-layer 1) causally verified to produce Burmese decodes. Evaluating head
+script and language family. Evaluating head
 partitions directly with \texttt{headlang.py} on a configuration-matched
 softmax reference and on the hard-code arms (Section~\ref{sec:lang})
 shows that the softmax reference's strongest head reaches a
@@ -1578,6 +1577,44 @@ the strongest head reaching roughly one fifth of the maximum attainable
 NMI, every deeper head scoring below all layer-0 heads, and removing the
 top 32 heads leaving most of the recoverable language signal intact in
 the rest of the code (Appendix~\ref{sec:langdetail}).
+
+\paragraph{Forcing one entry does not change the language.}
+\label{sec:entryforce}
+An interactive session had found that forcing entry 17 of head 8 in
+layer 1 of \texttt{resid\_nc} turns decoded text into Burmese while
+keeping its meaning. Rerun over held-out rows of other languages
+(\texttt{entry-force/force.py}), with the head's 31 other entries as the
+null, it does not. The decoder is first left to choose its output
+language, since forcing English makes it translate: even Burmese rows then
+decode with no Myanmar script. Left free, it decodes 17--20\% of Burmese
+rows (inputs and reconstructions) mostly in Myanmar script, but no forced
+row of entry 17 (0 of 128), against at most 3\% for any of its siblings and
+0\% unforced. Under the English decode, none of 8{,}704 decodes of 256
+rows contains a Myanmar letter. Nor does the entry keep more meaning than
+its siblings: the cosine between a decode's SONAR re-encoding and its row
+ranks entry 17 20th of 32 ($0.372$, against $0.380$ unforced and $0.089$
+for an unrelated row). On English sentences at the session's temperature
+($t{=}0.1$), forcing any entry of the head keeps little of a sentence's
+meaning (median cosine $0.30$, against $0.80$ unforced and $0.07$ for an
+unrelated sentence), and entry 17 ranks 21st. Burmese inputs do not
+select the entry either ($4.7\%$ of Burmese tail rows choose it, $5.4\%$
+of the rest). \texttt{resid\_nc} was trained on the cache with the English
+tag, so the same question was asked of the recipe ladder's control arm
+(\texttt{ste\_h76\_init01\_med837\_ctrl}, trained on correctly tagged
+sentences) by forcing each of its 12{,}160 entries over 256 rows of other
+languages (\texttt{entry-force/scan.py}) and reading the outputs with a
+Burmese-versus-rest logistic probe (held-out AUROC $0.996$ on the model's
+reconstructions). Its layer-0 heads do gather Burmese inputs: in five
+heads one entry takes 37--52\% of Burmese rows, $15$--$20{\times}$ its
+rate among other languages. Forcing an entry moves the probe
+reproducibly (between two halves of the rows the shifts correlate at
+$0.96$), and the entries Burmese rows choose move it most, but by at most
+$1.9$ of the $11.8$ logits that separate Burmese reconstructions from the
+rest, so the probe classifies at most 5\% of any entry's forced rows as
+Burmese, and none of
+the 24 decoded entries (the 8 largest shifts, the 8 entries Burmese rows
+choose most, 8 random) yields a Burmese decode. In both models a language
+is written by many heads together, not by one entry.
 
 \paragraph{What the English tag does to localization.} Because most of
 the SONAR cache was encoded under the English source-language tag
@@ -3247,11 +3284,16 @@ directions & 1 & 8 & 38 & 1 & 8 & 38 \\
 linear (the embedding) & 0.935 & 0.847 & 0.636 & 0.739 & 0.636 & 0.462 \\
 slow heads' code, seed 42 & 0.956 & 0.909 & 0.727 & 0.781 & 0.690 & 0.524 \\
 slow heads' code, seed 43 & 0.954 & 0.905 & 0.718 & 0.776 & 0.690 & 0.523 \\
+other 38-head blocks' codes & 0.57--0.60 & 0.44--0.46 & 0.25--0.26 & 0.45--0.48 & 0.33--0.34 & 0.19--0.20 \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-\noindent The slow-head code also spans the leading linear slow
+\noindent The last row is the null: the same fit on the code of each of
+the other six blocks of 38 heads (the Fano arm's heads 38--75 and both of
+the control's blocks, in each seed) falls far below the embedding, so the
+slow block's lead comes from the pair term rather than from one-hot
+coding. The slow-head code also spans the leading linear slow
 directions: ridge regression from the 38 slow heads' one-hot code
 explains $0.76$--$0.77$ of the held-out variance of the eight slowest
 linear directions, compared to $0.39$--$0.40$ for any other block of 38
