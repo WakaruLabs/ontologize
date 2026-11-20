@@ -1,5 +1,85 @@
 # lcm-organism: notes
 
+## 2026-11-20: Phase 1 on the RTX 3090: both gates pass, and the seeds' states agree up to nearly a rotation
+
+**Runs.** `train_lcm.py --cache data/sonar_embeddings/mc4_sent16_f16.npy --epochs 1 --seed 42`, then
+`--seed 43`: the default 104.9M-parameter SwiGLU model, 7,216 steps each at TF32, 51 minutes for both.
+The outputs are in `data/out/lcm-organism/lcm_l8_d1024_s{42,43}`. The readings come from `phase1.sh`, into
+`data/out/lcm-organism/phase1/`. Its tail-only harvests are in `/var/tmp/keira/lcm-phase1`, outside the
+repository.
+
+**Gate A: it has learned dynamics.** Held-out next-sentence FVU_w on the 26,335 pairs:
+
+| Step | Seed 42 | Seed 43 |
+|---|---|---|
+| 0 (untrained) | 2.587 | 2.580 |
+| 2,500 | 0.842 | 0.845 |
+| 5,000 | 0.829 | 0.829 |
+| 7,216 | **0.8245** | **0.8250** |
+
+- **The margin.** Against the context ridge's 0.870, the LCM is 0.045 better. The seeds differ by
+  0.0005, so the margin is about 90 times the spread. Against the ridge from x_t (0.898), it is 0.073
+  better.
+- **Most of the gain came early.** The last 2,216 steps added 0.004, so a second epoch would probably add
+  little.
+
+**Gate B: the state is more than its input.** The held-out R² of the state on the scored tail's 32,771
+rows, from ridges fitted on 227,791 rows of 20,000 training documents:
+
+| Block | Seed | x_n | x_n + earlier mean | x_n read alone |
+|---|---|---|---|---|
+| 4 | 42 | 0.544 | 0.686 | 0.730 |
+| 4 | 43 | 0.573 | 0.714 | 0.736 |
+| 8 | 42 | 0.348 | 0.501 | 0.582 |
+| 8 | 43 | 0.343 | 0.497 | 0.584 |
+
+- **What the context adds.** Even counting everything the model computes from x_n alone, x_n explains
+  73% of block 4's state and 58% of block 8's. The context supplies the remaining 26-27% at block 4 and
+  42% at block 8.
+- **The plan's reading.** It said to move to a later block only if x_n explained nearly all of the
+  state, so both blocks qualify. Block 8 holds more context, by this measure.
+- **The prefix mean carries much of it.** A linear readout from x_n and the mean of the earlier rows
+  already reaches 0.69-0.71 at block 4, close to the 0.73 of the alone state.
+
+**Agreement between the seeds' states** (`stateagree.py`, on the tail's last 65,536 rows, maps fitted on
+the first half and scored on the second):
+
+| Block | Models | CKA | Ridge R², 42→43 / 43→42 | Procrustes | Whitened Procrustes |
+|---|---|---|---|---|---|
+| 4 | trained | 0.912 | 0.868 / 0.865 | 0.183 | 0.801 |
+| 4 | untrained inits | 0.378 | 0.153 / 0.154 | 1.380 | 1.654 |
+| 8 | trained | 0.911 | 0.910 / 0.911 | 0.102 | 0.678 |
+| 8 | untrained inits | 0.297 | 0.077 / 0.080 | 1.518 | 1.781 |
+
+The Procrustes columns are residuals: 0 is identical, and about 2 means independent. CKA with rows
+shuffled is at most 0.005.
+
+- **Training makes the two seeds' representations far more alike** than their inits are.
+- **Nearly a rotation.**
+  - A rotation, after scaling each side to unit total variance, explains 82% of the other seed's
+    variance at block 4 and 90% at block 8.
+  - A general linear map explains 87% and 91%.
+  - So in the variance-weighted metric, the states are identified nearly up to a rotation and a scale.
+    The plan expected the rotation test to read clearly worse than the linear map, and it reads only a
+    little worse.
+- **But the agreement is in the high-variance directions.**
+  - Whitened, every direction counts equally, and the residual is 0.80 at block 4 and 0.68 at block 8.
+    That is well short of the inits' 1.65-1.78, and far from identity.
+  - So the shared part is a high-variance subspace, while most of the 1,024 directions, each with
+    little variance, are not shared.
+  - Some of the whitened residual may be estimation noise in the smallest directions, fitted from
+    32,768 rows. The canonical correlations would show how large the shared subspace is.
+- **What the theory suggested by analogy** was that learned dynamics may fix a subspace but not a basis.
+  Here the subspace is shared, and within it the two seeds differ by little more than a rotation.
+  Categorical heads cannot rotate, so Phase 2 asks whether the dictionary supplies the basis.
+
+**Scale and range.** The trained states are large.
+- The largest magnitudes in the tail harvests are 150 (seed 42) and 101 (seed 43) at block 4, and 2,320
+  and 1,943 at block 8. The untrained inits stay under 19.
+- All of these fit float16, whose relative precision is the same at any magnitude. But a few very large
+  coordinates at block 8 are a scale question for the dictionary recipe in Phase 2, alongside the norm
+  question noted on 2026-11-19.
+
 ## 2026-11-19: throughput pilot on the RTX 3090: 23 minutes per epoch
 
 **Run.** `train_lcm.py --cache data/sonar_embeddings/mc4_sent16_f16.npy --seed 42 --max-steps 175`, at the

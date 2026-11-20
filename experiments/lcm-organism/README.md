@@ -14,8 +14,9 @@ arms. Results go in `notes.md`.
 | `stateagree.py` | Two harvests of the same rows compared before any dictionary: CKA, Procrustes (rotation), whitened Procrustes and ridge R² (linear map) |
 | `stateinput.py` | Gate B: the share of a block's state on the scored tail that a ridge explains from x_n, from x_n with the run's earlier mean, and from the model's own state for x_n read alone (everything it computes from x_n without context) |
 | `f16cache.py` | The float16 copy of the cache, for the TPU upload |
+| `phase1.sh` | Phase 1's readings once both seeds have trained: Gate B on blocks 4 and 8, tail-only harvests of each seed and its untrained init, and `stateagree.py` between the seeds and between the inits |
 
-`tests/test_lcm_organism.py` covers all six.
+`tests/test_lcm_organism.py` covers the six Python files.
 
 ## Run
 

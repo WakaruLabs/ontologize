@@ -1,7 +1,10 @@
 # An LCM as model organism (plan)
 
-**Status:** plan (2026-11-18). Phase 0 is built and tested on CPU, and the float16 copy of the cache is
-written (2026-11-19, `notes.md`). No LCM has been trained at full size. `README.md` covers the code.
+**Status:** plan (2026-11-18).
+- Phase 0 is built and tested, and the float16 copy of the cache is written (2026-11-19).
+- Phase 1 ran on the RTX 3090 (2026-11-20). Both gates pass, and the two seeds' states agree up to
+  nearly a rotation in their high-variance directions.
+- Phase 2 is next. The results are in `notes.md`, and `README.md` covers the code.
 
 ## The question
 
