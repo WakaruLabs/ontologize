@@ -4,7 +4,11 @@
 - Phase 0 is built and tested, and the float16 copy of the cache is written (2026-11-19).
 - Phase 1 ran on the RTX 3090 (2026-11-20). Both gates pass, and the two seeds' states agree up to
   nearly a rotation in their high-variance directions.
-- Phase 2 is next. The results are in `notes.md`, and `README.md` covers the code.
+- Phase 2 ran on a v5e-4 (2026-11-20). Codes on the LCM's block-4 states agree across seeds well above
+  codes on SONAR or on the untrained LCM, by more within a language. SONAR recoloured to the LCM's
+  spectrum explains little of it. Heads are still not identified one by one, and `closure.py` hasn't
+  run.
+- The results are in `notes.md`, and `README.md` covers the code.
 
 ## The question
 

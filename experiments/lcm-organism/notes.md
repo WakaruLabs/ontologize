@@ -1,5 +1,148 @@
 # lcm-organism: notes
 
+## 2026-11-20: Phase 2 on a TPU: codes on the LCM's states agree across seeds at over twice SONAR's level, and the spectrum doesn't explain it
+
+**In short.**
+- **The plan's claim holds.** Codes on LCM block 4's states match across seeds well above codes on
+  SONAR or on the untrained LCM: 2.4 times SONAR's excess over the null on all heads, and 4.2 times
+  within a language. A third seed agrees with the first two at the same level.
+- **It is not effective dimension, and not context averaging.** SONAR recoloured to the LCM's
+  spectrum closes 76% of the gap in FVU_w, but only 22% of the gap in agreement, and 10% within a
+  language. The untrained LCM mixes in context, and agrees no more than SONAR.
+- **It is still not heads identified one by one.** Each head's best partner beats its runner-up by
+  at most 0.001, and the matched NMI, 0.034, is far below the pair objective's 0.41.
+
+**Runs.** Every arm is `train_pair.py --epochs 3 --pair-term agree --s-pair 0`, the SONAR control's
+recipe (`doc2_sp0_ph38`), to step 46,250, keeping only the last checkpoint.
+- **Where.** A v5e-4 under Flex-start through `experiments/cloud`, one run per chip, at matmul
+  precision `high`. Each run took about 1 h 57 min, against the plan's estimate of about an hour.
+- **Scoring,** at `highest`: `seedmatch.py --labels <harvest>.langs.npy --label-rows 262144
+  --min-rows 1000`, with `--c` for three seeds, then `eval_next.py`. The queues are in `queues/` and
+  the outputs in `data/out/lcm-organism/phase2_tpu/`.
+- **The inputs.**
+  - **LCM:** `harvest_lcm.py` on Phase 1's seed 42 (step 7,216) at block 4: the rows below 4,400,014
+    and the tail, at float16, with matched MSE weights (`lcm_b4`).
+  - **Untrained:** the same harvest of that run's step 0 (`init_b4`).
+  - **SONAR:** `mc4_sent16_f16.npy` with the control's `no837` weights.
+  - **Recoloured SONAR** (`recolour.py`, below), added after the spectrum check.
+- **Interruptions.** LCM seed 44 and both recoloured runs died together when the VM's RAM disk filled,
+  and resumed from their last checkpoints: step 7,000 for seed 44, and within the first 500 steps for
+  the others.
+
+**The readouts.**
+
+| Arm | Seeds | All 380 heads: matched NMI (null) | First 38 heads, within language (null) | Best over runner-up | FVU_w, each seed |
+|---|---|---|---|---|---|
+| LCM, block 4 | 42, 43, 44 | **0.0340** (0.0048) | **0.1269** (0.0495) | 0.0010 | 0.2820 / 0.2812 / 0.2798 |
+| SONAR recoloured to the LCM's spectrum | 42, 43 | 0.0206 (0.0048) | 0.0751 (0.0508) | 0.0006 | 0.3241 / 0.3236 |
+| SONAR, TPU | 42, 43, 44 | 0.0169 (0.0048) | 0.0692 (0.0507) | 0.0004 | 0.4593 / 0.4585 / 0.4597 |
+| SONAR, GPU (`long.sh`) | 42, 43, 44 | 0.0168 (0.0048) | 0.0692 (0.0507) | 0.0004 | 0.4593 / 0.4586 / 0.4596 |
+| Untrained LCM, block 4 | 42, 43 | 0.0155 (0.0048) | 0.0749 (0.0509) | 0.0003 | 0.4370 / 0.4370 |
+
+How to read the columns:
+- **The matched NMI** is between seeds 42 and 43. The null shuffles B's rows.
+- **Within language** scores the first 38 heads' matched pairs inside each language's rows, against a
+  null that shuffles within each language (84 languages, 260,453 rows). At `--s-pair 0` nothing
+  distinguishes those 38 heads from the rest.
+- **Best over runner-up** is the median, over those heads, of the best partner's NMI minus the second
+  best's.
+- **FVU_w** is held-out, against the input, under each arm's own weights.
+
+**The TPU retrain matches the GPU runs** within 0.0001 on every NMI and FVU_w, seed by seed, so the
+arms compare across the two machines. Only the loop count below differs, by one head.
+
+**Against the plan's predictions.**
+- **The untrained arm** was predicted to read near SONAR. It reads 0.0155, slightly below, so mixing in
+  context at init does not make heads agree.
+- **The LCM arm** was predicted to read above both, and it does. Its excess over the null is 0.0292,
+  against SONAR's 0.0120 and the init's 0.0107.
+- **Language.** Within a language, the LCM's excess is 0.077 against SONAR's 0.019. So the lead is not
+  language: it grows once language is held fixed.
+- **Block-level.** The margin was predicted near 0.003. It reads 0.0010.
+- **What would have counted against,** the three arms reading alike, did not happen.
+- **Seed 44,** the plan's third seed if the result was positive, matches seeds 42 and 43 at the same
+  level: 0.0341 and 0.0324 on the first 38 heads, against 0.0326 between 42 and 43.
+  - Its matches close a loop (42→43→44 lands where 42→44 does) for 3 of the 38 heads, against 1 by
+    chance.
+  - SONAR's three seeds close 1 on the TPU and 2 on the GPU.
+  - These counts are too small to read much from.
+
+**Still not heads identified one by one.** On the first 38 heads:
+- **Head-specific agreement.** The matched NMI minus a random one-to-one pairing's is 0.0026–0.0029
+  for the LCM's three seed pairs. It is 0.0013–0.0014 for SONAR on the TPU (0.0012–0.0014 on the
+  GPU), 0.0016 recoloured and 0.0012 untrained.
+- **Most of each arm's NMI is a level any pairing reaches.** The LCM doubles the head-specific part
+  too.
+- **A head agrees with its match in another seed scarcely more than two heads of one seed agree:**
+  0.032–0.034 against 0.028–0.032 for the LCM, and 0.016–0.017 against 0.014–0.015 for SONAR.
+
+**Is it effective dimension?** `spectrum.py` measures each arm in the frame its loss weighs (rows
+scaled by the square roots of their MSE weights), on 262,144 prefix rows and the tail's 262,144. The
+tail:
+
+| Arm | Participation ratio | Effective rank | Directions for 50% / 90% | Share between languages | Within-language participation ratio |
+|---|---|---|---|---|---|
+| LCM, block 4 | 141 | 315 | 63 / 366 | 0.154 | 143 |
+| SONAR recoloured | 149 | 324 | 66 / 371 | 0.072 | 166 |
+| Untrained LCM | 332 | 602 | 143 / 684 | 0.057 | 387 |
+| SONAR | 413 | 701 | 211 / 711 | 0.043 | 461 |
+
+- **The LCM's states are much lower-dimensional than SONAR's.** A code of fixed capacity covers more
+  of such a source, and might agree more for that reason alone.
+- **The gap in FVU_w is the spectrum.**
+  - Take the rate at which reverse water-filling on each arm's spectrum (`pareto.gaussian_reference`)
+    reaches the arm's FVU_w: 305 bits for the LCM, 315 for the untrained LCM and 363 for SONAR.
+  - Measured against its own spectrum, SONAR's code is not the worse one.
+- **The untrained arm already argued against dimension.** It is lower-dimensional than SONAR, and it
+  agrees slightly less.
+
+**The control (`recolour.py`).**
+- **The map.** SONAR's rows go through one linear map that gives them the LCM's weighted-frame spectrum
+  rank for rank:
+  - y = c R diag(s) Uᵀ(√w ⊙ x), where U and λ are SONAR's weighted-frame eigenvectors and eigenvalues;
+  - s = √(λ_LCM / λ_SONAR);
+  - R is a random rotation, so the trainer's inverse-variance weights stay near uniform;
+  - c brings each coordinate's variance near 1;
+  - the one direction the `no837` weights null is zeroed.
+- **Layout and training.** It is laid out as the `lcm_b4` harvest, with its sidecars and its own
+  matched weights. It trains as the LCM arm, with only the cache and the weights changed.
+- **Fidelity.** Under its own weights its participation ratio reads 149, against the target's 143.
+  The float16 copy rounded 102 of its 4.8 billion values to zero.
+
+What it shows:
+- **FVU_w** reads 0.324: 76% of SONAR's gap to the LCM.
+- **Agreement.** The excess on all heads, 0.0158, closes 22% of the gap. Within a language, 0.024
+  closes 10%.
+- **So the spectrum accounts for most of the LCM arm's lower error, and little of its agreement.**
+- **At nearly the same spectrum,** the LCM's rows code to 0.281 and the recoloured rows to 0.324: 305
+  Gaussian-equivalent bits against 255. The LCM's states have structure beyond their covariance that
+  the code uses, which the recoloured rows lack.
+
+**Context averaging does not explain it either.** `eval_next.py`'s copy baseline, which predicts each
+row by the one before, measures how alike adjacent rows are. Its FVU_w is 0.44 for the LCM, 0.77 for
+the untrained LCM, 1.37 recoloured and 1.53 for SONAR. The untrained LCM's adjacent rows are far more
+alike than SONAR's, yet its codes agree no more.
+
+**Caveats.**
+- **The control matches the total spectrum, not the split between languages.** Its share between
+  languages is 0.072 against the LCM's 0.154, and its within-language participation ratio is 166
+  against 143.
+  - A control that recolours the within- and between-language covariances separately would close
+    that.
+  - It matters most for the all-heads score, and less within a language, where the LCM leads most.
+- **Seeds.** The control and the untrained arm have two seeds each.
+- **Next-sentence FVU_w doesn't compare across arms,** since the LCM's rows carry their document's
+  context. For the record, against each arm's copy and ridge baselines:
+  - LCM: 0.559–0.561 (copy 0.439, ridge 0.309);
+  - untrained: 0.746 (0.766, 0.542);
+  - SONAR: 1.213–1.214 (1.533, 0.897);
+  - recoloured: 1.190 (1.369, 0.832).
+
+**Not yet run:**
+- `closure.py` on each arm;
+- the plan's across-models test, a dictionary on LCM seed 43's states, which needs `--cache-b`;
+- Phase 3.
+
 ## 2026-11-20: Phase 1 on the RTX 3090: both gates pass, and the seeds' states agree up to nearly a rotation
 
 **Runs.** `train_lcm.py --cache data/sonar_embeddings/mc4_sent16_f16.npy --epochs 1 --seed 42`, then
