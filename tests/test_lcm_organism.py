@@ -17,6 +17,10 @@
 # - stateagree.py: a rotation reads as identity under every statistic, an
 #   invertible linear map only under the linear ones, independent
 #   representations under none.
+# - readout.py: its features are Gate B's `x_context` and never reach across
+#   documents; its chunks end at documents and at the cuts; on a harvest
+#   whose states are planted as an affine function of those features, it
+#   reproduces the states row for row, laid out as the harvest.
 import json
 import os
 import signal
@@ -117,6 +121,7 @@ import jax.numpy as jnp  # noqa: E402
 
 import harvest_lcm  # noqa: E402
 import lcm  # noqa: E402
+import readout  # noqa: E402
 import recolour  # noqa: E402
 import spectrum  # noqa: E402
 import stateagree  # noqa: E402
@@ -448,3 +453,69 @@ def test_recolouring_gives_the_target_spectrum_with_even_coordinates():
     assert np.isclose(np.diag(C_o).mean(), 1.0)
     # a random rotation spreads a concentrated spectrum over every coordinate
     assert np.diag(C_o).std() < 0.5 and np.diag(C_o).min() > 0.1
+
+
+def test_the_readout_features_are_gate_bs_and_stay_in_their_document():
+    import stateinput
+    x = np.arange(12, dtype=np.float32).reshape(6, 2)
+    F = readout.context_features(x, np.array([0, 2, 5]))
+    np.testing.assert_array_equal(F[:, :2], x)
+    np.testing.assert_allclose(F[:, 2:4], [[0, 0], [0, 1], [0, 0], [4, 5], [5, 6], [0, 0]])
+    np.testing.assert_array_equal(F[:, 4], [1, 0, 1, 0, 0, 1])
+    r = np.random.default_rng(5)
+    lens = np.array([3, 1, 5, 2])
+    x = r.standard_normal((lens.sum(), 4)).astype(np.float32)
+    t = 6
+    mask = np.arange(t)[None] < lens[:, None]
+    pad = np.zeros((len(lens), t, 4), np.float32)
+    pad[mask] = x
+    _, want = stateinput.row_features(pad, mask)
+    got = readout.context_features(x, np.r_[0, np.cumsum(lens)[:-1]])
+    np.testing.assert_allclose(got, want, rtol=1e-5, atol=1e-6)
+
+
+def test_readout_chunks_end_at_documents_and_at_the_cuts():
+    ds = np.array([0, 3, 4, 9, 11, 16, 20])
+    assert readout.doc_chunks(ds, [11, 16], 25, 6) == [(0, 4), (4, 9), (9, 11), (11, 16),
+                                                       (16, 20), (20, 25)]
+    # a document longer than a chunk is one chunk
+    assert readout.doc_chunks(np.array([0, 10]), [], 12, 4) == [(0, 10), (10, 12)]
+
+
+def test_the_readout_reproduces_states_that_are_its_features_mapped(tmp_path):
+    c = synth(tmp_path)
+    x = np.load(c)
+    index = np.load(tmp_path / "s.index.npy")
+    n = len(x)
+    cache_first = harvest_lcm.first_rows(index[:, 0])
+    P = int(cache_first[np.searchsorted(cache_first, 300)])
+    T = int(cache_first[np.searchsorted(cache_first, n - 400)])
+    rows = harvest_lcm.harvest_rows(P, T, n)
+    # states planted as an affine map of each row's features in its document
+    r = np.random.default_rng(6)
+    A, b0 = r.standard_normal((2 * x.shape[1] + 1, 12)), r.standard_normal(12)
+    F = readout.context_features(x, cache_first)
+    tgt = tmp_path / "h.npy"
+    np.save(tgt, (F[rows] @ A + b0).astype(np.float16))
+    for suf in (".index.npy", ".langs.npy", ".kind.npy"):
+        np.save(tmp_path / ("h" + suf), np.load(tmp_path / ("s" + suf))[rows])
+    np.save(tmp_path / "h.docstart.npy", harvest_lcm.first_rows(index[rows, 0]))
+    (tmp_path / "h.meta.json").write_text(json.dumps({"rows": {"prefix": [0, P], "tail": [T, n]}}))
+    dst = tmp_path / "out" / "ro.npy"
+    dst.parent.mkdir()
+    readout.main(["--source", str(c), "--source-weights", str(tmp_path / "w.npy"),
+                  "--target", str(tgt), "--out", str(dst), "--fit-docs", "1000",
+                  "--holdout", "150", "--chunk", "50", "--alpha", "1e-9"])
+    meta = json.loads((tmp_path / "out" / "ro.meta.json").read_text())
+    assert meta["rows"]["prefix"] == [0, P] and meta["rows"]["tail"] == [T, n]
+    assert meta["r2"]["scored_tail"] > 0.9999 and meta["r2"]["tail"] > 0.9999
+    y, h = np.load(dst), np.load(tgt)
+    assert y.dtype == np.float16 and y.shape == h.shape
+    np.testing.assert_allclose(y.astype(np.float32), h.astype(np.float32), atol=0.02)
+    for suf in (".index.npy", ".langs.npy", ".kind.npy", ".docstart.npy"):
+        assert os.path.samefile(tmp_path / ("h" + suf), tmp_path / "out" / ("ro" + suf))
+    w = np.load(tmp_path / "out" / "ro.mse_weights.npy")
+    assert abs(w.mean() - 1) < 1e-5 and (tmp_path / "out" / "ro.mse_weights_matched.npy").exists()
+    assert not (tmp_path / "out" / "ro.npy.partial").exists()
+    with pytest.raises(SystemExit, match="exists"):
+        readout.main(["--source", str(c), "--target", str(tgt), "--out", str(dst)])

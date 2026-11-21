@@ -17,8 +17,10 @@ arms. Results go in `notes.md`.
 | `phase1.sh` | Phase 1's readings once both seeds have trained: Gate B on blocks 4 and 8, tail-only harvests of each seed and its untrained init, and `stateagree.py` between the seeds and between the inits |
 | `spectrum.py` | Each arm's covariance spectrum in the frame its loss weighs, on the same prefix and tail rows of every arm: participation ratio, effective rank, directions per share of the variance, `pareto.gaussian_reference`'s FVU at given rates, and the share of the variance between languages, of the total and of the pooled within-language covariance |
 | `recolour.py` | The effective-dimension control: SONAR's rows through one linear map that gives them a harvest's spectrum, laid out as that harvest |
+| `readout.py` | The context-averaging control: Gate B's ridge readout of a harvest's state from x_n, the mean of its document's earlier rows and an indicator of n = 0, written at every row of the harvest and laid out as it |
+| `phase2.sh` | Phase 2 on one GPU: the harvests, then the arms' dictionaries (`ARMS`, default `lcm init`) trained and scored by the SONAR control's recipe |
 
-`tests/test_lcm_organism.py` covers the eight Python files.
+`tests/test_lcm_organism.py` covers the nine Python files.
 
 ## Run
 
@@ -44,6 +46,9 @@ uv run python experiments/next-sentence/train_pair.py --cache data/activations/l
 JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/spectrum.py
 # SONAR recoloured to block 4's spectrum, then trained and scored as an arm
 JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/recolour.py
+# block 4's linear readout from x_n and its context's mean, then trained and scored on the GPU
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/readout.py
+ARMS=lcm_readout experiments/lcm-organism/phase2.sh train && ARMS=lcm_readout experiments/lcm-organism/phase2.sh score
 ```
 
 On a TPU (`experiments/cloud`), stage the float16 cache with the sidecars the scripts read
@@ -102,3 +107,11 @@ expired node loses only what had not reached the bucket.
     embedding carries, except the direction SONAR's weights zero, and depends on no other row.
   - **What it doesn't match.** It matches the total spectrum only. The split between variance
     across languages and within them, and the mean's share of a row's norm, stay SONAR's.
+- **The readout** (`readout.py`).
+  - **The map.** One ridge, fitted on 20,000 prefix documents against the harvest's own states, as
+    Gate B fits `x_context`. It is affine in x_n and in the mean of the document's earlier rows, the
+    context a running average would supply.
+  - **What it keeps.** The part of the state that is linear in those two, about 70% of block 4's
+    variance by Gate B. A dictionary on it sees the LCM's states without anything else the model
+    computes from the context or nonlinearly from x_n.
+  - **What it doesn't match.** Its spectrum is the readout's, not the harvest's.
