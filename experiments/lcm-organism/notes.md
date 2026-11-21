@@ -1,5 +1,169 @@
 # lcm-organism: notes
 
+## 2026-11-21: the fixed-mix control: SONAR's row plus its document's earlier mean agrees across seeds little more than SONAR
+
+**In short.**
+- **Averaging in the context does not give the LCM's lead.** Dictionaries on
+  y_n = x_n + mean(x_0 … x_{n−1}), in SONAR's coordinates with nothing fitted, close 17% of SONAR's
+  gap to the LCM on all heads and 20% within a language. The linear readout takes the same two inputs
+  through matrices fitted to the LCM's states, and it closed 86% and 62% (entry below).
+- **So the lead is in the LCM's own linear map** of the sentence and its context, not in the context
+  alone.
+- **Smoothness is not it either.** The mix's adjacent rows are much more alike than SONAR's, about as
+  alike as the untrained LCM's. Like the untrained LCM, it agrees little more than SONAR.
+
+**The control (`ctxmean.py`).**
+- **The map.** y_n = x_n + w · mean(x_0 … x_{n−1}) with w = 1, adding nothing at a document's first
+  row, on `mc4_sent16_f16.npy`'s rows, laid out as `lcm_b4`.
+- **The weight.** w = 1 counts the context so far as one more sentence. Nothing in it comes from the
+  LCM. The readout can't supply w, since its matrices map into the LCM's coordinates.
+- **Loss weights.** The SONAR arm's `no837`, scaled by 0.563 so the whitened error of predicting the
+  mean equals SONAR's. Inverse-variance weights would differ from the SONAR arm's in more than the
+  context. They would also give coordinate 837 (variance 8.5e-9, against a median of 4.1e-5) about
+  5,000 times the median weight.
+- **Rounding.** 0.59% of its float16 values are subnormal, against 0.79% in SONAR's own float16 copy.
+- **Its spectrum** (the tail, under those weights) lies between SONAR's and the LCM's:
+
+| Arm | Participation ratio | Effective rank | Directions for 50% / 90% | Share between languages | Within-language participation ratio |
+|---|---|---|---|---|---|
+| SONAR | 413 | 701 | 211 / 711 | 0.043 | 461 |
+| Fixed mix | 235 | 555 | 149 / 660 | 0.090 | 294 |
+| LCM, block 4 | 141 | 315 | 63 / 366 | 0.154 | 143 |
+| Linear readout | 122 | 255 | 52 / 294 | 0.153 | 130 |
+
+**Runs.** `ARMS=sonar_ctxmean phase2.sh train`, then `score`, on the RTX 3090, as for the readout arm:
+seeds 42 and 43 to step 46,250, about 2 h 5 min each, scored at `highest`.
+
+**The readouts,** beside the other arms' seeds 42 and 43:
+
+| Arm | All 380 heads: matched NMI (null) | First 38 heads, within language (null) | Best over runner-up | Head-specific part | Copy baseline | FVU_w, each seed |
+|---|---|---|---|---|---|---|
+| LCM, block 4 | 0.0340 (0.0048) | 0.1269 (0.0495) | 0.0010 | 0.0026 | 0.439 | 0.2820 / 0.2812 |
+| Linear readout of block 4 | 0.0316 (0.0048) | 0.1043 (0.0494) | 0.0005 | 0.0026 | 0.454 | 0.2746 / 0.2727 |
+| **Fixed mix** | **0.0197** (0.0048) | **0.0812** (0.0508) | 0.0004 | **0.0015** | 0.731 | 0.4364 / 0.4356 |
+| SONAR recoloured | 0.0206 (0.0048) | 0.0751 (0.0508) | 0.0006 | 0.0016 | 1.369 | 0.3241 / 0.3236 |
+| SONAR, TPU | 0.0169 (0.0048) | 0.0692 (0.0507) | 0.0004 | 0.0013 | 1.533 | 0.4593 / 0.4585 |
+| Untrained LCM, block 4 | 0.0155 (0.0048) | 0.0749 (0.0509) | 0.0003 | 0.0012 | 0.766 | 0.4370 / 0.4370 |
+
+The copy baseline is `eval_next.py`'s FVU_w for predicting each row by the one before, under the
+arm's weights: how alike adjacent rows are.
+
+**What it shows.**
+- **The gap.** The excess over the null is 0.0149 on all heads, against the LCM's 0.0292 and SONAR's
+  0.0120 (17% of the gap). Within a language it is 0.030, against 0.077 and 0.019 (20%).
+- **The head-specific part,** 0.0015, is SONAR's level (0.0013), not the LCM's and the readout's
+  (0.0026).
+- **For the record,** its next-sentence FVU_w is 0.774 (copy 0.731, ridge 0.560).
+
+**What it means.**
+- **Rows as alike as the untrained LCM's do not agree more than SONAR's.** Only the two arms whose rows
+  are the LCM's own map of its inputs, the LCM and its readout, agree well above SONAR.
+- **What the LCM contributes here is a linear map,** the readout's matrices on x_n and on the context
+  mean. They could matter for how they weigh the context against the row, or for how they reshape
+  x_n's own directions: the readout is far lower-dimensional than the mix. A readout from x_n alone
+  (Gate B's `x`, R² 0.544 for seed 42 at block 4) would separate the two.
+
+**Caveats.**
+- **One weight,** w = 1.
+- **Dimension.** The mix's participation ratio, 235, is about twice the readout's. Recolouring SONAR
+  to the LCM's spectrum closed 22% and 10% alone. A recoloured fixed mix would test the two together.
+- **Seeds.** Two.
+
+```bash
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/ctxmean.py --weight 1
+A=data/activations/lcm-organism
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/spectrum.py \
+    --arm sonar_ctxmean_b4 $A/sonar_ctxmean_b4.npy $A/sonar_ctxmean_b4.mse_weights_matched.npy \
+    --out data/out/lcm-organism/spectrum_ctxmean
+ARMS=sonar_ctxmean experiments/lcm-organism/phase2.sh train
+ARMS=sonar_ctxmean experiments/lcm-organism/phase2.sh score
+```
+
+## 2026-11-21: the linear-readout control: block 4's linear readout from x_n and its context's mean agrees across seeds almost as the LCM's states do
+
+**In short.**
+- **Most of the LCM arm's lead survives a linear readout.** Dictionaries on Gate B's ridge readout of
+  block 4's state, from x_n and the mean of its document's earlier rows, close 86% of SONAR's gap to
+  the LCM in seed agreement on all heads, and 62% within a language.
+- **It reproduces the head-specific part too:** 0.0026, the LCM's, against SONAR's 0.0013. Heads are
+  still not matched one by one.
+- **The readout's matrices were fitted to the LCM's states,** so this is still something the LCM
+  learned. A fixed mix, SONAR's row plus its document's earlier mean with no LCM, separates averaging
+  in the context from the LCM's own map (the entry above: averaging gives little of it).
+
+**The control (`readout.py`).**
+- **The map.** y_n = Wᵀ[x_n, mean(x_0 … x_{n−1}), 1{n = 0}] + b, with x the cache the LCM read
+  (`mc4_sent16_f16.npy`). It is Gate B's `x_context` ridge (`train_lcm.Ridge`, alpha 1e-3), fitted on
+  every row of 20,000 prefix documents (227,595 rows, seed 0) against `lcm_b4`'s states and written
+  at every harvest row.
+- **Fidelity.** Its held-out R² is 0.686 on the scored tail and on the whole tail, Gate B's 0.686 for
+  seed 42 at block 4.
+- **Layout.** It is laid out as `lcm_b4`, with its own inverse-variance weights matched to SONAR's
+  loss scale.
+- **Its spectrum** (`spectrum.py`, the tail, under those weights) is slightly lower-dimensional than the
+  LCM's states, with the same split between languages, which the recoloured control lacked:
+
+| Arm | Participation ratio | Effective rank | Directions for 50% / 90% | Share between languages | Within-language participation ratio |
+|---|---|---|---|---|---|
+| LCM, block 4 | 141 | 315 | 63 / 366 | 0.154 | 143 |
+| Linear readout | 122 | 255 | 52 / 294 | 0.153 | 130 |
+
+**Runs.** `ARMS=lcm_readout phase2.sh train`, then `score`, on the RTX 3090.
+- **Training:** Phase 2's recipe (`train_pair.py --epochs 3 --pair-term agree --s-pair 0`), seeds 42
+  and 43, to step 46,250, at the default precision. About 2 h 5 min a seed, at 6.9 steps a second.
+- **Scoring:** at `highest`, as for the TPU arms.
+- Outputs in `data/out/lcm-organism/phase2/`.
+
+**The readouts,** beside the Phase 2 arms' seeds 42 and 43:
+
+| Arm | All 380 heads: matched NMI (null) | First 38 heads, within language (null) | Best over runner-up | Head-specific part | FVU_w, each seed |
+|---|---|---|---|---|---|
+| LCM, block 4 | 0.0340 (0.0048) | 0.1269 (0.0495) | 0.0010 | 0.0026 | 0.2820 / 0.2812 |
+| **Linear readout of block 4** | **0.0316** (0.0048) | **0.1043** (0.0494) | 0.0005 | **0.0026** | 0.2746 / 0.2727 |
+| SONAR recoloured | 0.0206 (0.0048) | 0.0751 (0.0508) | 0.0006 | 0.0016 | 0.3241 / 0.3236 |
+| SONAR, TPU | 0.0169 (0.0048) | 0.0692 (0.0507) | 0.0004 | 0.0013 | 0.4593 / 0.4585 |
+| Untrained LCM | 0.0155 (0.0048) | 0.0749 (0.0509) | 0.0003 | 0.0012 | 0.4370 / 0.4370 |
+
+The head-specific part is the first 38 heads' matched NMI minus a random one-to-one pairing's (the
+Phase 2 entry's columns otherwise).
+
+**What it shows.**
+- **The gap.** The excess over the null is 0.0268 on all heads, against the LCM's 0.0292 and SONAR's
+  0.0120 (86% of the gap). Within a language it is 0.055, against 0.077 and 0.019 (62%). The
+  recoloured control closed 22% and 10%.
+- **Within a seed,** two heads agree at 0.026–0.030, against 0.0305 between matched heads across
+  seeds: the LCM's pattern (0.028–0.032 against 0.032–0.034).
+- **Error.** Its FVU_w, 0.273–0.275, is below the LCM's 0.281–0.282, as its lower dimension would
+  give.
+- **Adjacent rows are nearly as alike as the LCM's.** `eval_next.py`'s copy baseline reads 0.454
+  (LCM 0.439) and its next-sentence ridge 0.362 (0.309). The dictionaries' next-sentence FVU_w reads
+  0.562–0.564 (0.560–0.561).
+
+**What it means.**
+- **The lead is mostly in the part of the state that is linear in x_n and its context's mean.** What
+  the readout leaves out accounts for 14% of the gap on all heads and 38% within a language: the 31%
+  of the state's variance it misses, which includes everything nonlinear in x_n and in the context.
+- **The untrained LCM also mixes in context, yet reads like SONAR.** Either a context mean is not
+  enough by itself, or the random weights' mixing hides it. The fixed mix tests this (the entry
+  above).
+
+**Caveats.**
+- **Seeds.** Two.
+- **Dimension.** The readout is lower-dimensional than the LCM's states, so some of its agreement may
+  be dimension. The recoloured control says that effect is small.
+- **Precision.** It trained on the GPU at the default precision, and the other arms on the TPU at
+  `high`. The SONAR control's GPU and TPU runs agree within 0.0001 (the Phase 2 entry).
+
+```bash
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/readout.py
+A=data/activations/lcm-organism
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/spectrum.py \
+    --arm lcm_readout_b4 $A/lcm_readout_b4.npy $A/lcm_readout_b4.mse_weights_matched.npy \
+    --out data/out/lcm-organism/spectrum_readout
+ARMS=lcm_readout experiments/lcm-organism/phase2.sh train
+ARMS=lcm_readout experiments/lcm-organism/phase2.sh score
+```
+
 ## 2026-11-20: closure on each Phase 2 arm: no arm's heads are more closed than random projections of its own states
 
 **In short.**

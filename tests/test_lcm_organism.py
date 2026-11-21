@@ -21,6 +21,9 @@
 #   documents; its chunks end at documents and at the cuts; on a harvest
 #   whose states are planted as an affine function of those features, it
 #   reproduces the states row for row, laid out as the harvest.
+# - ctxmean.py: each row is the source's plus the weighted mean of its
+#   document's earlier rows (its own at a document's start), and the loss
+#   weights are the source's, scaled to the source's whitened base.
 import json
 import os
 import signal
@@ -482,7 +485,10 @@ def test_readout_chunks_end_at_documents_and_at_the_cuts():
     assert readout.doc_chunks(np.array([0, 10]), [], 12, 4) == [(0, 10), (10, 12)]
 
 
-def test_the_readout_reproduces_states_that_are_its_features_mapped(tmp_path):
+def planted_harvest(tmp_path):
+    """synth's cache, and a harvest of its rows below P and from T on whose
+    states are an affine map of readout.context_features: (cache, its rows,
+    the harvest, P, T, the cache rows the harvest keeps, the features)."""
     c = synth(tmp_path)
     x = np.load(c)
     index = np.load(tmp_path / "s.index.npy")
@@ -491,7 +497,6 @@ def test_the_readout_reproduces_states_that_are_its_features_mapped(tmp_path):
     P = int(cache_first[np.searchsorted(cache_first, 300)])
     T = int(cache_first[np.searchsorted(cache_first, n - 400)])
     rows = harvest_lcm.harvest_rows(P, T, n)
-    # states planted as an affine map of each row's features in its document
     r = np.random.default_rng(6)
     A, b0 = r.standard_normal((2 * x.shape[1] + 1, 12)), r.standard_normal(12)
     F = readout.context_features(x, cache_first)
@@ -501,6 +506,12 @@ def test_the_readout_reproduces_states_that_are_its_features_mapped(tmp_path):
         np.save(tmp_path / ("h" + suf), np.load(tmp_path / ("s" + suf))[rows])
     np.save(tmp_path / "h.docstart.npy", harvest_lcm.first_rows(index[rows, 0]))
     (tmp_path / "h.meta.json").write_text(json.dumps({"rows": {"prefix": [0, P], "tail": [T, n]}}))
+    return c, x, tgt, P, T, rows, F
+
+
+def test_the_readout_reproduces_states_that_are_its_features_mapped(tmp_path):
+    c, _, tgt, P, T, _, _ = planted_harvest(tmp_path)
+    n = len(np.load(c))
     dst = tmp_path / "out" / "ro.npy"
     dst.parent.mkdir()
     readout.main(["--source", str(c), "--source-weights", str(tmp_path / "w.npy"),
@@ -519,3 +530,33 @@ def test_the_readout_reproduces_states_that_are_its_features_mapped(tmp_path):
     assert not (tmp_path / "out" / "ro.npy.partial").exists()
     with pytest.raises(SystemExit, match="exists"):
         readout.main(["--source", str(c), "--target", str(tgt), "--out", str(dst)])
+
+
+def test_the_fixed_mix_adds_the_earlier_mean_and_keeps_the_sources_weights(tmp_path):
+    import ctxmean
+    c, x, tgt, P, T, rows, F = planted_harvest(tmp_path)
+    d = x.shape[1]
+    w = np.r_[np.linspace(0.5, 2, d - 1), 0.0].astype(np.float32)   # one coordinate zeroed
+    np.save(tmp_path / "w0.npy", w)
+    dst = tmp_path / "out" / "mix.npy"
+    dst.parent.mkdir()
+    ctxmean.main(["--source", str(c), "--source-weights", str(tmp_path / "w0.npy"),
+                  "--target", str(tgt), "--out", str(dst), "--weight", "0.5",
+                  "--holdout", "150", "--chunk", "50"])
+    y = np.load(dst)
+    want = F[rows, :d] + 0.5 * F[rows, d:2 * d]
+    assert y.dtype == np.float16 and y.shape == (len(rows), d)
+    np.testing.assert_allclose(y.astype(np.float32), want, rtol=2e-3, atol=1e-4)
+    # a document's first row is its own
+    first = np.load(tmp_path / "h.docstart.npy")
+    np.testing.assert_allclose(y[first].astype(np.float32), x[rows[first]], rtol=2e-3, atol=1e-4)
+    side = lambda s: tmp_path / "out" / ("mix" + s)  # noqa: E731
+    np.testing.assert_array_equal(np.load(side(".mse_weights.npy")), w)
+    matched = np.load(side(".mse_weights_matched.npy"))
+    assert matched[-1] == 0
+    assert np.isclose(harvest_lcm.whitened_base(y, matched), harvest_lcm.whitened_base(x, w),
+                      rtol=1e-3)
+    meta = json.loads(side(".meta.json").read_text())
+    assert meta["rows"]["prefix"] == [0, P] and meta["rows"]["tail"] == [T, len(x)]
+    for suf in (".index.npy", ".langs.npy", ".kind.npy", ".docstart.npy"):
+        assert os.path.samefile(tmp_path / ("h" + suf), side(suf))

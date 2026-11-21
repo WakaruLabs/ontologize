@@ -18,9 +18,10 @@ arms. Results go in `notes.md`.
 | `spectrum.py` | Each arm's covariance spectrum in the frame its loss weighs, on the same prefix and tail rows of every arm: participation ratio, effective rank, directions per share of the variance, `pareto.gaussian_reference`'s FVU at given rates, and the share of the variance between languages, of the total and of the pooled within-language covariance |
 | `recolour.py` | The effective-dimension control: SONAR's rows through one linear map that gives them a harvest's spectrum, laid out as that harvest |
 | `readout.py` | The context-averaging control: Gate B's ridge readout of a harvest's state from x_n, the mean of its document's earlier rows and an indicator of n = 0, written at every row of the harvest and laid out as it |
+| `ctxmean.py` | The fixed-mix control: SONAR's row plus a fixed weight times its document's earlier mean, with no LCM, laid out as a harvest and weighted as SONAR |
 | `phase2.sh` | Phase 2 on one GPU: the harvests, then the arms' dictionaries (`ARMS`, default `lcm init`) trained and scored by the SONAR control's recipe |
 
-`tests/test_lcm_organism.py` covers the nine Python files.
+`tests/test_lcm_organism.py` covers the ten Python files.
 
 ## Run
 
@@ -49,6 +50,9 @@ JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/recolour.py
 # block 4's linear readout from x_n and its context's mean, then trained and scored on the GPU
 JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/readout.py
 ARMS=lcm_readout experiments/lcm-organism/phase2.sh train && ARMS=lcm_readout experiments/lcm-organism/phase2.sh score
+# SONAR's row plus its document's earlier mean, with no LCM, then the same
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/ctxmean.py --weight 1
+ARMS=sonar_ctxmean experiments/lcm-organism/phase2.sh train && ARMS=sonar_ctxmean experiments/lcm-organism/phase2.sh score
 ```
 
 On a TPU (`experiments/cloud`), stage the float16 cache with the sidecars the scripts read
@@ -115,3 +119,9 @@ expired node loses only what had not reached the bucket.
     variance by Gate B. A dictionary on it sees the LCM's states without anything else the model
     computes from the context or nonlinearly from x_n.
   - **What it doesn't match.** Its spectrum is the readout's, not the harvest's.
+- **The fixed mix** (`ctxmean.py`).
+  - **The map.** y_n = x_n + w · mean(x_0 … x_{n−1}), in SONAR's coordinates, with one weight w
+    (`--weight`) and nothing fitted. It keeps the readout's inputs and drops the LCM's map.
+  - **Weights.** SONAR's own (the SONAR arm's `no837`), scaled so the whitened error of predicting the
+    mean equals SONAR's. Inverse-variance weights would differ from the SONAR arm's in more than the
+    context, and would weigh up coordinate 837, which `no837` zeroes.
