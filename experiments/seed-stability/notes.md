@@ -318,7 +318,8 @@ argument of `train_ste.train`, and the rows and `eval.npy` are unchanged. The pa
 `scores/done.log` exists) have been read beside the noisy cache pair, layer by layer, for partition
 NMI, contribution cosine, NPS(8) and prefix FVU, and the reading is a dated section here that
 says which agreement the cache pair has beyond the copy's. The k-means baseline below gives the
-expected direction.
+expected direction. *(Done 2026-11-21: "on a Gaussian copy of its data, the stack's seeds agree as
+they do on SONAR, except at layer 0", below.)*
 
 ```bash
 uv run python experiments/seed-stability/gausscopy.py prepare
@@ -487,3 +488,77 @@ JAX_PLATFORMS=cpu uv run --with faiss-cpu python experiments/seed-stability/kmea
     --mode aq --hs 16 32 76 --restarts 3 --best 2 --train-rows 32768 \
     --out data/out/sonar/kmeans_structure/aq_wide
 ```
+
+## 2026-11-21: on a Gaussian copy of its data, the stack's seeds agree as they do on SONAR, except at layer 0
+
+**Short version.** Trained at two seeds on rows from a Gaussian with `mc4_sent16`'s mean and
+covariance, the all-off arm's upper layers agree across seeds about as much as on SONAR. In
+layers 1–4 the copy's pair gives 67–86% of the cache pair's small excess over the null in
+partition NMI and 83–94% in contribution cosine, so most of what those layers share is the
+covariance's. Layer 0 is the exception. Its excess is 3.6 times the copy's in NMI (0.0223 against
+0.0062) and 3.0 times in cosine, so two thirds to three quarters of layer 0's agreement on SONAR
+comes from structure beyond the second moments. The k-means baseline points the same way (0.61 against 0.40 at 32
+cells), though the heads are far below it. The subspaces go the other way: the copy's seeds agree
+more at layers 1–3, and so do their layer inputs. The subspace agreement the cache pair shows is
+therefore no more than the covariance gives. On SONAR the two seeds' residuals drift further apart
+than on a Gaussian.
+
+**Where.** Unit `gauss-seeds`, restarted 06:27 (the section above). It waited for another
+session's GPU job, trained seed 42 from about 10:38 to 11:43 (50,000 steps in 65 min, 12.7 steps a
+second) and seed 43 until about 12:49, then scored the pair by 13:04 (`scores/done.log`). Outputs
+are in `data/out/sonar/gausscopy/`: `alloff`, `alloff_s43`, and `scores/` with one log per script.
+The scorers read the copy's held-out rows (`eval.npy`, stream 1, 65,536 rows) with the cache
+pair's row counts and weights: `med837` for contributions and subspaces, `ratecurve.py`'s default
+`no837` for the prefix FVU. The cache pair is the noisy all-off arm and its `_s43`
+(`recipe-ladder/notes.md`, 2026-11-20, "without training noise"), scored on `mc4_sent16`'s tail.
+
+**Seed agreement by layer**, cache pair / Gaussian copy's pair:
+
+| layer | partition NMI | excess over null | contribution cosine | excess over null | NPS(8), contributions | NPS(8), layer inputs |
+|---|---|---|---|---|---|---|
+| 0 | 0.0271 / 0.0110 | 0.0223 / 0.0062 | 0.0346 / 0.0124 | 0.0333 / 0.0111 | 126.6 / 126.8 | 128.0 / 128.0 |
+| 1 | 0.0067 / 0.0063 | 0.0019 / 0.0015 | 0.0048 / 0.0046 | 0.0035 / 0.0033 | 101.8 / 120.8 | 97.6 / 119.9 |
+| 2 | 0.0059 / 0.0057 | 0.0011 / 0.0009 | 0.0037 / 0.0033 | 0.0024 / 0.0020 | 76.7 / 109.8 | 60.6 / 107.7 |
+| 3 | 0.0055 / 0.0054 | 0.0007 / 0.0006 | 0.0031 / 0.0029 | 0.0018 / 0.0016 | 28.7 / 64.4 | 19.5 / 57.1 |
+| 4 | 0.0054 / 0.0052 | 0.0006 / 0.0004 | 0.0027 / 0.0025 | 0.0014 / 0.0012 | 17.4 / 22.8 | 18.9 / 17.4 |
+| null (rows shuffled) | 0.0048 / 0.0048 | | 0.0013 / 0.0013 | | | |
+
+NPS(8) is over chance r/d, with a ceiling of 128.
+
+- **Matched heads land in their own layer as often:** 76, 58, 28, 31 and 41 of 76 on the copy,
+  against 76, 58, 30, 24 and 35.
+- **Head sizes are alike.** Layer 4's median centered contribution is 0.066% of the target
+  variance, against 0.063% and 0.067% on the cache. The layer-0 lift in cosine at equal atom spread
+  is 13.0×, against 16.7× and 14.2×, so the copy keeps most of layer 0's link between head size and
+  agreement.
+- **Each seed's contribution still follows its own input more than the other seed's,** as on the
+  cache (layer 3: 74–76 against 59, on the cache 29–31 against 21–23).
+
+**Prefix FVU over the free coordinates, gains as computed** (seed 42 / seed 43):
+
+| data | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|
+| SONAR (`mc4_sent16` tail) | 0.6045 / 0.6034 | 0.4278 / 0.4270 | 0.3106 / 0.3099 | 0.2278 / 0.2274 | 0.1681 / 0.1679 |
+| Gaussian copy (`eval.npy`) | 0.6382 / 0.6379 | 0.4479 / 0.4475 | 0.3240 / 0.3237 | 0.2369 / 0.2368 | 0.1744 / 0.1743 |
+
+The copy is harder to code at every prefix, by 0.034 at one layer and 0.006 at five, as a Gaussian
+is the hardest source for its covariance under squared error. The copy's seeds agree in fit to
+0.0004 at every prefix, the cache's to 0.0011. Pinning the gains changes the copy's readings by at
+most 0.0003.
+
+**Reading.**
+- The stack's disagreement past layer 0 does not need SONAR. A Gaussian with no structure beyond
+  its covariance gives the same near-null agreement, so those layers' disagreement is a property of
+  the architecture and its training on that spectrum.
+- Layer 0 picks up real structure: the share of its agreement that exceeds the copy's is the part
+  of the code that SONAR's non-Gaussian structure pins down. It is still small in absolute terms
+  (NMI 0.027 against k-means' 0.61 at the same k).
+- The subspace measure cannot see this difference. The copy reproduces subspaces better, so a
+  subspace match on SONAR is a covariance statement.
+
+**Not tested.** One pair on each data. The copy is matched in its first two moments only, so it
+tells "beyond the covariance" from "within it", not which higher-order structure layer 0 uses.
+
+**Memory.** The unit's cgroup peak was 97.6 GB over training and scoring. That count includes page
+cache, and the ladder's training unit read 52.6 GB. Which step drove it was not traced. Run heavy
+CPU jobs beside such a unit with care.
