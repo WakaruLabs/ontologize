@@ -1,5 +1,99 @@
 # lcm-organism: notes
 
+## 2026-11-20: closure on each Phase 2 arm: no arm's heads are more closed than random projections of its own states
+
+**In short.**
+- **No arm's heads are closer to closed levels than random projections of the same states.** In every
+  arm, the trained heads miss within 2.1 points of what its random-projection heads miss, and the
+  first 38 heads read like the other heads.
+- **The states set what a head misses.** The share falls from 71% on SONAR to 61% on the untrained LCM
+  and 43% on the LCM, for random projections and trained heads alike, as adjacent states grow more
+  alike.
+- **The spectrum explains almost none of the drop.** SONAR recoloured to the LCM's spectrum reads 70%,
+  though the recolouring closed 76% of the gap in FVU_w (entry below).
+
+**Runs.** `closure.py` (experiments/next-sentence, entry of 2026-11-14 there) on each arm's seeds at
+step 46,250, on CPU, with its defaults: fit on the 321,161 adjacent pairs in rows 4.0M–4.4M, scored on
+the tail's 26,335 pairs from 2,673 documents. Every arm reads the same pairs, since each harvest keeps
+the cache's row numbers.
+- **SONAR:** `long.sh`'s GPU runs (`doc2_sp0_ph38`, `_s43`, `_s44`) on `mc4_sent16.npy`, which the TPU
+  retrain matches (entry below), with `sfa.py`'s directions as a group.
+- **The other arms:** the TPU runs on their own harvests, with `--sfa ''`. SONAR's SFA directions are
+  not directions of these arms' states.
+- About 20 minutes for a two-seed arm. Outputs in `data/out/lcm-organism/closure/<arm>/`.
+
+**The readouts.**
+
+| Arm | Seeds | Heads keep their entry | I(x_t; z_t+1), heads (bits) | Missed: 38 random projections | Missed: first 38 heads | Missed: 38 other heads |
+|---|---|---|---|---|---|---|
+| SONAR | 42, 43, 44 | 0.095–0.097 | 0.25–0.26 | 71.9% | 71.1–71.4% | 70.8–71.3% |
+| SONAR recoloured to the LCM's spectrum | 42, 43 | 0.108–0.109 | 0.33–0.35 | 69.7% | 70.5–70.7% | 70.4–70.5% |
+| Untrained LCM, block 4 | 42, 43 | 0.251–0.253 | 1.25–1.28 | 62.8% | 60.7–61.1% | 60.9–61.0% |
+| LCM, block 4 | 42, 43, 44 | 0.441–0.448 | 2.17–2.33 | 43.9% | 41.8–43.8% | 43.0–44.1% |
+
+How to read the columns:
+- **Missed** is the gap's share of what x_t says about the next entry: I(x_t; z_t+1 | z_t) over
+  I(x_t; z_t+1), summed over a group's heads. A closed head misses 0%.
+- **x_t is each arm's own row**: the LCM's state, which carries its document's context, or SONAR's
+  embedding. Each share is against that arm's own micro level.
+- **The first 38 heads** are the pair runs' slow heads. At `--s-pair 0` they are positions only.
+- **The other heads** are 38 drawn at random from the rest of layer 0.
+- **Random projections** take the argmax over 32 random directions of the arm's centered rows.
+- **Errors.** The document bootstrap's error on a group's gap is 0.003–0.006 bits: about 1.4 points of
+  share on SONAR and 0.25 on the LCM. The spread between seeds is larger.
+
+**Heads read like random projections in every arm.**
+- **Against the arm's random projections:** 0.5–1.1 points below on SONAR, 0.8–1.0 above recoloured,
+  1.7–2.1 below on the untrained LCM, and from 2.1 below to 0.2 above on the LCM.
+- **The test can tell trained heads from projections.** On SONAR, the Fano arm's slow heads miss 27%
+  against the projections' 72% (experiments/next-sentence, 2026-11-14). No arm here comes near that.
+
+**What a head misses follows how alike adjacent states are.**
+- **The order.** Heads keep their entry 10% of the time on SONAR, 11% recoloured, 25% untrained and
+  45% on the LCM. Missed falls 72, 70, 63, 44 for the projections in the same order. `eval_next.py`'s
+  copy baseline orders the arms the same way (entry below).
+- **The drop from SONAR to the LCM is 28.0 points on the random projections.**
+  - The untrained LCM's states account for 9.2 points (33%), and training for the other 18.9 (67%).
+  - Recolouring SONAR moves it 2.3 points (8%).
+  - On the trained heads the drop is 27.9 points: the untrained LCM 10.3 (37%), training 17.6 (63%),
+    recolouring 0.7 (2%).
+- **Closure and seed agreement part ways across arms.** The untrained LCM's states are smoother than
+  SONAR's, and its heads miss less, yet in Phase 2 they agreed across seeds no more than SONAR's.
+
+**The most closed heads are a tail, not a group.** Only a few heads in any arm read below its most
+closed random projection.
+- **LCM:** 37 of the 228 heads scored, at down to 25%, against the projections' lowest, 42.1%. They
+  carry less about the next entry: 1.5–2.3 bits, against 2.4–2.5 for every projection. Seed 43's
+  first 38 heads hold 15 of them, and the other five groups 2–6 each.
+- **Untrained LCM:** 21–29 of each 38 heads, but by little: down to 50.5%, against 61.6%.
+- **SONAR and recoloured:** 1–3 of each 38.
+
+**The SONAR rows reproduce the 2026-11-14 run.**
+- **The same values to the fourth decimal:** the random projections' 0.2150 bits, SFA's 0.0042 (0.8%
+  missed) and seed 42's first 38 heads' 0.1877.
+- **Its other heads read 0.1874, against 0.1784 then.** They are a different random draw, since each
+  checkpoint's draw follows the earlier ones' on the command line.
+
+**SFA on the other arms** was left until an arm's heads read more closed than its own random
+projections, which none do.
+
+**Caveats.**
+- **The 2026-11-14 entry's caveats apply:** one step of past and future, and a gap bounded from below
+  by a probe linear in x_t.
+- **Seeds.** The recoloured and untrained arms have two seeds each.
+
+```bash
+L=data/out/sonar/next-sentence/long
+JAX_PLATFORMS=cpu uv run python experiments/next-sentence/closure.py \
+    --ckpt $L/doc2_sp0_ph38 $L/doc2_sp0_ph38_s43 $L/doc2_sp0_ph38_s44 \
+    --cache data/sonar_embeddings/mc4_sent16.npy --out data/out/lcm-organism/closure/sonar
+P=data/out/lcm-organism/phase2_tpu
+JAX_PLATFORMS=cpu uv run python experiments/next-sentence/closure.py \
+    --ckpt $P/lcm_b4_doc2_sp0_ph38_s42 $P/lcm_b4_doc2_sp0_ph38_s43 $P/lcm_b4_doc2_sp0_ph38_s44 \
+    --cache data/activations/lcm-organism/lcm_b4.npy --sfa '' --out data/out/lcm-organism/closure/lcm_b4
+# likewise init_b4 and sonar_recol_b4, at seeds 42 and 43
+```
+
 ## 2026-11-20: Phase 2 on a TPU: codes on the LCM's states agree across seeds at over twice SONAR's level, and the spectrum doesn't explain it
 
 **In short.**
@@ -138,8 +232,7 @@ alike than SONAR's, yet its codes agree no more.
   - SONAR: 1.213–1.214 (1.533, 0.897);
   - recoloured: 1.190 (1.369, 0.832).
 
-**Not yet run:**
-- `closure.py` on each arm;
+**Not yet run** (`closure.py` on each arm has run since: the entry above):
 - the plan's across-models test, a dictionary on LCM seed 43's states, which needs `--cache-b`;
 - Phase 3.
 

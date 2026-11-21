@@ -6,8 +6,9 @@
   nearly a rotation in their high-variance directions.
 - Phase 2 ran on a v5e-4 (2026-11-20). Codes on the LCM's block-4 states agree across seeds well above
   codes on SONAR or on the untrained LCM, by more within a language. SONAR recoloured to the LCM's
-  spectrum explains little of it. Heads are still not identified one by one, and `closure.py` hasn't
-  run.
+  spectrum explains little of it. Heads are still not identified one by one.
+- `closure.py` ran on each arm (2026-11-20). No arm's heads are more closed than random projections of
+  its own states, and what a head misses follows how alike adjacent states are.
 - The results are in `notes.md`, and `README.md` covers the code.
 
 ## The question
