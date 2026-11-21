@@ -4779,6 +4779,62 @@ uv run python pareto.py --ckpt data/out/sonar/multilingual/ste_h76_init01 --step
     --out data/out/sonar/pareto_surrogate/hard_gaussian_unit
 ```
 
+## Do seeds' heads share the relations among their atoms, up to rotation? (`gramqap.py`, 2026-11-21): not past layer 0
+
+**Why.** `atomgram.py` pairs two heads' entries by linear assignment on their atoms, which needs
+the atoms to point the same ways. A Gram is unchanged by any rotation of a head's atoms, so two
+seeds' heads could share which atoms lie near which while pointing elsewhere. `gramqap.py` pairs
+entries from the Grams alone, by a quadratic assignment on each Gram's deviations from its mean
+cosine (scipy's FAQ, from the barycenter and four random starts). It solves the QAP for every pair
+of a layer's heads, so the null is matched the same way. The idea came from the ECCV 2018 graph
+matching chapter (`scratch/literature/peripheral-2026-11-21.md`).
+
+**Power, within one run** (`ste_h76_init01` at 369,500 against 350,000; stored order is the true
+correspondence). Ratio as `atomgram.py`'s: distance to the layer's other heads over distance to the
+paired head.
+
+| layer | `e`, Gram alone | entries recovered | decoded | entries | decoded, centered | entries |
+|---|---|---|---|---|---|---|
+| 0 | 6.88 | 1.00 | 5.95 | 0.98 | 4.97 | 0.93 |
+| 1 | 6.28 | 1.00 | 4.65 | 0.93 | 1.36 | 0.38 |
+| 2 | 6.32 | 1.00 | 3.93 | 0.90 | 1.12 | 0.20 |
+| 3 | 7.22 | 1.00 | 5.12 | 0.97 | 1.15 | 0.24 |
+| 4 | 7.87 | 1.00 | 4.37 | 0.95 | 1.33 | 0.40 |
+
+- **In the dictionary's own space and decoded uncentered, the Grams alone find the
+  correspondence:** every entry in `e`, and 90–98% decoded.
+- **Centered and decoded, they lose it past layer 0.** Only 20–40% of entries are recovered, even
+  though the atoms sit at cosine 0.98 to their earlier selves. Centering leaves a nearly flat Gram
+  whose deviations are no larger than 19,500 steps of drift. That variant cannot speak across
+  seeds past layer 0, and the reading below rests on the other two.
+
+**Across seeds** (`ste_h76_i01_s43` at 369,500). Chance is the same `gram` statistic between the
+two halves of A's own layer: heads with A's statistics and no correspondence, lifted above 1 only
+by the favourable pairing.
+
+| layer | atom match (`atomgram.py`'s), e / decoded / centered | Gram alone | chance (halves) |
+|---|---|---|---|
+| 0 | 1.15 / 1.17 / 1.20 | 1.16 / 1.21 / 1.25 | 1.06 / 1.08 / 1.09 |
+| 1 | 1.06 / 1.06 / 1.06 | 1.03 / 1.03 / 1.03 | 1.03 / 1.03 / 1.03 |
+| 2 | 1.05 / 1.05 / 1.06 | 1.03 / 1.03 / 1.03 | 1.03 / 1.03 / 1.03 |
+| 3 | 1.06 / 1.06 / 1.06 | 1.03 / 1.03 / 1.03 | 1.03 / 1.02 / 1.03 |
+| 4 | 1.06 / 1.06 / 1.06 | 1.07 / 1.04 / 1.06 | 1.04 / 1.03 / 1.04 |
+
+- **No agreement up to rotation.** In layers 1–3 the Gram-only match reads at its chance level, in
+  the two variants where it found every entry within a run. Layer 4 is barely above it. So past
+  layer 0, the seeds' heads differ in how their atoms relate, not only in where they point.
+- **Layer 0 agrees modestly,** and about as much by Grams as by atoms (1.16–1.25 against
+  1.15–1.20). That fits its partition NMI, the one layer with agreement above its null.
+- **Chance is above 1.** Pairing heads by the assignment most favourable to the ratio lifts
+  unrelated heads to 1.02–1.04 in layers 1–4. The halves offer 38 candidates where the full
+  comparison offers 76, so this chance level reads slightly low. `atomgram.py`'s 1.05–1.19× above,
+  and the appendix's figures from it, were read against 1. The atom match's own chance level was
+  not computed.
+
+Outputs: `data/out/sonar/gramqap/ste_h76_init01_369500_vs_ste_h76_init01_350000/` and
+`.../ste_h76_init01_369500_vs_ste_h76_i01_s43_369500/` (`gram.csv`). About four minutes each on 8
+CPU workers.
+
 ## Run
 
 See [`README.md`](README.md) for training and scoring commands.

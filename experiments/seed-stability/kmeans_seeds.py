@@ -1,0 +1,208 @@
+"""Do k-cell partitions of the data reproduce across seeds at all?
+
+A head of the stack's layer 0 partitions the data itself, and two seeds'
+best-matched layer-0 heads agree at a partition NMI of about 0.025 against
+a null of 0.005 (experiments/recipe-ladder/notes.md). This asks what a
+reproducible partition of the same rows looks like: k-means (k-means++
+seeding, Lloyd's iterations to a fixed point) in the loss's whitened frame,
+fit on training rows at several seeds and assigned on the held-out tail.
+Between every pair of seeds it reports the tail partitions' NMI
+(`partition.py`'s `nmi_matrix`, so the numbers sit beside the heads'),
+beside the null with one partition's rows shuffled, and each seed's FVU on
+the tail.
+
+`--gauss` runs the same on the Gaussian copy (`gausscopy.py`), whose
+training rows are the training stream and whose tail is the held-out file:
+the agreement a partition reaches when nothing beyond the covariance is
+there to agree on. `--ckpt` adds, per layer of a stack, each head's best
+NMI against the k-means partitions at the model's k: whether the heads are
+near the data's own k-means cells.
+
+    JAX_PLATFORMS=cpu uv run python experiments/seed-stability/kmeans_seeds.py \\
+        --gauss data/out/sonar/gausscopy --ckpt <run>
+"""
+import os
+
+os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
+
+import argparse
+import itertools
+import json
+import sys
+from pathlib import Path
+
+import numpy as np
+from jaxtyping import Float, Int
+
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parents[1]
+sys.path.insert(0, str(ROOT / "experiments" / "ste-arm"))
+sys.path.insert(0, str(HERE))
+
+
+def kmeans_pp(X: Float[np.ndarray, "n d"], k: int,
+              rng: np.random.Generator) -> Float[np.ndarray, "k d"]:
+    """k-means++ seeding: each centre drawn with probability proportional
+    to the squared distance to the nearest centre so far."""
+    n = len(X)
+    C = np.empty((k, X.shape[1]), X.dtype)
+    C[0] = X[rng.integers(n)]
+    d2 = ((X - C[0]) ** 2).sum(1)
+    for j in range(1, k):
+        p = d2 / d2.sum()
+        C[j] = X[rng.choice(n, p=p)]
+        d2 = np.minimum(d2, ((X - C[j]) ** 2).sum(1))
+    return C
+
+
+def assign(X: Float[np.ndarray, "n d"], C: Float[np.ndarray, "k d"],
+           chunk: int = 65536) -> Int[np.ndarray, "n"]:
+    """Nearest centre of each row, by ||c||² − 2 x·c."""
+    cc = (C.astype(np.float64) ** 2).sum(1)
+    out = np.empty(len(X), np.int64)
+    for i in range(0, len(X), chunk):
+        D = cc[None, :] - 2.0 * (X[i:i + chunk] @ C.T).astype(np.float64)
+        out[i:i + chunk] = D.argmin(1)
+    return out
+
+
+def kmeans(X: Float[np.ndarray, "n d"], k: int, seed: int,
+           iters: int = 300) -> Float[np.ndarray, "k d"]:
+    """Lloyd's iterations from k-means++ until no row changes cell (or
+    `iters`). An emptied cell is reseeded at the row farthest from its
+    centre, so every run ends with k cells."""
+    rng = np.random.default_rng(seed)
+    C = kmeans_pp(X, k, rng)
+    lab = None
+    for _ in range(iters):
+        new = assign(X, C)
+        if lab is not None and np.array_equal(new, lab):
+            break
+        lab = new
+        cnt = np.bincount(lab, minlength=k)
+        H = np.zeros((len(X), k), X.dtype)
+        H[np.arange(len(X)), lab] = 1
+        S = (H.T @ X).astype(np.float64)
+        live = cnt > 0
+        C[live] = (S[live] / cnt[live, None]).astype(X.dtype)
+        for j in np.flatnonzero(~live):
+            far = ((X - C[lab]) ** 2).sum(1).argmax()
+            C[j] = X[far]
+            lab[far] = j
+    return C
+
+
+def fvu(X: Float[np.ndarray, "n d"], C: Float[np.ndarray, "k d"],
+        lab: Int[np.ndarray, "n"]) -> float:
+    """Squared error to the assigned centre over the rows' total variance."""
+    X64 = X.astype(np.float64)
+    err = ((X64 - C[lab].astype(np.float64)) ** 2).sum()
+    return float(err / ((X64 - X64.mean(0)) ** 2).sum())
+
+
+def seed_table(train: Float[np.ndarray, "n d"], tail: Float[np.ndarray, "m d"],
+               k: int, seeds: list[int], perm_seed: int = 0) -> dict:
+    """Every seed's tail partition and FVU, and every pair's NMI beside the
+    rows-shuffled null."""
+    from partition import nmi_matrix
+    labs, fv = [], []
+    for s in seeds:
+        C = kmeans(train, k, s)
+        lab = assign(tail, C)
+        labs.append(lab)
+        fv.append(fvu(tail, C, lab))
+    rng = np.random.default_rng(perm_seed)
+    pair, null = [], []
+    for i, j in itertools.combinations(range(len(seeds)), 2):
+        a, b = labs[i][None], labs[j][None]
+        pair.append(float(nmi_matrix(a, k, b, k)[0, 0]))
+        null.append(float(nmi_matrix(a, k, rng.permutation(labs[j])[None], k)[0, 0]))
+    return {"k": k, "seeds": seeds, "fvu": fv, "nmi": pair, "null": null,
+            "labels": labs}
+
+
+def head_table(codes_: Int[np.ndarray, "heads m"], layer: Int[np.ndarray, "heads"],
+               labs: list, k: int) -> dict:
+    """Per layer: each head's best NMI against the k-means partitions."""
+    from partition import nmi_matrix
+    K = np.stack(labs)
+    M = nmi_matrix(codes_, k, K, k)                        # (heads, seeds)
+    best = M.max(1)
+    return {int(l): {"median": float(np.median(best[layer == l])),
+                     "max": float(best[layer == l].max())}
+            for l in np.unique(layer)}
+
+
+def rows(cfg) -> dict:
+    """Training rows and tail rows, whitened, for each data set."""
+    sw = np.sqrt(np.load(cfg.mse_weights)).astype(np.float32)
+    X = np.load(cfg.cache, mmap_mode="r")
+    idx = np.sort(np.random.default_rng(0).choice(cfg.prefix, cfg.train_rows,
+                                                  replace=False))
+    out = {"cache": (np.asarray(X[idx], np.float32) * sw,
+                     np.asarray(X[-cfg.tail_rows:], np.float32) * sw,
+                     np.asarray(X[-cfg.tail_rows:], np.float32))}
+    if cfg.gauss:
+        from gausscopy import BLOCK, block
+        g = Path(cfg.gauss)
+        z = np.load(g / "moments.npz")
+        mean, F = z["mean"].astype(np.float32), z["factor"].astype(np.float32)
+        T = np.concatenate([block(mean, F, 0, j)
+                            for j in range(-(-cfg.train_rows // BLOCK))])[:cfg.train_rows]
+        E = np.asarray(np.load(g / "eval.npy", mmap_mode="r")[-cfg.tail_rows:],
+                       np.float32)
+        out["gauss"] = (T * sw, E * sw, E)
+    return out
+
+
+def main() -> None:
+    p = argparse.ArgumentParser(description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--cache", default=str(ROOT / "data/sonar_embeddings/mc4_sent16.npy"))
+    p.add_argument("--mse-weights",
+                   default=str(ROOT / "data/out/sonar/sentcache/mse_weights_med837.npy"))
+    p.add_argument("--prefix", type=int, default=12_800_000,
+                   help="training rows are drawn from the cache's first rows")
+    p.add_argument("--train-rows", type=int, default=131072)
+    p.add_argument("--tail-rows", type=int, default=32768)
+    p.add_argument("--ks", type=int, nargs="+", default=[8, 32, 128])
+    p.add_argument("--seeds", type=int, nargs="+", default=[42, 43, 44, 45, 46])
+    p.add_argument("--gauss", default=None, help="gausscopy.py's output directory")
+    p.add_argument("--ckpt", default=None, help="a stack whose heads to compare")
+    p.add_argument("--step", type=int, default=0)
+    p.add_argument("--temperature", type=float, default=0.00015)
+    p.add_argument("--out", default=str(ROOT / "data/out/sonar/kmeans_seeds"))
+    cfg = p.parse_args()
+    out = Path(cfg.out)
+    out.mkdir(parents=True, exist_ok=True)
+
+    data = rows(cfg)
+    heads = None
+    if cfg.ckpt:
+        from partition import codes
+        heads = codes(cfg.ckpt, cfg.step, cfg.temperature, data["cache"][2], 256)
+    summary = {}
+    for name, (train, tail, _) in data.items():
+        summary[name] = {}
+        for k in cfg.ks:
+            t = seed_table(train, tail, k, cfg.seeds)
+            nm, nl = np.array(t["nmi"]), np.array(t["null"])
+            print(f"{name:<6} k={k:<4} seed NMI mean {nm.mean():.4f} "
+                  f"[{nm.min():.4f}, {nm.max():.4f}]  null {nl.mean():.4f}  "
+                  f"FVU {np.mean(t['fvu']):.4f} [{min(t['fvu']):.4f}, "
+                  f"{max(t['fvu']):.4f}]", flush=True)
+            row = {key: v for key, v in t.items() if key != "labels"}
+            if heads is not None and name == "cache" and heads[2] == k:
+                A, layer, _, used = heads
+                row["heads"] = head_table(A, layer, t["labels"], k)
+                row["heads_ckpt"], row["heads_step"] = cfg.ckpt, used
+                for l, v in row["heads"].items():
+                    print(f"         layer {l} heads' best NMI with k-means: "
+                          f"median {v['median']:.4f}  max {v['max']:.4f}")
+            summary[name][str(k)] = row
+    (out / "summary.json").write_text(json.dumps(summary, indent=1))
+    print(f"-> {out / 'summary.json'}")
+
+
+if __name__ == "__main__":
+    main()

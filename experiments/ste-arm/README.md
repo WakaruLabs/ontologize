@@ -84,6 +84,7 @@ does.
 | do two models learn the same partitions, in the same layers | `partition.py` |
 | do two models' heads write the same thing; what head size is made of | `headcontrib.py` |
 | do two checkpoints' heads hold the same atoms, whatever order each stores its entries in | `atomgram.py` |
+| do two checkpoints' heads share the relations among their atoms, whichever way the atoms point: entries paired from the Grams alone by a quadratic assignment, against a null matched the same way | `gramqap.py` |
 | do two runs compute the same function or only reach the same error; Ontologizers and SAEs | `reconseeds.py` |
 | is the strongest layer-0 head the same head across runs | `topichead.py` |
 | **what heads encode** | |
@@ -130,6 +131,12 @@ uv run python pareto.py --ckpt <dir> --temperature <the arm's T>
 # across seeds: atoms modulo entry order, and the reconstruction itself
 # (--a/--b of reconseeds.py may also be two sae.py params.npz)
 uv run python experiments/ste-arm/atomgram.py \
+    --a data/out/sonar/multilingual/ste_h76_init01 --step-a 369500 \
+    --b data/out/sonar/multilingual/ste_h76_i01_s43 --step-b 369500
+# the same Grams paired by a QAP alone; run it within one run first (B =
+# A's earlier step), whose stored order says whether the Grams can find a
+# correspondence that exists
+JAX_PLATFORMS=cpu uv run python experiments/ste-arm/gramqap.py \
     --a data/out/sonar/multilingual/ste_h76_init01 --step-a 369500 \
     --b data/out/sonar/multilingual/ste_h76_i01_s43 --step-b 369500
 uv run python experiments/ste-arm/reconseeds.py \

@@ -175,3 +175,61 @@ seeds' excess over the null as a share of the earlier checkpoint's:
 **Limits.** One seed pair per shape; the layer columns are read against
 the all-head null, not a per-layer one. The whitening is the objective's
 per-coordinate weighting, so "low variance" here means low after it.
+
+## 2026-11-21: two seeds' codes together: the disagreement is information, not a relabelling
+
+**Short version.** A ridge reads the input from each seed's whole one-hot code at FVU 0.179, and
+from both together at 0.121. Seed B adds more to A than A's own checkpoint 19,500 steps earlier
+(0.143) or random-projection heads of the same shape (0.160). At layer 0, 76% of what B explains
+A explains already: the same share as for random-projection heads (75%), against 97% for the
+earlier checkpoint. So two seeds' codes are complementary the way arbitrary partitions are, the
+reading Xuan, Souvenir & Pless's randomized ensembles rest on (ECCV 2018;
+`scratch/literature/peripheral-2026-11-21.md`).
+
+**Setup** (`complement.py`; `ste_h76_init01` and `ste_h76_i01_s43` at 369,500, earlier step
+350,000; `mc4_fresh`: fit on 81,920 rows, penalty chosen on 16,384, scored on the last 32,768;
+whitened by `data/out/sonar/mse_weights.npy`). Overlap(X) = (EV(A) + EV(X) − EV(A+X)) / EV(X), the
+share of what X explains that A explains already.
+
+| scope | FVU A / B | A+B | A+earlier | A+lsh | A+untrained | overlap: B | earlier | lsh | untrained |
+|---|---|---|---|---|---|---|---|---|---|
+| layer 0 | 0.545 / 0.545 | 0.436 | 0.533 | 0.457 | 0.487 | 0.762 | 0.975 | 0.753 | 0.782 |
+| layer 1 | 0.845 / 0.845 | 0.746 | 0.821 | 0.564 | 0.634 | 0.364 | 0.849 | 0.215 | 0.203 |
+| layer 2 | 0.914 / 0.914 | 0.850 | 0.884 | 0.594 | 0.675 | 0.263 | 0.652 | 0.107 | 0.093 |
+| layer 3 | 0.948 / 0.948 | 0.903 | 0.919 | 0.612 | 0.705 | 0.142 | 0.446 | 0.063 | 0.054 |
+| layer 4 | 0.970 / 0.970 | 0.942 | 0.949 | 0.628 | 0.730 | 0.106 | 0.355 | 0.046 | 0.048 |
+| stack | 0.179 / 0.179 | **0.121** | 0.143 | 0.160 | 0.162 | 0.929 | 0.957 | 0.971 | 0.970 |
+
+- **Over the stack, B is the most complementary code tried.** Its gain over A alone (0.058) is
+  1.6 times the earlier checkpoint's and three times random heads'. Random heads explain less
+  (EV 0.66 against 0.82), and nearly all of it A explains already (overlap 0.97).
+- **At layer 0, B overlaps A exactly as arbitrary partitions do,** though B is the better code (EV
+  0.455 against random heads' 0.358), so it adds more (0.108 against 0.088).
+- **Past layer 0, read B against the earlier checkpoint only.** Random heads and the untrained
+  model read the input, while a layer above 0 reads its own residual, so their per-layer rows are
+  not like for like. Against the checkpoint, B's overlap falls from 0.36 to 0.11 over layers 1–4,
+  while the checkpoint's falls from 0.85 to 0.36.
+- **The earlier checkpoint is not fully redundant.** It adds 0.035 over the stack, and its
+  overlap falls with depth. The upper layers' partitions drift within one run over 19,500 steps:
+  from the earlier code, `translate.py` predicts a layer-4 head at 0.18–0.21 (2026-11-11 above).
+  The redundant end is therefore the run's own drift, not a copy.
+
+**Limits.**
+- The readout uses entries alone, without the gains, a handicap shared by every code.
+- A+B costs twice A's bits. It was not compared with one model of 760 heads, which is the
+  question of whether two seeds beat one model twice the size.
+- The penalty sat at the top of its grid (1.0) for the layer-3 and layer-4 single codes and for
+  A+earlier at layers 1–4. Those FVUs could fall slightly with more shrinkage; at the stack, every
+  chosen penalty is inside the grid.
+- One seed pair, trained on `mc4_4M`. The whole stack's pairs have 24,320 features on 81,920 fit
+  rows.
+
+Output: `data/out/sonar/seedprobes/complement_ste_h76_init01__ste_h76_i01_s43/` (`fvu.csv`,
+`overlap.csv`). 22 minutes on 16 CPU threads, with other jobs loading the machine; peak memory
+was not measured.
+
+```bash
+JAX_PLATFORMS=cpu uv run python experiments/seed-probes/complement.py \
+    --a data/out/sonar/multilingual/ste_h76_init01 \
+    --b data/out/sonar/multilingual/ste_h76_i01_s43 --earlier 350000
+```

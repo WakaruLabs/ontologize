@@ -267,3 +267,223 @@ uv run python experiments/seed-stability/subspace.py --mode sae \
     --cache data/activations/gpt2_l8.npy --mse-weights data/activations/gpt2_l8.mse_weights.npy \
     --out data/out/gpt2_l8/seed_subspace/sae_k32
 ```
+
+## 2026-11-20: queued, the all-off arm on a Gaussian copy of its data
+
+**Why.** Three results point at the data's second moments:
+- the hard stack loses only a sixth of its fit on Gaussian rows with the tail's covariance
+  (`ste-arm/notes.md`, the random-vector health check);
+- its seeds share the data's and their inputs' principal subspaces and nothing beyond them;
+- its layer-0 partitions barely agree though both seeds see the same input there
+  (`recipe-ladder/notes.md`, without training noise).
+
+A Gaussian has nothing beyond its covariance to agree on, and where directions share a variance a
+quantizer's cells can rotate among them at no cost. So the all-off arm trained on a Gaussian copy
+of `mc4_sent16`, at two seeds, is the baseline for every seed statistic at once. If it agrees as
+much as the cache pair, the seeds agree on the spectrum and nothing else; whatever the cache pair
+agrees on beyond it is structure beyond the second moments.
+
+**The copy** (`gausscopy.py prepare`, 4 min 53 s on CPU). The mean and covariance of the first
+12.8M rows of `mc4_sent16`, the rows the ladder's arms train on, are in
+`data/out/sonar/gausscopy/moments.npz`. The covariance has one zero eigenvalue (−4e-20 after
+rounding; the largest is 1.3e-3), so the copy keeps that null direction. The 65,536 held-out rows
+(`eval.npy`, stream 1) miss the mean by at most 1.1e-4 per coordinate and the covariance by 6.6%
+in Frobenius norm, about what 65,536 samples in 1,024 dimensions allow. On the last 32,768 rows,
+under the `med837` weights, the weighted variance is 0.0072 for both the copy and the cache's tail;
+the mean's norm is 0.0535 against 0.0536, a row's 0.217 against 0.213. A CPU smoke run of eight
+steps starts at loss 1.03e-5, against the cache arm's 1.04e-5.
+
+**The run.** Unit `gauss-seeds` (`gauss_seeds.sh`), from 21:30, waits for an idle GPU and then
+trains the arm (the ladder's `nobcos_nosupp_nol1f_nohm` flags, with its training noise) at seeds
+42 and 43, about 1.2 GPU-hours each, before scoring the pair as the cache pair was scored. The
+comparison is the noisy cache pair in `recipe-ladder/notes.md`.
+
+**Restarted 2026-11-21 02:24.** The first start, at 01:41, ran at 7 s a step (about 100 hours
+for the arm): grain reads a source from several threads, and `GaussianSource`'s single-block cache,
+unguarded, had each reader thread regenerate its block with a BLAS call, 16 times per block,
+which took about 19 cores. The cache now holds eight blocks under a lock, each generated once
+(`tests/test_gausscopy.py`), with the same rows as before. The 200-step partial output was
+removed and the unit restarted; it waits for an idle GPU.
+
+**Restarted again 2026-11-21 06:27; the 02:24 diagnosis was wrong.** Training began at 06:20 and
+ran at 18 s a step (about 250 hours). The cause was the shuffle, not the threads. `train_ste.py`
+takes `sonar.py`'s `shuffle = True`, so each batch of 256 drew rows from about 256 different
+blocks, and the lock made them generate one after another. Measured on the loader alone: 28.5 s a
+batch shuffled, 45 ms in order. The rows are independent draws, so reading them in order changes
+nothing about the data. `train_gauss.py` now passes `shuffle=False` through a new optional
+argument of `train_ste.train`, and the rows and `eval.npy` are unchanged. The partial output
+(`log.jsonl` only, no checkpoint) was removed and the unit restarted with the command below.
+
+**Done when** the scores in `data/out/sonar/gausscopy/scores/` (written once
+`scores/done.log` exists) have been read beside the noisy cache pair, layer by layer, for partition
+NMI, contribution cosine, NPS(8) and prefix FVU, and the reading is a dated section here that
+says which agreement the cache pair has beyond the copy's. The k-means baseline below gives the
+expected direction.
+
+```bash
+uv run python experiments/seed-stability/gausscopy.py prepare
+systemd-run --user --unit gauss-seeds -p Restart=on-failure -p RestartSec=120 \
+    --working-directory=$PWD \
+    -p StandardOutput=append:$PWD/experiments/logs/gauss_seeds.log \
+    -p StandardError=append:$PWD/experiments/logs/gauss_seeds.log \
+    /usr/bin/bash experiments/seed-stability/gauss_seeds.sh
+```
+
+## 2026-11-20: k-means partitions of SONAR reproduce, beyond its Gaussian copy's, and the heads are not near them
+
+**Short version.** A 32-cell k-means of `mc4_sent16`'s whitened rows reproduces across seeds at
+partition NMI 0.61, against 0.40 for its Gaussian copy, and the gap widens at 128 cells (0.74
+against 0.39). At 8 cells the two are alike (0.53 and 0.56), so coarse cells follow the spectrum
+and finer ones find structure beyond it. So SONAR has a reproducible 32-way partition beyond its
+second moments. The stack's heads neither reproduce one (matched layer-0 heads 0.025 between
+seeds, `recipe-ladder/notes.md`) nor sit near the k-means cells: a layer-0 head's best NMI with
+any seed's k-means partition has median 0.054 (at most 0.144), and layers 1–4 are at 0.004–0.005.
+The heads' disagreement across seeds is therefore not what the data force on any 32-cell
+partition.
+
+**Setup** (`kmeans_seeds.py`, CPU, 23:55). k-means++ and Lloyd's iterations to a fixed point in
+the `med837` whitened frame, five seeds (42–46, so ten pairs), fit on 131,072 rows drawn from
+the first 12.8M (the ladder's training rows) and assigned on the last 32,768. The copy's training
+rows are its training stream and its tail is `gausscopy/eval.npy`. The heads are the noisy
+all-off arm's seed 42 (`ste_h76_init01_med837_nobcos_nosupp_nol1f_nohm`), on the same tail. Output
+in `data/out/sonar/kmeans_seeds/summary.json`.
+
+| k | cache: seed NMI [range] | Gaussian copy | null, cache / copy | FVU, cache / copy |
+|---|---|---|---|---|
+| 8 | 0.533 [0.366, 0.988] | 0.555 [0.470, 0.636] | 0.0002 / 0.0004 | 0.969 / 0.971 |
+| 32 | 0.607 [0.495, 0.761] | 0.396 [0.383, 0.416] | 0.0010 / 0.0042 | 0.948 / 0.958 |
+| 128 | 0.737 [0.679, 0.756] | 0.391 [0.384, 0.393] | 0.0092 / 0.0528 | 0.922 / 0.948 |
+
+- **The copy's null rises with k** (0.053 at 128 cells), because its cells are nearly equal in
+  size and the plug-in NMI's bias grows with the number of cells. Over the null the gap at 128 is
+  0.73 against 0.34.
+- **SONAR's k-means also fits better than the copy's** at 32 and 128 cells (0.948 and 0.922,
+  against 0.958 and 0.948), as cluster structure beyond the covariance would.
+- **At 8 cells SONAR's seeds split into near-identical and quite different solutions** (0.37 to
+  0.99), the copy's do not (0.47 to 0.64): two or more distinct local optima on the real data.
+- **Against the planted circle** (`experiments/planted-circle/notes.md`). Seeds that share a
+  factor and differ only in where they cut it still read NMI about 0.7, and spare heads stop
+  aligning with factors altogether. A k-means is one partition with no spare heads; a layer is 76
+  heads summed. The reproducible structure is in the data, and the multi-head code does not
+  settle on it.
+- **What it predicts for the Gaussian seed pair** (queued above). If its heads agree across
+  seeds as much as the cache pair's do, the heads' agreement does not reflect the structure
+  k-means finds; if less, the cache pair's small excess over the null is that structure.
+
+```bash
+JAX_PLATFORMS=cpu uv run python experiments/seed-stability/kmeans_seeds.py \
+    --gauss data/out/sonar/gausscopy \
+    --ckpt data/out/sonar/recipe_ladder/ste_h76_init01_med837_nobcos_nosupp_nol1f_nohm
+```
+
+## 2026-11-21: summed heads and the cascade each cost agreement, at equal error
+
+**Short version.** The stack differs from one k-means in two ways, and both lower how far a code
+of SONAR reproduces across seeds, with k-means alone and no training. Summing h codebooks at one
+stage (additive quantization, FAISS's LSQ++) roughly halves the matched head NMI with each
+doubling of h: 0.57, 0.30, 0.17 and 0.10 at h = 1, 2, 4 and 8. Every restart reaches nearly the
+same error (training FVU within 0.002 at each h), and the lowest-error runs agree no more than
+the rest, so these are many equally good solutions, not a search that sometimes fails. A residual
+cascade of single k-means stages falls from 0.64 at stage 0 to 0.23, 0.19 and 0.07. Sharing stage
+0, so that stage 1 sees identical inputs, lifts stage 1 to 0.44: the cascade costs about half of
+stage 1's agreement, and the rest is lost because the residual has less structure to agree on.
+SONAR stays above its Gaussian copy at every h. At the additive rate, 76 heads would land near
+0.015, the order of the stack's matched layer-0 heads (0.025); that is an extrapolation, since
+h = 76 was not run. *(Measured later the same day, in the next section: 0.009 at h = 76, below the
+extrapolation and below the stack's layer 0.)*
+
+**Setup** (`kmeans_structure.py`, CPU, 00:4x–02:20). The `med837` whitened frame, k = 32, the last
+32,768 rows of `mc4_sent16` as the tail, and the Gaussian copy's held-out rows for `gauss`.
+- **Additive:** LSQ++ (`faiss.LocalSearchQuantizer`, 5 bits per codebook), eight restarts per h
+  (seeds 0–7, so 28 pairs), each fit on 32,768 training rows. Heads are matched between two runs
+  by NMI with a Hungarian assignment, as `partition.py` matches the stack's heads.
+- **Residual:** k-means per stage (at most 100 Lloyd iterations), cascade seeds 42–45, fit on
+  65,536 training rows. `independent`: every seed runs every stage (6 pairs). `shared`: stage 0 is
+  seed 42's, and the other three seeds run stages 1–3 on its residual (3 pairs, against seed 42).
+- Outputs in `data/out/sonar/kmeans_structure/` (`aq.json`, `rvq.json`, `run.log`).
+
+**Additive, matched head NMI between runs:**
+
+| h | SONAR, all pairs [range] | lowest-error 3 | Gaussian copy | training FVU, SONAR (8 runs) |
+|---|---|---|---|---|
+| 1 | 0.574 [0.543, 0.593] | 0.562 | 0.352 | 0.932–0.934 |
+| 2 | 0.295 [0.269, 0.332] | 0.303 | 0.129 | 0.897–0.899 |
+| 4 | 0.167 [0.156, 0.193] | 0.169 | 0.058 | 0.850–0.851 |
+| 8 | 0.097 [0.087, 0.102] | 0.099 | 0.029 | 0.787–0.788 |
+
+The rows-shuffled null is 0.004–0.005 throughout. The rank correlation between a pair's NMI and
+its worse training FVU is −0.52 to +0.25 on SONAR, with no consistent sign. The ratio between
+successive h runs 0.51, 0.57 and 0.58 on SONAR and 0.37, 0.45 and 0.49 on the copy.
+
+- **Why this is not a weak solver.** On two planted additive factors (d = 8, two codebooks of 4)
+  LSQ recovers the factors in some restarts and mixes them in others, and the mixed ones have far
+  higher error (0.67–2.34 against 0.010–0.013, ten restarts), so there best-of-N recovers them.
+  On SONAR the restarts do not differ in error, so no selection by error makes them agree. The
+  simple block descent first written for this mixed even the planted factors in most runs and was
+  replaced (the planted runs were a scratch check, not kept).
+- **The data's structure persists in the additive code** (SONAR above its copy at every h, by
+  more than three times at h = 8) but is spread across heads, each carrying less of it.
+
+**Residual, NMI between two seeds' same stage:**
+
+| stage | independent | stage 0 shared | prefix FVU (independent) |
+|---|---|---|---|
+| 0 | 0.638 | 1 | 0.947 |
+| 1 | 0.226 | 0.441 | 0.929 |
+| 2 | 0.192 | 0.267 | 0.913 |
+| 3 | 0.069 | 0.103 | 0.902 |
+
+Stage 0 here differs from `kmeans_seeds.py`'s 0.607 by its training rows (65,536 against
+131,072) and the 100-iteration cap.
+
+- **Against the stack.** Its layer 0 is 76 heads summed on identical inputs, which the additive
+  trend puts near 0.015, and its layers 1–4 add the cascade's loss on top; their matched NMI of
+  0.005–0.007 against a null of 0.0048 is consistent with both. Neither training noise
+  (`recipe-ladder/notes.md`) nor the absence of structure (the k-means baseline above) is needed
+  to explain it.
+- **Open.** h = 16 and 32 under LSQ, to test the trend before relying on the extrapolation; and
+  whether a stack trained with fewer heads per layer at equal bits reproduces more, which is the
+  design question this raises.
+
+```bash
+JAX_PLATFORMS=cpu uv run --with faiss-cpu python experiments/seed-stability/kmeans_structure.py \
+    --mode aq --train-rows 32768 --gauss data/out/sonar/gausscopy
+JAX_PLATFORMS=cpu uv run python experiments/seed-stability/kmeans_structure.py --mode rvq
+```
+
+## 2026-11-21: additive codes at the stack's width reproduce less than the stack's layer 0
+
+**Short version.** Run out to the stack's 76 heads, LSQ's matched head NMI keeps falling: 0.057 at
+16 codebooks, 0.020 at 32 and 0.0089 at 76, against a null of 0.0047. The stack's matched layer-0
+heads reach 0.025 to 0.027 against 0.0048 (`recipe-ladder/notes.md`), about five times LSQ's
+excess over the null. So the stack's layer-0 agreement is not low for an additive code of its
+width; it is higher than that of a search-based one. The extrapolation in the last section put 76
+codebooks near 0.015, too high.
+
+**Setup.** As the last section's additive arm, SONAR only, with three restarts per h (three pairs),
+32,768 training rows. Output in `data/out/sonar/kmeans_structure/aq_wide/` (`aq.json`,
+`run.log`).
+
+| h | matched head NMI [range] | held-out FVU (training) |
+|---|---|---|
+| 16 | 0.0574 [0.0562, 0.0587] | 0.738–0.739 (0.706–0.707) |
+| 32 | 0.0196 [0.0193, 0.0199] | 0.682–0.683 (0.626–0.627) |
+| 76 | 0.0089 [0.0089, 0.0089] | 0.531 (0.456) |
+
+- **The fall is not slowing.** Successive ratios are 0.59 (8 to 16), 0.34 (16 to 32) and 0.45 over
+  the step from 32 to 76.
+- **These codes overfit.** At h = 76, the 2.5M codebook numbers are fit on 32,768 rows: training FVU
+  0.456, held out 0.531. Still, held out, LSQ's 76 codebooks fit better than the stack's first
+  layer (0.6045 at about 380 bits, `ratecurve.py`, under `no837` weights where these use `med837`).
+  So the comparison is a better fit at the same width that agrees less.
+- **Why the stack's layer 0 might agree more** is not tested here. It is one layer of five, trained
+  jointly, so it need not carry everything a lone 76-codebook code must, and it encodes by a
+  classifier rather than by search. Either could make its heads coarser and more repeatable.
+- Three restarts per h make the rank correlation with error (±1.00 in the log) meaningless here;
+  the spread of error across restarts is again small (at most 0.0015 held out).
+
+```bash
+JAX_PLATFORMS=cpu uv run --with faiss-cpu python experiments/seed-stability/kmeans_structure.py \
+    --mode aq --hs 16 32 76 --restarts 3 --best 2 --train-rows 32768 \
+    --out data/out/sonar/kmeans_structure/aq_wide
+```

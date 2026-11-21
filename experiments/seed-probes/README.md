@@ -3,7 +3,9 @@
 The seed comparisons in `experiments/ste-arm` (`partition.py`,
 `headcontrib.py`) match heads one to one and score the whole output space
 at once. Past layer 0 they find agreement near its null. Two weaker kinds
-of agreement would not show up there, and each has a script here.
+of agreement would not show up there, and each has a script here. A third
+script asks the opposite question: how much of what one seed's code says
+about the input the other's says too.
 
 ## `translate.py`: the same information, split differently
 
@@ -47,6 +49,23 @@ shuffled-row null. `--earlier` scores a run against its own earlier
 checkpoint in every band, since a band where one run does not agree with
 itself cannot show two seeds agreeing.
 
+## `complement.py`: shared or complementary information
+
+Xuan, Souvenir & Pless (ECCV 2018) train each member of an ensemble to a
+different random partition of the class labels, and the concatenation
+beats its members. In that reading, codes that disagree are complementary.
+The script reads the input, in the objective's whitened frame, from a
+one-hot code by a ridge, and again from A's code concatenated with
+another code X. With EV = 1 - FVU on held-out rows, overlap(X) =
+(EV(A) + EV(X) - EV(A+X)) / EV(X) is the share of what X explains that A
+explains already. Any added code raises the fit, so B's overlap is read
+against codes of its shape: `earlier` (the same model, the redundant end),
+`lsh` (arbitrary partitions) and `untrained`. Scopes are each layer alone
+and the whole stack. The ridge runs on the CPU in float64, from Gram
+blocks shared between conditions. The whole stack's pairs are about 5 GB
+per Gram; with the shared blocks and the solve, budget 25–30 GB (an
+estimate, not a measurement).
+
 ## Running
 
 ```bash
@@ -54,6 +73,9 @@ uv run python experiments/seed-probes/translate.py \
     --a data/out/sonar/multilingual/ste_h76_init01 \
     --b data/out/sonar/multilingual/ste_h76_i01_s43 --earlier 350000
 uv run python experiments/seed-probes/bandagree.py \
+    --a data/out/sonar/multilingual/ste_h76_init01 \
+    --b data/out/sonar/multilingual/ste_h76_i01_s43 --earlier 350000
+JAX_PLATFORMS=cpu uv run python experiments/seed-probes/complement.py \
     --a data/out/sonar/multilingual/ste_h76_init01 \
     --b data/out/sonar/multilingual/ste_h76_i01_s43 --earlier 350000
 ```

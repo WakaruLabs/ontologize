@@ -86,6 +86,29 @@ JAX_PLATFORMS=cpu uv run python experiments/rate-penalty/headdrop.py \
 layer is scored with every head dropped alone, then with the cumulative
 drops.
 
+## Plain quantizers at the same rates (`plainquant.py`)
+
+What the classifier costs against a codec that searches for each row's
+code. FAISS's product quantizer (`--pq MxNBITS`, M blocks of 2**NBITS
+centroids) and residual quantizer (`--rq-stages` stages of 2**`--rq-nbits`
+entries, one k-means each, encoded with beam width `--beam`) are fit in
+the same whitened frame as `ratecurve.py` and scored on the same tail rows.
+The RQ's first m stages are a code of m · nbits bits, so with 380 stages of
+32 entries one fit gives the curve at the stack's five prefix rates (76
+stages per layer). OPQ is available (`--opq`) but off by default: learning
+its rotation at d = 1024 took 400 s on 8,192 rows. FAISS's own RQ training
+default (progressive dimensions with codebook refinement) is replaced by one
+k-means per stage, which was 45 times faster. FAISS is not a project
+dependency:
+
+```bash
+JAX_PLATFORMS=cpu uv run --with faiss-cpu python experiments/rate-penalty/plainquant.py
+```
+
+Output: `data/out/sonar/rate_penalty/plainquant/summary.json`.
+`tests/test_plainquant.py` checks the FVU's ends and that the RQ's prefixes
+are partial sums of the chosen entries.
+
 `tests/test_ratecurve.py` checks the realized bits of even, constant and
 skewed heads, and the prefix FVU's weighting. `tests/test_headdrop.py`
 checks the drop order, the cumulative masks and the hull.

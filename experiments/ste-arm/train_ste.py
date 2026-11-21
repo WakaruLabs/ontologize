@@ -614,9 +614,12 @@ def setup(cfg: argparse.Namespace, src=None, hp=None, hp_extra=None):
     return hyper, model, meta, out, src
 
 
-def train(hyper, model, meta, out: Path, src) -> None:
+def train(hyper, model, meta, out: Path, src, shuffle=None) -> None:
+    """Train on `src`, shuffled as the base config says unless `shuffle`
+    overrides it."""
+    shuffle = base.shuffle if shuffle is None else shuffle
     env = TrainingEnv(model, hyper, meta,
-                      kwargs_loader={"d": base.d, "shuffle": base.shuffle})
+                      kwargs_loader={"d": base.d, "shuffle": shuffle})
     env.train(src, encoder=None)
     print("Training Complete!")
     try:

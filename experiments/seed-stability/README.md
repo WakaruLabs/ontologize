@@ -127,6 +127,103 @@ systemd-run --user --unit gpt2-sae-seeds -p Restart=on-failure -p RestartSec=120
     /usr/bin/bash experiments/seed-stability/gpt2_sae_seeds.sh
 ```
 
+## A Gaussian copy (`gausscopy.py`, `train_gauss.py`, `gauss_seeds.sh`)
+
+The baseline for every seed statistic at once. A model trained on rows
+from the Gaussian with the training rows' mean and covariance has nothing
+to agree on beyond the covariance, so whatever the cache pair agrees on
+beyond this pair is structure beyond the data's second moments.
+
+- `gausscopy.py prepare` reads the first 12.8M rows of `mc4_sent16` (the
+  recipe ladder's 50,000 steps of 256) and saves their mean, covariance
+  and its square root (from the eigendecomposition, which tolerates a
+  covariance too ill-conditioned for Cholesky) to
+  `data/out/sonar/gausscopy/moments.npz`. It writes 65,536 held-out rows
+  from another stream to `eval.npy`, in the cache layout, with what the
+  sample moments miss by in `eval.meta.json`. The scorers read its last
+  rows with `--cache`; the trainer's initialization probe reads its first
+  64.
+- `GaussianSource` generates row i as block i // 4096 of a stream keyed by
+  (seed, block). A resumed run sees the rows it would have seen, and two
+  seeds of an arm see the same rows in the same order, as they do on the
+  cache (the trainer does not shuffle).
+- `train_gauss.py` is `experiments/adam-eps/train_eps.py` with that source
+  in place of the cache's rows; pass `--epochs` rather than `--steps`.
+- `gauss_seeds.sh` trains the ladder's all-off arm (with its training
+  noise) at seeds 42 and 43, then scores the pair with `partition.py`,
+  `headcontrib.py`, `subspace.py --mode stack` and `ratecurve.py` on
+  `eval.npy`, into `data/out/sonar/gausscopy/scores/`. It waits for an idle
+  GPU and runs as a systemd unit:
+
+```bash
+systemd-run --user --unit gauss-seeds -p Restart=on-failure -p RestartSec=120 \
+    --working-directory=$PWD \
+    -p StandardOutput=append:$PWD/experiments/logs/gauss_seeds.log \
+    -p StandardError=append:$PWD/experiments/logs/gauss_seeds.log \
+    /usr/bin/bash experiments/seed-stability/gauss_seeds.sh
+```
+
+`tests/test_gausscopy.py` checks the chunked moments, the square root of a
+rank-deficient covariance, and the source: its rows' moments, its
+determinism across a pickle and a block boundary, and its streams.
+
+## How far a partition of the data reproduces (`kmeans_seeds.py`)
+
+A layer-0 head partitions the data itself, so the question of what a
+reproducible partition of these rows looks like has a direct reference:
+k-means. `kmeans_seeds.py` runs it in the loss's whitened frame
+(k-means++ seeding, Lloyd's iterations to a fixed point, an emptied cell
+reseeded at the farthest row) at several seeds and values of k, fits on
+131,072 rows drawn from the training prefix, and assigns the 32,768-row
+tail. Between every pair of seeds it reports the tail partitions' NMI
+(`partition.py`'s `nmi_matrix`, so the numbers read beside the heads'), a
+null with one partition's rows shuffled, and each seed's FVU.
+
+- `--gauss` runs the same on the Gaussian copy: training rows from its
+  training stream, the tail from `eval.npy`.
+- `--ckpt` adds, per layer of a stack, each head's best NMI against the
+  k-means partitions at the model's k.
+
+```bash
+JAX_PLATFORMS=cpu uv run python experiments/seed-stability/kmeans_seeds.py \
+    --gauss data/out/sonar/gausscopy \
+    --ckpt data/out/sonar/recipe_ladder/ste_h76_init01_med837_nobcos_nosupp_nol1f_nohm
+```
+
+Output: `data/out/sonar/kmeans_seeds/summary.json`.
+`tests/test_kmeans_seeds.py` checks the assignment against brute force,
+agreement on separated clusters and along a dominant direction, its
+absence on an isotropic Gaussian, and that every cell ends up used.
+
+## Summed heads against a cascade (`kmeans_structure.py`)
+
+The stack differs from one k-means in two ways: each layer sums many
+heads, and the layers form a residual cascade. `kmeans_structure.py`
+separates them with quantizers that need no training.
+
+- `--mode aq` sums h codebooks at one stage (additive quantization), fit by
+  FAISS's LSQ++, `--restarts` times per h. Heads are matched between runs
+  by NMI with a Hungarian assignment, beside a shuffled null, and the runs
+  are read against their training error: agreement among the `--best`
+  lowest-error runs, and its rank correlation with each pair's worse
+  error. FAISS is not a project dependency, so this mode runs under
+  `uv run --with faiss-cpu`; `unpack` turns its packed codes into one entry
+  per head.
+- `--mode rvq` is a cascade of single k-means stages, each on the previous
+  stages' residual, run independently per seed and with stage 0 shared
+  (taken from the first seed), so that stage 1 sees identical inputs.
+
+```bash
+JAX_PLATFORMS=cpu uv run --with faiss-cpu python experiments/seed-stability/kmeans_structure.py \
+    --mode aq --train-rows 32768 --gauss data/out/sonar/gausscopy
+JAX_PLATFORMS=cpu uv run python experiments/seed-stability/kmeans_structure.py --mode rvq
+```
+
+Output: `data/out/sonar/kmeans_structure/aq.json` and `rvq.json`.
+`tests/test_kmeans_structure.py` checks the cascade's falling prefix error
+and a shared first stage, the head matching, and the unpacking of FAISS's
+codes.
+
 ## Cost
 
 - `train_seed43.py`: **a full training run** — identical cost to the

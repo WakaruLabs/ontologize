@@ -109,3 +109,49 @@ float FVU.
   the arms' gain means are within 0.02 of the control's.
 - A control trained to the arm's rate as a fixed-rate code. For example, layer 5 with k = 16
   would match the 11 entries a `-2e-8` head uses, and could match the arm without the penalty.
+
+## 2026-11-21: plain quantizers at the stack's rates: a product quantizer beats the stack
+
+**Short version.** On the same tail rows and in the same whitened frame as `ratecurve.py`, FAISS's
+product quantizer with 256 blocks of 7 bits reaches FVU 0.149 at 1,792 bits, below the ladder's
+all-off hard stack at 1,891 (0.168 with float gains, 0.189 pinned), with 99 fewer bits. A greedy
+residual quantizer of the stack's own shape, 380 stages of 32 one after another, is worse than the
+stack at every prefix, by 0.04 to 0.06. So the stack's joint training beats coding its heads one at
+a time, and a codec with no classifier and no training beyond k-means per block beats the stack.
+
+**Setup** (`plainquant.py`, CPU, `uv run --with faiss-cpu`). The `no837` weights, the last 32,765
+rows of `mc4_sent16`, quantizers fit on 65,536 rows drawn from the first 12.8M. PQ blocks are fixed
+groups of four coordinates in the √w frame, with no rotation (OPQ was too slow to learn at d = 1024).
+RQ: one k-means per stage (FAISS's default training mode was 45 times slower), greedy encoding.
+Output in `data/out/sonar/rate_penalty/plainquant/`.
+
+| code | 380 bits | 760 | 1,140 | 1,520 | ~1,900 |
+|---|---|---|---|---|---|
+| all-off hard stack, float gains (prefixes) | 0.6045 | 0.4278 | 0.3106 | 0.2278 | 0.1681 |
+| the same, gains pinned | 0.6373 | 0.4553 | 0.3360 | 0.2511 | 0.1894 |
+| RQ, 380 stages of 32, greedy (prefixes) | 0.6425 | 0.4841 | 0.3702 | 0.2869 | 0.2257 |
+| PQ 256 × 7 bits (1,792) | | | | | 0.1494 |
+| PQ 512 × 4 bits (2,048) | | | | | 0.1245 |
+
+The stack's rows are `ratecurve.py`'s at 378, 757, 1,136, 1,514 and 1,891 bits (the noisy all-off
+arm, seed 42, `recipe-ladder/notes.md`). LSQ with 76 codebooks of 32 reaches 0.531 at 380 bits
+held out (`seed-stability/notes.md`, 2026-11-21, under `med837` weights), against the stack's first
+layer at 0.6045.
+
+- **Coding the heads one at a time costs 0.04–0.06 at every prefix.** The stack's first layer
+  chooses 76 heads in parallel and is trained end to end; greedy RQ chooses 76 single heads one after
+  another, each fit by k-means to what the last left. The stack is better.
+- **Search beats the classifier at 380 bits.** LSQ's joint search over 76 codebooks gets 0.53 where
+  the stack's layer 0 gets 0.60, and LSQ has not converged (it overfits its 32,768 rows).
+- **PQ is the strongest plain code here,** at both of its sizes, and the k256 SAE at 1,900 bits
+  (0.128 mean rate, `recipe-ladder/notes.md`) is level with PQ at 2,048. Faiss's advice holds:
+  fewer, larger codebooks per bit. PQ's are 4-dimensional with 128 entries each, against the stack's
+  1,024-dimensional heads of 32.
+- **Training budgets differ.** The stack saw 12.8M rows over 50,000 steps; PQ and RQ ran k-means on
+  65,536. The plain codes did not need more.
+- **Not run:** RQ with fewer, larger stages (for example 190 of 1,024) and a beam above 1; LSQ at
+  1,900 bits (380 codebooks), which the Faiss paper finds does not scale to long codes; OPQ.
+
+```bash
+JAX_PLATFORMS=cpu uv run --with faiss-cpu python experiments/rate-penalty/plainquant.py
+```
