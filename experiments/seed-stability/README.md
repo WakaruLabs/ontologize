@@ -95,7 +95,10 @@ the whitened data's top-r and bottom-r principal subspaces and chance
   φ(i, j) = ||A_iᵀ B_j||²_F / min(i, j) between the eigenbases of each
   layer's contribution x̂_{ℓ+1} − x̂_ℓ in the two seeds, and between each
   seed and the data. Chance is r/d on the diagonal, so rank 8 in 1,024
-  dimensions tops out at 128× chance.
+  dimensions tops out at 128× chance. A layer past the first is fit to
+  the residual x − x̂_ℓ, so each seed's contribution is also compared with
+  the principal subspace of its own layer input and of the other seed's,
+  and the two inputs with each other.
 
 ```bash
 uv run python experiments/seed-stability/subspace.py --mode sae \
@@ -110,6 +113,19 @@ uv run python experiments/seed-stability/subspace.py --mode stack \
 
 `tests/test_subspace.py` checks φ on nested, orthogonal and random
 subspaces, the energy share, and the transfer curves on planted sets.
+
+`gpt2_sae_seeds.sh` trains a seed pair (42, 43) of the GPT-2 k32 SAE at
+`sae.py`'s defaults into `data/out/gpt2_l8/sae_seeds/`, the
+language-model counterpart of the SONAR pair. It waits for unit
+`recipe-ladder-nonoise` and an idle GPU, and runs as a systemd unit:
+
+```bash
+systemd-run --user --unit gpt2-sae-seeds -p Restart=on-failure -p RestartSec=120 \
+    --working-directory=$PWD \
+    -p StandardOutput=append:$PWD/experiments/logs/gpt2_sae_seeds.log \
+    -p StandardError=append:$PWD/experiments/logs/gpt2_sae_seeds.log \
+    /usr/bin/bash experiments/seed-stability/gpt2_sae_seeds.sh
+```
 
 ## Cost
 

@@ -473,6 +473,8 @@ is added, renamed or retired, change both.
 | $\lambda_j$ | eigenvalues (Gaussian reference, eigen-steering); an SAE's L1 weight is $s_{\mathrm{L1}}$ like every other loss weight |
 | $\mathrm{assign}$ | the abstraction map from an input to its code, in the formal reading |
 | $h'$ | a number of heads kept, probed or conjoined (out of $h$) |
+| $d'$ | the dimension of a compared subspace (out of $d$) |
+| $\mathrm{NPS}(d')$ | normalized projection similarity of two ordered bases' first $d'$ columns (`subspace.py`; LoRA's φ, renamed since $\boldsymbol{\phi}$ is a head's contribution) |
 | $k_{\mathrm{probe}}$ | the sparse-probing budget (SAEBench) |
 | $W_{\mathrm{flat}}$ | the flat code-to-output map of a one-layer model |
 | $\tau_{\mathrm{rev}}$ | the dead-entry revival threshold |

@@ -920,3 +920,105 @@ JAX_PLATFORMS=cpu uv run python experiments/rate-penalty/ratecurve.py \
     --ckpt data/out/sonar/recipe_ladder/ste_h76_init01_med837_{ctrl,ctrl_s43,nosdf,nonoise} \
     --out data/out/sonar/recipe_ladder/noiseshare_ratecurve
 ```
+
+## 2026-11-20: queued, the all-off arm without noise at two seeds
+
+The test the noise-share section leaves open: does training noise keep the all-off arm's upper
+heads from reproducing? `ladder.sh` has two new arms, `nobcos_nosupp_nol1f_nohm_nonoise` and
+its `_s43`, which are the all-off arm with σ_K, σ_F and p_drop at 0; `ARCHS` limits a queue to
+named architectures. Unit `recipe-ladder-nonoise` trains both in the hard stack only (about 2.5
+GPU-hours), from 14:56, once the GPU is idle:
+
+```bash
+systemd-run --user --unit recipe-ladder-nonoise -p Restart=on-failure -p RestartSec=120 \
+    --working-directory=$PWD --setenv=ARCHS=ste_h76_init01 \
+    -p StandardOutput=append:$PWD/experiments/logs/recipe_ladder.log \
+    -p StandardError=append:$PWD/experiments/logs/recipe_ladder.log \
+    /usr/bin/bash experiments/recipe-ladder/ladder.sh med837 \
+    nobcos_nosupp_nol1f_nohm_nonoise nobcos_nosupp_nol1f_nohm_nonoise_s43
+```
+
+The reading: upper-layer head and subspace agreement between the two seeds of each pair (the
+noisy all-off arm and its `_s43`, against these two), beside each pair's fit.
+
+## 2026-11-20: without training noise, the upper heads still do not reproduce
+
+**Short version.** Trained without σ_K, σ_F and p_drop, the all-off arm's seeds agree no more
+than with them. Partition NMI and head-contribution cosine match the noisy pair layer by layer, to
+within 0.004. Layers 1–4 sit at 1.1–1.4× the shuffled null in NMI and 2–4× in cosine either way.
+Without noise, layers 2–3's subspaces agree more across seeds, but the two seeds' inputs to those
+layers agree more by as much or more, which is the cascade (`seed-stability/notes.md`, "the stack
+against each layer's own input"). Noise buys a little fit: 0.0008 in five-layer FVU, against seed
+differences of 0.0002–0.0005. So the hypothesis the noise-share section left open is refuted.
+Noise makes up most of the upper layers' input in training, and removing it leaves their seed
+agreement where it was.
+
+**Where.** Unit `recipe-ladder-nonoise` trained both arms 14:56–17:33, 50,000 steps each in about
+1 h 13 min, with `loss` equal to `MSE`. Outputs in `data/out/sonar/recipe_ladder/nonoise_seeds/`,
+one log per script and pair. Rows from `mc4_sent16`'s tail:
+- `partition.py`, 32,768;
+- `headcontrib.py`, 8,192 under the `med837` weights (centered contributions);
+- `subspace.py --mode stack`, 32,768 under `med837`;
+- `ratecurve.py`, 32,765, FVU over the free coordinates.
+
+**Seed agreement by layer**, with noise / without:
+
+| layer | partition NMI | contribution cosine | lands in the same layer (NMI) |
+|---|---|---|---|
+| 0 | 0.0271 / 0.0245 | 0.0346 / 0.0379 | 76 / 76 of 76 |
+| 1 | 0.0067 / 0.0066 | 0.0048 / 0.0047 | 58 / 57 |
+| 2 | 0.0059 / 0.0058 | 0.0037 / 0.0035 | 30 / 30 |
+| 3 | 0.0055 / 0.0055 | 0.0031 / 0.0029 | 24 / 30 |
+| 4 | 0.0054 / 0.0053 | 0.0027 / 0.0026 | 35 / 36 |
+| null (rows shuffled) | 0.0048 / 0.0048 | 0.0013 / 0.0013 (max 0.0035 / 0.0039) | |
+
+- **Layer 0 agrees little too, though both seeds see the same input there.** Its NMI is 5–6× the
+  null and its cosine 27–29×, with cosine rising with head size within the layer (r = 0.77 and
+  0.82). So the cascade adds to the upper layers' disagreement but does not start it.
+- **The head sizes match:** layer 4's median centered contribution is 0.063% and 0.067% of the
+  target variance; the layer-0 lift at equal atom spread is 16.7× and 14.2×.
+
+**Subspaces**, NPS(8) over chance (128× at most), seeds' contributions against each other, and the
+two seeds' layer inputs against each other:
+
+| layer | contributions, noise | inputs, noise | contributions, none | inputs, none |
+|---|---|---|---|---|
+| 0 | 126.6 | 128.0 | 126.7 | 128.0 |
+| 1 | 101.8 | 97.6 | 105.7 | 105.2 |
+| 2 | 76.7 | 60.6 | 81.6 | 79.8 |
+| 3 | 28.7 | 19.5 | 38.2 | 31.5 |
+| 4 | 17.4 | 18.9 | 17.6 | 18.5 |
+
+Each seed's contribution agrees with its own input more than with the other seed's (layer 3: 29–31
+against 21–23 with noise, 43–53 against 33–34 without).
+
+**Prefix FVU over the free coordinates, gains as computed:**
+
+| arm | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|
+| all off | 0.6045 | 0.4278 | 0.3106 | 0.2278 | 0.1681 |
+| all off, seed 43 | 0.6034 | 0.4270 | 0.3099 | 0.2274 | 0.1679 |
+| all off, no noise | 0.6075 | 0.4295 | 0.3118 | 0.2288 | 0.1690 |
+| all off, no noise, seed 43 | 0.6067 | 0.4289 | 0.3111 | 0.2283 | 0.1685 |
+
+Pinned, the five-layer readings are 0.1894 and 0.1890 with noise, 0.1897 and 0.1893 without, all
+at 1,891 bits.
+
+**What this leaves open.** Layer 0 disagrees across seeds on identical inputs, and the hard stack
+loses only a sixth of its fit on a Gaussian with the data's covariance (`ste-arm/notes.md`, the
+random-vector health check). A seed pair trained on that Gaussian would say whether the seeds'
+agreement on SONAR exceeds what the covariance alone gives.
+
+```bash
+R=data/out/sonar/recipe_ladder; O=$R/nonoise_seeds; A=ste_h76_init01_med837_nobcos_nosupp_nol1f_nohm
+C=data/sonar_embeddings/mc4_sent16.npy; W=data/out/sonar/sentcache/mse_weights_med837.npy
+for v in "" _nonoise; do
+    uv run python experiments/ste-arm/partition.py --a $R/$A$v --b $R/$A${v}_s43 --cache $C
+    uv run python experiments/ste-arm/headcontrib.py --a $R/$A$v --b $R/$A${v}_s43 \
+        --cache $C --mse-weights $W
+    uv run python experiments/seed-stability/subspace.py --mode stack --a $R/$A$v --b $R/$A${v}_s43 \
+        --cache $C --mse-weights $W --out $O/subspace_alloff${v:-_noisy}
+done
+uv run python experiments/rate-penalty/ratecurve.py \
+    --ckpt $R/$A $R/${A}_s43 $R/${A}_nonoise $R/${A}_nonoise_s43 --out $O/ratecurve
+```

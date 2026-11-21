@@ -2219,8 +2219,10 @@ ceiling at rank 8 is 128x; the "25x to 33x" above does not describe it.
 `experiments/seed-stability/subspace.py` now computes it with a written
 formula and reproduces the table within 20% (127/123/121 at layer 0
 down to 11/27/26 at layer 4, on 32,768 tail rows). It also finds that layers 1–2 agree a little beyond
-the data in their first few directions. See
-`experiments/seed-stability/notes.md`, 2026-11-20.
+the data in their first few directions, and that each layer's own input (the residual the
+earlier layers leave, which the two seeds share) accounts for it: against the larger of the
+data and the layer's input, the seeds agree at most 4% more, and more than 0.4% more only at
+layer 0. See `experiments/seed-stability/notes.md`, 2026-11-20.
 
 **Atom Grams reproduce, but there is almost nothing in them to
 reproduce.** Per-layer row collinearity agrees to four digits across

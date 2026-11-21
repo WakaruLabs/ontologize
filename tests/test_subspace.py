@@ -11,7 +11,8 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "experiments"
                        / "seed-stability"))
-from subspace import basis, best_cos, eig_basis, ev, phi, phi_table, transfer  # noqa: E402
+from subspace import (basis, best_cos, eig_basis, ev, input_table, phi,  # noqa: E402
+                      phi_table, transfer)
 
 
 def _orth(d, q, rng):
@@ -70,3 +71,18 @@ def test_phi_table_and_best_cos():
     assert np.isclose(t[4]["ab"], 1.0) and np.isclose(t[4]["ab_x"], 8.0)
     D = np.eye(3)
     assert np.allclose(best_cos(D, D[[0, 1]]), [1.0, 1.0, 0.0])
+
+
+def test_input_table_reads_contributions_that_follow_their_inputs():
+    # Each seed's contribution spans the top of its own input; the inputs
+    # share their top 4 directions, so the contributions agree across seeds
+    # exactly as much as each agrees with the other seed's input.
+    rng = np.random.default_rng(4)
+    d = 32
+    top = _orth(d, 4, rng)
+    rest = lambda: np.linalg.qr(np.hstack([top, rng.normal(size=(d, d - 4))]))[0]
+    A_in, B_in = rest(), rest()
+    t = input_table(A_in, B_in, A_in, B_in, (4, 8))
+    assert np.isclose(t[4]["a_in"], 1.0) and np.isclose(t[4]["in_ab"], 1.0)
+    assert np.isclose(t[4]["a_inb"], 1.0) and np.isclose(t[4]["a_in_x"], 8.0)
+    assert t[8]["in_ab"] < 0.9                  # beyond the shared top

@@ -29,6 +29,14 @@ root of the per-coordinate MSE weights (`--mse-weights`).
   between each seed and the whitened data's top-r principal subspace, each
   also over chance (r/d). The full prefix grid phi(i, j) between the seeds
   goes to the npz.
+  A layer past the first reads the residual x - x_hat_l the layers before
+  it leave, so each seed also gets the eigenbasis of its own layer input
+  (that residual, whitened and centered; at layer 0 it is the data's).
+  Per layer and rank: phi between each seed's contribution and its own
+  input, between the two seeds' inputs, and between each seed's
+  contribution and the other seed's input. Contributions that agree across
+  seeds no more than each agrees with its own input, or with the other
+  seed's, take their agreement from the cascade (data and earlier layers).
 
   uv run python experiments/seed-stability/subspace.py --mode sae \\
       --a data/out/sonar/sae_conv/m5120_k32/params.npz \\
@@ -140,6 +148,24 @@ def phi_table(A: Float[np.ndarray, "d d"], B: Float[np.ndarray, "d d"],
     return rows
 
 
+def input_table(A: Float[np.ndarray, "d d"], B: Float[np.ndarray, "d d"],
+                A_in: Float[np.ndarray, "d d"], B_in: Float[np.ndarray, "d d"],
+                ranks) -> dict:
+    """phi(r, r) of each seed's contribution basis (A, B) against its own
+    input's (A_in, B_in) and the other seed's input's, and between the two
+    inputs, each also over chance r/d."""
+    d = A.shape[0]
+    rows = {}
+    for r in ranks:
+        v = {"a_in": phi(A, A_in, r, r), "b_in": phi(B, B_in, r, r),
+             "in_ab": phi(A_in, B_in, r, r), "a_inb": phi(A, B_in, r, r),
+             "b_ina": phi(B, A_in, r, r), "chance": r / d}
+        v.update({f"{key}_x": v[key] / v["chance"]
+                  for key in ("a_in", "b_in", "in_ab", "a_inb", "b_ina")})
+        rows[r] = v
+    return rows
+
+
 def parse_args():
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -223,33 +249,49 @@ def run_stack(cfg, X, sw, data_V) -> dict:
                 E_in = module.nextinput(Xb, R, P.reshape(P.shape[0], -1))
         return jnp.stack(out)
 
-    bases, steps = {}, {}
+    def cov(S1, S2, n):
+        return S2 / n - np.einsum("li,lj->lij", S1 / n, S1 / n)
+
+    bases, in_bases, steps = {}, {}, {}
     for s, path in (("a", cfg.a), ("b", cfg.b)):
         model, params, step = load_onto(path, cfg.step)
         steps[s] = int(step)
         f = jax.jit(lambda x, p=params, m=model: m.apply({"params": p}, x,
                                                           method=prefixes))
-        l = model.l
-        S1 = np.zeros((l, X.shape[1]))
-        S2 = np.zeros((l, X.shape[1], X.shape[1]))
+        l, d = model.l, X.shape[1]
+        S1, S2 = np.zeros((l, d)), np.zeros((l, d, d))
+        T1, T2 = np.zeros((l, d)), np.zeros((l, d, d))
         for i in range(0, len(X), cfg.b_rows):
-            Y = np.asarray(f(jnp.asarray(X[i:i + cfg.b_rows])), np.float64)
-            W = np.diff(Y, axis=0) * sw                     # (l, b, d)
+            Xb = X[i:i + cfg.b_rows]
+            Y = np.asarray(f(jnp.asarray(Xb)), np.float64)    # (l + 1, b, d)
+            W = np.diff(Y, axis=0) * sw                       # contributions
+            E = (Xb[None].astype(np.float64) - Y[:-1]) * sw   # layer inputs
             S1 += W.sum(1)
             S2 += np.einsum("lbi,lbj->lij", W, W)
-        n = len(X)
-        C = S2 / n - np.einsum("li,lj->lij", S1 / n, S1 / n)
+            T1 += E.sum(1)
+            T2 += np.einsum("lbi,lbj->lij", E, E)
+        C, Cin = cov(S1, S2, len(X)), cov(T1, T2, len(X))
         bases[s] = [eig_basis(C[L]) for L in range(l)]
-    res = {"steps": steps, "layers": {}}
+        in_bases[s] = [eig_basis(Cin[L]) for L in range(l)]
+    res = {"steps": steps, "layers": {}, "inputs": {}}
     grid = {}
-    print(f"phi(r, r) over chance (r/d), per layer: a vs b | a vs data | b vs data")
+    print("phi(r, r) over chance (r/d), per layer: a vs b | a vs data | b vs data")
     for L in range(len(bases["a"])):
         A, B = bases["a"][L], bases["b"][L]
         res["layers"][L] = phi_table(A, B, data_V, RANKS)
+        res["inputs"][L] = input_table(A, B, in_bases["a"][L], in_bases["b"][L],
+                                       RANKS)
         grid[f"layer{L}"] = np.array([[phi(A, B, i, j) for j in RANKS] for i in RANKS])
         print(f"  layer {L}: " + "  ".join(
             f"r{r}: {v['ab_x']:.1f}|{v['a_data_x']:.1f}|{v['b_data_x']:.1f}"
             for r, v in res["layers"][L].items() if r in (1, 8, 32, 128)))
+    print("against layer inputs: a vs own input | b vs own input | input a vs b"
+          " | a vs b's input | b vs a's input")
+    for L, rows in res["inputs"].items():
+        print(f"  layer {L}: " + "  ".join(
+            f"r{r}: " + "|".join(f"{v[k + '_x']:.1f}" for k in
+                                 ("a_in", "b_in", "in_ab", "a_inb", "b_ina"))
+            for r, v in rows.items() if r in (1, 8, 32, 128)))
     res["grid_ranks"] = list(RANKS)
     return res, grid
 

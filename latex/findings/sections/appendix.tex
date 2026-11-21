@@ -81,6 +81,7 @@ $q$ & coordinates & $d$, $e$ & input dimension, dictionary width \\
 & & $d_{\mathrm{head}}$ & a head's slice of $e$ under concatenated heads \\
 & & $k_{\mathrm{sel}}$ & entries kept by the \texttt{top}$k_{\mathrm{sel}}$ selection rule \\
 & & $h'$ & heads kept, probed, or conjoined, out of $h$ \\
+& & $d'$ & dimension of a compared subspace, out of $d$ \\
 & & $n_{\mathrm{const}}$ & constant coordinates appended to a layer's input \\
 & & $m$, $k_{\mathrm{SAE}}$ & SAE width, and active latents under $\topk$ \\
 \bottomrule
@@ -165,6 +166,7 @@ $(\cdot)^{(1)}$, $(\cdot)^{(2)}$ & the two models in a pairwise comparison & Eq.
 $\mathbf{q}^{(1)}_i$; $[M^{\mathrm{part}}]_{ii'}$, $[M^{\mathrm{contr}}]_{ii'}$ & head $i$'s entry selections across rows; head-matching similarity matrices & Eq.~\eqref{eq:headmatch} \\
 $\boldsymbol{\phi}_{ni}$, $\mathrm{size}_i$ & head $i$'s output contribution on sample $n$; its share of whitened variance & Eqs.~\eqref{eq:headmatch}, \eqref{eq:headsize} \\
 $\mathbf{a}^{\mathrm{dec}}_{ij}$, $\bar{\mathbf{a}}^{\mathrm{dec}}_i$ & a decoded atom; head $i$'s usage-weighted mean decoded atom & Eq.~\eqref{eq:headsize} \\
+$\mathrm{NPS}(d')$; $V^{(1)}_{d'}$ & normalized projection similarity of two ordered orthonormal bases' first $d'$ columns; model (1)'s first $d'$ columns & §\ref{sec:seedsdetail} \\
 $\mathrm{recovered}$ & fraction of next-token or decoder loss recovered & Eq.~\eqref{eq:lossrec} \\
 $\eta^2$; $\mathcal{C}$, $n_{\mathrm{rows}}$ & fraction of variance explained by a partition; its cells and number of scored rows & Eq.~\eqref{eq:eta} \\
 $k_{\mathrm{probe}}$ & sparse-probing budget & §\ref{app:protocols} \\
@@ -3066,18 +3068,31 @@ although the exact script configuration of the earlier $0.0074$ readout
 was not recorded, the qualitative conclusion is identical under both.
 
 \emph{Subspaces.} For two orthonormal bases ordered by variance, the
-normalized projection similarity of their first $r$ columns,
-$\phi(r) = \lVert A_r^\top B_r\rVert_F^2/r$~\cite{hu2021}, is 1 for equal
-subspaces and $r/d$ in expectation for random ones, so at $r{=}8$ it can
-reach $128\times$ chance. Between the two seeds' per-layer contributions
-(whitened and centered, on the evaluation tail; \texttt{subspace.py}), the
-top-8 eigenspaces align $107$--$127\times$ above chance in layers 0--2 and
-$82\times$ in layer 3, yet each seed aligns almost as well with the
-\emph{cache's own} principal subspace ($97$--$123\times$ in layers 0--2,
-$86\times$ in layer 3), so the agreement is mostly shared data variance
-rather than architectural identifiability. Layers 1 and 2 keep a little
-more in their leading directions ($\phi(1) = 0.96$ and $0.82$ between
-seeds against $0.45$--$0.67$ with the data). At layer 4, each seed aligns
+normalized projection similarity of their first $d'$ columns,
+$\mathrm{NPS}(d') = \lVert V^{(1)\top}_{d'}V^{(2)}_{d'}\rVert_F^2/d'$~\cite{hu2021},
+is 1 for equal subspaces and $d'/d$ in expectation for random ones, so at
+$d'{=}8$ it can reach $128\times$ chance. Between the two seeds' per-layer
+contributions (whitened and centered, on the evaluation tail;
+\texttt{subspace.py}), the top-8 eigenspaces align $107$--$127\times$ above
+chance in layers 0--2 and $82\times$ in layer 3, yet each seed aligns almost
+as well with the \emph{cache's own} principal subspace ($97$--$123\times$ in
+layers 0--2, $86\times$ in layer 3), so the agreement is mostly shared data
+variance rather than architectural identifiability. Layers 1 and 2 agree
+more than that in their leading directions ($\mathrm{NPS}(1) = 0.96$ and
+$0.82$ between seeds against $0.45$--$0.67$ with the data), but a layer past
+the first is fit to the residual $\mathbf{y}_\ell$ that earlier layers
+leave, and each seed's contribution lies along the principal subspace of
+its own $\mathbf{y}_\ell$ about as closely as along the other seed's
+contribution ($\mathrm{NPS}(2) = 0.98$ and $0.93$ against $0.97$ and $0.91$
+in layers 1 and 2; at $d'{=}8$, $120$--$121\times$ chance against $122\times$
+and $110$--$112\times$ against $107\times$). The two seeds' residuals share
+those directions ($118\times$ in layer 1 and $95\times$ in layer 2 at
+$d'{=}8$), as both seeds' earlier layers take out the same leading
+directions, and they part with depth ($51\times$ in layer 3, $5.6\times$ in
+layer 4). Over every layer and every $d'$ from 1 to 512, the seeds agree at
+most $4\%$ more than each agrees with the larger of these two single-run
+references, the data's principal subspace and its own residual's, and by
+more than $0.5\%$ only at layer 0, whose input is the data. At layer 4, each seed aligns
 with the data $26$--$27\times$ above chance while agreeing with the other
 seed at only $11\times$, so different seeds select \emph{different}
 data-aligned subspaces. The $\topk$ SAE pair's decoder directions behave
@@ -3087,10 +3102,12 @@ at decoder cosine $0.7$ in the other seed span a subspace that the other
 seed's unmatched latents reproduce: that seed's top-64 subspace holds
 $0.342$ of their energy, against $0.355$ for their own top-64 (the
 optimum), $0.172$ for the data's top-64 principal subspace and $0.063$ by
-chance, in the same order at every rank from 8 to 512. The SAE's unstable
+chance, in the same order at every rank from 8 to 512. A seed pair of the
+same SAE on GPT-2 reads the same way: $0.230$ against $0.244$, $0.150$ and
+$0.083$ at rank 64 ($d{=}768$). The SAE's unstable
 latents thus re-express a subspace that both seeds share beyond the data's
-principal directions, which the stack's layers do only in layers 1--2's
-first few directions.
+principal directions, which no layer of the stack does beyond what it is
+fit to.
 
 \emph{Atom Gram matrices.} Evaluating within-head atom Gram structure
 (\texttt{atomgram.py}), per-layer mean row collinearity agrees to four

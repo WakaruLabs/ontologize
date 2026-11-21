@@ -67,8 +67,8 @@ both the sample partitions and the decoded directions must reproduce up
 to entry permutation. Section~\ref{sec:seeds} tested both criteria on
 hard codes across SONAR and GPT-2. Beyond layer~0, no individual head
 reproduces, nor do our layer-level diagnostics show cross-seed agreement
-beyond each model's shared alignment with the data's principal
-directions. Testing whether a full layer reproduces as a variable merge of its
+beyond each model's alignment with the principal directions of the data
+and of the residual each layer is fit to. Testing whether a full layer reproduces as a variable merge of its
 heads~\cite[Def.~37]{geiger2025}, in which individual heads form
 seed-dependent factorizations, requires a whole-layer comparison that
 translates one seed's layer code into another's. Layer~0 reproduces only
@@ -275,8 +275,9 @@ to identical held-out reconstruction error to four decimal places while
 learning substantially different reconstructions (whitened residual
 correlation of $0.30$, compared to $0.83$ between SAE seeds). Past
 layer~0, independent runs show no above-null head-level agreement across
-partitions, output contributions, subspaces beyond the data's principal
-directions, or dictionary Gram matrices on either SONAR or GPT-2
+partitions, output contributions, subspaces beyond the principal
+directions of the data and of each layer's input, or dictionary Gram
+matrices on either SONAR or GPT-2
 (including under the direct-atom design of Section~\ref{sec:gpt2hard}),
 even though individual heads remain stable across late checkpoints within
 a single run. Layer~0 reproduces at less than one fifth of the within-run

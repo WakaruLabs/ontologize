@@ -104,7 +104,7 @@ shared at 0.999 in layer 0, and at 0.96 and 0.82 between seeds in layers 1–2 a
 the data.
 - **Layer 0** is the data's principal subspace in both seeds (φ ≥ 0.93 to r = 128).
 - **Layers 1–2** agree a little beyond the data in their first 1–16 directions, and not past rank
-  32.
+  32. Their own inputs account for it (next section).
 - **Layer 3** agrees with the other seed less than with the data from rank 8 on.
 - **Layer 4's seeds share under half of what each shares with the data** from rank 2 to rank 32
   (0.39–0.47 of it), and 0.67–0.77 of it at rank 1.
@@ -123,4 +123,147 @@ uv run python experiments/seed-stability/subspace.py --mode stack \
     --a data/out/sonar/multilingual/ste_h76_init01 \
     --b data/out/sonar/multilingual/ste_h76_i01_s43 --step 369500 \
     --out data/out/sonar/seed_subspace/ste_h76_init01
+```
+
+## 2026-11-20: the stack against each layer's own input
+
+**Short version.** Layers 1–2's agreement beyond the data is the cascade's. A layer past the first
+is fit to the residual y_ℓ = x − x̂_ℓ that earlier layers leave. Each seed's contribution lies
+along the principal subspace of its own y_ℓ about as closely as along the other seed's
+contribution, and the two seeds' residuals share their leading directions. Against the larger of
+the two single-run references (the data's principal subspace, or the layer's own input's), the
+seeds agree at most 4.1% more, at any layer and rank from 1 to 512, and by more than 0.4% only
+at layer 0, whose input is the data.
+
+**Setup.** As above, same rows and checkpoints; `subspace.py --mode stack` now also takes each
+seed's layer input y_ℓ (whitened and centered) and its covariance eigenbasis. At layer 0 that is
+the data's, and the two seeds' layer-0 inputs read NPS 1.000 at every rank, as they should.
+
+**NPS(r)** (raw; between seeds | seed 42 against its own input | seed 43 against its own | the two
+inputs against each other):
+
+| layer | r = 1 | 2 | 8 | 32 |
+|---|---|---|---|---|
+| 1 | 0.956 \| 0.958 \| 0.948 \| 0.962 | 0.972 \| 0.977 \| 0.979 \| 0.966 | 0.951 \| 0.947 \| 0.934 \| 0.922 | 0.860 \| 0.874 \| 0.869 \| 0.834 |
+| 2 | 0.822 \| 0.898 \| 0.683 \| 0.743 | 0.910 \| 0.928 \| 0.933 \| 0.883 | 0.835 \| 0.873 \| 0.860 \| 0.745 | 0.705 \| 0.699 \| 0.716 \| 0.590 |
+| 3 | 0.761 \| 0.799 \| 0.764 \| 0.651 | 0.741 \| 0.771 \| 0.772 \| 0.651 | 0.642 \| 0.581 \| 0.592 \| 0.399 | 0.408 \| 0.428 \| 0.429 \| 0.279 |
+| 4 | 0.199 \| 0.164 \| 0.020 \| 0.000 | 0.154 \| 0.131 \| 0.086 \| 0.017 | 0.083 \| 0.109 \| 0.088 \| 0.044 | 0.097 \| 0.157 \| 0.149 \| 0.077 |
+
+- **Layers 1–2 follow their inputs.** The between-seed NPS is within 0.05 of the two seeds' mean
+  NPS against their own inputs at every rank, and the data's leading-direction gap (NPS(1) 0.96
+  and 0.82 between seeds, 0.45–0.67 with the data) is gone. Seed 43's layer-2 NPS(1) against its
+  own input (0.683) is the one low value; at rank 2 it reads 0.933, so its input's first two
+  directions are near a tie.
+- **The residuals part with depth.** The two seeds' inputs agree at NPS(8) 0.92, 0.75, 0.40 and
+  0.04 at layers 1–4, and at layer 4 their leading directions are orthogonal (NPS(1) 0.000).
+- **Layer 3** agrees across seeds a little more than with its own input at ranks 4–8, but less than
+  with the data, which is the larger reference there from rank 8 on.
+- **Layer 4's contributions** lie along neither their own inputs (NPS(8) 0.09–0.11) nor each
+  other (0.08), and along the data about twice as closely (0.20–0.21).
+- **Ratio to the larger reference** (between-seed NPS over the larger of the data's and own
+  input's, both seeds): at rank 8, 1.030, 1.004, 0.956, 0.955 and 0.395 for layers 0–4. Over all
+  ranks, layer 0 reads 0.995–1.041 and layers 1–4 at most 1.004.
+- **For the writeup.** The findings' results and discussion now say the seeds agree no more than
+  each agrees with the data or with its own layer's input, at most 3% more at rank 8. The
+  appendix gives the comparison under the name NPS(d′), since the writeup reserves φ, A and r.
+
+Same command as above; the input comparison is in `subspace_stack.json` under `inputs`.
+
+## 2026-11-20: queued, a GPT-2 SAE seed pair
+
+The 11-19 section left open whether the SONAR k32 pair's low agreement is SONAR's or the fit's.
+GPT-2's `gpt2_l8/sae/m12160_k32` has one seed, and it is older (2026-09-29) than the current
+`gpt2_l8` harvest files (10-01), so a seed-43 replica of it might not share its data.
+`gpt2_sae_seeds.sh` instead trains a fresh pair at sae.py's defaults, seeds 42 and 43, into
+`data/out/gpt2_l8/sae_seeds/`, as unit `gpt2-sae-seeds`, once `recipe-ladder-nonoise` has
+finished (about 20 minutes a seed, from the old run's timestamps). A three-step CPU smoke run
+trained. Then `splitting.py` and `subspace.py --mode sae` on it, beside the SONAR pair.
+
+## 2026-11-20: the GPT-2 SAE pair agrees more than SONAR's, and less than the papers'
+
+**Short version.** The same k32 recipe on GPT-2's `gpt2_l8` harvest fits far better (FVU_w 0.188
+against SONAR's 0.499) and agrees more across seeds on every lenient statistic, but stays below
+the agreement the papers report for language-model SAEs. It trained on far less data than those
+SAEs (4M distinct tokens against 300–500M), and their comparisons use other widths and sparsity
+rules, so the pair does not apportion the SONAR pair's gap among the substrate, the fit and the
+training. The subspace result carries over: the other seed reproduces the unmatched latents'
+subspace almost to the optimum, well beyond the data's.
+
+**Where.** Unit `gpt2-sae-seeds` trained `m12160_k32` and `m12160_k32_s43` at sae.py's defaults
+(20 epochs, 19,360 steps of 4,096) into `data/out/gpt2_l8/sae_seeds/`: FVU_w 0.1875 and 0.1876 on
+sae.py's held-out tail, no dead latents. Seed 42 took 1 h 35 min, against seed 43's 24 min,
+because it shared the CPU with scoring jobs. `splitting.py` read the cache's first 524,288 rows,
+as for SONAR (12,124 of 12,160 latents fire at least 50 times); `subspace.py` read 32,768 tail
+rows in the loss's whitened frame. Outputs in `data/out/gpt2_l8/splitting/m12160_k32__m12160_k32_s43/`
+and `data/out/gpt2_l8/seed_subspace/sae_k32/`.
+
+**The field's statistics** (A->B / B->A where they differ):
+
+| statistic | SONAR pair | GPT-2 pair | reported |
+|---|---|---|---|
+| decoder share, cosine > 0.7 (Leask et al.) | 0.331 / 0.334 | 0.434 / 0.434 | 0.94, two 3,072-latent L1 GPT-2 SAEs |
+| PW-MCC (Song et al.) | 0.511 (random 0.117) | 0.627 (random 0.142) | 0.818 Pythia-160M, 0.790 Gemma-2-2B |
+| mean MPPC (Wang et al.) | 0.384 / 0.385 | 0.688 / 0.688 | 0.81 on Pythia |
+
+- **The GPT-2 pair sits between SONAR's and the papers' on each.** It closes most of the gap in
+  activation correlation, about two fifths in PW-MCC and a sixth in decoder share.
+- **Decoder share over thresholds:** 0.929 above cosine 0.4, 0.80 above 0.5, 0.099 above 0.9 (both
+  ways). SONAR's: 0.49–0.50, 0.42–0.43, 0.24.
+- **MPPC above** 0.4, 0.5, 0.7 and 0.9: 0.867, 0.779, 0.547 and 0.196 (A->B).
+- **Containment reverses at strict thresholds.** A matched at τ = 0.3/0.5/0.7/0.9: 0.634 / 0.284 /
+  0.078 / 0.005, against SONAR's 0.307 / 0.235 / 0.147 / 0.030. The GPT-2 latents correlate better
+  but are contained in each other less tightly. The findings' comparison of the softmax
+  Ontologizer (at most 0.1%) with the SONAR pair (3–31%) uses the SONAR numbers.
+- **What it does not separate.** On GPT-2 the fit is better too, so the pair cannot tell SONAR's
+  lower agreement from its poorer fit. Nor does it show that the recipe falls short, since the
+  published SAEs differ in data, training length, width and sparsity:
+  - Leask et al.'s 0.94: two 3,072-latent (4×) L1 SAEs on GPT-2 small's layer-8 residual, 300M
+    OpenWebText tokens in one pass, 128-token contexts, lr 4e-4.
+  - Song et al.'s 0.818 / 0.790: TopK at k = 20 (Pythia-160M, 16,384 latents) and k = 80
+    (Gemma-2-2B, 65,536 latents), each the highest PW-MCC of a sweep over k. Pythia's trained on
+    500M Pile tokens in 244k steps, and PW-MCC rose over training (BatchTopK's had not saturated
+    at 2.5 × 10^5 steps).
+  - Wang et al.'s 0.81: L1 SAEs of 24,576 latents (32×) on Pythia-160M; no token count given.
+  - This pair: 3.97M distinct tokens (34,846 C4 documents, 128-token contexts), 79M rows seen in
+    20 passes, 12,160 latents (16×), TopK 32, lr 1e-4. The SONAR pair: 3.97M distinct rows, about
+    590M seen in some 150 passes (`sae_ladder.sh`), 5,120 latents, lr 1e-4 and then 4e-4.
+- **The test that would separate data from method** is this pair on a larger harvest. At 300M
+  tokens a float32 cache is about 920 GB, so it would stream activations or use a smaller
+  harvest. A cheaper first look is whether agreement still rises with steps on the current
+  harvest, which needs intermediate checkpoints.
+
+**Subspaces** (`--mode sae`). 43.1% and 43.2% of the live latents have a match at decoder cosine
+0.7 (SONAR 33%; Gerasimov et al. 0.746 on GPT-2). Energy share of seed 42's set, mean over 10
+size-matched draws; d = 768, so chance at r = 64 is 0.083:
+
+| set | r | own (ceiling) | other seed's | data's top-r | data's bottom-r | chance |
+|---|---|---|---|---|---|---|
+| unmatched (6,902) | 8 | 0.047 | 0.044 | 0.026 | 0.001 | 0.010 |
+| | 64 | 0.244 | 0.230 | 0.150 | 0.027 | 0.083 |
+| | 128 | 0.405 | 0.383 | 0.276 | 0.067 | 0.167 |
+| | 512 | 0.892 | 0.873 | 0.826 | 0.499 | 0.667 |
+| matched (5,238) | 8 | 0.048 | 0.045 | 0.027 | 0.001 | 0.010 |
+| | 64 | 0.247 | 0.236 | 0.159 | 0.025 | 0.083 |
+
+- **The other seed captures 94–98% of the optimum** at every rank from 8 to 512, as on SONAR
+  (96–97%).
+- **The data's top-r captures 56–72% of it for r from 8 to 128, in both sets.** On SONAR the
+  unmatched set's was 40–54% and the matched set's 75–84%, so there the matched latents lie more
+  along the data's principal directions; on GPT-2 the two sets look alike.
+
+```bash
+systemd-run --user --unit gpt2-sae-seeds -p Restart=on-failure -p RestartSec=120 \
+    --working-directory=$PWD \
+    -p StandardOutput=append:$PWD/experiments/logs/gpt2_sae_seeds.log \
+    -p StandardError=append:$PWD/experiments/logs/gpt2_sae_seeds.log \
+    /usr/bin/bash experiments/seed-stability/gpt2_sae_seeds.sh
+uv run python splitting.py --cache data/activations/gpt2_l8.npy \
+    --a data/out/gpt2_l8/sae_seeds/m12160_k32/params.npz \
+    --b data/out/gpt2_l8/sae_seeds/m12160_k32_s43/params.npz \
+    --out data/out/gpt2_l8/splitting/m12160_k32__m12160_k32_s43
+uv run python experiments/seed-stability/subspace.py --mode sae \
+    --a data/out/gpt2_l8/sae_seeds/m12160_k32/params.npz \
+    --b data/out/gpt2_l8/sae_seeds/m12160_k32_s43/params.npz \
+    --cache data/activations/gpt2_l8.npy --mse-weights data/activations/gpt2_l8.mse_weights.npy \
+    --out data/out/gpt2_l8/seed_subspace/sae_k32
 ```

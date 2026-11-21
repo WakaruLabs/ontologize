@@ -14,13 +14,15 @@
 # first ten, one change each. The rest remove or rescale s_bcossim and
 # s_support together and apart, remove s_L1F with both of them, and then
 # s_Hm with all three, which leaves no auxiliary weight (with a seed-43
-# replica of that arm); a
+# replica of that arm, and that arm without any training noise at seeds 42
+# and 43); a
 # rescaled weight is the recipe's divided by 50, as --s-hm 2e-6 is, the
 # factor by which mc4_sent16's whitened MSE is below mc4_4M's. Each arm
 # keeps only its final checkpoint (--max-to-keep 1
 # --checkpoint-each 50000): collapse is read from loss.csv, which logs every
 # 250 steps. The arms go in pairs, both architectures per arm, in the order
-# below, so a partial queue leaves complete comparisons. Training waits
+# below, so a partial queue leaves complete comparisons; ARCHS in the
+# environment names fewer architectures. Training waits
 # until the GPU is idle (utilization at most 10% at three checks five
 # minutes apart), as full_runs.sh does. Every trainer resumes from its own
 # checkpoint, so this runs as a systemd unit with Restart=on-failure, and a
@@ -55,10 +57,16 @@ declare -A flags=(
     [nobcos_nosupp_nol1f]="--s-bcossim 0 --s-support 0 --s-l1f 0"
     [nobcos_nosupp_nol1f_nohm]="--s-bcossim 0 --s-support 0 --s-l1f 0 --s-hm 0"
     [nobcos_nosupp_nol1f_nohm_s43]="--s-bcossim 0 --s-support 0 --s-l1f 0 --s-hm 0 --seed 43"
+    [nobcos_nosupp_nol1f_nohm_nonoise]="--s-bcossim 0 --s-support 0 --s-l1f 0 --s-hm 0 --sd-k 0 --sd-f 0 --p-drop 0"
+    [nobcos_nosupp_nol1f_nohm_nonoise_s43]="--s-bcossim 0 --s-support 0 --s-l1f 0 --s-hm 0 --sd-k 0 --sd-f 0 --p-drop 0 --seed 43"
     [bcos2e-7_supp2e-8]="--s-bcossim 2e-7 --s-support 2e-8"
     [bcos2e-7]="--s-bcossim 2e-7" [supp2e-8]="--s-support 2e-8")
 for arm in "${arms[@]}"; do
     [ -v "flags[$arm]" ] || { echo "no arm $arm" >&2; exit 1; }
+done
+read -ra archs <<< "${ARCHS:-ste_h76_init01 ste_k128_h54_direct}"
+for a in "${archs[@]}"; do
+    [ -v "arch[$a]" ] || { echo "no architecture $a" >&2; exit 1; }
 done
 
 # idle: utilization at most 10% at five samples two seconds apart
@@ -80,7 +88,7 @@ dd if=$cache of=/dev/null bs=64M count=$(( (rows * 4096 + 128) / (64 << 20) + 1 
 
 mkdir -p $out
 for arm in "${arms[@]}"; do
-    for a in ste_h76_init01 ste_k128_h54_direct; do
+    for a in "${archs[@]}"; do
         name=${a}_${wt}_$arm
         /usr/bin/uv run python experiments/adam-eps/train_eps.py $recipe \
             ${arch[$a]} ${flags[$arm]} --out $out/$name \

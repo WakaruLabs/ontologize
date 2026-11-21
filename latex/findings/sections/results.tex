@@ -796,7 +796,7 @@ what is compared & stack & flat & null \\
 \midrule
 head partitions (mean matched NMI) & 0.0121 & 0.0177 & 0.0048 \\
 head contributions (centered cosine) & 0.0074 & --- & 0.0015 \\
-per-layer subspace, rank 8 & = data's & --- & see text \\
+per-layer subspace, rank 8 & $\le 1.03\times$ data's or input's & --- & see text \\
 atom Grams, entries matched & 1.05--1.19$\times$ chance & --- & within-layer pairing \\
 reconstruction (residual correlation) & 0.30 & 0.34 & 0.53 (same run) \\
 \bottomrule
@@ -808,8 +808,9 @@ Hungarian-matched head partitions agree barely above the permutation null
 comparing a single run against its own checkpoint 19{,}500 steps earlier
 yields an NMI of $0.38$. Centered per-head output contributions show
 similarly negligible alignment ($0.0074$ vs.\ a $0.0015$ null). Rank-8
-per-layer subspaces overlap across seeds no more than each run overlaps with
-the data's leading principal directions, and per-head atom Gram matrices
+per-layer subspaces overlap across seeds at most $3\%$ more than each run's
+overlap with the leading principal directions of the data or of the
+residual that layer is fit to, whichever is larger, and per-head atom Gram matrices
 align near chance ($1.05$--$1.19\times$ random within-layer pairing) even
 under optimal entry matching, whereas within a single run each head's Gram
 matrix matches its earlier checkpoint at $8.5$--$10.7\times$ chance
@@ -851,10 +852,16 @@ same-size GPT-2 SAEs~\cite{leask2025}; its Hungarian-matched decoder
 cosine is $0.51$ (random directions $0.12$), against $0.79$--$0.82$ for
 $\topk$ SAEs on Pythia and Gemma~\cite{song2025positionmechanisticinterpretabilityprioritize};
 and its latents' best activation correlation with the other seed averages
-$0.38$, against $0.81$ across SAE seeds on Pythia~\cite{wang2024}. This SAE
-leaves half the variance unexplained ($\fvu$ $0.499$), so whether the gap
-comes from SONAR or from the fit is open; a seed pair of GPT-2 SAEs trained
-here would separate the two.
+$0.38$, against $0.81$ across SAE seeds on Pythia~\cite{wang2024}. A seed
+pair of the same SAE trained on the residual leaving GPT-2's block 8, which
+it fits far better ($\fvu$ $0.188$ against SONAR's $0.499$), lands between
+the two on each statistic: $0.43$, $0.63$ (random directions $0.14$) and
+$0.69$. That pair trained on 4~million distinct tokens, against 300--500
+million for the published SAEs that report it, and those comparisons use
+other widths and sparsity rules: Leask et al.'s 94\% is between two
+3{,}072-latent L1-penalized SAEs, and Song et al.'s $0.82$ is the best of a
+sweep over $k_{\mathrm{SAE}}$. These numbers therefore do not apportion the
+gap among the substrate, the fit and the training.
 Theoretically, static marginal reconstruction objectives cannot identify
 latent factors without auxiliary side information or structural assumptions
 matched to the data-generating process~\cite{locatello2019,hillar2015},
