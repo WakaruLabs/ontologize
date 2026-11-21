@@ -532,6 +532,32 @@ def test_the_readout_reproduces_states_that_are_its_features_mapped(tmp_path):
         readout.main(["--source", str(c), "--target", str(tgt), "--out", str(dst)])
 
 
+def test_the_row_readout_sees_x_n_alone(tmp_path):
+    c, x, tgt, P, T, rows, F = planted_harvest(tmp_path)
+    np.testing.assert_array_equal(readout.row_features(x[:5], np.array([0, 2])), x[:5])
+    (tmp_path / "out").mkdir()
+    r2 = {}
+    for kind in ("context", "row"):
+        dst = tmp_path / "out" / f"{kind}.npy"
+        readout.main(["--source", str(c), "--source-weights", str(tmp_path / "w.npy"),
+                      "--target", str(tgt), "--out", str(dst), "--features", kind,
+                      "--fit-docs", "1000", "--holdout", "150", "--chunk", "50", "--alpha", "1e-9"])
+        meta = json.loads((tmp_path / "out" / f"{kind}.meta.json").read_text())
+        r2[kind] = meta["r2"]["tail"]
+        assert meta["fit"]["features"] == readout.DESCRIBED[kind]
+    # the planted states read the context, which x_n alone cannot supply
+    assert r2["context"] > 0.9999 and r2["row"] < 0.95
+    # the row readout is the best affine map of x_n on the tail, up to the fit
+    y = np.load(tmp_path / "out" / "row.npy").astype(np.float64)
+    h = np.load(tgt).astype(np.float64)
+    tail = slice(P, None)
+    X = np.c_[x[rows][tail], np.ones(len(h) - P)]
+    best = h[tail] - X @ np.linalg.lstsq(X, h[tail], rcond=None)[0]
+    sst = ((h[tail] - h[tail].mean(0)) ** 2).sum()
+    assert r2["row"] > 1 - (best ** 2).sum() / sst - 0.05
+    assert np.isclose(r2["row"], 1 - ((y[tail] - h[tail]) ** 2).sum() / sst, atol=1e-3)
+
+
 def test_the_fixed_mix_adds_the_earlier_mean_and_keeps_the_sources_weights(tmp_path):
     import ctxmean
     c, x, tgt, P, T, rows, F = planted_harvest(tmp_path)

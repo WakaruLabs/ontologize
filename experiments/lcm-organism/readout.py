@@ -1,6 +1,7 @@
 """An LCM state's linear readout from its row and its context's mean: the control for context averaging.
 
     JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/readout.py
+    JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/readout.py --features row
 
 Gate B (stateinput.py's `x_context`) found that a ridge from x_n, the mean of
 the document's earlier rows and an indicator of n = 0 explains about 70% of
@@ -17,6 +18,11 @@ rows of n's document (0 at n = 0). W and b are fitted, with
 from the harvest's prefix (seed `--seed`), against the harvest's own states.
 The held-out R^2 on the scored tail (the last 32,768 rows, snapped to whole
 documents) should read Gate B's.
+
+`--features row` reads from x_n alone (Gate B's `x`): y_n = W^T x_n + b. It
+keeps how the LCM reshapes a sentence's own directions and drops the context,
+which separates the two parts of the readout above. Its default output is
+`lcm_readout_x_b4.npy`.
 
 The output is laid out as the target harvest (harvest_lcm.py), as
 recolour.py lays out its rows: the same rows in the same order, with the
@@ -67,6 +73,18 @@ def context_features(x: Float[np.ndarray, "m d"], first: Int[np.ndarray, "k"]
     return np.concatenate([x64, mean, (count == 0)[:, None]], 1).astype(np.float32)
 
 
+def row_features(x: Float[np.ndarray, "m d"], first: Int[np.ndarray, "k"]
+                 ) -> Float[np.ndarray, "m d"]:
+    """x_n alone: stateinput.row_features' `x`. `first` is unused."""
+    return np.asarray(x, np.float32)
+
+
+FEATURES = {"context": context_features, "row": row_features}
+DEFAULT_OUT = {"context": "data/activations/lcm-organism/lcm_readout_b4.npy",
+               "row": "data/activations/lcm-organism/lcm_readout_x_b4.npy"}
+DESCRIBED = {"context": "x_n, earlier mean, 1{n = 0}", "row": "x_n"}
+
+
 def doc_chunks(docstart: Int[np.ndarray, "k"], cuts: List[int], n: int, chunk: int
                ) -> List[Tuple[int, int]]:
     """[lo, hi) ranges that cover [0, n), each ending at a document
@@ -92,11 +110,12 @@ def source_span(lo: int, hi: int, P: int, T: int) -> slice:
 
 
 def fit_readout(x_s: np.ndarray, h: np.ndarray, docstart: Int[np.ndarray, "k"],
-                docs: Int[np.ndarray, "f"], alpha: float, b: int = 512
+                docs: Int[np.ndarray, "f"], alpha: float, b: int = 512,
+                features=context_features
                 ) -> Tuple[Float[np.ndarray, "e d"], Float[np.ndarray, "d"], int]:
-    """The ridge from context_features to the harvest's states, on every row
-    of the documents numbered `docs` (indices into `docstart`, all in the
-    prefix). Returns (W, b, rows fitted)."""
+    """The ridge from `features` (context_features or row_features) to the
+    harvest's states, on every row of the documents numbered `docs` (indices
+    into `docstart`, all in the prefix). Returns (W, b, rows fitted)."""
     ends = np.r_[docstart[1:], len(h)]
     ridge = None
     for i in range(0, len(docs), b):
@@ -105,7 +124,7 @@ def fit_readout(x_s: np.ndarray, h: np.ndarray, docstart: Int[np.ndarray, "k"],
         k, lens = k[lens > 0], lens[lens > 0]
         rows = np.concatenate([np.arange(docstart[j], docstart[j] + n) for j, n in zip(k, lens)])
         first = np.r_[0, np.cumsum(lens)[:-1]]
-        F = context_features(np.asarray(x_s[rows], np.float32), first)
+        F = features(np.asarray(x_s[rows], np.float32), first)
         if ridge is None:
             ridge = Ridge(F.shape[1], h.shape[1])
         ridge.add(F, np.asarray(h[rows], np.float32))
@@ -122,7 +141,10 @@ def main(argv=None) -> Path:
                    help="the control's weights on it, which the loss scale is matched to")
     p.add_argument("--target", default="data/activations/lcm-organism/lcm_b4.npy",
                    help="a harvest: its rows and the states the ridge predicts")
-    p.add_argument("--out", default="data/activations/lcm-organism/lcm_readout_b4.npy")
+    p.add_argument("--features", choices=sorted(FEATURES), default="context",
+                   help="context: x_n, the earlier mean and 1{n = 0}; row: x_n alone")
+    p.add_argument("--out", default=None, help="default: lcm_readout_b4.npy, or "
+                   "lcm_readout_x_b4.npy for --features row, in data/activations/lcm-organism")
     p.add_argument("--fit-docs", type=int, default=20000, help="prefix documents for the fit")
     p.add_argument("--alpha", type=float, default=1e-3)
     p.add_argument("--holdout", type=int, default=32768, help="the scored tail, snapped")
@@ -131,9 +153,10 @@ def main(argv=None) -> Path:
     cfg = p.parse_args(argv)
     resolve = lambda s: Path(s) if Path(s).is_absolute() else ROOT / s  # noqa: E731
     src, src_w, tgt, dst = (resolve(s) for s in (cfg.source, cfg.source_weights, cfg.target,
-                                                 cfg.out))
+                                                 cfg.out or DEFAULT_OUT[cfg.features]))
     if dst.exists():
         raise SystemExit(f"{dst} exists")
+    features = FEATURES[cfg.features]
 
     mapping = row_map(tgt)
     if mapping is None:
@@ -156,7 +179,7 @@ def main(argv=None) -> Path:
     prefix_docs = np.flatnonzero(ds < P)
     docs = np.sort(np.random.default_rng(cfg.seed).choice(
         prefix_docs, size=min(cfg.fit_docs, len(prefix_docs)), replace=False))
-    W, b0, fit_rows = fit_readout(x_s, h, ds, docs, cfg.alpha)
+    W, b0, fit_rows = fit_readout(x_s, h, ds, docs, cfg.alpha, features=features)
     print(f"fit: {len(docs)} documents, {fit_rows} rows", flush=True)
 
     W32, b32 = W.astype(np.float32), b0.astype(np.float32)
@@ -167,7 +190,7 @@ def main(argv=None) -> Path:
     sse = {"tail": 0.0, "scored": 0.0}
     for lo, hi in doc_chunks(ds, [P, m - held], m, cfg.chunk):
         first = np.unique(ds[(ds >= lo) & (ds < hi)] - lo)
-        F = context_features(np.asarray(x_s[source_span(lo, hi, P, T)], np.float32), first)
+        F = features(np.asarray(x_s[source_span(lo, hi, P, T)], np.float32), first)
         y = F @ W32 + b32
         if lo >= P:
             e = float(((y.astype(np.float64) - np.asarray(h[lo:hi], np.float64)) ** 2).sum())
@@ -210,7 +233,7 @@ def main(argv=None) -> Path:
                      "note": "harvest row i is cache row i below P, cache row T + i - P after"},
             "holdout": {"rows": cfg.holdout, "harvest": held},
             "fit": {"docs": int(len(docs)), "rows": fit_rows, "seed": cfg.seed,
-                    "alpha": cfg.alpha, "features": "x_n, earlier mean, 1{n = 0}"},
+                    "alpha": cfg.alpha, "features": DESCRIBED[cfg.features]},
             "r2": r2, "conversion": conv,
             "mse_weights": {"rows": P, "max": float(w.max()), "median": float(np.median(w))},
             "mse_weights_matched_scale": matched}

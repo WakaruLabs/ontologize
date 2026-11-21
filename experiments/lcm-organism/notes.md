@@ -1,5 +1,87 @@
 # lcm-organism: notes
 
+## 2026-11-21: the readout from x_n alone: the LCM's map of a sentence by itself gives its lead on all heads, and the context adds within a language
+
+**In short.**
+- **On all heads, the sentence alone is enough.** Dictionaries on LCM block 4's linear readout from
+  x_n alone close 84% of SONAR's gap to the LCM, against 86% with the context's mean as well (two
+  entries below). They also reach the LCM's head-specific part, 0.0026.
+- **Within a language, the context matters.** The readout from x_n alone closes 38%, and with the
+  context's mean 62%. The fixed mix, the same context without the LCM's map, closes 20% (entry
+  below).
+- **So the LCM's lead has two parts.** How it reshapes each sentence's own directions carries the lead
+  on all heads. How it combines the sentence with its context carries most of what it adds within a
+  language. Beyond any linear readout, the LCM's states add the last 38% within a language.
+
+**The control** (`readout.py --features row`).
+- **The map.** y_n = Wᵀx_n + b: Gate B's `x` ridge, fitted as the full readout on the same 20,000
+  prefix documents, and written into `lcm_readout_x_b4.npy`.
+- **Fidelity.** Its held-out R² is 0.543 on the scored tail (0.542 on the whole tail), Gate B's 0.544.
+- **Its spectrum** is the lowest-dimensional of any arm, with nearly the LCM's share between
+  languages:
+
+| Arm (the tail) | Participation ratio | Effective rank | Directions for 50% / 90% | Share between languages | Within-language participation ratio |
+|---|---|---|---|---|---|
+| SONAR | 413 | 701 | 211 / 711 | 0.043 | 461 |
+| LCM, block 4 | 141 | 315 | 63 / 366 | 0.154 | 143 |
+| Readout, x_n and context | 122 | 255 | 52 / 294 | 0.153 | 130 |
+| Readout, x_n alone | 98 | 212 | 41 / 263 | 0.147 | 108 |
+
+**Runs.** `ARMS=lcm_readout_x phase2.sh train`, then `score`, on the RTX 3090, as for the other
+readout arm: seeds 42 and 43 to step 46,250, about 2 hours each, scored at `highest`.
+
+**The readouts,** beside the other arms' seeds 42 and 43:
+
+| Arm | All 380 heads: matched NMI (null) | First 38 heads, within language (null) | Gap closed, all heads / within | Head-specific part | Share between languages | FVU_w, each seed |
+|---|---|---|---|---|---|---|
+| LCM, block 4 | 0.0340 (0.0048) | 0.1269 (0.0495) | | 0.0026 | 0.154 | 0.2820 / 0.2812 |
+| Readout, x_n and context | 0.0316 (0.0048) | 0.1043 (0.0494) | 86% / 62% | 0.0026 | 0.153 | 0.2746 / 0.2727 |
+| **Readout, x_n alone** | **0.0313** (0.0048) | **0.0907** (0.0495) | **84% / 38%** | **0.0026** | 0.147 | 0.2481 / 0.2475 |
+| Fixed mix | 0.0197 (0.0048) | 0.0812 (0.0508) | 17% / 20% | 0.0015 | 0.090 | 0.4364 / 0.4356 |
+| SONAR recoloured | 0.0206 (0.0048) | 0.0751 (0.0508) | 22% / 10% | 0.0016 | 0.072 | 0.3241 / 0.3236 |
+| SONAR, TPU | 0.0169 (0.0048) | 0.0692 (0.0507) | | 0.0013 | 0.043 | 0.4593 / 0.4585 |
+| Untrained LCM | 0.0155 (0.0048) | 0.0749 (0.0509) | −8% / 9% | 0.0012 | 0.057 | 0.4370 / 0.4370 |
+
+The gap closed is the arm's excess over the null, as a share of the way from SONAR's to the LCM's.
+
+**What it shows.**
+- **The gap.** The excess is 0.0265 on all heads, against the LCM's 0.0292 and SONAR's 0.0120. Within
+  a language it is 0.041, against 0.077 and 0.019.
+- **The two readouts differ only in the context.** They have nearly the same share between languages
+  (0.147 and 0.153) and the same agreement on all heads (0.0265 and 0.0268). They part only within a
+  language (0.041 against 0.055), which is the context's contribution through the LCM's map.
+- **Error.** Its FVU_w, 0.248, is the lowest of any arm, as its dimension would give.
+- **Without the context, adjacent rows are not alike.** Its copy baseline reads 1.056 (SONAR 1.533,
+  the LCM 0.439). Its next-sentence FVU_w is 0.97 (ridge 0.715).
+
+**Across the seven arms,** both scores rise with the share of the variance between languages: Pearson
+0.98 on all heads and 0.88 within a language (Spearman 0.93 and 1.00). That is seven points. The
+within-language score holds language fixed, so the share can at most mark something the LCM's map
+does.
+
+**What it means.**
+- **The lead on all heads comes from the LCM's map of each sentence alone.** That map moves far more
+  of the variance between languages (0.043 to 0.147). The recoloured control had the LCM's spectrum
+  with SONAR's split between languages (0.072), and it closed 22%. So the language structure the map
+  brings forward, more than its dimension, is the likelier carrier.
+- **Within a language,** combining the sentence with its context through the LCM's map carries 24
+  points of the gap. What the LCM computes beyond its linear readouts carries the last 38.
+
+**Caveats.**
+- **Dimension.** This is the lowest-dimensional arm (participation ratio 98), so some of its agreement
+  on all heads may be dimension.
+- **Seeds.** Two, on one LCM at one block.
+
+```bash
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/readout.py --features row
+A=data/activations/lcm-organism
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/spectrum.py \
+    --arm lcm_readout_x_b4 $A/lcm_readout_x_b4.npy $A/lcm_readout_x_b4.mse_weights_matched.npy \
+    --out data/out/lcm-organism/spectrum_readout_x
+ARMS=lcm_readout_x experiments/lcm-organism/phase2.sh train
+ARMS=lcm_readout_x experiments/lcm-organism/phase2.sh score
+```
+
 ## 2026-11-21: the fixed-mix control: SONAR's row plus its document's earlier mean agrees across seeds little more than SONAR
 
 **In short.**
@@ -61,7 +143,8 @@ arm's weights: how alike adjacent rows are.
 - **What the LCM contributes here is a linear map,** the readout's matrices on x_n and on the context
   mean. They could matter for how they weigh the context against the row, or for how they reshape
   x_n's own directions: the readout is far lower-dimensional than the mix. A readout from x_n alone
-  (Gate B's `x`, R² 0.544 for seed 42 at block 4) would separate the two.
+  (Gate B's `x`, R² 0.544 for seed 42 at block 4) would separate the two (the entry above: the
+  reshaping carries the lead on all heads, the context part of it within a language).
 
 **Caveats.**
 - **One weight,** w = 1.
