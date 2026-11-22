@@ -22,7 +22,16 @@ with the real row's language: if it reproduces as SONAR does, language is
 the structure that makes SONAR's partitions reproducible.
 `--within-language` runs it on the cache's own rows less each row's
 language mean (from the same mixture.npz), which removes the part of that
-structure the means carry. `--ckpt` adds, per layer of a stack, each head's best
+structure the means carry. `--marginals pca ica` runs it on copies of the
+cache's own rows that keep each coordinate's distribution in a frame and
+break every tie between coordinates (`marginal_copy`): "pca" keeps each
+whitened principal direction's marginal, its skew, tails and modes; "ica"
+keeps each FastICA source's, so the copy is an independent-components model
+of the rows. Between the Gaussian copy and the cache they say whether the
+reproducible cells come from a few oddly shaped directions or from how
+directions combine; `coordinates_<frame>.csv` gives each direction's
+variance share, skew, excess kurtosis and bimodality coefficient. `--ckpt`
+adds, per layer of a stack, each head's best
 NMI against the k-means partitions at the model's k: whether the heads are
 near the data's own k-means cells.
 
@@ -46,6 +55,10 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 sys.path.insert(0, str(ROOT / "experiments" / "ste-arm"))
 sys.path.insert(0, str(HERE))
+
+# the data sets whose tail row i is drawn for the cache's tail row i, so the
+# row's language applies to it
+ROW_FOR_ROW = {"cache", "mixture", "within"}
 
 
 def kmeans_pp(X: Float[np.ndarray, "n d"], k: int,
@@ -108,6 +121,108 @@ def fvu(X: Float[np.ndarray, "n d"], C: Float[np.ndarray, "k d"],
     return float(err / ((X64 - X64.mean(0)) ** 2).sum())
 
 
+def principal(X: Float[np.ndarray, "n d"], rel_tol: float = 1e-9
+              ) -> tuple[Float[np.ndarray, "d"], Float[np.ndarray, "p"],
+                         Float[np.ndarray, "d p"]]:
+    """(mean, eigenvalues in descending order, eigenvectors) of the rows'
+    covariance, keeping the directions whose variance exceeds rel_tol of
+    the largest."""
+    mu = X.astype(np.float64).mean(0)
+    Xc = X.astype(np.float64) - mu
+    lam, V = np.linalg.eigh(Xc.T @ Xc / len(X))
+    lam, V = lam[::-1], V[:, ::-1]
+    keep = lam > rel_tol * lam[0]
+    return mu, lam[keep], V[:, keep]
+
+
+def symmetric_orth(W: Float[np.ndarray, "p p"]) -> Float[np.ndarray, "p p"]:
+    """(W Wᵀ)^(-1/2) W: the orthogonal matrix nearest W."""
+    s, U = np.linalg.eigh(W.astype(np.float64) @ W.T.astype(np.float64))
+    return (U / np.sqrt(np.clip(s, 1e-12, None))) @ U.T @ W.astype(np.float64)
+
+
+def fastica(Z: Float[np.ndarray, "n p"], seed: int, iters: int = 200,
+            tol: float = 1e-4) -> tuple[Float[np.ndarray, "p p"], int, float]:
+    """Symmetric FastICA (Hyvärinen 1999) with the log-cosh contrast on
+    sphered rows (zero mean, identity covariance): the orthogonal W whose
+    rows' projections Z Wᵀ are as far from Gaussian as the contrast finds.
+    Returns W, the iterations run, and the last step's largest change,
+    max |1 − |w_new · w||| over rows (below tol: converged)."""
+    rng = np.random.default_rng(seed)
+    p = Z.shape[1]
+    W = symmetric_orth(rng.standard_normal((p, p)))
+    Z32 = Z.astype(np.float32)
+    lim = np.inf
+    for it in range(1, iters + 1):
+        G = np.tanh(Z32 @ W.T.astype(np.float32))
+        gp = (1.0 - G.astype(np.float64) ** 2).mean(0)
+        W_new = symmetric_orth((G.T @ Z32).astype(np.float64) / len(Z)
+                               - gp[:, None] * W)
+        lim = float(np.abs(np.abs((W_new * W).sum(1)) - 1.0).max())
+        W = W_new
+        if lim < tol:
+            break
+    return W, it, lim
+
+
+def shuffle_columns(Y: Float[np.ndarray, "n p"], seed: int
+                    ) -> Float[np.ndarray, "n p"]:
+    """Each column permuted on its own: every column keeps its values,
+    and nothing ties one column's value in a row to another's."""
+    rng = np.random.default_rng(seed)
+    return np.stack([Y[rng.permutation(len(Y)), j] for j in range(Y.shape[1])], 1)
+
+
+def shape_stats(Y: Float[np.ndarray, "n p"]) -> dict:
+    """Per column: skewness, excess kurtosis, and Sarle's bimodality
+    coefficient (skew² + 1) / (kurtosis + 3(n−1)²/((n−2)(n−3))), which is
+    1/3 for a Gaussian, 5/9 for a uniform, and above 5/9 suggests two
+    modes unless the column is strongly skewed (an exponential reads 5/9)."""
+    n = len(Y)
+    Yc = Y.astype(np.float64) - Y.mean(0)
+    sd = Yc.std(0)
+    skew = (Yc ** 3).mean(0) / sd ** 3
+    kurt = (Yc ** 4).mean(0) / sd ** 4 - 3.0
+    bc = (skew ** 2 + 1) / (kurt + 3 * (n - 1) ** 2 / ((n - 2) * (n - 3)))
+    return {"skew": skew, "kurtosis": kurt, "bimodality": bc}
+
+
+def marginal_copy(train: Float[np.ndarray, "n d"], tail: Float[np.ndarray, "m d"],
+                  frame: str, seed: int = 0, ica_iters: int = 200
+                  ) -> tuple[Float[np.ndarray, "n d"], Float[np.ndarray, "m d"], dict]:
+    """Copies of the training and tail rows that keep each coordinate's
+    distribution in a frame fitted on the training rows and nothing that
+    ties coordinates together: every coordinate's column is permuted on its
+    own, in the training rows and the tail separately. `frame` "pca" is the
+    rows' principal directions, so the copy keeps the covariance and every
+    principal direction's marginal (its skew, tails and modes); "ica" is
+    FastICA's sources in the sphered principal frame, so the copy is
+    exactly an independent-components model with the rows' own source
+    marginals. Directions with no variance are left out of the copy. The
+    dict has, per coordinate of the frame, its share of the variance and
+    `shape_stats` on the training rows, and for "ica" how FastICA ended."""
+    mu, lam, V = principal(train)
+    if frame == "pca":
+        M = V.T                                          # (p, d): coordinate -> row
+        to = lambda X: (X.astype(np.float64) - mu) @ V
+        info = {}
+    elif frame == "ica":
+        sphere = V / np.sqrt(lam)
+        W, it, lim = fastica((train.astype(np.float64) - mu) @ sphere, seed,
+                             ica_iters)
+        M = W @ (V * np.sqrt(lam)).T                     # Y M + mu = X
+        to = lambda X: (X.astype(np.float64) - mu) @ sphere @ W.T
+        info = {"ica_iterations": it, "ica_last_change": lim}
+    else:
+        raise ValueError(f"unknown frame {frame!r}")
+    Yt, Ye = to(train), to(tail)
+    var = (M ** 2).sum(1) * Yt.var(0)
+    stats = {"variance_share": var / var.sum(), **shape_stats(Yt), **info}
+    back = lambda Y: (Y @ M + mu).astype(np.float32)
+    return (back(shuffle_columns(Yt, 2 * seed)),
+            back(shuffle_columns(Ye, 2 * seed + 1)), stats)
+
+
 def seed_table(train: Float[np.ndarray, "n d"], tail: Float[np.ndarray, "m d"],
                k: int, seeds: list[int], perm_seed: int = 0) -> dict:
     """Every seed's tail partition and FVU, and every pair's NMI beside the
@@ -141,8 +256,10 @@ def head_table(codes_: Int[np.ndarray, "heads m"], layer: Int[np.ndarray, "heads
             for l in np.unique(layer)}
 
 
-def rows(cfg) -> dict:
-    """Training rows and tail rows, whitened, for each data set."""
+def rows(cfg) -> tuple[dict, dict]:
+    """Training rows and tail rows, whitened, for each data set, with the
+    tail in the cache's own frame for the heads (None for a copy made in
+    the whitened frame); and each marginal copy's per-coordinate table."""
     sw = np.sqrt(np.load(cfg.mse_weights)).astype(np.float32)
     X = np.load(cfg.cache, mmap_mode="r")
     idx = np.sort(np.random.default_rng(0).choice(cfg.prefix, cfg.train_rows,
@@ -150,6 +267,12 @@ def rows(cfg) -> dict:
     out = {"cache": (np.asarray(X[idx], np.float32) * sw,
                      np.asarray(X[-cfg.tail_rows:], np.float32) * sw,
                      np.asarray(X[-cfg.tail_rows:], np.float32))}
+    shapes = {}
+    for frame in cfg.marginals:
+        print(f"{frame} copy: fitting the frame", flush=True)
+        T, E, shapes[frame] = marginal_copy(*out["cache"][:2], frame,
+                                            ica_iters=cfg.ica_iters)
+        out[frame] = (T, E, None)
     if cfg.gauss:
         from gausscopy import BLOCK, block
         g = Path(cfg.gauss)
@@ -177,7 +300,27 @@ def rows(cfg) -> dict:
         T = np.asarray(X[idx], np.float32) - Mt
         E = np.asarray(X[-cfg.tail_rows:], np.float32) - Me
         out["within"] = (T * sw, E * sw, E)
-    return out
+    return out, shapes
+
+
+def write_shapes(path: Path, st: dict) -> dict:
+    """A copy's per-coordinate table as CSV, and a summary of it."""
+    cols = ("variance_share", "skew", "kurtosis", "bimodality")
+    with open(path, "w") as f:
+        f.write("coordinate," + ",".join(cols) + "\n")
+        for i in range(len(st["skew"])):
+            f.write(f"{i}," + ",".join(f"{st[c][i]:.6g}" for c in cols) + "\n")
+    kurt, bc = st["kurtosis"], st["bimodality"]
+    top = np.argsort(-np.abs(kurt))[:5]
+    return {"coordinates": int(len(kurt)),
+            "abs_kurtosis_over_1": int((np.abs(kurt) > 1).sum()),
+            "bimodality_over_5/9": int((bc > 5 / 9).sum()),
+            "top_abs_kurtosis": [{"coordinate": int(i),
+                                  "variance_share": float(st["variance_share"][i]),
+                                  "skew": float(st["skew"][i]),
+                                  "kurtosis": float(kurt[i]),
+                                  "bimodality": float(bc[i])} for i in top],
+            **{k: st[k] for k in ("ica_iterations", "ica_last_change") if k in st}}
 
 
 def main() -> None:
@@ -199,6 +342,10 @@ def main() -> None:
     p.add_argument("--within-language", default=None,
                    help="mixture.npz again: the cache's own rows less their "
                         "language's mean")
+    p.add_argument("--marginals", nargs="*", default=[], choices=["pca", "ica"],
+                   help="copies of the cache's rows that keep each coordinate's "
+                        "distribution in this frame and nothing that ties them")
+    p.add_argument("--ica-iters", type=int, default=200)
     p.add_argument("--ckpt", default=None, help="a stack whose heads to compare")
     p.add_argument("--step", type=int, default=0)
     p.add_argument("--temperature", type=float, default=0.00015)
@@ -207,7 +354,16 @@ def main() -> None:
     out = Path(cfg.out)
     out.mkdir(parents=True, exist_ok=True)
 
-    data = rows(cfg)
+    data, shapes = rows(cfg)
+    summary = {}
+    for frame, st in shapes.items():
+        summary[f"{frame}_coordinates"] = s = write_shapes(
+            out / f"coordinates_{frame}.csv", st)
+        print(f"{frame} frame: {s['abs_kurtosis_over_1']} of {s['coordinates']} "
+              f"coordinates with |excess kurtosis| > 1, "
+              f"{s['bimodality_over_5/9']} with bimodality > 5/9"
+              + (f"; FastICA {s['ica_iterations']} iterations, last change "
+                 f"{s['ica_last_change']:.2e}" if frame == "ica" else ""), flush=True)
     L = np.load(Path(cfg.cache).with_suffix(".langs.npy"), mmap_mode="r")
     _, lang = np.unique(np.asarray(L[-cfg.tail_rows:]), return_inverse=True)
     n_lang = int(lang.max()) + 1
@@ -215,7 +371,6 @@ def main() -> None:
     if cfg.ckpt:
         from partition import codes
         heads = codes(cfg.ckpt, cfg.step, cfg.temperature, data["cache"][2], 256)
-    summary = {}
     for name, (train, tail, _) in data.items():
         summary[name] = {}
         for k in cfg.ks:
@@ -226,7 +381,7 @@ def main() -> None:
                   f"FVU {np.mean(t['fvu']):.4f} [{min(t['fvu']):.4f}, "
                   f"{max(t['fvu']):.4f}]", flush=True)
             row = {key: v for key, v in t.items() if key != "labels"}
-            if name != "gauss":   # rows that stand for the tail's own rows
+            if name in ROW_FOR_ROW:   # rows that stand for the tail's own rows
                 from partition import nmi_matrix
                 row["language_nmi"] = [
                     float(nmi_matrix(lab[None], k, lang[None], n_lang)[0, 0])

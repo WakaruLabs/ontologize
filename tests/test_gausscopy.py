@@ -144,3 +144,19 @@ def test_mixture_rows_follow_their_labels_and_are_deterministic():
         pass
     else:
         raise AssertionError("an unknown label was drawn")
+
+
+def test_sae_gauss_trains_on_the_training_stream_and_scores_the_heldout_tail(tmp_path):
+    from sae_gauss import gauss_rows, stream_rows
+    path, _, _ = _planted(tmp_path)
+    z = np.load(path)
+    mean, F = z["mean"].astype(np.float32), z["factor"].astype(np.float32)
+    n = BLOCK + 100
+    T = stream_rows(mean, F, n)
+    train = GaussianSource(path, n, seed=0)
+    assert np.allclose(T[[0, BLOCK - 1, BLOCK, n - 1]],
+                       np.stack([train[i] for i in (0, BLOCK - 1, BLOCK, n - 1)]))
+    write_rows(tmp_path / "eval.npy", mean, F, 300, seed=1)
+    T2, E = gauss_rows(tmp_path, n, 200)
+    assert np.array_equal(T2, T)
+    assert np.array_equal(E, np.load(tmp_path / "eval.npy")[-200:])

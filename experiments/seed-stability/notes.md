@@ -633,3 +633,120 @@ JAX_PLATFORMS=cpu uv run python experiments/seed-stability/kmeans_seeds.py \
     --within-language data/out/sonar/gausscopy/mixture.npz \
     --out data/out/sonar/kmeans_seeds_language
 ```
+
+## 2026-11-21: queued, seed agreement against width in the trained stack
+
+Unit `width-seeds` (`width_seeds.sh`, the README's command), queued 23:11 behind another session's
+`lcm-readout-x-rot`, which held the GPU. It trains one-layer stacks of 1, 4, 16 and 76 heads of 32
+at seeds 42 and 43 (the ladder's all-off recipe, 50,000 steps each) and scores each pair with
+`partition.py` and `ratecurve.py` into `data/out/sonar/width_seeds/scores/`.
+
+**Done when** `scores/done.log` exists and the matched head NMI at each width has been read beside
+LSQ's (0.57, 0.17 and 0.057 at h = 1, 4 and 16; 0.0089 at 76; "summed heads and the cascade" and
+"additive codes at the stack's width" above) and beside k-means' 0.61 at k = 32. The h = 76 pair
+should also be read against the five-layer stack's layer 0 (0.025–0.027), and the section should
+say whether the trained curve follows LSQ's halving.
+
+## 2026-11-22: queued, the k32 SAE seed pair on a Gaussian copy of `mc4_4M`
+
+Unit `sae-gauss-seeds` (`sae_gauss_seeds.sh`, the README's command), queued 00:35 to run after
+`width-seeds`. It trains `sae_conv/m5120_k32`'s settings (150 epochs, 144,300 steps of 4,096) at
+seeds 42 and 43 on 3,941,632 rows of a Gaussian with the moments of every row the real pair
+trained on (`data/out/sonar/gausscopy_4M`), then scores the pair with `subspace.py --mode sae` on
+the copy's held-out tail and `splitting.py` on the first 524,288 rows of its training stream, as
+the real pair was scored. About 2.6 GPU-hours a run, from the block-sparse SAEs' 15 steps a second
+at the same size.
+- The copy's held-out covariance is within 1.4% (relative Frobenius) of the training rows' over
+  557,056 rows (`eval.meta.json`). Its smallest eigenvalue is 9e-9, against 0.053 for the
+  largest: `mc4_4M`'s rows are unit vectors, so one direction (the norm's) has almost no
+  variance. The copy keeps the covariance, not the unit norm.
+- A CPU smoke run at full size generated the rows in under 3 minutes (2 steps, FVU_w 0.839), and
+  both scorers read its output.
+
+**Done when** `data/out/sonar/sae_gauss/scores/done.log` exists and the Gaussian pair's table
+(unmatched and matched sets at r = 8, 64, 128 and 512: own, other seed's, data's top-r) sits
+beside the real pair's (2026-11-20, "Subspaces"), with its matched share at decoder cosine ≥ 0.7
+beside the real pair's 33%, and `splitting.py`'s PW-MCC beside the real pair's 0.51. The section
+should say whether the real pair's transfer of 96–97% of the optimum, about twice the data's
+top-r, survives the copy.
+
+## 2026-11-22: SONAR's coordinates shuffled apart keep half its k-means agreement at 32 cells, and little at 128
+
+**Short version.** Two copies of `mc4_sent16`'s own rows keep the distribution of every
+coordinate and nothing that ties coordinates together. One copy uses the principal frame, the
+other FastICA's.
+- At 32 cells both copies reproduce across seeds about halfway between the Gaussian copy and
+  SONAR: 0.507 and 0.492, against 0.396 and 0.607.
+- At 128 cells they keep little of SONAR's lead: 0.425 and 0.492, against 0.391 and 0.737. That
+  is a tenth and three tenths of the excess.
+
+So at 32 cells about half of what makes SONAR's cells reproduce lies in how single directions
+are distributed. At 128 cells most of it lies in how directions combine. That joint structure is
+not language either ("not language", above): SONAR's rows less their language means still
+reproduce at 0.659 at 128 cells.
+
+**Setup** (`kmeans_seeds.py --marginals pca ica`, CPU, 00:33 to 03:55). As in the 2026-11-20
+section: the `med837` whitened frame, seeds 42–46 (ten pairs), fit on 131,072 rows drawn from
+the first 12.8M, assigned on the last 32,768. Each copy permutes every coordinate's column on its
+own, separately in the training rows and the tail (`marginal_copy`). It then maps the rows back
+to the whitened frame, so k-means reads it as it reads the cache. The cache rows give the
+2026-11-20 numbers again.
+- **Principal frame.** The training rows' 1,023 principal directions with variance. The copy
+  keeps the covariance.
+- **ICA frame.** Symmetric FastICA (log-cosh) in the sphered principal frame, fit on the training
+  rows. It stopped at the 200-iteration cap, short of its tolerance of 1e-4: in the last step the
+  largest change over the 1,023 rows, 1 − |w_new · w|, was 0.19. The frame is therefore not
+  FastICA's fixed point. The copy is still exactly an independent-coordinates model with these
+  sources' marginals, and a converged frame might find sources further from Gaussian. Loading the
+  rows and fitting both frames took about 17 minutes, so the README's few seconds an iteration
+  holds.
+
+| data | seed NMI, k = 8 | 32 | 128 | FVU, k = 8 | 32 | 128 |
+|---|---|---|---|---|---|---|
+| SONAR | 0.533 | 0.607 | 0.737 | 0.969 | 0.948 | 0.922 |
+| ICA-frame copy | 0.570 [0.480, 0.637] | 0.492 [0.460, 0.519] | 0.492 [0.471, 0.505] | 0.970 | 0.955 | 0.940 |
+| principal-frame copy | 0.788 [0.662, 0.986] | 0.507 [0.488, 0.538] | 0.425 [0.418, 0.434] | 0.968 | 0.955 | 0.945 |
+| Gaussian copy (2026-11-20) | 0.555 | 0.396 | 0.391 | 0.971 | 0.958 | 0.948 |
+
+The copies' shuffled nulls at 128 cells are 0.039 (ICA) and 0.053 (principal), like the Gaussian
+copy's 0.053, because their cells are nearly equal in size. SONAR's is 0.009. Read over the
+nulls, the shares below hardly move.
+
+- **Each copy's share of SONAR's excess over the Gaussian copy**, (copy − Gaussian) / (SONAR −
+  Gaussian), is 53% (principal) and 45% (ICA) at 32 cells, and 10% and 29% at 128.
+- **The fit gives the same shares.** At 128 cells SONAR's FVU is 0.026 below the Gaussian copy's,
+  and the copies recover 0.003 (principal) and 0.008 (ICA) of it. At 32 cells SONAR is 0.010
+  below, and each copy recovers about a third of that.
+- **The principal directions are nearly Gaussian; FastICA's sources are not.**
+  - In the principal frame the median excess kurtosis is 0.89 (largest 1.6) and the median
+    |skew| 0.01. The 20 largest directions hold 14% of the variance and have median kurtosis
+    0.37.
+  - Every FastICA source has excess kurtosis above 1 (median 4.6, largest 215), and the median
+    |skew| is 0.81. The 184 sources with kurtosis above 10 hold 25% of the variance.
+  - So the sources are sparse: a peak near zero and a long tail to one side. One reading, not
+    tested: rows far out along one source form rays, which cells at 128 can follow from seed to
+    seed. The principal copy, nearly Gaussian in each coordinate, has none. Why that copy gains so
+    much at 8 and 32 cells is not clear.
+- **Sarle's coefficient finds no clear second mode.**
+  - It passes 5/9 for 24 ICA sources. Each of them has |skew| 2.2–3.7 and kurtosis 7–23, so
+    skew alone takes the coefficient there: a one-mode exponential reads exactly 5/9.
+  - In the principal frame only the first direction reaches it: 0.557, with skew 0.81 and
+    kurtosis −0.03, holding 2.1% of the variance. It is the one candidate for two modes, not
+    checked.
+- **At 8 cells the principal copy reproduces more than SONAR does** (0.79). Like SONAR's, its
+  pairs split into near-identical and quite different solutions (0.66–0.99). Possibly the first
+  direction's skew fixes one coarse cut; not checked. The ICA copy at 8 cells is at the Gaussian
+  copy's level.
+
+**For the stack.** A stack pair on the ICA-frame copy would say whether layer 0's excess over the
+Gaussian copy (2026-11-21) comes from the sources' sparsity or from how they combine. The copy
+here is only 131,072 training rows, so that pair needs a streamed copy: the frame fitted once,
+with each block's columns permuted within the block.
+
+Output: `data/out/sonar/kmeans_seeds_marginals/` (`summary.json`, `run.log`,
+`coordinates_pca.csv`, `coordinates_ica.csv`).
+
+```bash
+JAX_PLATFORMS=cpu uv run python experiments/seed-stability/kmeans_seeds.py \
+    --marginals pca ica --out data/out/sonar/kmeans_seeds_marginals
+```

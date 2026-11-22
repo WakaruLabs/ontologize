@@ -54,6 +54,21 @@ def test_topk_sae_learns_planted_dictionary(tmp_path):
     assert np.allclose(norms, 1.0, atol=1e-4)
 
 
+def test_rows_in_memory_train_as_the_cache_does(tmp_path):
+    # the cache's own rows passed as (head, tail) give the run the cache
+    # gives, with the cache file no longer read
+    cfg = make_cfg(tmp_path, epochs=10, out=str(tmp_path / "a"))
+    X = np.load(cfg.cache)
+    ref = sae.train(cfg)
+    cfg2 = make_cfg(tmp_path, epochs=10, out=str(tmp_path / "b"))
+    cfg2.cache = str(tmp_path / "missing.npy")
+    got = sae.train(cfg2, rows=(X[:-cfg2.eval_rows], X[-cfg2.eval_rows:]))
+    assert np.allclose(got[:2], ref[:2], rtol=1e-5) and got[2] == ref[2]
+    with pytest.raises(AssertionError):
+        sae.train(make_cfg(tmp_path, block_rows=512, out=str(tmp_path / "c")),
+                  rows=(X[:-512], X[-512:]))
+
+
 def test_resume_from_snapshot(tmp_path):
     cfg = make_cfg(tmp_path, max_steps=20, save_each=10)
     sae.train(cfg)

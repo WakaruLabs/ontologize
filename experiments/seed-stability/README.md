@@ -166,6 +166,8 @@ systemd-run --user --unit gauss-seeds -p Restart=on-failure -p RestartSec=120 \
 `tests/test_gausscopy.py` checks the chunked moments, the square root of a
 rank-deficient covariance, and the source: its rows' moments, its
 determinism across a pickle and a block boundary, and its streams.
+`gausscopy.py head` writes the training stream's first rows as `head.npy`,
+for a scorer that reads a cache's first rows (below, the SAE pair).
 
 ## How far a partition of the data reproduces (`kmeans_seeds.py`)
 
@@ -188,8 +190,25 @@ null with one partition's rows shuffled, and each seed's FVU.
   Gaussian copy by the language structure alone.
 - `--within-language` (the same `mixture.npz`) runs it on the cache's own
   rows less their language's mean.
-- For every data set but the Gaussian copy, each seed's cells are also
-  scored against the rows' languages (NMI, `language_nmi`).
+- `--marginals pca ica` runs it on copies of the cache's own rows (the
+  same training and tail rows, whitened) that keep each coordinate's
+  distribution in a frame fitted on the training rows and break every tie
+  between coordinates: each coordinate's column is permuted on its own
+  (`marginal_copy`). In `pca` the coordinates are the principal
+  directions, so the copy keeps the covariance and each direction's
+  marginal (its skew, tails and modes). In `ica` they are the sources of a
+  symmetric FastICA (log-cosh contrast, in numpy) in the sphered principal
+  frame, so the copy is exactly an independent-components model with the
+  rows' own source marginals. Between the Gaussian copy and the cache,
+  they say whether the reproducible cells come from oddly shaped
+  directions or from how directions combine. Each frame's per-coordinate
+  table (variance share, skew, excess kurtosis, Sarle's bimodality
+  coefficient) goes to `coordinates_<frame>.csv`, with a summary and
+  FastICA's convergence in `summary.json`. FastICA at d = 1024 on 131,072
+  rows takes a few seconds an iteration on the CPU, up to `--ica-iters`.
+- The cells are also scored against the rows' languages (NMI,
+  `language_nmi`) for the data sets whose tail row i stands for the
+  cache's tail row i: the cache, the mixture and within.
 - `--ckpt` adds, per layer of a stack, each head's best NMI against the
   k-means partitions at the model's k.
 
@@ -202,12 +221,20 @@ JAX_PLATFORMS=cpu uv run python experiments/seed-stability/kmeans_seeds.py \
     --mixture data/out/sonar/gausscopy/mixture.npz \
     --within-language data/out/sonar/gausscopy/mixture.npz \
     --out data/out/sonar/kmeans_seeds_language
+JAX_PLATFORMS=cpu uv run python experiments/seed-stability/kmeans_seeds.py \
+    --marginals pca ica --out data/out/sonar/kmeans_seeds_marginals
 ```
 
 Output: `data/out/sonar/kmeans_seeds/summary.json`.
 `tests/test_kmeans_seeds.py` checks the assignment against brute force,
 agreement on separated clusters and along a dominant direction, its
-absence on an isotropic Gaussian, and that every cell ends up used.
+absence on an isotropic Gaussian, and that every cell ends up used. For
+the marginal copies: the `pca` copy keeps every principal coordinate's
+values and the covariance and loses a planted dependence between
+uncorrelated coordinates; FastICA recovers planted sources; the `ica` copy
+keeps two uniform sources mixed along non-orthogonal directions inside
+their parallelogram, where the `pca` copy spills rows outside it; and the
+shape statistics read a Gaussian, a uniform and two modes.
 `tests/test_gausscopy.py` checks the per-language moments against numpy's,
 their total covariance against the pooled one, and that mixture rows
 follow their language's moments and depend only on its stream.
@@ -260,6 +287,46 @@ systemd-run --user --unit width-seeds -p Restart=on-failure -p RestartSec=120 \
     -p StandardError=append:$PWD/experiments/logs/width_seeds.log \
     /usr/bin/bash experiments/seed-stability/width_seeds.sh
 ```
+
+## The SAE pair on a Gaussian copy (`sae_gauss.py`, `sae_gauss_seeds.sh`)
+
+The k32 SAE pair (`sae_conv/m5120_k32`, `_s43`, on `mc4_4M`) shares the
+subspace of its unmatched latents at 96–97% of the optimum, against the
+data's top principal directions' roughly half (`subspace.py --mode sae`).
+The same pair trained on a Gaussian copy of `mc4_4M` says how much of that
+the covariance alone gives.
+
+- The copy: `gausscopy.py prepare --cache data/sonar_embeddings/mc4_4M.npy
+  --rows 3941632 --eval-rows 557056 --out data/out/sonar/gausscopy_4M`, the
+  moments of every row the real pair trained on, and held-out rows enough
+  for `splitting.py`'s 524,288 at the head and the 32,768-row tail.
+  `gausscopy.py head` writes the first 524,288 rows of the training stream
+  as `head.npy`, since `splitting.py` read the real pair's training rows.
+- `sae_gauss.py` is `sae.py` (all its flags) with `--gauss DIR`: it
+  generates the first n rows of the copy's training stream in memory (n
+  defaults to the cache's own training split, 3,941,632 rows, 16 GB; under
+  3 minutes) and hands them, with the last `--eval-rows` of `eval.npy`, to
+  `sae.train(cfg, rows=...)`, which then reads no cache. It writes
+  `gauss.json` beside the run.
+- `sae_gauss_seeds.sh` trains the real pair's settings (`--m 5120 --topk
+  32 --epochs 150`, 144,300 steps of 4,096) at seeds 42 and 43 into
+  `data/out/sonar/sae_gauss/`, then scores the pair with `subspace.py
+  --mode sae` on the copy's tail and `splitting.py` on `head.npy`, into
+  `scores/`. It waits for the unit named by `AFTER` (default `width-seeds`)
+  to be down at three checks five minutes apart, then for an idle GPU:
+
+```bash
+systemd-run --user --unit sae-gauss-seeds -p Restart=on-failure -p RestartSec=120 \
+    --working-directory=$PWD \
+    -p StandardOutput=append:$PWD/experiments/logs/sae_gauss_seeds.log \
+    -p StandardError=append:$PWD/experiments/logs/sae_gauss_seeds.log \
+    /usr/bin/bash experiments/seed-stability/sae_gauss_seeds.sh
+```
+
+`tests/test_sae.py` checks that rows passed in memory train exactly as the
+same rows in a cache do, and that `--block-rows` refuses them.
+`tests/test_gausscopy.py` checks that `sae_gauss.py`'s rows are the
+training stream's and its held-out rows the end of `eval.npy`.
 
 ## Cost
 

@@ -4835,6 +4835,62 @@ Outputs: `data/out/sonar/gramqap/ste_h76_init01_369500_vs_ste_h76_init01_350000/
 `.../ste_h76_init01_369500_vs_ste_h76_i01_s43_369500/` (`gram.csv`). About four minutes each on 8
 CPU workers.
 
+## `resid_nc_hm`'s rank-1 forms are negative and even, and its cells least convex where they are rank-1 (2026-11-22)
+
+**Why.** A discussion outside the repository claimed that `resid_nc_hm`'s layers 0–3 collapse to rank-1 PSD forms
+(u·x)², "a convex cone per feature", so that the model learns disjoint convex covers unasked.
+`bilinspec.py` and `cellshape.py` had been run on `resid_nc` and `ste_h76_init01`, not on this
+run.
+
+**Weights** (`bilinspec.py`, steps 3,050,000 and 8,273,900; the post cited 3,054,500, which this
+copy lacks):
+
+| layer | median \|cos(w, v)\|, 3.05M / final | share above 0.9 | dominant eigenvalue negative | constant coordinate |
+|---|---|---|---|---|
+| 0 | 0.895 / 0.887 | 43% / 24% | 100% / 100% | no |
+| 1 | 0.984 / 0.976 | 96% / 95% | 99.8% / 99.5% | yes |
+| 2 | 0.978 / 0.987 | 99.4% / 99.5% | 99.6% / 99.6% | yes |
+| 3 | 0.907 / 0.965 | 67% / 93% | 99.5% / 99.2% | yes |
+| 4 | 0.572 / 0.724 | 0% / 0.3% | 99.1% / 99.6% | yes |
+
+The alignment is as claimed, but the forms are −λ(u·x)², high where the input is orthogonal to
+u, as in `resid_nc` above. With the constant coordinate (layers 1–4) a form is about
+−λ(u·x + a)², peaked on a hyperplane; without it (layer 0) the logits are even in x.
+
+**Cells** (`cellshape.py`, final step, T 0.03, `mc4_4M`'s last 32,768 rows, as the section on
+convexity above):
+
+| layer | entries | 2 rows | 8 | 32 | centroid | all | negation |
+|---|---|---|---|---|---|---|---|
+| 0 | 31.8 | 0.989 | 0.999 | 0.999 | 0.999 | 96.9% | 1.000 |
+| 1 | 32.0 | 0.800 | 0.015 | 0.006 | 0.007 | 0.0% | 0.000 |
+| 2 | 31.2 | 0.875 | 0.040 | 0.031 | 0.031 | 3.1% | 0.001 |
+| 3 | 31.2 | 0.968 | 0.835 | 0.383 | 0.137 | 0.0% | 0.003 |
+| 4 | 31.1 | 0.998 | 1.000 | 1.000 | 1.000 | 100.0% | 0.000 |
+
+- **Layers 1–3, the most nearly rank-1, have the least convex cells.** Fewer than 4% of centroids
+  keep their entry in layers 1–2, and 14% in layer 3. This is `resid_nc`'s layer 1 (17%) made
+  stronger and extended to layers 2–3.
+- **Layer 0 keeps its centroids and is wholly sign-blind,** as `resid_nc`'s layer 0 is: a cell
+  contains every row's negation, so it is symmetric, not a cone.
+- **Layer 4, the least aligned, is convex.** So in this run convexity goes with forms that are not
+  rank-1, as in the hard stack, not with the collapse.
+
+One run, one tail.
+
+Outputs: `data/out/sonar/multilingual/resid_nc_hm/bilinspec/` and
+`data/out/sonar/cellshape_resid_nc_hm/`. `bilinspec.py` restores with the saved sharding, so it
+needs the GPU (`XLA_PYTHON_CLIENT_PREALLOCATE=false` keeps it small beside another job);
+`cellshape.py` runs under `JAX_PLATFORMS=cpu`.
+
+```bash
+XLA_PYTHON_CLIENT_PREALLOCATE=false uv run python bilinspec.py \
+    --ckpt data/out/sonar/multilingual/resid_nc_hm --steps 3050000 8273900 \
+    --out data/out/sonar/multilingual/resid_nc_hm/bilinspec
+JAX_PLATFORMS=cpu uv run python experiments/ste-arm/cellshape.py \
+    --ckpt data/out/sonar/multilingual/resid_nc_hm:0.03 --out data/out/sonar/cellshape_resid_nc_hm
+```
+
 ## Run
 
 See [`README.md`](README.md) for training and scoring commands.

@@ -25,8 +25,13 @@ rows' languages (`mixture_rows`) has the data's language structure and
 nothing beyond it. Its pooled covariance is the cache's, by the law of
 total covariance, which `mixture.meta.json` checks against `prepare`'s.
 
+`head` writes the training stream's first rows as head.npy, for a scorer
+that reads a cache's first rows, which a trainer on the cache saw
+(splitting.py); `sae_gauss.py` trains on the same stream.
+
     uv run python experiments/seed-stability/gausscopy.py prepare
     uv run python experiments/seed-stability/gausscopy.py mixture
+    uv run python experiments/seed-stability/gausscopy.py head --out <dir>
 """
 import argparse
 import json
@@ -244,6 +249,16 @@ def mixture(cfg: argparse.Namespace) -> None:
     print(json.dumps(meta, indent=1))
 
 
+def head(cfg: argparse.Namespace) -> None:
+    """The training stream's first rows as head.npy, for a scorer that
+    reads a cache's first rows (splitting.py), which a trainer saw."""
+    out = Path(cfg.out)
+    z = np.load(out / "moments.npz")
+    write_rows(out / "head.npy", z["mean"].astype(np.float32),
+               z["factor"].astype(np.float32), cfg.rows, 0)
+    print(f"-> {out / 'head.npy'} ({cfg.rows:,} rows of the training stream)")
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -261,8 +276,11 @@ def main() -> None:
     m.add_argument("--cache", default=str(CACHE))
     m.add_argument("--rows", type=int, default=12_800_000)
     m.add_argument("--out", default=str(OUT))
+    h = sub.add_parser("head", help="the training stream's first rows (head.npy)")
+    h.add_argument("--rows", type=int, default=524288)
+    h.add_argument("--out", default=str(OUT))
     cfg = p.parse_args()
-    {"prepare": prepare, "mixture": mixture}[cfg.cmd](cfg)
+    {"prepare": prepare, "mixture": mixture, "head": head}[cfg.cmd](cfg)
 
 
 if __name__ == "__main__":

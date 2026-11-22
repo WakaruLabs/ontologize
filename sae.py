@@ -151,7 +151,7 @@ from ontologize.grouped import Grouped, group_softmax, group_top1
 from ontologize.blocksparse import BlockSparse, block_topk
 
 
-def parse_args():
+def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--m", type=int, default=5120,
@@ -232,7 +232,11 @@ def parse_args():
                    help="output dir (default data/out/sonar/sae/<auto name>)")
     p.add_argument("--overwrite", action="store_true",
                    help="ignore an existing state snapshot instead of resuming")
-    return p.parse_args()
+    return p
+
+
+def parse_args(argv=None):
+    return parser().parse_args(argv)
 
 
 def run_name(cfg):
@@ -608,7 +612,14 @@ def block_batches(groups: Iterator[Tuple[int, np.ndarray, np.ndarray]],
                     yield buf[perm[k * b:(k + 1) * b]]
 
 
-def train(cfg):
+def train(cfg, rows=None):
+    """Train the SAE `cfg` describes. `rows`, when given, is (training rows,
+    held-out rows), two in-memory arrays that stand in for the cache:
+    training draws from the first (its first --train-rows when set) and
+    the held-out scores read the second, so --cache and --eval-rows are not
+    read. Its batches are the uniform ones; --block-rows reads a file."""
+    if rows is not None:
+        assert not cfg.block_rows, "--block-rows reads the cache file"
     if cfg.groups:
         assert not cfg.topk, "--groups needs --topk 0 (mutually exclusive)"
         assert cfg.m % cfg.groups == 0, "--m must be a multiple of --groups"
@@ -659,10 +670,14 @@ def train(cfg):
          "block": cfg.block, "adam_eps": cfg.adam_eps, "lr": cfg.lr,
          "sd_pre": cfg.sd_pre, "p_drop": cfg.p_drop, "sd_out": cfg.sd_out}))
 
-    mm = np.load(cfg.cache, mmap_mode="r")
-    n_train, n_head = splits(mm.shape[0], cfg.eval_rows, cfg.train_rows)
+    if rows is None:
+        mm = np.load(cfg.cache, mmap_mode="r")
+        n_train, n_head = splits(mm.shape[0], cfg.eval_rows, cfg.train_rows)
+        X_eval = np.asarray(mm[n_head:], dtype=np.float32)
+    else:
+        mm, X_eval = rows[0], np.asarray(rows[1], dtype=np.float32)
+        n_train = min(len(mm), cfg.train_rows) if cfg.train_rows else len(mm)
     d = mm.shape[1]
-    X_eval = np.asarray(mm[n_head:], dtype=np.float32)
 
     w = np.load(cfg.mse_weights) if cfg.mse_weights else np.ones(d)
     w_sqrt = jnp.asarray(np.sqrt(w), jnp.float32)
