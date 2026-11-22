@@ -104,15 +104,25 @@ def test_fastica_recovers_planted_sources():
     # started from its own fixed point, it stops at once and stays there
     W2, it2, lim2 = fastica((X - mu) @ (V / np.sqrt(lam)), seed=1, W0=W)
     assert it2 <= 2 and lim2 < 1e-4 and np.abs(np.abs((W2 * W).sum(1)) - 1).max() < 1e-3
-    # damped steps reach the same sources, and the checkpoint sees the run
-    seen = []
-    W3, it3, lim3 = fastica((X - mu) @ (V / np.sqrt(lam)), seed=2, iters=2000,
-                            patience=1, checkpoint=lambda W, i, l, s: seen.append(i),
-                            checkpoint_every=2)
-    Y3 = (X - mu) @ (V / np.sqrt(lam)) @ W3.T
-    C3 = np.abs(np.corrcoef(np.concatenate([Y3, S], 1).T)[:4, 4:])
-    assert lim3 < 1e-4 and (C3.max(0) > 0.98).all()
-    assert seen == list(range(2, it3, 2))
+    # damped steps, per row or shared, reach the same sources, and the
+    # checkpoint sees the run and its steps
+    Zs = (X - mu) @ (V / np.sqrt(lam))
+    for shared in (False, True):
+        seen, steps = [], []
+        W3, it3, lim3 = fastica(Zs, seed=2, iters=2000, patience=1, shared=shared,
+                                checkpoint_every=2,
+                                checkpoint=lambda W, i, l, s: (seen.append(i),
+                                                               steps.append(s)))
+        Y3 = Zs @ W3.T
+        C3 = np.abs(np.corrcoef(np.concatenate([Y3, S], 1).T)[:4, 4:])
+        assert lim3 < 1e-4 and (C3.max(0) > 0.98).all()
+        assert seen == list(range(2, it3, 2))
+        assert np.shape(steps[-1]) == (() if shared else (4,))
+    # a continued per-row fit takes its steps back; a shared step needs one
+    W4, it4, _ = fastica(Zs, seed=3, W0=W3, patience=1, step0=np.full(4, 0.5))
+    assert it4 <= 2
+    with pytest.raises(ValueError):
+        fastica(Zs, seed=3, patience=1, shared=True, step0=np.full(4, 0.5))
 
 
 def test_an_ica_fit_continues_only_on_its_own_rows():

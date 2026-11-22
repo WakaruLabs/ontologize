@@ -121,6 +121,9 @@ def main() -> None:
                    help="A's iterations, if not --iters (0: --frame-a as it is)")
     p.add_argument("--patience", type=int, default=50,
                    help="kmeans_seeds.py's --ica-patience (0: plain FastICA)")
+    p.add_argument("--shared-step", action="store_true",
+                   help="kmeans_seeds.py's --ica-shared-step: one damped step "
+                        "for all rows instead of one per row")
     p.add_argument("--out", default=str(ROOT / "data/out/sonar/ica_seeds"))
     cfg = p.parse_args()
     out = Path(cfg.out)
@@ -137,12 +140,14 @@ def main() -> None:
     print("A: FastICA", flush=True)
     iters_a = cfg.iters if cfg.iters_a is None else cfg.iters_a
     fa = ica_frame(TA, 0, iters_a, load(cfg.frame_a), log_every=25,
-                   patience=cfg.patience, checkpoint_path=out / "frame_a.partial.npz")
+                   patience=cfg.patience, checkpoint_path=out / "frame_a.partial.npz",
+                   shared=cfg.shared_step)
     np.savez(out / "frame_a.npz", **fa)
     print(f"A: {fa['iterations']} iterations, last change {fa['last_change']:.2e}\n"
           "B: FastICA", flush=True)
     fb = ica_frame(TB, 1, cfg.iters, load(cfg.frame_b), log_every=25,
-                   patience=cfg.patience, checkpoint_path=out / "frame_b.partial.npz")
+                   patience=cfg.patience, checkpoint_path=out / "frame_b.partial.npz",
+                   shared=cfg.shared_step)
     np.savez(out / "frame_b.npz", **fb)
     print(f"B: {fb['iterations']} iterations, last change {fb['last_change']:.2e}",
           flush=True)

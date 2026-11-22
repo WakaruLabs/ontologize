@@ -207,13 +207,19 @@ null with one partition's rows shuffled, and each seed's FVU.
   FastICA's convergence in `summary.json`. FastICA at d = 1024 on 131,072
   rows takes a few seconds an iteration on the CPU, up to `--ica-iters`.
   Every 25 iterations it prints the largest and median change, how many
-  rows still change by the tolerance or more, its step, and the largest
+  rows still change by the tolerance or more, its steps, and the largest
   change over two iterations, which stays small while rows flip between
-  two states. Symmetric FastICA can cycle that way instead of converging;
-  `--ica-patience N` damps its steps, moving W part of the way to the
-  update and halving that share whenever the largest change goes N
-  iterations without a new low (same fixed points; convergence is read on
-  the full update). Each fitted frame is saved as `frame_<frame>.npz`
+  two states. Symmetric FastICA can cycle that way instead of converging.
+  `--ica-patience N` damps its steps: each row of W moves part of the way
+  to its update, and a row's share halves whenever that row, still above
+  the tolerance, goes N iterations without a new low. The fixed points are
+  the same, and convergence is read on the full update.
+  `--ica-shared-step` uses one share for all rows instead, halved whenever
+  the largest change goes N iterations without a new low. The
+  iteration-800 frame in `notes.md` was fitted that way. From a random
+  start the shared step stalls: on the same rows and start it left 751
+  rows above the tolerance after 800 iterations, against 127 for per-row
+  steps. Each fitted frame is saved as `frame_<frame>.npz`
   (mean, eigenvalues, eigenvectors, and for `ica` the unmixing), the ICA
   frame also every 100 iterations as `frame_ica.partial.npz` with its
   step, and `--ica-init` continues FastICA from either, fit on the same
@@ -269,7 +275,8 @@ absence on an isotropic Gaussian, and that every cell ends up used. For
 the marginal copies: the `pca` copy keeps every principal coordinate's
 values and the covariance and loses a planted dependence between
 uncorrelated coordinates; FastICA recovers planted sources, with damped
-steps too, and, started at its own fixed point, stays there; a saved
+steps too, per row or shared, and, started at its own fixed point, stays
+there, and a shared step refuses per-row starting steps; a saved
 `ica` fit continues on its own rows, or with no iterations is used as it
 is, and is refused on others; the `ica`
 copy keeps two uniform sources mixed along non-orthogonal directions
@@ -295,8 +302,9 @@ at random, which no data pin, and the two principal frames' coordinates.
 `sources.csv` gives each of A's sources its kurtosis, variance share,
 partner, both matched values and its runner-up; `summary.json` bins them by
 kurtosis, since ICA cannot pin a source near Gaussian. Both fits are damped
-(`--patience`, default 50) and checkpointed (`frame_a.partial.npz`,
-`frame_b.partial.npz`; `--frame-b` continues B). `--iters` caps each fit's
+(`--patience`, default 50; per row unless `--shared-step`) and
+checkpointed (`frame_a.partial.npz`, `frame_b.partial.npz`; `--frame-b`
+continues B). `--iters` caps each fit's
 iterations, and `--iters-a` A's alone: `--iters-a 0` uses `--frame-a` as it
 is, so B can be given the iterations A had.
 

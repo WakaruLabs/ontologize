@@ -147,7 +147,8 @@ def symmetric_orth(W: Float[np.ndarray, "p p"]) -> Float[np.ndarray, "p p"]:
 def fastica(Z: Float[np.ndarray, "n p"], seed: int, iters: int = 200,
             tol: float = 1e-4, W0: Float[np.ndarray, "p p"] | None = None,
             log_every: int = 0, patience: int = 0, min_step: float = 1 / 64,
-            checkpoint=None, checkpoint_every: int = 100, step0: float = 1.0
+            checkpoint=None, checkpoint_every: int = 100,
+            step0: float | Float[np.ndarray, "p"] = 1.0, shared: bool = False
             ) -> tuple[Float[np.ndarray, "p p"], int, float]:
     """Symmetric FastICA (Hyvärinen 1999) with the log-cosh contrast on
     sphered rows (zero mean, identity covariance): the orthogonal W whose
@@ -155,27 +156,40 @@ def fastica(Z: Float[np.ndarray, "n p"], seed: int, iters: int = 200,
     It starts from W0 when given (an earlier fit to continue), else from a
     random rotation.
 
-    Each iteration computes the fixed-point update F(W) and its largest
-    change, max |1 − |f · w|| over rows; below tol, F(W) is returned as
-    converged. With `patience` 0 every step is the update itself. Symmetric
-    FastICA can cycle instead of converging, so with `patience` > 0 the
-    step is damped: W moves a share `step` of the way to F(W) (its rows'
-    signs matched to W's) and is orthogonalized again; `step` starts at
-    `step0` (1, or where a continued fit left it) and halves, down to
-    `min_step`, whenever the largest change has gone `patience` iterations
-    without a new low. The fixed points are the plain algorithm's, and
-    convergence is read on the full update either way. Every log_every
-    iterations it prints the largest and median change, how many rows
-    change by tol or more, the step, and the largest change over two
-    iterations, which stays small while the rows flip between two states.
-    checkpoint(W, it, lim, step) is called every checkpoint_every
-    iterations. Returns W, the iterations run, and the last largest
+    Each iteration computes the fixed-point update F(W) and each row's
+    change, |1 − |f · w||; once the largest is below tol, F(W) is returned
+    as converged. With `patience` 0 every step is the update itself.
+    Symmetric FastICA can cycle instead of converging, so with `patience`
+    > 0 the steps are damped: row i of W moves a share step_i of the way
+    to F(W)'s (signs matched to W's), and W is orthogonalized again. The
+    fixed points are the plain algorithm's, and convergence is read on the
+    full update either way. The steps start at `step0` (a number, or a
+    continued fit's steps) and halve, down to `min_step`:
+      - by default, row by row, whenever row i, still changing by tol or
+        more, has gone `patience` iterations without a new low of its own;
+      - with `shared`, one step for all rows, whenever the largest change
+        has gone `patience` iterations without a new low. That step answers
+        to the worst row, and from a random start it can reach `min_step`
+        while most rows still change by more than tol.
+    Every log_every iterations it prints the largest and median change,
+    how many rows change by tol or more, the step (its smallest and median
+    by row), and the largest change over two iterations, which stays small
+    while rows flip between two states. checkpoint(W, it, lim, step) is
+    called every checkpoint_every iterations, with the shared step or the
+    per-row steps. Returns W, the iterations run, and the last largest
     change."""
     rng = np.random.default_rng(seed)
     p = Z.shape[1]
     W = symmetric_orth(rng.standard_normal((p, p)) if W0 is None else W0)
     Z32 = Z.astype(np.float32)
-    lim, best, since, step, W_prev = np.inf, np.inf, 0, float(step0), None
+    lim, W_prev = np.inf, None
+    if shared:
+        if np.ndim(step0):
+            raise ValueError("a shared step starts from one value, not one per row")
+        best, since, step = np.inf, 0, float(step0)
+    else:
+        step = np.broadcast_to(np.asarray(step0, np.float64), (p,)).copy()
+        best, since = np.full(p, np.inf), np.zeros(p, int)
     for it in range(1, iters + 1):
         G = np.tanh(Z32 @ W.T.astype(np.float32))
         gp = (1.0 - G.astype(np.float64) ** 2).mean(0)
@@ -187,24 +201,36 @@ def fastica(Z: Float[np.ndarray, "n p"], seed: int, iters: int = 200,
         if lim < tol:
             W = F
             break
-        if lim < best:
-            best, since = lim, 0
+        if shared:
+            if lim < best:
+                best, since = lim, 0
+            else:
+                since += 1
+                if patience and since >= patience and step > min_step:
+                    step, since = max(step / 2, min_step), 0
+            full, share = step == 1.0, step
         else:
-            since += 1
-            if patience and since >= patience and step > min_step:
-                step, since = max(step / 2, min_step), 0
-        W_new = F if step == 1.0 else symmetric_orth(
-            W + step * (np.sign(cos)[:, None] * F - W))
+            low = change < best
+            best[low], since[low] = change[low], 0
+            since[~low] += 1
+            if patience:
+                cut = (since >= patience) & (change >= tol) & (step > min_step)
+                step[cut], since[cut] = np.maximum(step[cut] / 2, min_step), 0
+            full, share = bool((step == 1.0).all()), step[:, None]
+        W_new = F if full else symmetric_orth(
+            W + share * (np.sign(cos)[:, None] * F - W))
         if log_every and it % log_every == 0:
             two = (float(np.abs(np.abs((W_new * W_prev).sum(1)) - 1.0).max())
                    if W_prev is not None else np.nan)
+            steps = (f"step {step:g}" if shared else
+                     f"step min {step.min():g} median {np.median(step):g}")
             print(f"FastICA iteration {it}: largest change {lim:.2e}, median "
                   f"{np.median(change):.2e}, {int((change >= tol).sum())} of "
-                  f"{p} rows at or above {tol:g}, step {step:g}, largest "
-                  f"change over two iterations {two:.2e}", flush=True)
+                  f"{p} rows at or above {tol:g}, {steps}, largest change "
+                  f"over two iterations {two:.2e}", flush=True)
         W_prev, W = W, W_new
         if checkpoint is not None and it % checkpoint_every == 0:
-            checkpoint(W, it, lim, step)
+            checkpoint(W, it, lim, step if shared else step.copy())
     return W, it, lim
 
 
@@ -232,8 +258,8 @@ def shape_stats(Y: Float[np.ndarray, "n p"]) -> dict:
 
 def ica_frame(train: Float[np.ndarray, "n d"], seed: int = 0, iters: int = 200,
               init: dict | None = None, log_every: int = 0, patience: int = 0,
-              checkpoint_path: Path | None = None, step0: float | None = None
-              ) -> dict:
+              checkpoint_path: Path | None = None, step0: float | None = None,
+              shared: bool = False) -> dict:
     """FastICA's frame of the training rows: their principal frame (mean,
     eigenvalues, eigenvectors, directions with no variance left out) and
     the unmixing W of symmetric FastICA in its sphered coordinates, with
@@ -243,9 +269,10 @@ def ica_frame(train: Float[np.ndarray, "n d"], seed: int = 0, iters: int = 200,
     raises if its principal frame is not these rows'; FastICA continues at
     `step0` when given, else at the step the frame was saved with, else at
     1, and `iterations` counts the earlier fit's too.
-    `patience` damps the steps (`fastica`), and with `checkpoint_path` the
-    frame so far is saved there every 100 iterations, with its step, in
-    the form `init` takes."""
+    `patience` damps the steps (`fastica`, row by row, or with `shared` one
+    step for all rows), and with `checkpoint_path` the frame so far is
+    saved there every 100 iterations, with its step, in the form `init`
+    takes."""
     mu, lam, V = principal(train)
     W0, done = None, 0
     if init is not None:
@@ -254,7 +281,7 @@ def ica_frame(train: Float[np.ndarray, "n d"], seed: int = 0, iters: int = 200,
             raise ValueError("the initial frame was fit on other rows")
         W0, done = init["unmixing"], int(init.get("iterations", 0))
         if step0 is None and "step" in init:
-            step0 = float(init["step"])
+            step0 = np.asarray(init["step"], np.float64)
     step0 = 1.0 if step0 is None else step0
     frame = {"mean": mu, "eigenvalues": lam, "eigenvectors": V}
     if iters == 0:
@@ -271,7 +298,7 @@ def ica_frame(train: Float[np.ndarray, "n d"], seed: int = 0, iters: int = 200,
 
     W, it, lim = fastica((train.astype(np.float64) - mu) @ (V / np.sqrt(lam)),
                          seed, iters, W0=W0, log_every=log_every,
-                         patience=patience, step0=step0,
+                         patience=patience, step0=step0, shared=shared,
                          checkpoint=save if checkpoint_path else None)
     return {**frame, "unmixing": W, "iterations": done + it, "last_change": lim}
 
@@ -504,7 +531,7 @@ def rows(cfg) -> tuple[dict, dict, dict]:
         extra["ica_fit"] = ica_frame(out["cache"][0], 0, cfg.ica_iters, init,
                                      log_every=25, patience=cfg.ica_patience,
                                      checkpoint_path=Path(cfg.out) / "frame_ica.partial.npz",
-                                     step0=cfg.ica_step)
+                                     step0=cfg.ica_step, shared=cfg.ica_shared_step)
     for frame in cfg.marginals:
         print(f"{frame} copy", flush=True)
         T, E, shapes[frame] = marginal_copy(*out["cache"][:2], frame,
@@ -609,9 +636,13 @@ def main() -> None:
                         "every 100 iterations) from an earlier run on the same "
                         "rows: FastICA continues from its unmixing")
     p.add_argument("--ica-patience", type=int, default=0,
-                   help="damp FastICA's steps, halving them whenever the largest "
+                   help="damp FastICA's steps, halving a row's whenever its "
                         "change goes this many iterations without a new low "
                         "(0: plain FastICA)")
+    p.add_argument("--ica-shared-step", action="store_true",
+                   help="damp with one step for all rows, halved whenever the "
+                        "largest change stalls (the schedule "
+                        "frame_ica.iter800.npz was fitted with)")
     p.add_argument("--ica-step", type=float, default=None,
                    help="the damped step to start at (default: --ica-init's "
                         "saved step, else 1)")

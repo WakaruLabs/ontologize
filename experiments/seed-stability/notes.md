@@ -943,9 +943,9 @@ the tolerance is 1e-4.
   Continued from there (`--ica-init`, `--ica-step 0.5`), 12 rows were left by iteration 750, with
   the step at its floor of 1/64 from 725, and they stayed to iteration 800. The continued run's
   log counts from its own start, so these are its iterations 550, 525 and 600. Both pieces used
-  one step for all rows, `fastica` as committed in `107f043`. The largest change was then
-  3.5e-4, an angle of 1.5° between a row and its update, against the tolerance's 0.8°. This
-  frame (`frame_ica.iter800.npz`) is the one used here.
+  one step for all rows, `fastica` as committed in `107f043` and now `--ica-shared-step`. The
+  largest change was then 3.5e-4, an angle of 1.5° between a row and its update, against the
+  tolerance's 0.8°. This frame (`frame_ica.iter800.npz`) is the one used here.
 - **Two further attempts made things worse.** Both started from iteration 800 at step 0.25. A
   step shared by all rows (patience 50) had 20 rows above the tolerance after 100 iterations. A
   step per row, each halving its own (patience 20), had 25 after 150. Neither was kept. The remaining rows had low log-cosh
@@ -971,9 +971,12 @@ the tolerance is 1e-4.
   (Hungarian) and separately by the |cosine| of their whitened directions. Kurtosis and skew are
   A's, on its training rows.
 - **B's fit differs from A's.** It ran with a damping step per row (the working tree's `fastica`
-  at the time), where A's ran with one step for all rows. It ended with 127 rows above the
+  at the time, and the default since the section below), where A's ran with one step for all
+  rows. It ended with 127 rows above the
   tolerance (largest change 2.0e-3), against A's 12. Its unconverged rows can account for at
-  most 127 of the 514 matches below 0.5.
+  most 127 of the 514 matches below 0.5. *(Refit later the same day with the shared step, from
+  the same rows and start: it stalls with 751 rows above the tolerance, and the split by kurtosis
+  holds. See "per-row damping converges where one shared step stalls", below.)*
 
 | excess kurtosis | sources | variance | median abs. skew | matched correlation, median [q10, q90] | runner-up, median |
 |---|---|---|---|---|---|
@@ -1057,9 +1060,9 @@ Output:
 ```bash
 o=data/out/sonar/kmeans_seeds_ica
 JAX_PLATFORMS=cpu uv run python experiments/seed-stability/kmeans_seeds.py \
-    --marginals ica --ica-iters 200 --ica-patience 50 --no-cache --out $o
+    --marginals ica --ica-iters 200 --ica-patience 50 --ica-shared-step --no-cache --out $o
 JAX_PLATFORMS=cpu uv run python experiments/seed-stability/kmeans_seeds.py \
-    --marginals ica --ica-iters 600 --ica-patience 50 --ica-step 0.5 \
+    --marginals ica --ica-iters 600 --ica-patience 50 --ica-shared-step --ica-step 0.5 \
     --ica-init $o/frame_ica.iter200.npz --no-cache --out $o
 JAX_PLATFORMS=cpu uv run python experiments/seed-stability/kmeans_seeds.py \
     --marginals ica --groups 0.2 0.15 0.1 --ica-init $o/frame_ica.iter800.npz --ica-iters 0 \
@@ -1201,4 +1204,55 @@ JAX_PLATFORMS=cpu uv run python experiments/seed-stability/atomsources.py \
     --frame $F --sources data/out/sonar/ica_seeds/sources.csv \
     --a data/out/sonar/width_seeds/l1_h76_s42 --b data/out/sonar/width_seeds/l1_h76_s43 \
     --out data/out/sonar/atomsources/h76
+```
+
+## 2026-11-22: per-row damping converges where one shared step stalls
+
+**Short version.** B's FastICA, the disjoint sample of `ica_seeds.py`, was refit with one damping
+step shared by all rows. It used the same rows, the same random start, 800 iterations and patience
+50, so the only difference from the earlier fit is the damping. The shared step stalls:
+
+| damping | rows above the tolerance at 800 | largest change |
+|---|---|---|
+| per row (earlier B) | 127 | 2.0e-3 |
+| shared | 751 | 5.4e-2 |
+
+The skewed/symmetric split of the section above holds under both.
+
+**How the shared step stalls.** It halves whenever the largest change over all rows goes 50
+iterations without a new low, so it answers to the single worst row.
+- At iteration 200 it was at 0.5, with 701 rows above the tolerance, against the per-row fit's 432.
+- From about iteration 225 the count stayed near 760 while the step halved. It reached its floor
+  of 1/64 by iteration 425. From there the change over two iterations was about 1e-6, so W barely
+  moved.
+- A's frame reached 12 rows with a shared step only after a restart at step 0.5 at iteration
+  200, which reset the patience count. So a shared step can work, but a fresh start does not
+  get there.
+
+**Reproduction against A**, by A's kurtosis bins; median matched correlation, per-row B / shared B:
+
+| excess kurtosis | sources | per-row B | shared B |
+|---|---|---|---|
+| [1, 2) | 246 | 0.148 | 0.141 |
+| [2, 5) | 289 | 0.227 | 0.187 |
+| [5, 10) | 306 | 0.911 | 0.902 |
+| ≥ 10 | 182 | 0.952 | 0.951 |
+
+- 304 sources match above 0.9 with the shared B, against 336 with the per-row B.
+- The unconverged rows cost mostly the middle bin.
+- **The two B frames themselves differ.** The best |cosine| between their rows has median
+  0.66, and 424 rows are above 0.9.
+
+The per-row damping that fitted the earlier B was reverted in 7dba40e and is restored after it as
+`fastica`'s default. The shared step is `--shared-step` (`ica_seeds.py`) and `--ica-shared-step`
+(`kmeans_seeds.py`), so both B fits and A's frame can be rebuilt. `ica_seeds/` is the per-row fit
+and `ica_seeds_shared/` the refit.
+
+Output: `data/out/sonar/ica_seeds_shared/` (`summary.json`, `sources.csv`, `run.log`,
+`frame_b.npz`).
+
+```bash
+JAX_PLATFORMS=cpu uv run python experiments/seed-stability/ica_seeds.py \
+    --frame-a data/out/sonar/kmeans_seeds_ica/frame_ica.iter800.npz --iters-a 0 --iters 800 \
+    --patience 50 --shared-step --out data/out/sonar/ica_seeds_shared
 ```
