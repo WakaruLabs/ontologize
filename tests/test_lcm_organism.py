@@ -629,6 +629,32 @@ def test_the_weighted_frame_is_the_cache_recoloured_to_itself_unrotated(tmp_path
     assert np.isclose(wf0[:, :-1].var(0).mean(), 1, rtol=1e-2)
 
 
+def test_the_weighted_frame_rotates_all_but_the_coordinates_it_keeps(tmp_path):
+    import weightframe
+    _, _, tgt, P, _, _, _ = planted_harvest(tmp_path)
+    d = np.load(tgt).shape[1]
+    w = harvest_lcm.inverse_variance(np.load(tgt), P)
+    w[1] = 0.0  # a dead coordinate stays dead and out of the rotation
+    np.save(tmp_path / "w.npy", w.astype(np.float32))
+    out = tmp_path / "out"
+    out.mkdir()
+    base = ["--source", str(tgt), "--source-weights", str(tmp_path / "w.npy"), "--chunk", "50"]
+    weightframe.main([*base, "--out", str(out / "wf.npy")])
+    weightframe.main([*base, "--out", str(out / "part.npy"), "--rotate-except", "0,3"])
+    wf, part = (np.load(out / f).astype(np.float64) for f in ("wf.npy", "part.npy"))
+    keep, dead = [0, 3], [1]
+    rest = [j for j in range(d) if j not in keep + dead]
+    np.testing.assert_allclose(part[:, keep], wf[:, keep], rtol=2e-3, atol=1e-3)
+    assert (part[:, dead] == 0).all() and np.load(out / "part.mse_weights.npy")[1] == 0
+    # the rest is an orthogonal map of the same block: norms and the loss are kept
+    M = np.linalg.lstsq(wf[:, rest], part[:, rest], rcond=None)[0]
+    assert ((wf[:, rest] @ M - part[:, rest]) ** 2).sum() < 1e-4 * (part ** 2).sum()
+    np.testing.assert_allclose(M @ M.T, np.eye(len(rest)), atol=1e-2)
+    assert np.abs(M - np.eye(len(rest))).max() > 0.1
+    frame = json.loads((out / "part.meta.json").read_text())["frame"]
+    assert frame["rotate_except"] == keep and frame["rotated"] == len(rest)
+
+
 def test_recolouring_to_its_own_spectrum_is_a_scaled_rotation():
     r = np.random.default_rng(8)
     d = 32

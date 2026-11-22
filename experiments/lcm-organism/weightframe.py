@@ -20,12 +20,19 @@ is y' rotated, or else chosen to bring each coordinate's variance to about 1.
 A dictionary on y' differs from one on y only in its input's scale per
 coordinate, and from one on y_rot only in the rotation.
 
+`--rotate-except J` rotates part of the frame: the live coordinates outside
+the list J are mixed among themselves by a random rotation (drawn as
+recolour.py draws R, from `--rotation-seed`), and those in J keep their axes.
+That is still a rotation of sqrt(w) * y, so the loss is unchanged, and a
+dictionary on it tells whether the coordinates in J carry what the basis
+gives.
+
 The output is laid out as the source, with its `.index`, `.kind`, `.langs`
 and `.docstart` sidecars linked, and its `.meta.json` the source's with the
 scale recorded. Its `.mse_weights.npy` is its own inverse variance over the
 prefix rows, accumulated from the rows as written: 1 on every coordinate when
-the source's weights are its inverse variances, and 0 wherever the source's
-weights are 0. `.mse_weights_matched.npy` is that times one constant, so the
+the source's weights are its inverse variances and nothing is rotated, and 0
+wherever the source's weights are 0. `.mse_weights_matched.npy` is that times one constant, so the
 whitened error of predicting the mean equals the source's under its weights,
 as harvest_lcm.py matches a harvest. Rows are written through
 `<out>.partial` and renamed when complete.
@@ -57,6 +64,10 @@ def main(argv=None) -> Path:
                    help="default: the source's .mse_weights_matched.npy")
     p.add_argument("--scale-like", default=None, metavar="NPY",
                    help="a recolour.py output whose map's scale c this uses")
+    p.add_argument("--rotate-except", default=None, metavar="J",
+                   help="comma-separated coordinates to keep on their axes while "
+                        "the other live coordinates are rotated among themselves")
+    p.add_argument("--rotation-seed", type=int, default=0)
     p.add_argument("--out", default="data/activations/lcm-organism/lcm_readout_x_wf_b4.npy")
     p.add_argument("--chunk", type=int, default=65536)
     cfg = p.parse_args(argv)
@@ -83,6 +94,14 @@ def main(argv=None) -> Path:
     else:
         c = 1.0 / np.sqrt(whitened_base(x, w) * d / live.sum())
     sw = (c * np.sqrt(w)).astype(np.float32)
+    keep = rot = R = None
+    if cfg.rotate_except is not None:
+        keep = sorted({int(j) for j in cfg.rotate_except.split(",") if j.strip()})
+        if any(j < 0 or j >= d for j in keep):
+            raise SystemExit(f"--rotate-except names a coordinate outside 0..{d - 1}")
+        rot = np.flatnonzero(live & ~np.isin(np.arange(d), keep))
+        R = np.linalg.qr(np.random.default_rng(cfg.rotation_seed)
+                         .standard_normal((len(rot), len(rot))))[0].astype(np.float32)
 
     part = dst.with_name(dst.name + ".partial")
     out = np.lib.format.open_memmap(part, mode="w+", dtype=np.float16, shape=(m, d))
@@ -90,7 +109,10 @@ def main(argv=None) -> Path:
     s1, s2 = np.zeros(d), np.zeros(d)
     for lo in range(0, m, cfg.chunk):
         hi = min(lo + cfg.chunk, m)
-        y16, st = to_f16(np.asarray(x[lo:hi], np.float32) * sw)
+        y32 = np.asarray(x[lo:hi], np.float32) * sw
+        if R is not None:
+            y32[:, rot] = y32[:, rot] @ R
+        y16, st = to_f16(y32)
         conv["max_abs"] = max(conv["max_abs"], st["max_abs"])
         for k in ("subnormal", "to_zero", "nonfinite"):
             conv[k] += st[k]
@@ -122,7 +144,10 @@ def main(argv=None) -> Path:
     span = float(own[live].max() / own[live].min())
     meta = {**src_meta, "rows_from": src.name, "conversion": conv,
             "frame": {"weights": src_w.name, "scale": c,
-                      "scale_like": Path(cfg.scale_like).name if cfg.scale_like else None},
+                      "scale_like": Path(cfg.scale_like).name if cfg.scale_like else None,
+                      "rotate_except": keep,
+                      "rotation_seed": cfg.rotation_seed if keep is not None else None,
+                      "rotated": int(len(rot)) if rot is not None else 0},
             "mse_weights": {"rows": P, "live": int(live.sum()), "span": span},
             "mse_weights_matched_scale": matched}
     side(".meta.json").write_text(json.dumps(meta, indent=2) + "\n")
