@@ -142,26 +142,66 @@ def symmetric_orth(W: Float[np.ndarray, "p p"]) -> Float[np.ndarray, "p p"]:
 
 
 def fastica(Z: Float[np.ndarray, "n p"], seed: int, iters: int = 200,
-            tol: float = 1e-4) -> tuple[Float[np.ndarray, "p p"], int, float]:
+            tol: float = 1e-4, W0: Float[np.ndarray, "p p"] | None = None,
+            log_every: int = 0, patience: int = 0, min_step: float = 1 / 64,
+            checkpoint=None, checkpoint_every: int = 100, step0: float = 1.0
+            ) -> tuple[Float[np.ndarray, "p p"], int, float]:
     """Symmetric FastICA (Hyvärinen 1999) with the log-cosh contrast on
     sphered rows (zero mean, identity covariance): the orthogonal W whose
     rows' projections Z Wᵀ are as far from Gaussian as the contrast finds.
-    Returns W, the iterations run, and the last step's largest change,
-    max |1 − |w_new · w||| over rows (below tol: converged)."""
+    It starts from W0 when given (an earlier fit to continue), else from a
+    random rotation.
+
+    Each iteration computes the fixed-point update F(W) and its largest
+    change, max |1 − |f · w|| over rows; below tol, F(W) is returned as
+    converged. With `patience` 0 every step is the update itself. Symmetric
+    FastICA can cycle instead of converging, so with `patience` > 0 the
+    step is damped: W moves a share `step` of the way to F(W) (its rows'
+    signs matched to W's) and is orthogonalized again; `step` starts at
+    `step0` (1, or where a continued fit left it) and halves, down to
+    `min_step`, whenever the largest change has gone `patience` iterations
+    without a new low. The fixed points are the plain algorithm's, and
+    convergence is read on the full update either way. Every log_every
+    iterations it prints the largest and median change, how many rows
+    change by tol or more, the step, and the largest change over two
+    iterations, which stays small while the rows flip between two states.
+    checkpoint(W, it, lim, step) is called every checkpoint_every
+    iterations. Returns W, the iterations run, and the last largest
+    change."""
     rng = np.random.default_rng(seed)
     p = Z.shape[1]
-    W = symmetric_orth(rng.standard_normal((p, p)))
+    W = symmetric_orth(rng.standard_normal((p, p)) if W0 is None else W0)
     Z32 = Z.astype(np.float32)
-    lim = np.inf
+    lim, best, since, step, W_prev = np.inf, np.inf, 0, float(step0), None
     for it in range(1, iters + 1):
         G = np.tanh(Z32 @ W.T.astype(np.float32))
         gp = (1.0 - G.astype(np.float64) ** 2).mean(0)
-        W_new = symmetric_orth((G.T @ Z32).astype(np.float64) / len(Z)
-                               - gp[:, None] * W)
-        lim = float(np.abs(np.abs((W_new * W).sum(1)) - 1.0).max())
-        W = W_new
+        F = symmetric_orth((G.T @ Z32).astype(np.float64) / len(Z)
+                           - gp[:, None] * W)
+        cos = (F * W).sum(1)
+        change = np.abs(np.abs(cos) - 1.0)
+        lim = float(change.max())
         if lim < tol:
+            W = F
             break
+        if lim < best:
+            best, since = lim, 0
+        else:
+            since += 1
+            if patience and since >= patience and step > min_step:
+                step, since = max(step / 2, min_step), 0
+        W_new = F if step == 1.0 else symmetric_orth(
+            W + step * (np.sign(cos)[:, None] * F - W))
+        if log_every and it % log_every == 0:
+            two = (float(np.abs(np.abs((W_new * W_prev).sum(1)) - 1.0).max())
+                   if W_prev is not None else np.nan)
+            print(f"FastICA iteration {it}: largest change {lim:.2e}, median "
+                  f"{np.median(change):.2e}, {int((change >= tol).sum())} of "
+                  f"{p} rows at or above {tol:g}, step {step:g}, largest "
+                  f"change over two iterations {two:.2e}", flush=True)
+        W_prev, W = W, W_new
+        if checkpoint is not None and it % checkpoint_every == 0:
+            checkpoint(W, it, lim, step)
     return W, it, lim
 
 
@@ -187,8 +227,59 @@ def shape_stats(Y: Float[np.ndarray, "n p"]) -> dict:
     return {"skew": skew, "kurtosis": kurt, "bimodality": bc}
 
 
+def ica_frame(train: Float[np.ndarray, "n d"], seed: int = 0, iters: int = 200,
+              init: dict | None = None, log_every: int = 0, patience: int = 0,
+              checkpoint_path: Path | None = None, step0: float = 1.0) -> dict:
+    """FastICA's frame of the training rows: their principal frame (mean,
+    eigenvalues, eigenvectors, directions with no variance left out) and
+    the unmixing W of symmetric FastICA in its sphered coordinates, with
+    the iterations run and the last step's largest change. `init` is an
+    earlier fit's frame on the same rows, which FastICA continues from (up
+    to `iters` more iterations); it raises if its principal frame is not
+    these rows'; FastICA continues at the step it was saved with (`step0`
+    when it has none), and `iterations` counts the earlier fit's too.
+    `patience` damps the steps (`fastica`), and with `checkpoint_path` the
+    frame so far is saved there every 100 iterations, with its step, in
+    the form `init` takes."""
+    mu, lam, V = principal(train)
+    W0, done = None, 0
+    if init is not None:
+        if not (init["eigenvectors"].shape == V.shape
+                and np.allclose(init["eigenvectors"], V, atol=1e-6)):
+            raise ValueError("the initial frame was fit on other rows")
+        W0, done = init["unmixing"], int(init.get("iterations", 0))
+        step0 = float(init.get("step", step0))
+    frame = {"mean": mu, "eigenvalues": lam, "eigenvectors": V}
+
+    def save(W, it, lim, step):
+        tmp = Path(checkpoint_path).with_suffix(".tmp.npz")
+        np.savez(tmp, **frame, unmixing=W, iterations=done + it,
+                 last_change=lim, step=step)
+        os.replace(tmp, checkpoint_path)
+
+    W, it, lim = fastica((train.astype(np.float64) - mu) @ (V / np.sqrt(lam)),
+                         seed, iters, W0=W0, log_every=log_every,
+                         patience=patience, step0=step0,
+                         checkpoint=save if checkpoint_path else None)
+    return {**frame, "unmixing": W, "iterations": done + it, "last_change": lim}
+
+
+def to_sources(X: Float[np.ndarray, "n d"], fit: dict) -> Float[np.ndarray, "n p"]:
+    """Rows as `ica_frame`'s sources (unit variance on the training rows)."""
+    V, lam = fit["eigenvectors"], fit["eigenvalues"]
+    return (X.astype(np.float64) - fit["mean"]) @ (V / np.sqrt(lam)) @ fit["unmixing"].T
+
+
+def mixing(fit: dict) -> Float[np.ndarray, "p d"]:
+    """Each source's direction in the rows' frame: sources @ mixing + mean
+    gives back the rows (their part with variance)."""
+    return fit["unmixing"] @ (fit["eigenvectors"] * np.sqrt(fit["eigenvalues"])).T
+
+
 def marginal_copy(train: Float[np.ndarray, "n d"], tail: Float[np.ndarray, "m d"],
-                  frame: str, seed: int = 0, ica_iters: int = 200
+                  frame: str, seed: int = 0, ica_iters: int = 200,
+                  ica_init: dict | None = None, ica_log: int = 0,
+                  ica_fit: dict | None = None
                   ) -> tuple[Float[np.ndarray, "n d"], Float[np.ndarray, "m d"], dict]:
     """Copies of the training and tail rows that keep each coordinate's
     distribution in a frame fitted on the training rows and nothing that
@@ -196,31 +287,96 @@ def marginal_copy(train: Float[np.ndarray, "n d"], tail: Float[np.ndarray, "m d"
     own, in the training rows and the tail separately. `frame` "pca" is the
     rows' principal directions, so the copy keeps the covariance and every
     principal direction's marginal (its skew, tails and modes); "ica" is
-    FastICA's sources in the sphered principal frame, so the copy is
-    exactly an independent-components model with the rows' own source
-    marginals. Directions with no variance are left out of the copy. The
-    dict has, per coordinate of the frame, its share of the variance and
-    `shape_stats` on the training rows, and for "ica" how FastICA ended."""
-    mu, lam, V = principal(train)
+    FastICA's sources in the sphered principal frame (`ica_frame`, or
+    `ica_fit` when it has been fitted already), so the copy is exactly an
+    independent-components model with the rows' own source marginals.
+    Directions with no variance are left out of the copy. The dict has, per
+    coordinate of the frame, its share of the variance and `shape_stats` on
+    the training rows; `frame`, the fitted frame (mean, eigenvalues,
+    eigenvectors, and for "ica" the unmixing W, sources = sphered rows Wᵀ);
+    and for "ica" how FastICA ended."""
     if frame == "pca":
+        mu, lam, V = principal(train)
+        fit = {"mean": mu, "eigenvalues": lam, "eigenvectors": V}
         M = V.T                                          # (p, d): coordinate -> row
         to = lambda X: (X.astype(np.float64) - mu) @ V
         info = {}
     elif frame == "ica":
-        sphere = V / np.sqrt(lam)
-        W, it, lim = fastica((train.astype(np.float64) - mu) @ sphere, seed,
-                             ica_iters)
-        M = W @ (V * np.sqrt(lam)).T                     # Y M + mu = X
-        to = lambda X: (X.astype(np.float64) - mu) @ sphere @ W.T
-        info = {"ica_iterations": it, "ica_last_change": lim}
+        fit = ica_fit if ica_fit is not None else ica_frame(
+            train, seed, ica_iters, ica_init, ica_log)
+        mu, M = fit["mean"], mixing(fit)                 # Y M + mu = X
+        to = lambda X: to_sources(X, fit)
+        info = {"ica_iterations": fit["iterations"],
+                "ica_last_change": fit["last_change"]}
     else:
         raise ValueError(f"unknown frame {frame!r}")
     Yt, Ye = to(train), to(tail)
     var = (M ** 2).sum(1) * Yt.var(0)
-    stats = {"variance_share": var / var.sum(), **shape_stats(Yt), **info}
+    stats = {"variance_share": var / var.sum(), **shape_stats(Yt), **info,
+             "frame": fit}
     back = lambda Y: (Y @ M + mu).astype(np.float32)
     return (back(shuffle_columns(Yt, 2 * seed)),
             back(shuffle_columns(Ye, 2 * seed + 1)), stats)
+
+
+def energy_dependence(S: Float[np.ndarray, "n p"]) -> Float[np.ndarray, "p p"]:
+    """Spearman correlation between the sources' magnitudes |s_i|: the
+    dependence ICA leaves when sources are uncorrelated but tend to be
+    large together. Ranks keep heavy tails from dominating it. Independent
+    sources read zero, within about 1/sqrt(n)."""
+    from scipy.stats import rankdata
+    R = rankdata(np.abs(S), axis=0)
+    R = (R - R.mean(0)) / R.std(0)
+    return R.T @ R / len(S)
+
+
+def energy_groups(R: Float[np.ndarray, "p p"], tau: float) -> Int[np.ndarray, "p"]:
+    """Sources grouped by average-linkage clustering on 1 − R, cut so that
+    the mean correlation between a group's members' magnitudes is at least
+    tau: group labels 0, 1, ..."""
+    from scipy.cluster.hierarchy import fcluster, linkage
+    from scipy.spatial.distance import squareform
+    D = 1.0 - R
+    np.fill_diagonal(D, 0.0)
+    Z = linkage(squareform(np.maximum(D, 0.0), checks=False), "average")
+    _, lab = np.unique(fcluster(Z, 1.0 - tau, "distance"), return_inverse=True)
+    return lab
+
+
+def group_copy(train: Float[np.ndarray, "n d"], tail: Float[np.ndarray, "m d"],
+               fit: dict, groups: Int[np.ndarray, "p"], seed: int = 0
+               ) -> tuple[Float[np.ndarray, "n d"], Float[np.ndarray, "m d"]]:
+    """Copies in the ICA frame that keep each group of sources' joint
+    distribution and nothing that ties groups together: one permutation of
+    the rows per group, in the training rows and the tail separately. All
+    singletons is the ICA copy; one group is the rows themselves."""
+    M = mixing(fit)
+
+    def copy(X, s):
+        Y = to_sources(X, fit)
+        rng = np.random.default_rng(s)
+        out = np.empty_like(Y)
+        for g in range(int(groups.max()) + 1):
+            cols = np.flatnonzero(groups == g)
+            out[:, cols] = Y[np.ix_(rng.permutation(len(Y)), cols)]
+        return (out @ M + fit["mean"]).astype(np.float32)
+
+    return copy(train, 2 * seed), copy(tail, 2 * seed + 1)
+
+
+def group_stats(groups: Int[np.ndarray, "p"], R: Float[np.ndarray, "p p"],
+                variance_share: Float[np.ndarray, "p"]) -> dict:
+    """A grouping's sizes, the share of sources and of variance outside
+    singletons, and its groups' mean within-group magnitude correlation."""
+    size = np.bincount(groups)
+    multi = size[groups] > 1
+    within = [float(R[np.ix_(c, c)][~np.eye(len(c), dtype=bool)].mean())
+              for c in (np.flatnonzero(groups == g) for g in np.flatnonzero(size > 1))]
+    return {"groups": int(len(size)), "largest": int(size.max()),
+            "groups_over_1": int((size > 1).sum()),
+            "sources_in_groups": int(multi.sum()),
+            "variance_in_groups": float(variance_share[multi].sum()),
+            "within_correlation_median": float(np.median(within)) if within else None}
 
 
 def seed_table(train: Float[np.ndarray, "n d"], tail: Float[np.ndarray, "m d"],
@@ -256,23 +412,54 @@ def head_table(codes_: Int[np.ndarray, "heads m"], layer: Int[np.ndarray, "heads
             for l in np.unique(layer)}
 
 
-def rows(cfg) -> tuple[dict, dict]:
+def train_index(prefix: int, n: int, seed: int = 0,
+                exclude: Int[np.ndarray, "m"] | None = None) -> Int[np.ndarray, "n"]:
+    """The training rows' indices: n of the first `prefix` rows drawn
+    without replacement (seed 0 is every data set's here), sorted, none of
+    them in `exclude`."""
+    pool = prefix if exclude is None else np.setdiff1d(np.arange(prefix), exclude)
+    return np.sort(np.random.default_rng(seed).choice(pool, n, replace=False))
+
+
+def rows(cfg) -> tuple[dict, dict, dict]:
     """Training rows and tail rows, whitened, for each data set, with the
     tail in the cache's own frame for the heads (None for a copy made in
-    the whitened frame); and each marginal copy's per-coordinate table."""
+    the whitened frame); each marginal copy's per-coordinate table; and
+    the ICA fit (None unless a copy needs it) and, with --groups, the
+    sources' magnitude correlations and each grouping."""
     sw = np.sqrt(np.load(cfg.mse_weights)).astype(np.float32)
     X = np.load(cfg.cache, mmap_mode="r")
-    idx = np.sort(np.random.default_rng(0).choice(cfg.prefix, cfg.train_rows,
-                                                  replace=False))
+    idx = train_index(cfg.prefix, cfg.train_rows)
     out = {"cache": (np.asarray(X[idx], np.float32) * sw,
                      np.asarray(X[-cfg.tail_rows:], np.float32) * sw,
                      np.asarray(X[-cfg.tail_rows:], np.float32))}
-    shapes = {}
+    shapes, extra = {}, {"ica_fit": None, "energy": None}
+    if "ica" in cfg.marginals or cfg.groups:
+        print("ica frame: fitting", flush=True)
+        init = dict(np.load(cfg.ica_init)) if cfg.ica_init else None
+        extra["ica_fit"] = ica_frame(out["cache"][0], 0, cfg.ica_iters, init,
+                                     log_every=25, patience=cfg.ica_patience,
+                                     checkpoint_path=Path(cfg.out) / "frame_ica.partial.npz",
+                                     step0=cfg.ica_step)
     for frame in cfg.marginals:
-        print(f"{frame} copy: fitting the frame", flush=True)
+        print(f"{frame} copy", flush=True)
         T, E, shapes[frame] = marginal_copy(*out["cache"][:2], frame,
-                                            ica_iters=cfg.ica_iters)
+                                            ica_fit=extra["ica_fit"])
         out[frame] = (T, E, None)
+    if cfg.groups:
+        fit = extra["ica_fit"]
+        S = to_sources(out["cache"][0], fit)
+        R = energy_dependence(S)
+        var = (mixing(fit) ** 2).sum(1) * S.var(0)
+        extra["energy"] = {"R": R, "groups": {}}
+        for tau in cfg.groups:
+            g = energy_groups(R, tau)
+            name = f"ica_g{tau:g}"
+            print(f"{name} copy", flush=True)
+            T, E = group_copy(*out["cache"][:2], fit, g)
+            out[name] = (T, E, None)
+            extra["energy"]["groups"][name] = {
+                "tau": tau, "labels": g, **group_stats(g, R, var / var.sum())}
     if cfg.gauss:
         from gausscopy import BLOCK, block
         g = Path(cfg.gauss)
@@ -300,7 +487,7 @@ def rows(cfg) -> tuple[dict, dict]:
         T = np.asarray(X[idx], np.float32) - Mt
         E = np.asarray(X[-cfg.tail_rows:], np.float32) - Me
         out["within"] = (T * sw, E * sw, E)
-    return out, shapes
+    return out, shapes, extra
 
 
 def write_shapes(path: Path, st: dict) -> dict:
@@ -346,6 +533,23 @@ def main() -> None:
                    help="copies of the cache's rows that keep each coordinate's "
                         "distribution in this frame and nothing that ties them")
     p.add_argument("--ica-iters", type=int, default=200)
+    p.add_argument("--ica-init", default=None,
+                   help="frame_ica.npz (or the frame_ica.partial.npz a run saves "
+                        "every 100 iterations) from an earlier run on the same "
+                        "rows: FastICA continues from its unmixing")
+    p.add_argument("--ica-patience", type=int, default=0,
+                   help="damp FastICA's steps, halving them whenever the largest "
+                        "change goes this many iterations without a new low "
+                        "(0: plain FastICA)")
+    p.add_argument("--ica-step", type=float, default=1.0,
+                   help="the damped step to start at, when --ica-init has none")
+    p.add_argument("--groups", type=float, nargs="*", default=[],
+                   help="copies that keep groups of FastICA sources whose "
+                        "magnitudes correlate at a mean of at least each value, "
+                        "and nothing that ties groups together")
+    p.add_argument("--no-cache", action="store_true",
+                   help="leave the cache's own rows unscored (their numbers do "
+                        "not change from run to run)")
     p.add_argument("--ckpt", default=None, help="a stack whose heads to compare")
     p.add_argument("--step", type=int, default=0)
     p.add_argument("--temperature", type=float, default=0.00015)
@@ -354,8 +558,38 @@ def main() -> None:
     out = Path(cfg.out)
     out.mkdir(parents=True, exist_ok=True)
 
-    data, shapes = rows(cfg)
+    data, shapes, extra = rows(cfg)
     summary = {}
+    frames = {f: st["frame"] for f, st in shapes.items()}
+    if extra["ica_fit"] is not None:
+        frames["ica"] = extra["ica_fit"]
+        print(f"FastICA: {extra['ica_fit']['iterations']} iterations, last change "
+              f"{extra['ica_fit']['last_change']:.2e}", flush=True)
+    for frame, fr in frames.items():
+        np.savez(out / f"frame_{frame}.npz", **fr)
+    if extra["energy"] is not None:
+        R = extra["energy"]["R"]
+        np.save(out / "energy_ica.npy", R.astype(np.float32))
+        off = R[~np.eye(len(R), dtype=bool)]
+        summary["energy"] = {
+            "null_sd": float(1 / np.sqrt(cfg.train_rows)),
+            "quantiles": {q: float(np.quantile(off, float(q)))
+                          for q in ("0.01", "0.5", "0.99", "0.999")},
+            "pairs_over": {t: int((off > float(t)).sum() // 2)
+                           for t in ("0.05", "0.1", "0.2", "0.3")}}
+        e = summary["energy"]
+        print(f"magnitude correlations: median {e['quantiles']['0.5']:+.4f}, "
+              f"99.9th percentile {e['quantiles']['0.999']:+.4f} (null SD "
+              f"{e['null_sd']:.4f}); pairs over 0.1 {e['pairs_over']['0.1']}, "
+              f"over 0.3 {e['pairs_over']['0.3']}", flush=True)
+        np.savez(out / "groups_ica.npz",
+                 **{n: g["labels"] for n, g in extra["energy"]["groups"].items()})
+        for n, g in extra["energy"]["groups"].items():
+            summary[f"{n}_groups"] = s = {k: v for k, v in g.items() if k != "labels"}
+            print(f"{n}: {s['groups']} groups, {s['groups_over_1']} of them "
+                  f"larger than one (largest {s['largest']}), holding "
+                  f"{s['sources_in_groups']} sources and "
+                  f"{s['variance_in_groups']:.1%} of the variance", flush=True)
     for frame, st in shapes.items():
         summary[f"{frame}_coordinates"] = s = write_shapes(
             out / f"coordinates_{frame}.csv", st)
@@ -372,6 +606,8 @@ def main() -> None:
         from partition import codes
         heads = codes(cfg.ckpt, cfg.step, cfg.temperature, data["cache"][2], 256)
     for name, (train, tail, _) in data.items():
+        if name == "cache" and cfg.no_cache:
+            continue
         summary[name] = {}
         for k in cfg.ks:
             t = seed_table(train, tail, k, cfg.seeds)

@@ -1,8 +1,10 @@
-# experiments/ste-arm/cellshape.py: whether a head's cells are convex and
-# whether it ignores its input's sign. Heads with affine logits keep every
-# mean of their own rows and give negated rows another entry; a head whose
-# logits are squares of linear forms is sign-blind and splits each cell into
-# two opposite lobes, whose cross-lobe means leave the cell.
+# experiments/ste-arm/cellshape.py: whether a head's cells are convex cones,
+# whether they are convex, and whether it ignores its input's sign. Heads
+# with linear logits keep every mean of their own rows, rescaled or not, and
+# give negated rows another entry; an affine cell that is not a cone keeps
+# its raw means and loses rescaled ones; a head whose logits are squares of
+# linear forms is sign-blind and splits each cell into two opposite lobes,
+# whose cross-lobe means leave the cell.
 import sys
 from pathlib import Path
 
@@ -25,8 +27,24 @@ def test_linear_heads_keep_every_mean():
     res = shape_tests(S, assign(S), 6, assign, lambda P: -P, 20, 8, rng)
     for key in ("mean2", "mean8", "mean32", "centroid"):
         assert np.allclose(res[key], 1.0)
+        assert np.allclose(res[f"{key}_raw"], 1.0)
+        assert np.allclose(res[f"{key}_radial"], 0.0)
     # argmax of -s is the argmin of s, never the argmax for k > 1
     assert np.allclose(res["negation"], 0.0)
+
+
+def test_an_affine_cell_keeps_raw_means_and_loses_rescaled_ones():
+    # x_1 <= 3/4 on the unit circle: the cell is convex but not a cone, so
+    # a midpoint of two of its points stays in it and the midpoint pushed
+    # back to the circle can leave it
+    rng = np.random.default_rng(3)
+    S = sphere(4000, 2, rng)
+    assign = lambda P: (P[:, :1] > 0.75).astype(int)        # one head, k 2
+    res = shape_tests(S, assign(S), 2, assign, lambda P: -P, 20, 64, rng)
+    for key in ("mean2", "mean8", "mean32", "centroid"):
+        assert np.allclose(res[f"{key}_raw"], 1.0)
+    assert res["mean2"][0] < 0.99 and res["mean2_radial"][0] > 0.01
+    assert np.isclose(res["mean2_radial"][0], 1.0 - res["mean2"][0])
 
 
 def test_squared_logits_are_sign_blind_and_split_cells():
@@ -50,3 +68,8 @@ def test_cell_means_rescale_to_the_rows_norm():
     C, cid = cell_means(S, A, 2, 0, 5, 20, rng)
     assert C.shape == (2, 4)
     assert set(map(tuple, cid)) == {(0, 0), (0, 1)}
+    # the raw means are the same groups' means, before rescaling
+    P2, _, R2 = cell_means(S, A, 2, 8, 5, 20, np.random.default_rng(4), raw=True)
+    assert np.allclose(P2, R2 * (3.0 / np.linalg.norm(R2, axis=1, keepdims=True)),
+                       atol=1e-5)
+    assert (np.linalg.norm(R2, axis=1) < 3.0).all()

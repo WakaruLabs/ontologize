@@ -750,3 +750,61 @@ Output: `data/out/sonar/kmeans_seeds_marginals/` (`summary.json`, `run.log`,
 JAX_PLATFORMS=cpu uv run python experiments/seed-stability/kmeans_seeds.py \
     --marginals pca ica --out data/out/sonar/kmeans_seeds_marginals
 ```
+
+## 2026-11-22: a head screen passes 5–7 of 380 heads on SONAR and none on its Gaussian copy
+
+**Short version.** `headscreen.py` asks of each head whether the other seed's matched head agrees
+with it more than anything else does: more than zero, more than either side's runner-up partner,
+and more than either side's closest head in its own seed. Each comparison must hold by 2 SDs, on
+rows the matching never saw.
+- On the control pair 5 of 380 heads pass, and on the all-off pair 7. All of them are in layer 0.
+- On the all-off pair trained on the Gaussian copy, none pass.
+
+So the rule has a calibration: second moments alone yield no passing head. Almost every head
+shares its cross-seed agreement with several others. At layer 0 the median matched NMI (0.029
+control, 0.021 all-off) is below both the median runner-up partner (0.035, 0.025) and the median
+closest head in the same seed (0.034, 0.024). For autointerp the rule names these heads:
+- control, layer 0: heads 0, 19, 31, 64 and 70;
+- all-off, layer 0: heads 11, 12, 26, 28, 34, 36 and 75.
+
+Every other head reproduces, if at all, only as part of a block.
+
+**Setup** (`headscreen.py`, CPU, 06:23 to 06:45, about 7 minutes a pair).
+- The last 65,535 rows of each pair's data, in thirds of 21,845: `mc4_sent16`'s tail for the
+  ladder pairs (`ste_h76_init01_med837_ctrl` and `_ctrl_s43`; the all-off arm and its `_s43`), and
+  `gausscopy/eval.npy` for the copy's pair (`gausscopy/alloff`, `alloff_s43`).
+- Final checkpoints (step 50,000), T 0.00015.
+- Partners, runner-ups and closest same-seed heads are chosen on the first third. NMIs are scored
+  on the other two, less the Miller–Madow bias.
+- A rows-shuffled pairing reads +0.0001 (SD 0.0003) once corrected. Matched on the third it was
+  chosen on, the same null reads +0.0009, which is what selection alone adds.
+
+| pair | layer 0 passing | matched NMI median, layer 0 / 1 / 2–4 | failing the floor, layers 2 / 3 / 4 |
+|---|---|---|---|
+| control | 5 of 76 | 0.029 / 0.0035 / 0.0021 | 0 / 0 / 0 |
+| all-off | 7 of 76 | 0.021 / 0.0019 / 0.0006–0.0011 | 4 / 10 / 14 |
+| all-off, Gaussian copy | 0 of 76 | 0.0061 / 0.0014 / 0.0004–0.0008 | 9 / 22 / 39 |
+
+- **The passing heads win narrowly.** Their matched NMI is 0.024–0.058, ahead of their nearest
+  alternative by 0.002–0.013.
+- **Layers 1–4 pass nothing in any pair.** Every comparison but the floor fails for every head,
+  or for all but one or two. In the control pair, every upper head's matched NMI is still above zero: around
+  0.002, but with no partner that stands out.
+- **The Gaussian copy's layer-0 heads fail on the runner-ups** (72 and 74 of 76) more often than
+  on their own seed's neighbours (54 and 62). Their agreement is spread over many partners.
+- **Requiring all five comparisons** keeps 380 heads from producing chance passes, and the copy's
+  zero bounds that rate in practice. The rule can only find fewer heads than a looser match
+  would.
+
+Output: `data/out/sonar/headscreen/{ctrl,alloff,gauss_alloff}/` (`heads.csv`, `summary.json`)
+and the `.log` beside each.
+
+```bash
+L=data/out/sonar/recipe_ladder
+JAX_PLATFORMS=cpu uv run python experiments/seed-stability/headscreen.py \
+    --a $L/ste_h76_init01_med837_ctrl --b $L/ste_h76_init01_med837_ctrl_s43 \
+    --rows 65536 --out data/out/sonar/headscreen/ctrl
+JAX_PLATFORMS=cpu uv run python experiments/seed-stability/headscreen.py \
+    --a data/out/sonar/gausscopy/alloff --b data/out/sonar/gausscopy/alloff_s43 \
+    --cache data/out/sonar/gausscopy/eval.npy --rows 65536 --out data/out/sonar/headscreen/gauss_alloff
+```

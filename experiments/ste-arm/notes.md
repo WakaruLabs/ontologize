@@ -4613,6 +4613,10 @@ Readings:
 
 One seed per arm, one cache tail.
 
+(2026-11-22: because each mean is rescaled to its rows' norm, "convex" in this section means
+cone-like, or geodesically convex on the sphere. Convexity on the affine slice is not tested;
+see the correction under the `resid_nc_hm` section below.)
+
 ```bash
 JAX_PLATFORMS=cpu uv run python experiments/ste-arm/cellshape.py \
     --ckpt data/out/sonar/multilingual/ste_h76_init01:0.00015 \
@@ -4877,6 +4881,54 @@ convexity above):
   rank-1, as in the hard stack, not with the collapse.
 
 One run, one tail.
+
+**Correction (2026-11-22, later the same day).** `cellshape.py` rescales each mean to the mean
+norm of the rows it averages before scoring it (`cell_means`). Its shares therefore test whether
+a cell is a convex cone, or geodesically convex on the sphere of shapes. They do not test
+convexity on the affine slice with the constant coordinate fixed. Read "least convex" above as
+"least cone-like", and layer 4's "is convex" as "is cone-like". Layers 1–3's cells are not a
+cover by cones, which is what the outside claim needed. The same holds for the 2026-11-14
+section's "convex".
+
+`cellshape.py` now also scores the same means unrescaled (`_raw`: convexity on the affine
+slice) and the share kept raw but lost rescaled (`_radial`). It takes `dir:T:step` for an
+earlier step. The final step's rescaled shares reproduce the table above exactly, from the same
+draws. Shares that keep their entry:
+
+| layer | step | midpoints, rescaled / raw | 8 rows | 32 rows | centroids | heads keeping every centroid, raw |
+|---|---|---|---|---|---|---|
+| 0 | final | 0.989 / 0.989 | 0.999 / 0.999 | 0.999 / 0.999 | 0.999 / 0.999 | 96.9% |
+| 1 | final | 0.800 / 0.969 | 0.015 / 0.979 | 0.006 / 0.986 | 0.007 / 0.996 | 93.8% |
+| 2 | final | 0.875 / 0.990 | 0.040 / 1.000 | 0.031 / 1.000 | 0.031 / 1.000 | 100% |
+| 3 | final | 0.968 / 0.993 | 0.835 / 1.000 | 0.383 / 1.000 | 0.137 / 1.000 | 100% |
+| 4 | final | 0.998 / 1.000 | 1.000 / 1.000 | 1.000 / 1.000 | 1.000 / 1.000 | 100% |
+| 1 | 3,050,000 | 0.803 / 0.987 | 0.034 / 1.000 | 0.016 / 1.000 | 0.012 / 1.000 | 100% |
+| 2 | 3,050,000 | 0.902 / 0.993 | 0.058 / 1.000 | 0.027 / 1.000 | 0.025 / 1.000 | 100% |
+| 3 | 3,050,000 | 0.992 / 0.999 | 0.985 / 1.000 | 0.898 / 1.000 | 0.725 / 1.000 | 100% |
+
+At 3,050,000 layers 0 and 4 keep their means' entries within 0.002 of the final step's shares,
+and every head of layer 0 keeps every centroid (96.9% of heads at the final step).
+
+- **Layers 1–3's losses are the radial step.** On the same means, almost every one that loses
+  its entry after rescaling kept it raw. The `_radial` share is 0.97–0.99 of centroids in layers
+  1–2.
+- **On these rows the cells come close to convex on the slice, and are not exactly convex.** Up
+  to 3.1% of midpoints change winner raw. At the final step, layer 1 also loses 1–2% of its raw
+  8- and 32-row means and 0.4% of its raw centroids.
+- **Layer 0 cannot tell the two apart.** It has no constant coordinate, so its logits are
+  homogeneous quadratics, and rescaling a mean never changes its winner.
+- **Layer 3 depends on the step.** It keeps 72.5% of its rescaled centroids at 3,050,000 and
+  13.7% at the final step, but every raw centroid at both. So only layers 1–2 are firmly not
+  cone-like.
+
+These agree, within their random draws, with the check made outside the repository mentioned
+above. Output: `data/out/sonar/cellshape_resid_nc_hm_raw/`.
+
+```bash
+JAX_PLATFORMS=cpu uv run python experiments/ste-arm/cellshape.py \
+    --ckpt data/out/sonar/multilingual/resid_nc_hm:0.03 data/out/sonar/multilingual/resid_nc_hm:0.03:3050000 \
+    --out data/out/sonar/cellshape_resid_nc_hm_raw
+```
 
 Outputs: `data/out/sonar/multilingual/resid_nc_hm/bilinspec/` and
 `data/out/sonar/cellshape_resid_nc_hm/`. `bilinspec.py` restores with the saved sharding, so it

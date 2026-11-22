@@ -7,11 +7,14 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "experiments"
                        / "seed-stability"))
-from kmeans_seeds import (assign, fastica, fvu, kmeans, marginal_copy,  # noqa: E402
-                          principal, seed_table, shape_stats)
+from kmeans_seeds import (assign, energy_dependence, energy_groups,  # noqa: E402
+                          fastica, fvu, group_copy, ica_frame, kmeans,
+                          marginal_copy, principal, seed_table, shape_stats,
+                          to_sources, train_index)
 
 
 def test_assign_is_the_nearest_centre():
@@ -98,6 +101,33 @@ def test_fastica_recovers_planted_sources():
     C = np.abs(np.corrcoef(np.concatenate([Y, S], 1).T)[:4, 4:])
     assert lim < 1e-4 and it < 200
     assert (C.max(0) > 0.98).all() and (C.max(1) > 0.98).all()
+    # started from its own fixed point, it stops at once and stays there
+    W2, it2, lim2 = fastica((X - mu) @ (V / np.sqrt(lam)), seed=1, W0=W)
+    assert it2 <= 2 and lim2 < 1e-4 and np.abs(np.abs((W2 * W).sum(1)) - 1).max() < 1e-3
+    # damped steps reach the same sources, and the checkpoint sees the run
+    seen = []
+    W3, it3, lim3 = fastica((X - mu) @ (V / np.sqrt(lam)), seed=2, iters=2000,
+                            patience=1, checkpoint=lambda W, i, l, s: seen.append(i),
+                            checkpoint_every=2)
+    Y3 = (X - mu) @ (V / np.sqrt(lam)) @ W3.T
+    C3 = np.abs(np.corrcoef(np.concatenate([Y3, S], 1).T)[:4, 4:])
+    assert lim3 < 1e-4 and (C3.max(0) > 0.98).all()
+    assert seen == list(range(2, it3, 2))
+
+
+def test_an_ica_fit_continues_only_on_its_own_rows():
+    rng = np.random.default_rng(9)
+    S = rng.laplace(size=(12000, 3))
+    X = (S @ rng.standard_normal((3, 3))).astype(np.float32)
+    _, _, st = marginal_copy(X[:10000], X[10000:], "ica", ica_iters=3)
+    assert {"mean", "eigenvalues", "eigenvectors", "unmixing"} <= set(st["frame"])
+    _, _, st2 = marginal_copy(X[:10000], X[10000:], "ica", ica_init=st["frame"])
+    assert st2["ica_last_change"] < 1e-4
+    # a continued fit counts the earlier one's iterations and keeps its step
+    fit = ica_frame(X[:10000], init={**st["frame"], "step": 0.25}, patience=5)
+    assert fit["iterations"] > st["frame"]["iterations"] == 3
+    with pytest.raises(ValueError):
+        marginal_copy(X[2000:], X[:2000], "ica", ica_init=st["frame"])
 
 
 def test_the_ica_copy_keeps_an_independent_model_the_pca_copy_breaks():
@@ -116,6 +146,54 @@ def test_the_ica_copy_keeps_an_independent_model_the_pca_copy_breaks():
     assert edge["ica"] < np.sqrt(3) + 0.05
     assert edge["pca"] > np.sqrt(3) + 0.3
     assert st["ica_last_change"] < 1e-4
+
+
+def planted_scale_groups(n, rng):
+    """Six Laplace sources mixed at random; sources 0-2 share one scale
+    variable (their magnitudes rise together), 3-5 are independent."""
+    S = rng.laplace(size=(n, 6))
+    S[:, :3] *= np.exp(rng.standard_normal((n, 1)))
+    S = (S - S.mean(0)) / S.std(0)
+    return S, (S @ rng.standard_normal((6, 6))).astype(np.float32)
+
+
+def test_magnitude_correlations_find_sources_that_share_a_scale():
+    rng = np.random.default_rng(10)
+    S, _ = planted_scale_groups(40000, rng)
+    R = energy_dependence(S)
+    assert R[0, 1] > 0.2 and R[1, 2] > 0.2
+    assert np.abs(R[3:, 3:][~np.eye(3, dtype=bool)]).max() < 0.03
+    assert np.abs(R[:3, 3:]).max() < 0.03
+    g = energy_groups(R, 0.1)
+    assert len(set(g[:3])) == 1 and len(set(g[3:])) == 3 and g[3] != g[0]
+
+
+def test_the_group_copy_keeps_a_group_and_breaks_ties_between_groups():
+    rng = np.random.default_rng(11)
+    _, X = planted_scale_groups(40000, rng)
+    fit = ica_frame(X[:30000], iters=500)
+    assert fit["last_change"] < 1e-4
+    S = to_sources(X[:30000], fit)
+    R = energy_dependence(S)
+    g = energy_groups(R, 0.1)
+    T, E = group_copy(X[:30000], X[30000:], fit, g)
+    Rt = energy_dependence(to_sources(T, fit))
+    shared = np.flatnonzero(np.bincount(g)[g] == 3)
+    assert len(shared) == 3
+    a, b = shared[:2]
+    assert abs(Rt[a, b] - R[a, b]) < 0.03                  # kept inside the group
+    other = np.flatnonzero(np.bincount(g)[g] == 1)[0]
+    assert abs(Rt[a, other]) < 0.03
+    singles = group_copy(X[:30000], X[30000:], fit, np.arange(6))[0]
+    assert energy_dependence(to_sources(singles, fit))[a, b] < 0.03
+    assert np.allclose(to_sources(T, fit).std(0), S.std(0), rtol=1e-6)
+
+
+def test_the_training_rows_are_drawn_as_before_and_a_second_draw_avoids_them():
+    a = train_index(1000, 100)
+    assert np.array_equal(a, np.sort(np.random.default_rng(0).choice(1000, 100, replace=False)))
+    b = train_index(1000, 100, seed=1, exclude=a)
+    assert len(np.intersect1d(a, b)) == 0 and len(b) == 100
 
 
 def test_shape_stats_read_gaussian_uniform_and_two_modes():

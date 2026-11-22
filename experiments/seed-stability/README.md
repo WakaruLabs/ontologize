@@ -206,6 +206,29 @@ null with one partition's rows shuffled, and each seed's FVU.
   coefficient) goes to `coordinates_<frame>.csv`, with a summary and
   FastICA's convergence in `summary.json`. FastICA at d = 1024 on 131,072
   rows takes a few seconds an iteration on the CPU, up to `--ica-iters`.
+  Every 25 iterations it prints the largest and median change, how many
+  rows still change by the tolerance or more, its step, and the largest
+  change over two iterations, which stays small while rows flip between
+  two states. Symmetric FastICA can cycle that way instead of converging;
+  `--ica-patience N` damps its steps, moving W part of the way to the
+  update and halving that share whenever the largest change goes N
+  iterations without a new low (same fixed points; convergence is read on
+  the full update). Each fitted frame is saved as `frame_<frame>.npz`
+  (mean, eigenvalues, eigenvectors, and for `ica` the unmixing), the ICA
+  frame also every 100 iterations as `frame_ica.partial.npz` with its
+  step, and `--ica-init` continues FastICA from either, fit on the same
+  rows, at that step (`--ica-step` for a frame saved without one) and
+  counting the earlier iterations.
+- `--groups TAU ...` runs it on copies between the ICA copy and the cache.
+  The sources' magnitudes |s_i| are correlated over the training rows
+  (Spearman, `energy_dependence`): uncorrelated sources that tend to be
+  large together are the dependence ICA leaves. Average-linkage clustering
+  on 1 − that correlation, cut at mean correlation TAU, groups them
+  (`energy_groups`), and the copy permutes each group's sources together
+  (`group_copy`), keeping each group's joint distribution and nothing that
+  ties groups. All singletons is the ICA copy, one group the cache.
+  `energy_ica.npy` holds the correlations and `groups_ica.npz` each
+  grouping. `--no-cache` leaves the cache's own rows unscored.
 - The cells are also scored against the rows' languages (NMI,
   `language_nmi`) for the data sets whose tail row i stands for the
   cache's tail row i: the cache, the mixture and within.
@@ -231,10 +254,71 @@ agreement on separated clusters and along a dominant direction, its
 absence on an isotropic Gaussian, and that every cell ends up used. For
 the marginal copies: the `pca` copy keeps every principal coordinate's
 values and the covariance and loses a planted dependence between
-uncorrelated coordinates; FastICA recovers planted sources; the `ica` copy
-keeps two uniform sources mixed along non-orthogonal directions inside
-their parallelogram, where the `pca` copy spills rows outside it; and the
-shape statistics read a Gaussian, a uniform and two modes.
+uncorrelated coordinates; FastICA recovers planted sources, with damped
+steps too, and, started at its own fixed point, stays there; a saved
+`ica` fit continues on its own rows and is refused on others; the `ica`
+copy keeps two uniform sources mixed along non-orthogonal directions
+inside their parallelogram, where the `pca` copy spills rows outside it;
+the shape statistics read a Gaussian, a uniform and two modes; the
+magnitude correlations find sources planted to share a scale and group
+them apart from independent ones; and the group copy keeps a group's
+magnitude correlation while breaking it between groups, which the ICA
+copy breaks within the group too. A second draw of training rows avoids
+the first.
+
+## Whether FastICA's sources reproduce (`ica_seeds.py`)
+
+FastICA, as `kmeans_seeds.py` fits it, on its training rows (A, continued
+from a saved `frame_ica.npz` with `--frame-a`) and on as many rows from the
+same prefix and disjoint from them (B, another random start). On the
+held-out tail, each of A's sources is matched one to one with B's
+(Hungarian) by the |correlation| of the two sources and by the |cosine|
+of their directions in the whitened frame. Beside them: B's sources rotated
+at random, which no data pin, and the two principal frames' coordinates.
+`sources.csv` gives each of A's sources its kurtosis, variance share,
+partner, both matched values and its runner-up; `summary.json` bins them by
+kurtosis, since ICA cannot pin a source near Gaussian. Both fits are damped
+(`--patience`, default 50) and checkpointed (`frame_a.partial.npz`,
+`frame_b.partial.npz`; `--frame-b` continues B).
+
+```bash
+JAX_PLATFORMS=cpu uv run python experiments/seed-stability/ica_seeds.py \
+    --frame-a data/out/sonar/kmeans_seeds_ica/frame_ica.npz --out data/out/sonar/ica_seeds
+```
+
+`tests/test_ica_seeds.py` checks that a relabelled, sign-flipped copy
+matches exactly, and on planted sources that non-Gaussian ones reproduce
+across three disjoint samples, a random rotation does not, and two
+Gaussian sources land in a different rotation of their plane.
+
+## Which heads reproduce as heads (`headscreen.py`)
+
+A multitrait–multimethod screen of a seed pair. Each head of A is matched
+to one of B's over the whole models (Hungarian on NMI, as `partition.py`
+matches), on the first third of the tail rows; on the same third it finds
+each side's runner-up partner in the other seed and its closest other head
+in its own seed. On the other two thirds, the matched NMI must exceed zero,
+both runner-ups and both within-seed neighbours. Every NMI is corrected by
+the Miller–Madow bias of the plug-in mutual information,
+(r_a − 1)(r_b − 1)/2n nats for r occupied cells, over the mean entropy;
+`null_check` gives the corrected NMI of a rows-shuffled pairing. Each
+comparison's noise is the SD, over a layer's heads, of how much the two
+scoring thirds disagree, halved; a head passes when every comparison is
+more than `--z` (default 2) such SDs above zero. `heads.csv` has every
+matched pair, and `summary.json` the passing heads per layer and how many
+fail each comparison.
+
+```bash
+JAX_PLATFORMS=cpu uv run python experiments/seed-stability/headscreen.py \
+    --a data/out/sonar/recipe_ladder/ste_h76_init01_med837_ctrl \
+    --b data/out/sonar/recipe_ladder/ste_h76_init01_med837_ctrl_s43 \
+    --rows 65536 --out data/out/sonar/headscreen/ctrl
+```
+
+`tests/test_headscreen.py` checks that independent partitions read zero
+once corrected while the plug-in NMI does not, and on planted heads that a
+shared head passes, a shared head whose own seed holds a copy of it fails
+its within-seed comparison, and the rest fail.
 `tests/test_gausscopy.py` checks the per-language moments against numpy's,
 their total covariance against the pooled one, and that mixture rows
 follow their language's moments and depend only on its stream.

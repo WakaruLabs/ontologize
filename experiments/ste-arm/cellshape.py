@@ -1,4 +1,4 @@
-"""Are a head's cells convex, and is it blind to the sign of its input?
+"""Are a head's cells convex cones, are they convex, and is it blind to sign?
 
 A head with affine logits cuts its input space into a power diagram, whose
 cells are convex (Aurenhammer 1991, §3.1): the mean of any rows a head
@@ -18,14 +18,27 @@ followed by any constant coordinates), per head:
             the share of means of 2, 8 or 32 distinct random rows of one
             entry (--draws per entry used by >= --min-count rows), each
             rescaled to the mean norm of its rows, that the head assigns
-            to that entry: convexity tested at a growing scale;
+            to that entry: a cone test at a growing scale;
   centroid  the same for the mean of all the entry's rows;
+  <mean>_raw
+            the same means, of the same groups of rows, as they are, with
+            the constant coordinates at their value: convexity on that
+            affine slice, at points inside the ball the unit shapes lie on;
+  <mean>_radial
+            the share of those means kept as they are and lost once
+            rescaled: losses that the radial step alone makes;
   negation  the share of rows whose negated shape (constant coordinates
             kept) keeps its entry.
-For a convex cone every mean share is 1; on the unit sphere the classifier
-sees, that is geodesic convexity within a hemisphere. The random-projection
-heads are scored the same way on the raw rows, centered on the mean they
-are centered on, with negation as reflection through it.
+For a convex cone every rescaled share is 1; on the unit sphere the
+classifier sees, that is geodesic convexity within a hemisphere. A convex
+cell keeps every raw mean but need not keep a rescaled one: the half-plane
+x_1 <= 3/4 holds the unit points (1/2, ±√3/2) and their midpoint, but not
+the midpoint rescaled, (1, 0). The random-projection heads are scored the
+same way on the raw rows, centered on the mean they are centered on (the
+apex of every cell's cone), with negation as reflection through it.
+
+A checkpoint is given as dir:temperature, scored at its latest step, or
+dir:temperature:step.
 
     JAX_PLATFORMS=cpu uv run python experiments/ste-arm/cellshape.py \\
         --ckpt data/out/sonar/multilingual/ste_h76_init01:0.00015 \\
@@ -53,20 +66,21 @@ from pareto import load_onto
 
 # rows per mean, smallest first; 0 is the mean of all the entry's rows
 SIZES = (2, 8, 32, 0)
-KEYS = ("mean2", "mean8", "mean32", "centroid", "negation")
+MEANS = ("mean2", "mean8", "mean32", "centroid")
+KEYS = (MEANS + tuple(f"{m}_raw" for m in MEANS)
+        + tuple(f"{m}_radial" for m in MEANS) + ("negation",))
 
 
 def cell_means(S: Float[np.ndarray, "n d"], A: Int[np.ndarray, "n h"], k: int,
                size: int, draws: int, min_count: int,
-               rng: np.random.Generator
-               ) -> Tuple[Float[np.ndarray, "c d"], Int[np.ndarray, "c 2"]]:
+               rng: np.random.Generator, raw: bool = False):
     """Means of `size` distinct random rows of one entry, `draws` per used
     entry (size 0: one mean of all the entry's rows, the centroid), in the
     shape coordinates `S`, each rescaled to the mean norm of the rows it
     averages (so unit rows give unit points). Returns the points and their
-    (head, entry)."""
+    (head, entry), and with `raw` also the same means unrescaled."""
     norm = np.linalg.norm(S, axis=1)
-    pts, ids = [], []
+    pts, ids, raws = [], [], []
     for j in range(A.shape[1]):
         for e in range(k):
             rows = np.flatnonzero(A[:, j] == e)
@@ -81,11 +95,13 @@ def cell_means(S: Float[np.ndarray, "n d"], A: Int[np.ndarray, "n h"], k: int,
             scale = norm[pick].mean(1)
             pts.append(m * (scale / np.maximum(np.linalg.norm(m, axis=1),
                                                1e-30))[:, None])
+            raws.append(m)
             ids.extend([(j, e)] * len(pick))
     d = S.shape[1]
-    return (np.concatenate(pts).astype(np.float32) if pts
-            else np.zeros((0, d), np.float32),
-            np.asarray(ids, np.int64).reshape(-1, 2))
+    stack = lambda L: (np.concatenate(L).astype(np.float32) if L
+                       else np.zeros((0, d), np.float32))
+    ids = np.asarray(ids, np.int64).reshape(-1, 2)
+    return (stack(pts), ids, stack(raws)) if raw else (stack(pts), ids)
 
 
 def kept(assign: Callable[[np.ndarray], np.ndarray],
@@ -114,29 +130,35 @@ def shape_tests(S: Float[np.ndarray, "n d"], A: Int[np.ndarray, "n h"], k: int,
                 sizes: Tuple[int, ...] = SIZES
                 ) -> Dict[str, Float[np.ndarray, "h"]]:
     """Per-head shares for one layer of heads: for each mean size (0 for
-    the centroid), the share of means that keep their entry; and the share
-    of rows whose negation keeps theirs. `assign` maps shape points to
-    entries (n, h); `negate` maps rows to their negations in the same
-    coordinates."""
+    the centroid), the share of means that keep their entry, rescaled to
+    their rows' norm (`mean8`) and as they are (`mean8_raw`), and the share
+    kept as they are and lost once rescaled (`mean8_radial`), all on the
+    same means; and the share of rows whose negation keeps theirs. `assign`
+    maps shape points to entries (n, h); `negate` maps rows to their
+    negations in the same coordinates."""
     h = A.shape[1]
     out = {}
     for size in sizes:
-        P, ids = cell_means(S, A, k, size, draws, min_count, rng)
-        out[f"mean{size}" if size else "centroid"] = per_head(
-            kept(assign, P, ids), ids[:, 0], h)
+        P, ids, R = cell_means(S, A, k, size, draws, min_count, rng, raw=True)
+        name = f"mean{size}" if size else "centroid"
+        kr, kw = kept(assign, P, ids), kept(assign, R, ids)
+        out[name] = per_head(kr, ids[:, 0], h)
+        out[f"{name}_raw"] = per_head(kw, ids[:, 0], h)
+        out[f"{name}_radial"] = per_head(kw * (1 - kr), ids[:, 0], h)
         if size == 0:
             out["entries"] = np.bincount(ids[:, 0], minlength=h).astype(float)
     out["negation"] = (assign(negate(S)) == A).mean(0)
     return out
 
 
-def layer_inputs(ckpt: str, T: float, X: Float[np.ndarray, "n d"], batch: int
+def layer_inputs(ckpt: str, T: float, X: Float[np.ndarray, "n d"], batch: int,
+                 step: int = 0
                  ) -> Tuple[List[np.ndarray], List[np.ndarray], List[Callable],
                             List[int], Dict]:
-    """Per layer: the classifier's input U on every row, its argmax code,
-    a function from inputs to argmax codes, and the trailing constant
-    coordinate count."""
-    model, raw, step = load_onto(ckpt, 0)
+    """Per layer, at checkpoint `step` (0: the latest): the classifier's
+    input U on every row, its argmax code, a function from inputs to argmax
+    codes, and the trailing constant coordinate count."""
+    model, raw, step = load_onto(ckpt, step)
     params = {"params": raw}
 
     def probe(module, Xb: Float[Array, "b d"]):
@@ -190,7 +212,7 @@ def summarize(res: Dict[str, np.ndarray]) -> Dict[str, float]:
         v = res[key][np.isfinite(res[key])]
         out[key] = float(v.mean()) if len(v) else float("nan")
         out[f"{key}_min"] = float(v.min()) if len(v) else float("nan")
-        if key != "negation":
+        if key != "negation" and not key.endswith("_radial"):
             out[f"{key}_heads_all"] = float((v == 1.0).mean()) if len(v) \
                 else float("nan")
     out["entries_per_head"] = float(res["entries"].mean())
@@ -202,7 +224,8 @@ def main() -> None:
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--ckpt", nargs="+", required=True,
-                   help="checkpoint dirs, each as dir:temperature")
+                   help="checkpoint dirs, each as dir:temperature or "
+                        "dir:temperature:step (no step: the latest)")
     p.add_argument("--cache", default="data/sonar_embeddings/mc4_4M.npy")
     p.add_argument("--rows", type=int, default=32768,
                    help="the cache's held-out tail")
@@ -241,10 +264,11 @@ def main() -> None:
                              + [res[key][j] for key in KEYS + ("entries",)])
 
     for spec in cfg.ckpt:
-        path, T = spec.rsplit(":", 1)
-        Us, As, assign, n_const, info = layer_inputs(path, float(T), X,
-                                                     cfg.batch)
-        name = Path(path).name
+        path, *rest = spec.split(":")
+        T, step = float(rest[0]), int(rest[1]) if len(rest) > 1 else 0
+        Us, As, assign, n_const, info = layer_inputs(path, T, X, cfg.batch,
+                                                     step)
+        name = Path(path).name + (f"@{step}" if step else "")
         print(f"{name} step {info['step']}: {info['l']} x {info['h']} "
               f"heads, k {info['k']}, constant coordinates {n_const}")
         for li in range(info["l"]):
@@ -257,7 +281,8 @@ def main() -> None:
             res = shape_tests(U[:, :d], As[li], info["k"],
                               lambda S, f=assign[li], full=full: f(full(S)),
                               lambda S: -S, cfg.min_count, cfg.draws, rng)
-            results.append({"model": name, "layer": li, **summarize(res)})
+            results.append({"model": name, "step": info["step"], "layer": li,
+                            **summarize(res)})
             for j in range(info["h"]):
                 per_head_rows.append([name, li, j]
                                      + [res[key][j]
@@ -265,16 +290,24 @@ def main() -> None:
 
     print(f"\n{len(X)} held-out rows; entries used by >= {cfg.min_count} "
           f"rows; {cfg.draws} random means of each size per entry. Share "
-          f"of means that keep their entry, mean over heads; 'all' is the "
-          f"share of heads that keep every centroid")
-    print(f"{'model':>20} {'layer':>5} {'entries':>8} {'mean2':>7} "
+          f"of means that keep their entry, mean over heads, rescaled to "
+          f"their rows' norm (a cone test) and as they are (convexity on "
+          f"the slice), and the share kept as they are but lost rescaled; "
+          f"'all' is the share of heads that keep every centroid")
+    print(f"{'model':>20} {'layer':>5} {'entries':>8} {'means':>9} {'mean2':>7} "
           f"{'mean8':>7} {'mean32':>7} {'centroid':>9} {'all':>7} "
           f"{'negation':>9}")
     for r in results:
-        print(f"{r['model']:>20} {r['layer']:>5} {r['entries_per_head']:8.1f} "
-              f"{r['mean2']:7.3f} {r['mean8']:7.3f} {r['mean32']:7.3f} "
-              f"{r['centroid']:9.3f} {r['centroid_heads_all']:7.1%} "
-              f"{r['negation']:9.3f}")
+        for kind, suf in (("rescaled", ""), ("raw", "_raw"), ("radial", "_radial")):
+            first = kind == "rescaled"
+            lead = (f"{r['model']:>20} {r['layer']:>5} {r['entries_per_head']:8.1f}"
+                    if first else " " * 35)
+            alls = (f"{r['centroid' + suf + '_heads_all']:7.1%}"
+                    if kind != "radial" else " " * 7)
+            print(f"{lead} {kind:>9} "
+                  + " ".join(f"{r[m + suf]:7.3f}" for m in MEANS[:3])
+                  + f" {r['centroid' + suf]:9.3f} {alls}"
+                  + (f" {r['negation']:9.3f}" if first else ""))
     (out / "summary.json").write_text(json.dumps(
         {"rows": len(X), "cache": cfg.cache, "min_count": cfg.min_count,
          "draws": cfg.draws, "results": results}, indent=1))
