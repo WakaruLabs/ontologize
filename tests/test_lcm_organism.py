@@ -24,6 +24,8 @@
 # - ctxmean.py: each row is the source's plus the weighted mean of its
 #   document's earlier rows (its own at a document's start), and the loss
 #   weights are the source's, scaled to the source's whitened base.
+# - recolour.py: a source already laid out as the target harvest is mapped
+#   row for row, by one linear map with no offset.
 import json
 import os
 import signal
@@ -586,3 +588,34 @@ def test_the_fixed_mix_adds_the_earlier_mean_and_keeps_the_sources_weights(tmp_p
     assert meta["rows"]["prefix"] == [0, P] and meta["rows"]["tail"] == [T, len(x)]
     for suf in (".index.npy", ".langs.npy", ".kind.npy", ".docstart.npy"):
         assert os.path.samefile(tmp_path / ("h" + suf), side(suf))
+
+
+def test_a_source_laid_out_as_the_target_is_recoloured_row_for_row(tmp_path):
+    import ctxmean
+    c, x, tgt, P, T, rows, F = planted_harvest(tmp_path)
+    d = x.shape[1]
+    # a target harvest as wide as the source, on the same rows and sidecars
+    r = np.random.default_rng(7)
+    t8 = tmp_path / "h8.npy"
+    np.save(t8, (F[rows] @ r.standard_normal((F.shape[1], d))).astype(np.float16))
+    for suf in (".index.npy", ".langs.npy", ".kind.npy", ".docstart.npy", ".meta.json"):
+        os.link(tmp_path / ("h" + suf), tmp_path / ("h8" + suf))
+    np.save(tmp_path / "w8.npy", np.ones(d, np.float32))
+    out = tmp_path / "out"
+    out.mkdir()
+    ctxmean.main(["--source", str(c), "--source-weights", str(tmp_path / "w.npy"),
+                  "--target", str(t8), "--out", str(out / "mix.npy"), "--holdout", "150",
+                  "--chunk", "50"])
+    recolour.main(["--source", str(out / "mix.npy"),
+                   "--source-weights", str(out / "mix.mse_weights_matched.npy"),
+                   "--target", str(t8), "--target-weights", str(tmp_path / "w8.npy"),
+                   "--out", str(out / "rec.npy"), "--min-rows", "10"])
+    meta = json.loads((out / "rec.meta.json").read_text())
+    assert meta["source_laid_out"] and meta["rows"]["prefix"] == [0, P]
+    mix, rec = np.load(out / "mix.npy").astype(np.float64), np.load(out / "rec.npy").astype(np.float64)
+    assert rec.shape == mix.shape
+    # row i is the map of the mix's row i: one linear map, no offset, fits every row
+    M = np.linalg.lstsq(mix, rec, rcond=None)[0]
+    assert ((mix @ M - rec) ** 2).sum() < 1e-4 * (rec ** 2).sum()
+    for suf in (".index.npy", ".langs.npy", ".docstart.npy"):
+        assert os.path.samefile(tmp_path / ("h8" + suf), out / ("rec" + suf))

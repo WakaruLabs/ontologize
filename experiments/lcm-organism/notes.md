@@ -1,5 +1,70 @@
 # lcm-organism: notes
 
+## 2026-11-21: the fixed mix recoloured to the LCM's spectrum agrees no more than the fixed mix
+
+**In short.**
+- **Dimension and context together do not give the LCM's lead.** SONAR's row plus its document's
+  earlier mean, recoloured to block 4's spectrum, closes −3% of SONAR's gap to the LCM on all heads
+  and 19% within a language. That is SONAR's level on all heads, and the plain fixed mix's (20%)
+  within a language.
+- **So the lead is in the LCM's particular map.** It is not in the spectrum that map gives, nor in
+  the context mean, nor in both. The readout from x_n alone is also a linear map of SONAR's rows to a
+  low-dimensional spectrum, and it closes 84% on all heads (entry below). The two recolourings close
+  22% (SONAR) and −3% (the fixed mix).
+- **The share of variance between languages does not carry it.** This arm has more of its variance
+  between languages than the fixed mix (0.117 against 0.090) and agrees less. Over the eight arms, the
+  correlation of agreement with that share falls to 0.86 on all heads and 0.84 within a language.
+
+**The control.**
+- **The map.** `recolour.py` now reads a source laid out as its target row for row. With `--source
+  sonar_ctxmean_b4.npy` and that cache's matched weights, it gives the fixed mix block 4's
+  weighted-frame spectrum rank for rank, under a random rotation. The direction `no837` zeroes stays
+  zero.
+- **Fidelity.** Its participation ratio under its own weights is 149, against the target's 143, the
+  same as the recoloured SONAR's.
+- **Its spectrum** on the tail: participation ratio 148, effective rank 322, 65 / 370 directions for
+  50% / 90%, 0.117 between languages, and within-language participation ratio 173.
+
+**Runs.** `ARMS=sonar_ctxmean_recol phase2.sh train`, then `score`, on the RTX 3090: seeds 42 and 43
+to step 46,250, about 2 hours each. The machine restarted during scoring, after `seedmatch.py` had
+written its scores, and the score stage was rerun for `eval_next.py`.
+
+**The readouts,** beside every other arm's seeds 42 and 43:
+
+| Arm | All 380 heads: matched NMI (null) | First 38 heads, within language (null) | Gap closed, all heads / within | Head-specific part | Share between languages | Copy baseline | FVU_w, each seed |
+|---|---|---|---|---|---|---|---|
+| LCM, block 4 | 0.0340 (0.0048) | 0.1269 (0.0495) | | 0.0026 | 0.154 | 0.439 | 0.2820 / 0.2812 |
+| Readout, x_n and context | 0.0316 (0.0048) | 0.1043 (0.0494) | 86% / 62% | 0.0026 | 0.153 | 0.454 | 0.2746 / 0.2727 |
+| Readout, x_n alone | 0.0313 (0.0048) | 0.0907 (0.0495) | 84% / 38% | 0.0026 | 0.147 | 1.056 | 0.2481 / 0.2475 |
+| Fixed mix | 0.0197 (0.0048) | 0.0812 (0.0508) | 17% / 20% | 0.0015 | 0.090 | 0.731 | 0.4364 / 0.4356 |
+| **Fixed mix recoloured** | **0.0163** (0.0048) | **0.0810** (0.0510) | **−3% / 19%** | 0.0015 | 0.117 | 0.632 | 0.3484 / 0.3476 |
+| SONAR recoloured | 0.0206 (0.0048) | 0.0751 (0.0508) | 22% / 10% | 0.0016 | 0.072 | 1.369 | 0.3241 / 0.3236 |
+| SONAR, TPU | 0.0169 (0.0048) | 0.0692 (0.0507) | | 0.0013 | 0.043 | 1.533 | 0.4593 / 0.4585 |
+| Untrained LCM | 0.0155 (0.0048) | 0.0749 (0.0509) | −8% / 9% | 0.0012 | 0.057 | 0.766 | 0.4370 / 0.4370 |
+
+**What it means.**
+- **Two linear maps of SONAR's rows to a low-dimensional spectrum differ by 62 points on all heads:**
+  the recoloured SONAR closes 22% and the readout from x_n alone 84%. They differ in two ways.
+  - **Which directions get the variance.** The recolouring gives SONAR's own top directions the LCM's
+    top eigenvalues. The readout gives them to whichever directions the LCM weighs up.
+  - **The coordinate basis.** The recoloured arms are rotated at random, while the readouts come out
+    in the LCM's own coordinates, and the trainer weights each coordinate by its inverse variance.
+- **The readout from x_n alone under a random rotation separates the two.** It is running.
+
+**Caveats.**
+- **Seeds.** Two, and one rotation seed for the recolouring.
+
+```bash
+A=data/activations/lcm-organism
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/recolour.py --source $A/sonar_ctxmean_b4.npy \
+    --source-weights $A/sonar_ctxmean_b4.mse_weights_matched.npy --out $A/sonar_ctxmean_recol_b4.npy
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/spectrum.py \
+    --arm sonar_ctxmean_recol_b4 $A/sonar_ctxmean_recol_b4.npy $A/sonar_ctxmean_recol_b4.mse_weights_matched.npy \
+    --out data/out/lcm-organism/spectrum_ctxmean_recol
+ARMS=sonar_ctxmean_recol experiments/lcm-organism/phase2.sh train
+ARMS=sonar_ctxmean_recol experiments/lcm-organism/phase2.sh score
+```
+
 ## 2026-11-21: the readout from x_n alone: the LCM's map of a sentence by itself gives its lead on all heads, and the context adds within a language
 
 **In short.**
@@ -149,7 +214,8 @@ arm's weights: how alike adjacent rows are.
 **Caveats.**
 - **One weight,** w = 1.
 - **Dimension.** The mix's participation ratio, 235, is about twice the readout's. Recolouring SONAR
-  to the LCM's spectrum closed 22% and 10% alone. A recoloured fixed mix would test the two together.
+  to the LCM's spectrum closed 22% and 10% alone. A recoloured fixed mix would test the two together
+  (the entry above: it closes −3% and 19%).
 - **Seeds.** Two.
 
 ```bash

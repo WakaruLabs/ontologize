@@ -28,6 +28,13 @@ order, with the target's `.index`, `.kind`, `.langs` and `.docstart` sidecars
 linked, its own `.mse_weights.npy` and `.mse_weights_matched.npy` computed as
 harvest_lcm.py computes them, and a `.meta.json` with the target's row ranges.
 Rows are written through `<out>.partial` and renamed when complete.
+
+A source already laid out as the target (its meta.json's row ranges are the
+target's, as ctxmean.py writes them) is read row for row: the recoloured
+fixed mix,
+
+    recolour.py --source <ctxmean>.npy --source-weights <ctxmean>.mse_weights_matched.npy \\
+        --out data/activations/lcm-organism/sonar_ctxmean_recol_b4.npy
 """
 import argparse
 import json
@@ -108,13 +115,22 @@ def main(argv=None) -> Path:
     x_s = np.load(src, mmap_mode="r")
     x_t = np.load(tgt, mmap_mode="r")
     n = T + x_t.shape[0] - P
-    if x_s.shape[0] != n or x_s.shape[1] != x_t.shape[1]:
-        raise SystemExit(f"{src} is {x_s.shape}; {tgt}'s rows end at cache row {n}")
-    rows = harvest_rows(P, T, n)
     idx_s = np.load(f"{stem(src)}.index.npy", mmap_mode="r")
     idx_t = np.load(f"{stem(tgt)}.index.npy", mmap_mode="r")
-    if not (np.array_equal(idx_t[:P], idx_s[:P]) and np.array_equal(idx_t[P:], idx_s[T:n])):
-        raise SystemExit(f"{tgt}'s index is not {src}'s on the harvest's rows")
+    laid_out = row_map(src) == mapping
+    if laid_out:
+        # the source is already laid out as the target: row i is row i
+        if x_s.shape != x_t.shape:
+            raise SystemExit(f"{src} is {x_s.shape}, laid out as {tgt}, which is {x_t.shape}")
+        rows = np.arange(x_s.shape[0])
+        if not np.array_equal(idx_t, idx_s):
+            raise SystemExit(f"{tgt}'s index is not {src}'s")
+    else:
+        if x_s.shape[0] != n or x_s.shape[1] != x_t.shape[1]:
+            raise SystemExit(f"{src} is {x_s.shape}; {tgt}'s rows end at cache row {n}")
+        rows = harvest_rows(P, T, n)
+        if not (np.array_equal(idx_t[:P], idx_s[:P]) and np.array_equal(idx_t[P:], idx_s[T:n])):
+            raise SystemExit(f"{tgt}'s index is not {src}'s on the harvest's rows")
 
     # the fit, on the same prefix rows of both
     fit = np.sort(np.random.default_rng(cfg.seed).choice(P, size=min(cfg.fit_rows, P),
@@ -173,8 +189,8 @@ def main(argv=None) -> Path:
                    ("target", C_t, mean_share(C_t, mu(x_t, w_t, file_rows(some, mapping)))),
                    ("out", C_o, mean_share(C_o, mu(np.load(dst, mmap_mode="r"), w * matched,
                                                    some))))}
-    meta = {"source": src.name, "target": tgt.name, "n": int(len(rows)), "d": int(A.shape[0]),
-            "dtype": "float16",
+    meta = {"source": src.name, "source_laid_out": bool(laid_out), "target": tgt.name,
+            "n": int(len(rows)), "d": int(A.shape[0]), "dtype": "float16",
             "rows": {"prefix": [0, P], "tail": [T, n],
                      "note": "harvest row i is cache row i below P, cache row T + i - P after"},
             "holdout": held,

@@ -16,7 +16,7 @@ arms. Results go in `notes.md`.
 | `f16cache.py` | The float16 copy of the cache, for the TPU upload |
 | `phase1.sh` | Phase 1's readings once both seeds have trained: Gate B on blocks 4 and 8, tail-only harvests of each seed and its untrained init, and `stateagree.py` between the seeds and between the inits |
 | `spectrum.py` | Each arm's covariance spectrum in the frame its loss weighs, on the same prefix and tail rows of every arm: participation ratio, effective rank, directions per share of the variance, `pareto.gaussian_reference`'s FVU at given rates, and the share of the variance between languages, of the total and of the pooled within-language covariance |
-| `recolour.py` | The effective-dimension control: SONAR's rows through one linear map that gives them a harvest's spectrum, laid out as that harvest |
+| `recolour.py` | The effective-dimension control: SONAR's rows through one linear map that gives them a harvest's spectrum, laid out as that harvest. A source already laid out as the harvest, such as the fixed mix, is read row for row |
 | `readout.py` | The context-averaging control: Gate B's ridge readout of a harvest's state from x_n, the mean of its document's earlier rows and an indicator of n = 0, written at every row of the harvest and laid out as it. `--features row` reads from x_n alone |
 | `ctxmean.py` | The fixed-mix control: SONAR's row plus a fixed weight times its document's earlier mean, with no LCM, laid out as a harvest and weighted as SONAR |
 | `phase2.sh` | Phase 2 on one GPU: the harvests, then the arms' dictionaries (`ARMS`, default `lcm init`) trained and scored by the SONAR control's recipe |
@@ -56,6 +56,11 @@ ARMS=lcm_readout_x experiments/lcm-organism/phase2.sh train && ARMS=lcm_readout_
 # SONAR's row plus its document's earlier mean, with no LCM, then the same
 JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/ctxmean.py --weight 1
 ARMS=sonar_ctxmean experiments/lcm-organism/phase2.sh train && ARMS=sonar_ctxmean experiments/lcm-organism/phase2.sh score
+# the fixed mix recoloured to block 4's spectrum
+A=data/activations/lcm-organism
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/recolour.py --source $A/sonar_ctxmean_b4.npy \
+    --source-weights $A/sonar_ctxmean_b4.mse_weights_matched.npy --out $A/sonar_ctxmean_recol_b4.npy
+ARMS=sonar_ctxmean_recol experiments/lcm-organism/phase2.sh train && ARMS=sonar_ctxmean_recol experiments/lcm-organism/phase2.sh score
 ```
 
 On a TPU (`experiments/cloud`), stage the float16 cache with the sidecars the scripts read
