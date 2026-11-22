@@ -66,6 +66,9 @@ JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/recolour.py --source $A
     --source-weights $A/lcm_readout_x_b4.mse_weights_matched.npy --target $A/lcm_readout_x_b4.npy \
     --target-weights $A/lcm_readout_x_b4.mse_weights_matched.npy --out $A/lcm_readout_x_rot_b4.npy
 ARMS=lcm_readout_x_rot experiments/lcm-organism/phase2.sh train && ARMS=lcm_readout_x_rot experiments/lcm-organism/phase2.sh score
+# the same rows unrotated, each coordinate scaled by the root of its loss weight: the rotated arm is these rotated
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/weightframe.py --scale-like $A/lcm_readout_x_rot_b4.npy
+ARMS=lcm_readout_x_wf experiments/lcm-organism/phase2.sh train && ARMS=lcm_readout_x_wf experiments/lcm-organism/phase2.sh score
 ```
 
 On a TPU (`experiments/cloud`), stage the float16 cache with the sidecars the scripts read

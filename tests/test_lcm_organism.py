@@ -590,6 +590,45 @@ def test_the_fixed_mix_adds_the_earlier_mean_and_keeps_the_sources_weights(tmp_p
         assert os.path.samefile(tmp_path / ("h" + suf), side(suf))
 
 
+def test_the_weighted_frame_is_the_cache_recoloured_to_itself_unrotated(tmp_path):
+    import weightframe
+    _, _, tgt, P, _, _, _ = planted_harvest(tmp_path)
+    h = np.load(tgt).astype(np.float64)
+    d = h.shape[1]
+    w = harvest_lcm.inverse_variance(np.load(tgt), P)
+    np.save(tmp_path / "w.npy", w.astype(np.float32))
+    out = tmp_path / "out"
+    out.mkdir()
+    wts = ["--source-weights", str(tmp_path / "w.npy")]
+    recolour.main(["--source", str(tgt), *wts, "--target", str(tgt), "--target-weights",
+                   str(tmp_path / "w.npy"), "--out", str(out / "rot.npy"), "--min-rows", "10"])
+    weightframe.main(["--source", str(tgt), *wts, "--scale-like", str(out / "rot.npy"),
+                      "--out", str(out / "wf.npy"), "--chunk", "50"])
+    c = json.loads((out / "rot.meta.json").read_text())["map"]["scale"]
+    wf, rot = np.load(out / "wf.npy").astype(np.float64), np.load(out / "rot.npy").astype(np.float64)
+    np.testing.assert_allclose(wf, c * np.sqrt(w) * h, rtol=2e-3, atol=1e-3)
+    # the recoloured rows are these rows rotated
+    M = np.linalg.lstsq(wf, rot, rcond=None)[0]
+    assert ((wf @ M - rot) ** 2).sum() < 1e-4 * (rot ** 2).sum()
+    np.testing.assert_allclose(M @ M.T, np.eye(d), atol=1e-2)
+    # their own weights are flat, and the loss scale is the source's
+    np.testing.assert_allclose(np.load(out / "wf.mse_weights.npy"), 1, rtol=1e-2)
+    m = np.load(out / "wf.mse_weights_matched.npy")
+    assert np.isclose(harvest_lcm.whitened_base(wf, m), harvest_lcm.whitened_base(h, w), rtol=1e-3)
+    meta = json.loads((out / "wf.meta.json").read_text())
+    assert meta["rows"] == json.loads((tmp_path / "h.meta.json").read_text())["rows"]
+    for suf in (".index.npy", ".langs.npy", ".kind.npy", ".docstart.npy"):
+        assert os.path.samefile(tmp_path / ("h" + suf), out / ("wf" + suf))
+    # a coordinate the weights zero stays zero and keeps no weight; the default
+    # scale brings the other coordinates' variance to about 1
+    np.save(tmp_path / "w0.npy", np.r_[w[:-1], 0.0].astype(np.float32))
+    weightframe.main(["--source", str(tgt), "--source-weights", str(tmp_path / "w0.npy"),
+                      "--out", str(out / "wf0.npy"), "--chunk", "50"])
+    wf0 = np.load(out / "wf0.npy").astype(np.float64)
+    assert (wf0[:, -1] == 0).all() and np.load(out / "wf0.mse_weights.npy")[-1] == 0
+    assert np.isclose(wf0[:, :-1].var(0).mean(), 1, rtol=1e-2)
+
+
 def test_recolouring_to_its_own_spectrum_is_a_scaled_rotation():
     r = np.random.default_rng(8)
     d = 32

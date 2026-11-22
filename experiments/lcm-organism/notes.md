@@ -17,11 +17,13 @@
 **The control.**
 - **The map.** `recolour.py` with the readout as both source and target, under its matched weights.
   Recolouring a cache to its own spectrum is a rotation times a scale
-  (`test_recolouring_to_its_own_spectrum_is_a_scaled_rotation`), so only the basis changes. Rotation
-  seed 0, nothing zeroed, written into `lcm_readout_x_rot_b4.npy` with its own matched weights.
-- **The weights change with the basis.** The trainer weights each coordinate by its inverse variance.
-  The readout's weights span a factor of 19 (coefficient of variation 0.24), and the rotated cache's
-  a factor of 2.5 (0.13).
+  (`test_recolouring_to_its_own_spectrum_is_a_scaled_rotation`) of its rows in the frame its loss
+  weighs: y_rot = c R Uᵀ (√w ⊙ y). So the loss measures errors as it does on the readout, and only
+  the basis changes. Rotation seed 0, nothing zeroed, written into `lcm_readout_x_rot_b4.npy` with
+  its own matched weights.
+- **The weights move into the rows.** The trainer weights each coordinate by its inverse variance.
+  The readout's weights span a factor of 19 (coefficient of variation 0.24). The rotated cache
+  carries them in its rows, and its own weights span a factor of 2.5 (0.13).
 - **Its spectrum** on the tail, under its own weights, is the readout's:
 
 | Arm (the tail) | Participation ratio | Effective rank | Directions for 50% / 90% | Share between languages | Within-language participation ratio |
@@ -57,9 +59,14 @@ readout arms: seeds 42 and 43 to step 46,250.
     lower-dimensional one (participation ratio 98 against 141).
 
   So this run does not isolate the directions.
-- **"The basis" includes the weights.** The rotation changed both the coordinates the heads read and
-  how the loss weighs them. This run cannot tell which of the two mattered. The unrotated readout
-  trained with uniform weights would: the rotated cache's weights are nearly uniform already.
+- **The change of basis has two steps, not yet told apart.** Each coordinate is scaled by √w_j,
+  which evens out the input's scales (they span a factor of 4.4), and then the coordinates are mixed.
+  The rows after the first step alone (`weightframe.py`) would separate the two.
+
+  (Corrected 2026-11-22, the same session: this bullet first said the rotation changed how the loss
+  weighs the coordinates, and proposed training the unrotated readout with flat weights. The map
+  carries the weights into the rows, so the loss is unchanged, and flat weights would have changed
+  it. That arm was started and stopped after half an hour.)
 - **Reconstruction is about as hard.** FVU_w is 0.268 against 0.248, each under its own weights. The
   copy baseline reads 1.063 against 1.056, and the next-sentence FVU_w 0.970 against 0.97 (ridge
   0.719).
