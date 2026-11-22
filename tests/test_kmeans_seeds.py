@@ -13,8 +13,8 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "experiments"
                        / "seed-stability"))
 from kmeans_seeds import (assign, energy_dependence, energy_groups,  # noqa: E402
                           fastica, fvu, group_copy, ica_frame, kmeans,
-                          marginal_copy, principal, seed_table, shape_stats,
-                          to_sources, train_index)
+                          marginal_copy, principal, scale_copy, seed_table,
+                          shape_stats, to_sources, train_index)
 
 
 def test_assign_is_the_nearest_centre():
@@ -126,6 +126,12 @@ def test_an_ica_fit_continues_only_on_its_own_rows():
     # a continued fit counts the earlier one's iterations and keeps its step
     fit = ica_frame(X[:10000], init={**st["frame"], "step": 0.25}, patience=5)
     assert fit["iterations"] > st["frame"]["iterations"] == 3
+    # with no iterations, the saved frame is used as it is
+    same = ica_frame(X[:10000], iters=0, init=fit)
+    assert np.array_equal(same["unmixing"], fit["unmixing"])
+    assert (same["iterations"], same["last_change"]) == (fit["iterations"], fit["last_change"])
+    with pytest.raises(ValueError):
+        ica_frame(X[2000:], iters=0, init=fit)
     with pytest.raises(ValueError):
         marginal_copy(X[2000:], X[:2000], "ica", ica_init=st["frame"])
 
@@ -187,6 +193,41 @@ def test_the_group_copy_keeps_a_group_and_breaks_ties_between_groups():
     singles = group_copy(X[:30000], X[30000:], fit, np.arange(6))[0]
     assert energy_dependence(to_sources(singles, fit))[a, b] < 0.03
     assert np.allclose(to_sources(T, fit).std(0), S.std(0), rtol=1e-6)
+
+
+def _mean_offdiag(R):
+    return R[~np.eye(len(R), dtype=bool)].mean()
+
+
+def test_the_scale_copy_keeps_a_shared_scale_the_ica_copy_breaks():
+    # 128 Laplace sources mixed at random, all multiplied by one scale per
+    # row; then the same without the scale. Binning rows by a scale
+    # estimated from their own sources adds a magnitude correlation of about
+    # 0.75/p (0.024 at 32)
+    rng = np.random.default_rng(12)
+    n, p = 40000, 128
+    A = rng.standard_normal((p, p))
+    for shared in (True, False):
+        S = rng.laplace(size=(n, p))
+        if shared:
+            S *= np.exp(0.5 * rng.standard_normal((n, 1)))
+        X = ((S / S.std(0)) @ A).astype(np.float32)
+        fit = ica_frame(X[:30000], iters=300)
+        Y = to_sources(X[:30000], fit)
+        T, E = scale_copy(X[:30000], X[30000:], fit)
+        Yt = to_sources(T, fit)
+        R, Rt = energy_dependence(Y), energy_dependence(Yt)
+        Ri = energy_dependence(to_sources(
+            marginal_copy(X[:30000], X[30000:], "ica", ica_fit=fit)[0], fit))
+        if shared:
+            assert _mean_offdiag(R) > 0.1
+            assert abs(_mean_offdiag(Rt) - _mean_offdiag(R)) < 0.015
+            assert abs(_mean_offdiag(Ri)) < 0.01
+        else:
+            assert abs(_mean_offdiag(R)) < 0.01 and abs(_mean_offdiag(Rt)) < 0.015
+        # each source keeps its values, and the tail is copied on its own
+        assert np.allclose(np.sort(Yt, 0), np.sort(Y, 0), atol=1e-4)
+        assert E.shape == X[30000:].shape
 
 
 def test_the_training_rows_are_drawn_as_before_and_a_second_draw_avoids_them():

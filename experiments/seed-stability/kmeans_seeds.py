@@ -30,7 +30,10 @@ keeps each FastICA source's, so the copy is an independent-components model
 of the rows. Between the Gaussian copy and the cache they say whether the
 reproducible cells come from a few oddly shaped directions or from how
 directions combine; `coordinates_<frame>.csv` gives each direction's
-variance share, skew, excess kurtosis and bimodality coefficient. `--ckpt`
+variance share, skew, excess kurtosis and bimodality coefficient.
+`--groups` keeps groups of FastICA sources whose magnitudes correlate
+(`group_copy`), and `--scale-copy` keeps each row's scale shared by all its
+sources and shuffles the sources apart under it (`scale_copy`). `--ckpt`
 adds, per layer of a stack, each head's best
 NMI against the k-means partitions at the model's k: whether the heads are
 near the data's own k-means cells.
@@ -229,15 +232,17 @@ def shape_stats(Y: Float[np.ndarray, "n p"]) -> dict:
 
 def ica_frame(train: Float[np.ndarray, "n d"], seed: int = 0, iters: int = 200,
               init: dict | None = None, log_every: int = 0, patience: int = 0,
-              checkpoint_path: Path | None = None, step0: float = 1.0) -> dict:
+              checkpoint_path: Path | None = None, step0: float | None = None
+              ) -> dict:
     """FastICA's frame of the training rows: their principal frame (mean,
     eigenvalues, eigenvectors, directions with no variance left out) and
     the unmixing W of symmetric FastICA in its sphered coordinates, with
     the iterations run and the last step's largest change. `init` is an
     earlier fit's frame on the same rows, which FastICA continues from (up
-    to `iters` more iterations); it raises if its principal frame is not
-    these rows'; FastICA continues at the step it was saved with (`step0`
-    when it has none), and `iterations` counts the earlier fit's too.
+    to `iters` more iterations; at 0 the frame is returned as it is); it
+    raises if its principal frame is not these rows'; FastICA continues at
+    `step0` when given, else at the step the frame was saved with, else at
+    1, and `iterations` counts the earlier fit's too.
     `patience` damps the steps (`fastica`), and with `checkpoint_path` the
     frame so far is saved there every 100 iterations, with its step, in
     the form `init` takes."""
@@ -248,8 +253,15 @@ def ica_frame(train: Float[np.ndarray, "n d"], seed: int = 0, iters: int = 200,
                 and np.allclose(init["eigenvectors"], V, atol=1e-6)):
             raise ValueError("the initial frame was fit on other rows")
         W0, done = init["unmixing"], int(init.get("iterations", 0))
-        step0 = float(init.get("step", step0))
+        if step0 is None and "step" in init:
+            step0 = float(init["step"])
+    step0 = 1.0 if step0 is None else step0
     frame = {"mean": mu, "eigenvalues": lam, "eigenvectors": V}
+    if iters == 0:
+        if init is None:
+            raise ValueError("no iterations and no initial frame")
+        return {**frame, "unmixing": W0, "iterations": done,
+                "last_change": float(init.get("last_change", np.inf))}
 
     def save(W, it, lim, step):
         tmp = Path(checkpoint_path).with_suffix(".tmp.npz")
@@ -364,6 +376,57 @@ def group_copy(train: Float[np.ndarray, "n d"], tail: Float[np.ndarray, "m d"],
     return copy(train, 2 * seed), copy(tail, 2 * seed + 1)
 
 
+def row_scale(S: Float[np.ndarray, "n p"]) -> Float[np.ndarray, "n"]:
+    """Each row's scale, shared by its sources: the median of |s_i| over
+    them, which a few large sources hardly move."""
+    return np.maximum(np.median(np.abs(S), axis=1), 1e-30)
+
+
+def scale_copy(train: Float[np.ndarray, "n d"], tail: Float[np.ndarray, "m d"],
+               fit: dict, seed: int = 0, bins: int = 64
+               ) -> tuple[Float[np.ndarray, "n d"], Float[np.ndarray, "m d"]]:
+    """Copies in the ICA frame that keep each row's scale (`row_scale`)
+    and nothing else that ties sources together. The rows are sorted by
+    their scale and cut into `bins` bins of equal count, and within each
+    bin every source's column is permuted on its own, in the training rows
+    and the tail separately. Every source keeps its values exactly and,
+    up to the bin's width, how they depend on the scale; the ICA copy
+    breaks that dependence as well. (Dividing by the scale, permuting and
+    multiplying back would assume s = r u with u independent of r, which
+    a source whose spikes grow less than in proportion to r breaks.)"""
+    M = mixing(fit)
+
+    def copy(X, s):
+        Y = to_sources(X, fit)
+        rng = np.random.default_rng(s)
+        out = np.empty_like(Y)
+        cols = np.arange(Y.shape[1])
+        for b in np.array_split(np.argsort(row_scale(Y)), bins):
+            idx = rng.permuted(np.tile(np.arange(len(b)), (len(cols), 1)), axis=1)
+            out[b] = Y[b][idx.T, cols]
+        return (out @ M + fit["mean"]).astype(np.float32)
+
+    return copy(train, 2 * seed), copy(tail, 2 * seed + 1)
+
+
+def scale_stats(train: Float[np.ndarray, "n d"], copy: Float[np.ndarray, "n d"],
+                fit: dict, sources: int = 300) -> dict:
+    """What the scale copy keeps, on the training rows and their copy:
+    the row scale's coefficient of variation, the median magnitude
+    correlation between the first `sources` sources, and the sources'
+    median excess kurtosis."""
+    out = {}
+    for name, X in (("rows", train), ("copy", copy)):
+        S = to_sources(X, fit)
+        r = row_scale(S)
+        R = energy_dependence(S[:, :sources])
+        out[name] = {"scale_cv": float(r.std() / r.mean()),
+                     "magnitude_correlation_median":
+                         float(np.median(R[~np.eye(len(R), dtype=bool)])),
+                     "kurtosis_median": float(np.median(shape_stats(S)["kurtosis"]))}
+    return out
+
+
 def group_stats(groups: Int[np.ndarray, "p"], R: Float[np.ndarray, "p p"],
                 variance_share: Float[np.ndarray, "p"]) -> dict:
     """A grouping's sizes, the share of sources and of variance outside
@@ -425,16 +488,17 @@ def rows(cfg) -> tuple[dict, dict, dict]:
     """Training rows and tail rows, whitened, for each data set, with the
     tail in the cache's own frame for the heads (None for a copy made in
     the whitened frame); each marginal copy's per-coordinate table; and
-    the ICA fit (None unless a copy needs it) and, with --groups, the
-    sources' magnitude correlations and each grouping."""
+    the ICA fit (None unless a copy needs it), with --groups the sources'
+    magnitude correlations and each grouping, and with --scale-copy what
+    that copy keeps (`scale_stats`)."""
     sw = np.sqrt(np.load(cfg.mse_weights)).astype(np.float32)
     X = np.load(cfg.cache, mmap_mode="r")
     idx = train_index(cfg.prefix, cfg.train_rows)
     out = {"cache": (np.asarray(X[idx], np.float32) * sw,
                      np.asarray(X[-cfg.tail_rows:], np.float32) * sw,
                      np.asarray(X[-cfg.tail_rows:], np.float32))}
-    shapes, extra = {}, {"ica_fit": None, "energy": None}
-    if "ica" in cfg.marginals or cfg.groups:
+    shapes, extra = {}, {"ica_fit": None, "energy": None, "scale": None}
+    if "ica" in cfg.marginals or cfg.groups or cfg.scale_copy:
         print("ica frame: fitting", flush=True)
         init = dict(np.load(cfg.ica_init)) if cfg.ica_init else None
         extra["ica_fit"] = ica_frame(out["cache"][0], 0, cfg.ica_iters, init,
@@ -460,6 +524,11 @@ def rows(cfg) -> tuple[dict, dict, dict]:
             out[name] = (T, E, None)
             extra["energy"]["groups"][name] = {
                 "tau": tau, "labels": g, **group_stats(g, R, var / var.sum())}
+    if cfg.scale_copy:
+        print("ica_scale copy", flush=True)
+        T, E = scale_copy(*out["cache"][:2], extra["ica_fit"])
+        out["ica_scale"] = (T, E, None)
+        extra["scale"] = scale_stats(out["cache"][0], T, extra["ica_fit"])
     if cfg.gauss:
         from gausscopy import BLOCK, block
         g = Path(cfg.gauss)
@@ -532,7 +601,9 @@ def main() -> None:
     p.add_argument("--marginals", nargs="*", default=[], choices=["pca", "ica"],
                    help="copies of the cache's rows that keep each coordinate's "
                         "distribution in this frame and nothing that ties them")
-    p.add_argument("--ica-iters", type=int, default=200)
+    p.add_argument("--ica-iters", type=int, default=200,
+                   help="FastICA's iterations (with --ica-init, more of them; "
+                        "0 uses --ica-init's frame as it is)")
     p.add_argument("--ica-init", default=None,
                    help="frame_ica.npz (or the frame_ica.partial.npz a run saves "
                         "every 100 iterations) from an earlier run on the same "
@@ -541,12 +612,16 @@ def main() -> None:
                    help="damp FastICA's steps, halving them whenever the largest "
                         "change goes this many iterations without a new low "
                         "(0: plain FastICA)")
-    p.add_argument("--ica-step", type=float, default=1.0,
-                   help="the damped step to start at, when --ica-init has none")
+    p.add_argument("--ica-step", type=float, default=None,
+                   help="the damped step to start at (default: --ica-init's "
+                        "saved step, else 1)")
     p.add_argument("--groups", type=float, nargs="*", default=[],
                    help="copies that keep groups of FastICA sources whose "
                         "magnitudes correlate at a mean of at least each value, "
                         "and nothing that ties groups together")
+    p.add_argument("--scale-copy", action="store_true",
+                   help="a copy that keeps each row's scale shared by its "
+                        "FastICA sources and shuffles the sources apart under it")
     p.add_argument("--no-cache", action="store_true",
                    help="leave the cache's own rows unscored (their numbers do "
                         "not change from run to run)")
@@ -567,6 +642,14 @@ def main() -> None:
               f"{extra['ica_fit']['last_change']:.2e}", flush=True)
     for frame, fr in frames.items():
         np.savez(out / f"frame_{frame}.npz", **fr)
+    if extra["scale"] is not None:
+        summary["ica_scale_stats"] = s = extra["scale"]
+        print("scale copy, rows / copy: scale CV {:.3f} / {:.3f}, magnitude "
+              "correlation median {:+.4f} / {:+.4f}, kurtosis median {:.2f} / {:.2f}".format(
+                  s["rows"]["scale_cv"], s["copy"]["scale_cv"],
+                  s["rows"]["magnitude_correlation_median"],
+                  s["copy"]["magnitude_correlation_median"],
+                  s["rows"]["kurtosis_median"], s["copy"]["kurtosis_median"]), flush=True)
     if extra["energy"] is not None:
         R = extra["energy"]["R"]
         np.save(out / "energy_ica.npy", R.astype(np.float32))

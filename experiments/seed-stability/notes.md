@@ -476,10 +476,15 @@ codebooks near 0.015, too high.
 - **These codes overfit.** At h = 76, the 2.5M codebook numbers are fit on 32,768 rows: training FVU
   0.456, held out 0.531. Still, held out, LSQ's 76 codebooks fit better than the stack's first
   layer (0.6045 at about 380 bits, `ratecurve.py`, under `no837` weights where these use `med837`).
-  So the comparison is a better fit at the same width that agrees less.
+  So the comparison is a better fit at the same width that agrees less. *(Corrected 2026-11-22:
+  the all-off arm was trained and scored under `med837` too, as its `log.jsonl` records, so the
+  two fits are in the same weighting.)*
 - **Why the stack's layer 0 might agree more** is not tested here. It is one layer of five, trained
   jointly, so it need not carry everything a lone 76-codebook code must, and it encodes by a
   classifier rather than by search. Either could make its heads coarser and more repeatable.
+  *(Tested 2026-11-22, "one trained head reproduces less than k-means": a one-layer stack of 76
+  heads trained alone agrees at 0.031, so being one layer of five is not the reason. Trained
+  layers beat LSQ at every width from 4 heads, though one trained head falls short of k-means.)*
 - Three restarts per h make the rank correlation with error (±1.00 in the log) meaningless here;
   the spread of error across restarts is again small (at most 0.0015 held out).
 
@@ -697,7 +702,9 @@ to the whitened frame, so k-means reads it as it reads the cache. The cache rows
   rows. It stopped at the 200-iteration cap, short of its tolerance of 1e-4: in the last step the
   largest change over the 1,023 rows, 1 − |w_new · w|, was 0.19. The frame is therefore not
   FastICA's fixed point. The copy is still exactly an independent-coordinates model with these
-  sources' marginals, and a converged frame might find sources further from Gaussian. Loading the
+  sources' marginals, and a converged frame might find sources further from Gaussian. *(Run
+  2026-11-22, "converged, FastICA's skewed sources reproduce": at 800 damped iterations the copy
+  reads 0.597, 0.510 and 0.494, and the sources' shapes barely change.)* Loading the
   rows and fitting both frames took about 17 minutes, so the README's few seconds an iteration
   holds.
 
@@ -807,4 +814,391 @@ JAX_PLATFORMS=cpu uv run python experiments/seed-stability/headscreen.py \
 JAX_PLATFORMS=cpu uv run python experiments/seed-stability/headscreen.py \
     --a data/out/sonar/gausscopy/alloff --b data/out/sonar/gausscopy/alloff_s43 \
     --cache data/out/sonar/gausscopy/eval.npy --rows 65536 --out data/out/sonar/headscreen/gauss_alloff
+```
+
+## 2026-11-22: one trained head reproduces less than k-means, and wider trained layers more than LSQ
+
+**Short version.** One-layer stacks of 1, 4, 16 and 76 heads of 32 were trained with the all-off
+recipe at seeds 42 and 43. Their matched heads agree across seeds at NMI 0.418, 0.255, 0.098 and
+0.031, against a null of 0.004–0.005.
+- **At one head, training costs agreement that search does not.** The trained head reproduces at
+  0.418, below k-means at the same 32 cells (0.607, ten pairs ranging 0.495–0.761) and near the
+  Gaussian copy's k-means (0.396). Its held-out fit is about the same as k-means' (FVU 0.950
+  against 0.948).
+- **From four heads on, the trained heads reproduce more than LSQ's codebooks**: 0.255, 0.098 and
+  0.031 against 0.167, 0.057 and 0.0089. They fit worse at every width.
+- **The trained curve does not follow LSQ's halving.** Per doubling of h it keeps 0.78 of its NMI
+  from 1 to 4 heads, 0.62 from 4 to 16 and 0.60 from 16 to 76. LSQ keeps 0.54, 0.59 and 0.44. At
+  76 heads the trained layer has 3.5 times LSQ's NMI and 6 times its excess over the null.
+- **Trained alone, 76 heads agree as much as the five-layer stack's layer 0**, slightly more:
+  0.031 against 0.027 (0.025 without training noise). The fit is also about the same: FVU 0.598
+  against that layer's 0.6045 and 0.6034. So layer 0 does not owe its agreement to being one layer
+  of five, a reading the 2026-11-21 section ("additive codes at the stack's width") left open.
+  There is one pair on each side, so the 0.004 difference is not established.
+
+A reading: between k-means' 0.607 and the 76-head layer's 0.031 is a factor of 20. The one trained
+head's shortfall against k-means accounts for 1.45 of it, and the fall from one trained head to 76
+for 13.5. The stack's low layer-0 agreement is mostly its width. The training makes a single head
+less repeatable than k-means, but makes a wide layer lose agreement more slowly than search does.
+
+**Setup** (`width_seeds.sh`, unit `width-seeds`, README's command; finished 10:56, 50 to 100
+minutes a run).
+- `train_eps.py` with the recipe ladder's all-off flags: temperature 0.00015, lr 1e-5, σ_K 0.3,
+  σ_F 0.1, p_drop 0.1, Adam's eps 1e-15, dictionary init scale 0.1, and the four auxiliary
+  weights at 0. Each run trained 50,000 steps of 256 rows of `mc4_sent16` under `med837` weights.
+- Every setting `log.jsonl` records but the output path is the five-layer all-off arm's
+  (`ste_h76_init01_med837_nobcos_nosupp_nol1f_nohm`), so the h = 76 pair differs from that arm
+  only in `--l 1`.
+- Scoring: `partition.py` on the last 32,768 rows, with heads matched one to one by NMI beside the
+  rows-shuffled null. `ratecurve.py` on 32,765 tail rows gives FVU over the free coordinates, with
+  gains as computed (float) and pinned to their means.
+- LSQ and k-means are the earlier sections' ("summed heads and the cascade", "additive codes at
+  the stack's width", and the 2026-11-20 k-means section). All are in the same `med837` frame,
+  scored on the same tail.
+
+| h | matched NMI, mean (median, max over heads) | null | LSQ | FVU float / pinned | LSQ FVU | bits (of nominal) |
+|---|---|---|---|---|---|---|
+| 1 | 0.418 | 0.0044 | 0.574 (k-means 0.607) | 0.950 / 0.952 | 0.932–0.934 training (k-means 0.948 held out) | 4.74 (5) |
+| 4 | 0.255 (0.255, 0.292) | 0.0045 | 0.167 | 0.887 / 0.898 | 0.850–0.851 training | 19.4 (20) |
+| 16 | 0.098 (0.101, 0.117) | 0.0046 | 0.057 | 0.796 / 0.815 | 0.738–0.739 | 78.9 (80) |
+| 76 | 0.031 (0.029, 0.075) | 0.0047 | 0.0089 | 0.598 / 0.631 | 0.531 | 377.7 (380) |
+| five-layer stack, layer 0 | 0.027 | 0.0048 | | 0.6045, 0.6034 (float) | | |
+
+FVUs and bits are the two seeds' mean. They differ by at most 0.0015 in FVU. One of seed 42's
+single head's 32 entries is dead (`ratecurve.py`'s `dead` column). Every other run uses all its
+entries.
+
+- **Why one trained head reproduces less than k-means is not tested.** It is a different partition
+  in three ways:
+  - its cells are set by a learned classifier, not by the nearest centre;
+  - it trains under σ_K, σ_F and p_drop;
+  - it stops after 50,000 steps, where Lloyd's iterations run to a fixed point.
+
+  Two cheap checks come first. One is the trained head's NMI with each k-means seed's cells
+  (`kmeans_seeds.py --ckpt`), which says whether it lands near a k-means solution at all. The other
+  is an h = 1 pair without noise.
+- **Fit against agreement.** At every h from 4, LSQ fits better and agrees less. Its FVUs at 1
+  and 4 are on its own 32,768 training rows, so they flatter it. At 16 and 76 its held-out FVU is
+  still lower, by 0.06–0.07. The 2026-11-21 section found the same at 76 alone.
+- **Over the null the factors barely change**: 0.78, 0.61 and 0.57 per doubling for the trained
+  layer, and LSQ's last step falls to 0.32. The null rises slightly with h, by the plug-in NMI's
+  bias.
+- **A few of the 76 heads agree well above the layer's mean** (largest 0.075). A head screen
+  (`headscreen.py`, the last section) of this pair would say whether it passes more heads than the
+  five-layer stack's 7 of 76.
+
+Output: `data/out/sonar/width_seeds/l1_h{1,4,16,76}_s{42,43}/` (step 50,000) and
+`data/out/sonar/width_seeds/scores/` (`partition_h*.log`, `ratecurve_h*/curve.csv`,
+`done.log`). The training logs are `experiments/logs/width_seeds_l1_h*_s*.log`.
+
+```bash
+systemd-run --user --unit width-seeds -p Restart=on-failure -p RestartSec=120 \
+    --working-directory=$PWD \
+    -p StandardOutput=append:$PWD/experiments/logs/width_seeds.log \
+    -p StandardError=append:$PWD/experiments/logs/width_seeds.log \
+    /usr/bin/bash experiments/seed-stability/width_seeds.sh
+```
+
+## 2026-11-22: converged, FastICA's skewed sources reproduce and its symmetric ones are one shared scale
+
+**Short version.** FastICA on the training rows was run to 800 damped iterations, which leaves 12
+of 1,023 sources short of its tolerance.
+- **The ICA copy reproduces as it did before convergence.** It reads 0.597, 0.510 and 0.494 at 8,
+  32 and 128 cells, against 0.570, 0.492 and 0.492 from the 200-iteration frame ("coordinates
+  shuffled apart", above). The iteration cap did not matter.
+- **About half the sources reproduce across disjoint samples, and half do not.**
+  - FastICA was fit again on 131,072 other rows. The 488 sources with excess kurtosis of 5 or more
+    (56% of the variance) find a partner at median correlation 0.84–0.96. Nearly all of them are
+    skewed: median |skew| 1.2–2.8 by bin.
+  - The 374 symmetric sources with kurtosis below 3 (29% of the variance) match at 0.15–0.17,
+    which is no better than their runner-up partner.
+- **The symmetric sources are mostly one scale shared by every source.**
+  - The sources' magnitudes are almost all positively correlated (median +0.07, null SD 0.003).
+  - Within the symmetric sources' span, random directions have kurtosis 0.99, against the
+    sources' 1.74.
+  - Dividing each row by its radius in that span takes the sources' kurtosis to 0.42 and their
+    magnitude correlations to zero.
+- **The skewed sources are directions.** The same division leaves them at kurtosis 8.0 of 8.8,
+  and a random rotation within their span drops them to 0.61. The two sets' radii correlate at
+  Spearman 0.90, so one scale serves both.
+- **Copies that keep groups of magnitude-correlated sources together add little.** With 60% of
+  the variance in 63 groups (cut 0.1), agreement at 128 cells rises from 0.494 to 0.540, against
+  SONAR's 0.737. That is 43% of SONAR's excess over the Gaussian copy, against the ICA copy's 30%.
+  Any grouping cuts across a scale that every source shares.
+
+So the ICA copy's shortfall at 128 cells is not a convergence problem. The grouping tested here is
+the wrong cut for the dependence that is there. The test that follows is a copy that keeps each
+row's shared scale and shuffles the sources apart under it. That copy has not been built.
+*(Built and run later the same day, next section: it reproduces at 0.518 at 128 cells, below the
+cut-0.1 group copy, so the shared scale is not what SONAR's cells reproduce on either.)*
+
+**FastICA's convergence** (`kmeans_seeds.py --marginals ica`, CPU, about 8 seconds an iteration;
+logs in `data/out/sonar/kmeans_seeds_ica/run_*.log`). The change is 1 − |w_new · w| per row, and
+the tolerance is 1e-4.
+- **Plain symmetric FastICA cycles.** Run again from the same start as the marginals section's
+  fit, at 300 iterations its largest change was 0.093 and 875 rows were at or above the tolerance.
+- **Damped** (`--ica-patience 50`): W moves part of the way to the update, and that share halves
+  whenever the largest change goes 50 iterations without a new low. From the same start, at 200
+  iterations, 496 rows were at or above the tolerance (largest change 4.4e-3, step 0.5).
+  Continued from there (`--ica-init`, `--ica-step 0.5`), 12 rows were left by iteration 750, with
+  the step at its floor of 1/64 from 725, and they stayed to iteration 800. The continued run's
+  log counts from its own start, so these are its iterations 550, 525 and 600. Both pieces used
+  one step for all rows, `fastica` as committed in `107f043`. The largest change was then
+  3.5e-4, an angle of 1.5° between a row and its update, against the tolerance's 0.8°. This
+  frame (`frame_ica.iter800.npz`) is the one used here.
+- **Two further attempts made things worse.** Both started from iteration 800 at step 0.25. A
+  step shared by all rows (patience 50) had 20 rows above the tolerance after 100 iterations. A
+  step per row, each halving its own (patience 20), had 25 after 150. Neither was kept. The remaining rows had low log-cosh
+  contrast in a one-off check (a scratch script, not kept in the repository), so the objective is
+  nearly flat along them.
+- **What convergence moved was the part the data do not pin.** Between the damped fit's 200th
+  and 800th iterations, the skewed sources kept their directions: best |cosine| between the two
+  frames' rows had median 0.976 for kurtosis ≥ 5. The symmetric ones moved (0.61 for kurtosis
+  < 3). The plain 200-iteration frame of the marginals section was not saved, so this compares
+  two damped frames.
+- **The sources' shapes hardly changed**:
+
+| frame | median kurtosis | median abs. skew | sources with kurtosis > 10 | their share of the variance | bimodality > 5/9 |
+|---|---|---|---|---|---|
+| marginals section (200 iterations) | 4.60 | 0.81 | 184 | 25% | 24 |
+| 800 iterations | 4.78 | 0.96 | 182 | 24% | 23 |
+
+**Reproduction across samples** (`ica_seeds.py`).
+- A is the 800-iteration frame as it is (`--iters-a 0`).
+- B is FastICA from another random start, on 131,072 rows from the same first 12.8M and disjoint
+  from A's, run for 800 damped iterations (`--patience 50`).
+- On the tail's 32,768 rows, each of A's sources is matched one to one with B's, by |correlation|
+  (Hungarian) and separately by the |cosine| of their whitened directions. Kurtosis and skew are
+  A's, on its training rows.
+- **B's fit differs from A's.** It ran with a damping step per row (the working tree's `fastica`
+  at the time), where A's ran with one step for all rows. It ended with 127 rows above the
+  tolerance (largest change 2.0e-3), against A's 12. Its unconverged rows can account for at
+  most 127 of the 514 matches below 0.5.
+
+| excess kurtosis | sources | variance | median abs. skew | matched correlation, median [q10, q90] | runner-up, median |
+|---|---|---|---|---|---|
+| [1, 2) | 246 | 19.2% | 0.03 | 0.148 [0.120, 0.204] | 0.148 |
+| [2, 3) | 128 | 10.1% | 0.07 | 0.170 [0.126, 0.316] | 0.166 |
+| [3, 4) | 64 | 5.5% | 0.24 | 0.269 [0.155, 0.868] | 0.183 |
+| [4, 5) | 97 | 8.8% | 0.98 | 0.566 [0.203, 0.921] | 0.196 |
+| [5, 6) | 93 | 9.0% | 1.22 | 0.839 [0.306, 0.942] | 0.174 |
+| [6, 8) | 126 | 12.9% | 1.54 | 0.919 [0.294, 0.961] | 0.105 |
+| [8, 10) | 87 | 10.4% | 1.80 | 0.930 [0.618, 0.969] | 0.084 |
+| [10, 20) | 135 | 18.5% | 2.33 | 0.956 [0.870, 0.983] | 0.066 |
+| ≥ 20 | 47 | 5.6% | 2.76 | 0.906 [0.595, 0.980] | 0.077 |
+| all | 1,023 | | | 0.489 [0.136, 0.961] | |
+
+- **Beside it**, B's sources rotated at random match at median 0.106 (q90 0.123). The two samples'
+  principal coordinates match at 0.321, with 57 above 0.9.
+- **Matching by direction** gives median 0.523, with 372 above 0.9, and the same partner as the
+  correlation match for 69% of sources.
+- **The rank correlation between a source's kurtosis and its matched correlation is 0.82.** Of
+  the 336 sources matched above 0.9, 95% have kurtosis 5 or more, and none has less than 3.7. The
+  matches split into two groups: 450 lie below 0.3 and 436 above 0.8.
+
+**The shared scale** (a scratch check on A's training rows, not kept in the repository).
+- The symmetric set is the sources with kurtosis < 3 and |skew| < 0.3 (356 of them); the skewed
+  set has kurtosis ≥ 5 and |skew| ≥ 1 (441).
+- Each set is standardized, and a row's radius in it is the root mean square over the set's
+  sources.
+- Magnitude correlations are over the first 300 sources of each set.
+
+| set | statistic (median) | sources | random rotation in their span | sources ÷ own radius |
+|---|---|---|---|---|
+| symmetric | excess kurtosis | 1.74 | 0.99 | 0.42 |
+| symmetric | magnitude correlation | +0.078 | +0.096 | −0.001 |
+| skewed | excess kurtosis | 8.79 | 0.61 | 8.01 |
+| skewed | magnitude correlation | +0.060 | +0.061 | +0.005 |
+
+The radius varies over rows with coefficient of variation 0.30 (symmetric) and 0.23 (skewed).
+The two radii correlate at Spearman 0.90.
+
+- **A Gaussian scale mixture, x = r·g, gives every direction in its span the same kurtosis and no
+  preferred rotation.** The symmetric set is mostly that: more than half its sources' kurtosis is
+  in every direction of the span. What ICA found beyond the scale (1.74 against 0.99, and the 0.42
+  left after the division) is too weak to pin directions across samples.
+- **Whether r is the row's raw SONAR norm** was not checked.
+
+**Group copies** (`kmeans_seeds.py --groups`, the 800-iteration frame as it is). The sources'
+magnitude correlations have median +0.070 and 99.9th percentile +0.244. 54,819 pairs are above
+0.1, and one is above 0.3 (0.301).
+
+| copy | sources in groups (groups, largest) | variance in groups | seed NMI, k = 8 | 32 | 128 | FVU, 32 / 128 |
+|---|---|---|---|---|---|---|
+| ICA copy | none | 0 | 0.597 [0.470, 0.826] | 0.510 [0.483, 0.538] | 0.494 [0.478, 0.512] | 0.954 / 0.940 |
+| cut 0.2 | 87 (10, 65) | 6.5% | 0.512 | 0.512 | 0.496 | 0.954 / 0.941 |
+| cut 0.15 | 217 (28, 112) | 18.7% | 0.568 | 0.507 | 0.504 | 0.955 / 0.941 |
+| cut 0.1 | 620 (63, 218) | 60.2% | 0.732 | 0.528 | 0.540 | 0.957 / 0.943 |
+| ICA copy, 200 iterations (above) | none | 0 | 0.570 | 0.492 | 0.492 | 0.955 / 0.940 |
+| SONAR | | | 0.533 | 0.607 | 0.737 | 0.948 / 0.922 |
+| Gaussian copy | | | 0.555 | 0.396 | 0.391 | 0.958 / 0.948 |
+
+- Cut 0.05 puts 977 sources in one group, close to the cache itself, and was not run.
+- The shuffled nulls at 128 cells are 0.040 (ICA copy), 0.037, 0.032 and 0.017 (cuts 0.2 to 0.1).
+- **Share of SONAR's excess over the Gaussian copy:** 54% at 32 cells and 30% at 128 for the ICA
+  copy, and 63% and 43% at cut 0.1.
+- **The cut-0.1 copy fits worse than the ICA copy while reproducing more**: FVU 0.957 against
+  0.954 at 32 cells, and 0.943 against 0.940 at 128. This is not understood.
+- **At 8 cells the cut-0.1 copy's pairs split**, as the principal copy's did (0.58–0.94).
+
+**For the stack.** The skewed sources are the data's reproducible directions: 488 of them, holding
+56% of the variance. Whether a stack's layer-0 atoms point along them can be checked without
+training. A copy that keeps each row's scale says whether that scale is what SONAR's cells at 128
+reproduce on.
+
+Output:
+- `data/out/sonar/kmeans_seeds_ica800/` (`summary.json`, `run.log`, `coordinates_ica.csv`,
+  `energy_ica.npy`, `groups_ica.npz`, `frame_ica.npz`);
+- `data/out/sonar/ica_seeds/` (`summary.json`, `sources.csv`, `run.log`, `frame_a.npz`,
+  `frame_b.npz`);
+- the frames along the way, in `data/out/sonar/kmeans_seeds_ica/` (`frame_ica.iter200.npz`,
+  `frame_ica.iter800.npz`).
+
+```bash
+o=data/out/sonar/kmeans_seeds_ica
+JAX_PLATFORMS=cpu uv run python experiments/seed-stability/kmeans_seeds.py \
+    --marginals ica --ica-iters 200 --ica-patience 50 --no-cache --out $o
+JAX_PLATFORMS=cpu uv run python experiments/seed-stability/kmeans_seeds.py \
+    --marginals ica --ica-iters 600 --ica-patience 50 --ica-step 0.5 \
+    --ica-init $o/frame_ica.iter200.npz --no-cache --out $o
+JAX_PLATFORMS=cpu uv run python experiments/seed-stability/kmeans_seeds.py \
+    --marginals ica --groups 0.2 0.15 0.1 --ica-init $o/frame_ica.iter800.npz --ica-iters 0 \
+    --no-cache --out data/out/sonar/kmeans_seeds_ica800
+JAX_PLATFORMS=cpu uv run python experiments/seed-stability/ica_seeds.py \
+    --frame-a $o/frame_ica.iter800.npz --iters-a 0 --iters 800 --patience 50 \
+    --out data/out/sonar/ica_seeds
+```
+
+The first two commands stand for runs that were stopped at their checkpoints: those runs were
+given `--ica-iters 5000`, and the checkpoints at iterations 200 and 800 were copied to
+`frame_ica.iter200.npz` and `frame_ica.iter800.npz`.
+
+## 2026-11-22: layer 0's atoms point along the reproducible ICA sources, both seeds' along the same ones
+
+**Short version.** Two follow-ups to the last section, both on its 800-iteration FastICA frame.
+- **The stack's layer-0 atoms point along the skewed sources and nowhere else.**
+  - Of the 441 skewed sources, 26–28% have an atom of the all-off stack's layer 0 at |cosine|
+    ≥ 0.5.
+  - None of the 356 symmetric sources has one even at 0.3. Nor do the sources rotated at random,
+    and only 0.1% of the principal directions have one at 0.5.
+  - 85% of the atoms have a skewed source as their nearest, though skewed sources are 43% of all
+    sources.
+  - Layers 1–4 have no atom at 0.5 with any source.
+- **Both seeds' layer 0s cover the same sources.**
+  - 21.5% of skewed sources have an atom at ≥ 0.5 in both seeds, against 7.5% if the seeds were
+    independent.
+  - Over the skewed sources, the two seeds' best cosines correlate at Spearman 0.87, and at 0.69
+    with each source's variance share partialled out.
+  - Yet the two seeds' layer-0 heads partition the rows at a matched NMI of only 0.027.
+  - A one-layer stack of 76 heads reads the same.
+- **A copy that keeps each row's scale shared by its sources adds little to the ICA copy.** At 128
+  cells it reproduces at 0.518, against the ICA copy's 0.494 and SONAR's 0.737. That is 37% of
+  SONAR's excess over the Gaussian copy, against the ICA copy's 30% and the cut-0.1 group copy's
+  43%. At 32 cells it is below the ICA copy (0.494 against 0.510).
+
+So what layer 0's seeds disagree on is not mainly which directions they write. Both write along
+the same reproducible sources. They differ in how those atoms are grouped into heads. That is a
+reading: it would follow if the atoms matched across seeds one to one regardless of head, which
+was not measured. The shared scale, for its part, is not what makes SONAR's cells at 128
+reproduce. Cut 0.1 keeps more than the scale does, so some of it is in how sources combine within
+groups.
+
+**The scale copy** (`kmeans_seeds.py --scale-copy`, the 800-iteration frame as it is, CPU).
+- A row's scale is the median of its 1,023 sources' magnitudes (`row_scale`). The rows are sorted
+  by it into 64 bins of equal count: 2,048 training rows or 512 tail rows each.
+- Within each bin, every source's column is permuted on its own, in the training rows and the
+  tail separately.
+- On the training rows the copy keeps the scale's coefficient of variation (0.269 against 0.266),
+  the sources' median magnitude correlation (+0.0709 against +0.0711) and every source's values
+  (median kurtosis 4.78).
+- **A first version was stopped.** It divided each row's sources by the scale, permuted, and
+  multiplied the scale back. That assumes each source is the scale times something independent of
+  it, and on these rows it raised the sources' median kurtosis to 6.13. The skewed sources' spikes
+  grow less than in proportion to the scale. It was stopped after 8 cells (0.502 [0.358, 0.675],
+  FVU 0.976). Its log is `run_multiplicative_stopped.log`.
+
+| copy | seed NMI, k = 8 | 32 | 128 | FVU, 8 / 32 / 128 | null at 128 |
+|---|---|---|---|---|---|
+| SONAR | 0.533 | 0.607 | 0.737 | 0.969 / 0.948 / 0.922 | 0.009 |
+| group copy, cut 0.1 | 0.732 | 0.528 | 0.540 | 0.971 / 0.957 / 0.943 | 0.017 |
+| scale copy | 0.410 [0.208, 0.999] | 0.494 [0.421, 0.598] | 0.518 [0.490, 0.543] | 0.977 / 0.962 / 0.953 | 0.003 |
+| ICA copy | 0.597 | 0.510 | 0.494 | 0.970 / 0.954 / 0.940 | 0.040 |
+| Gaussian copy | 0.555 | 0.396 | 0.391 | 0.971 / 0.958 / 0.948 | 0.053 |
+
+- **The scale copy fits worst of all**, the Gaussian copy included, at every k. This is not
+  understood.
+- **Its cells are far less equal in size than the ICA copy's**: the null at 128 cells is 0.003
+  against 0.040. That is what cells that follow the scale would show, but it was not checked.
+- **At 8 cells its pairs range from 0.21 to 1.00**: some seeds find the same split and others
+  quite different ones.
+
+**The atoms** (`atomsources.py`, CPU, a few minutes a pair).
+- **Runs:** the five-layer all-off pair (`ste_h76_init01_med837_nobcos_nosupp_nol1f_nohm`, `_s43`)
+  and the one-layer h = 76 pair (`width_seeds/l1_h76_s42`, `_s43`), both at step 50,000.
+- **Atoms:** each entry's decoded atom in the `med837` frame (`headcontrib.atoms_and_codes`),
+  centered on its head's usage-weighted mean atom. Only entries used on the last 32,768 tail rows
+  count, which is 2,431–2,432 of 2,432 per layer.
+- **Directions:** the frame's mixing rows, classed from `ica_seeds.py`'s `sources.csv`:
+  - skewed: kurtosis ≥ 5 and |skew| ≥ 1, 441 sources;
+  - symmetric: kurtosis < 3 and |skew| < 0.3, 356;
+  - other: 226.
+- **References:** the same sources rotated at random in the sphered frame, and the principal
+  directions.
+
+Layer 0, seeds 42 / 43 of the five-layer pair, and in parentheses the one-layer pair's:
+
+| directions | count | share with an atom at \|cos\| ≥ 0.5 | ≥ 0.7 | median best \|cos\| |
+|---|---|---|---|---|
+| skewed sources | 441 | 0.263 / 0.283 (0.297 / 0.288) | 0.095 / 0.107 (0.129 / 0.132) | 0.334 / 0.322 (0.347 / 0.346) |
+| symmetric sources | 356 | 0 / 0 (0 / 0) | 0 | 0.141 / 0.144 (0.144 / 0.144) |
+| other sources | 226 | 0.022 / 0.031 (0.031 / 0.035) | 0.004 / 0.004 (0.009 / 0) | 0.176 / 0.176 (0.181 / 0.187) |
+| sources rotated at random | 1,023 | 0 / 0 (0 / 0) | 0 | 0.177 / 0.177 (0.176 / 0.175) |
+| principal directions | 1,023 | 0.001 / 0.001 (0.001 / 0.001) | 0 | 0.090 / 0.092 (0.086 / 0.089) |
+
+- **Each atom's nearest source** is skewed for 85% of atoms in all four runs. The atoms' median
+  best |cosine| is 0.22–0.23 with the sources, against 0.15 with the rotated ones and 0.17 with
+  the principal directions.
+- **Both seeds, five-layer pair.**
+  - At ≥ 0.5, 21.5% of skewed sources have an atom in both seeds, against 7.5% for independent
+    seeds. That is 95 sources holding 16.8% of the variance.
+  - At ≥ 0.7, 6.8% against 1.0%.
+  - The one-layer pair: 23.4% against 8.6% (103 sources, 18.2%).
+- **Spearman between the seeds' best cosines:**
+  - over all sources, 0.929 (one-layer 0.933);
+  - within the skewed sources, 0.874 (0.878);
+  - within them with variance share partialled out (on ranks), 0.691 (0.668).
+- **Variance draws atoms but does not explain them.** A source's best cosine rises with its
+  variance share: Spearman 0.83 over all sources and 0.78 within the skewed ones. The covered
+  skewed sources' median share is 0.0016, against 0.0010 for the rest. But the principal
+  directions carry more variance than any source: the first holds 2.1%, the largest source 0.45%.
+  Almost none of them has an atom at 0.5.
+- **Reproduction across samples barely adds.** Within the skewed sources, a source's best
+  cosine correlates with its cross-sample correlation at 0.20, and at 0.10 with variance
+  partialled out.
+- **Layers 1–4** (five-layer pair) have no atom at ≥ 0.5 with any source. The skewed sources'
+  median best cosine falls from 0.166 to 0.125, toward the rotated reference's 0.146 to 0.123. The
+  two seeds' Spearman over sources falls with depth: 0.72, 0.52, 0.34 and 0.15 for layers 1–4.
+
+**For the stack.** Layer 0 has 2,432 atoms and covers about 120 skewed sources at 0.5 in each
+seed. The two seeds cover largely the same ones. The direct test of the reading above is to match
+each seed's atoms to the other's one to one, ignoring heads, beside a null that keeps each atom's
+spectrum. A high atom match with a low head match would place the seeds' disagreement in how
+entries are grouped into heads.
+
+Output: `data/out/sonar/kmeans_seeds_scale/` (`summary.json`, `run.log`,
+`run_multiplicative_stopped.log`) and `data/out/sonar/atomsources/{alloff,h76}/` (`summary.json`,
+`sources.csv`, `run.log`).
+
+```bash
+F=data/out/sonar/kmeans_seeds_ica/frame_ica.iter800.npz
+JAX_PLATFORMS=cpu uv run python experiments/seed-stability/kmeans_seeds.py \
+    --scale-copy --ica-init $F --ica-iters 0 --no-cache --out data/out/sonar/kmeans_seeds_scale
+L=data/out/sonar/recipe_ladder/ste_h76_init01_med837_nobcos_nosupp_nol1f_nohm
+JAX_PLATFORMS=cpu uv run python experiments/seed-stability/atomsources.py \
+    --frame $F --sources data/out/sonar/ica_seeds/sources.csv \
+    --a $L --b ${L}_s43 --out data/out/sonar/atomsources/alloff
+JAX_PLATFORMS=cpu uv run python experiments/seed-stability/atomsources.py \
+    --frame $F --sources data/out/sonar/ica_seeds/sources.csv \
+    --a data/out/sonar/width_seeds/l1_h76_s42 --b data/out/sonar/width_seeds/l1_h76_s43 \
+    --out data/out/sonar/atomsources/h76
 ```

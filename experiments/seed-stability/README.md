@@ -217,8 +217,9 @@ null with one partition's rows shuffled, and each seed's FVU.
   (mean, eigenvalues, eigenvectors, and for `ica` the unmixing), the ICA
   frame also every 100 iterations as `frame_ica.partial.npz` with its
   step, and `--ica-init` continues FastICA from either, fit on the same
-  rows, at that step (`--ica-step` for a frame saved without one) and
-  counting the earlier iterations.
+  rows, at that step (`--ica-step` sets another) and counting the earlier
+  iterations. With `--ica-iters 0` the saved frame is used as it is, once
+  its principal frame is checked against the rows.
 - `--groups TAU ...` runs it on copies between the ICA copy and the cache.
   The sources' magnitudes |s_i| are correlated over the training rows
   (Spearman, `energy_dependence`): uncorrelated sources that tend to be
@@ -229,6 +230,19 @@ null with one partition's rows shuffled, and each seed's FVU.
   ties groups. All singletons is the ICA copy, one group the cache.
   `energy_ica.npy` holds the correlations and `groups_ica.npz` each
   grouping. `--no-cache` leaves the cache's own rows unscored.
+- `--scale-copy` runs it on a copy that keeps a scale shared by all of a
+  row's sources and nothing else that ties them. The row's scale is the
+  median of its sources' magnitudes (`row_scale`). The rows are sorted by
+  it into 64 bins of equal count, and within each bin every source's
+  column is permuted on its own (`scale_copy`). Every source keeps its
+  values exactly and, up to the bin's width, how they depend on the scale.
+  Because the scale is estimated from the same sources, the copy adds a
+  magnitude correlation of about 0.75/p between them. Dividing by the scale
+  and multiplying it back after permuting would instead assume each source
+  is the scale times something independent of it. On `mc4_sent16` that
+  raised the sources' median kurtosis from 4.8 to 6.1. `summary.json`'s
+  `ica_scale_stats` compares the rows' and the copy's scale spread, median
+  magnitude correlation and median kurtosis.
 - The cells are also scored against the rows' languages (NMI,
   `language_nmi`) for the data sets whose tail row i stands for the
   cache's tail row i: the cache, the mixture and within.
@@ -256,15 +270,18 @@ the marginal copies: the `pca` copy keeps every principal coordinate's
 values and the covariance and loses a planted dependence between
 uncorrelated coordinates; FastICA recovers planted sources, with damped
 steps too, and, started at its own fixed point, stays there; a saved
-`ica` fit continues on its own rows and is refused on others; the `ica`
+`ica` fit continues on its own rows, or with no iterations is used as it
+is, and is refused on others; the `ica`
 copy keeps two uniform sources mixed along non-orthogonal directions
 inside their parallelogram, where the `pca` copy spills rows outside it;
 the shape statistics read a Gaussian, a uniform and two modes; the
 magnitude correlations find sources planted to share a scale and group
 them apart from independent ones; and the group copy keeps a group's
 magnitude correlation while breaking it between groups, which the ICA
-copy breaks within the group too. A second draw of training rows avoids
-the first.
+copy breaks within the group too. With a scale shared by every source,
+the scale copy keeps the sources' magnitude correlation, which the ICA
+copy breaks; without one, the scale copy adds next to none. A second
+draw of training rows avoids the first.
 
 ## Whether FastICA's sources reproduce (`ica_seeds.py`)
 
@@ -279,17 +296,55 @@ at random, which no data pin, and the two principal frames' coordinates.
 partner, both matched values and its runner-up; `summary.json` bins them by
 kurtosis, since ICA cannot pin a source near Gaussian. Both fits are damped
 (`--patience`, default 50) and checkpointed (`frame_a.partial.npz`,
-`frame_b.partial.npz`; `--frame-b` continues B).
+`frame_b.partial.npz`; `--frame-b` continues B). `--iters` caps each fit's
+iterations, and `--iters-a` A's alone: `--iters-a 0` uses `--frame-a` as it
+is, so B can be given the iterations A had.
 
 ```bash
 JAX_PLATFORMS=cpu uv run python experiments/seed-stability/ica_seeds.py \
-    --frame-a data/out/sonar/kmeans_seeds_ica/frame_ica.npz --out data/out/sonar/ica_seeds
+    --frame-a data/out/sonar/kmeans_seeds_ica/frame_ica.npz --iters-a 0 --iters 800 \
+    --out data/out/sonar/ica_seeds
 ```
 
 `tests/test_ica_seeds.py` checks that a relabelled, sign-flipped copy
 matches exactly, and on planted sources that non-Gaussian ones reproduce
 across three disjoint samples, a random rotation does not, and two
 Gaussian sources land in a different rotation of their plane.
+
+## Whether a stack's atoms point along the sources (`atomsources.py`)
+
+The stack's atoms are set against FastICA's source directions: the rows of
+the mixing matrix in the loss's whitened frame. Each decoded atom
+(`headcontrib.atoms_and_codes`) is centered on its head's usage-weighted
+mean atom, and only entries used on `--rows` tail rows count.
+- **Per run and layer:** each source's best |cosine| with any atom, by
+  class from `ica_seeds.py`'s `sources.csv`. The classes are skewed
+  (kurtosis ≥ 5, |skew| ≥ 1), symmetric (kurtosis < 3, |skew| < 0.3) and
+  the rest.
+- **References:** the same for the sources rotated at random (the same
+  spectrum, nothing ICA found) and for the principal directions.
+- **Per atom:** its best |cosine| with any source, and the class of its
+  nearest source.
+- **Per source:** the Spearman correlation of its best cosine with its
+  correlation across samples and with its variance share.
+- **With `--b`:** the share of each class that both runs have an atom
+  along, beside the product of the two runs' shares.
+
+It reads only the checkpoints, the frame and the tail rows. Output:
+`summary.json` and `sources.csv` (each source's best cosine per run and
+layer).
+
+```bash
+JAX_PLATFORMS=cpu uv run python experiments/seed-stability/atomsources.py \
+    --frame data/out/sonar/kmeans_seeds_ica/frame_ica.iter800.npz \
+    --sources data/out/sonar/ica_seeds/sources.csv \
+    --a <run> --b <run>_s43 --out <dir>
+```
+
+`tests/test_atomsources.py` checks that copies of some directions are
+found along them and not along the rest, that the classes follow kurtosis
+and skew, that the rotated reference keeps the spectrum, that centering
+drops unused entries, and that "both runs" is read against independence.
 
 ## Which heads reproduce as heads (`headscreen.py`)
 

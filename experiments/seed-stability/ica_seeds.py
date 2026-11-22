@@ -112,10 +112,13 @@ def main() -> None:
     p.add_argument("--tail-rows", type=int, default=32768)
     p.add_argument("--frame-a", default=None,
                    help="kmeans_seeds.py's frame_ica.npz on its training rows "
-                        "(continued until converged; fitted afresh without it)")
+                        "(continued for --iters-a more iterations; fitted "
+                        "afresh without it)")
     p.add_argument("--frame-b", default=None,
                    help="an earlier run's frame_b.npz, to continue B's fit")
     p.add_argument("--iters", type=int, default=5000)
+    p.add_argument("--iters-a", type=int, default=None,
+                   help="A's iterations, if not --iters (0: --frame-a as it is)")
     p.add_argument("--patience", type=int, default=50,
                    help="kmeans_seeds.py's --ica-patience (0: plain FastICA)")
     p.add_argument("--out", default=str(ROOT / "data/out/sonar/ica_seeds"))
@@ -132,7 +135,8 @@ def main() -> None:
     tail = np.asarray(X[-cfg.tail_rows:], np.float32) * sw
     load = lambda f: dict(np.load(f)) if f else None
     print("A: FastICA", flush=True)
-    fa = ica_frame(TA, 0, cfg.iters, load(cfg.frame_a), log_every=25,
+    iters_a = cfg.iters if cfg.iters_a is None else cfg.iters_a
+    fa = ica_frame(TA, 0, iters_a, load(cfg.frame_a), log_every=25,
                    patience=cfg.patience, checkpoint_path=out / "frame_a.partial.npz")
     np.savez(out / "frame_a.npz", **fa)
     print(f"A: {fa['iterations']} iterations, last change {fa['last_change']:.2e}\n"
