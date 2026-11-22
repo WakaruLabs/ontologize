@@ -1,5 +1,78 @@
 # lcm-organism: notes
 
+## 2026-11-22: the readout rescaled to its loss's frame, unrotated: the rotation's cost is mostly the mixing
+
+**In short.**
+- **Mixing the readout's coordinates costs most of its lead. Rescaling them costs little.** The
+  rotation of the entry below changes the basis in two steps. Each coordinate is scaled by the root
+  of its loss weight, and then the coordinates are mixed. Dictionaries on the rows after the first
+  step alone close 72% of SONAR's gap to the LCM on all heads and 35% within a language. Unrotated,
+  the readout closes 84% and 38%; rotated, 41% and 26%.
+- **Of the 43 points the rotation costs on all heads, rescaling takes 12 and mixing 31.** Within a
+  language the rotation costs 13 points: 4 from rescaling, which may be seed noise (Caveats), and 9
+  from mixing.
+- **The head-specific part** falls from 0.0026 to 0.0023 with rescaling, and to 0.0019 with the
+  rotation.
+
+**The control.**
+- **The rows.** `weightframe.py` writes the readout from x_n alone as y' = c √w ⊙ y, unrotated, with
+  c = 376.83 taken from the rotated cache (`--scale-like`). The rotated cache is these rows rotated
+  (`test_the_weighted_frame_is_the_cache_recoloured_to_itself_unrotated`), so the two arms differ by
+  the rotation alone.
+- **The same loss as the readout's.** The arm's own weights are flat (they span a factor of
+  1.0002), so its loss measures errors exactly as the readout's does. Its next-sentence baselines are
+  the readout's to four places: copy 1.0557, ridge 0.7153. The rotated arm's own weights span a
+  factor of 2.5, so its loss differs a little (copy 1.0633).
+- **Fidelity.** On 20,000 rows, the rotated cache keeps these rows' norms within 1.3e-4 and their
+  inner products within 1.1e-4. A linear map from these rows reproduces it with a share of 8e-8 of
+  its variance left over. Written in float16, 24 values rounded to zero.
+- **Its spectrum** on the tail, under its own weights, is the readout's: participation ratio 98,
+  effective rank 212, 41 / 263 directions for 50% / 90%, 0.147 between languages, and
+  within-language participation ratio 108.
+
+**Runs.** `ARMS=lcm_readout_x_wf phase2.sh train`, then `score`, on the RTX 3090, as for the other
+readout arms: seeds 42 and 43 to step 46,250, a little over 2 hours each.
+
+**The readouts,** beside every other arm's seeds 42 and 43:
+
+| Arm | All 380 heads: matched NMI (null) | First 38 heads, within language (null) | Gap closed, all heads / within | Head-specific part | Share between languages | Copy baseline | FVU_w, each seed |
+|---|---|---|---|---|---|---|---|
+| LCM, block 4 | 0.0340 (0.0048) | 0.1269 (0.0495) | | 0.0026 | 0.154 | 0.439 | 0.2820 / 0.2812 |
+| Readout, x_n and context | 0.0316 (0.0048) | 0.1043 (0.0494) | 86% / 62% | 0.0026 | 0.153 | 0.454 | 0.2746 / 0.2727 |
+| Readout, x_n alone | 0.0313 (0.0048) | 0.0907 (0.0495) | 84% / 38% | 0.0026 | 0.147 | 1.056 | 0.2481 / 0.2475 |
+| **Readout, x_n alone, rescaled** | **0.0291** (0.0048) | **0.0891** (0.0500) | **72% / 35%** | **0.0023** | 0.147 | 1.056 | 0.2569 / 0.2559 |
+| Readout, x_n alone, rotated | 0.0240 (0.0048) | 0.0842 (0.0506) | 41% / 26% | 0.0019 | 0.145 | 1.063 | 0.2677 / 0.2670 |
+| Fixed mix | 0.0197 (0.0048) | 0.0812 (0.0508) | 17% / 20% | 0.0015 | 0.090 | 0.731 | 0.4364 / 0.4356 |
+| Fixed mix recoloured | 0.0163 (0.0048) | 0.0810 (0.0510) | −3% / 19% | 0.0015 | 0.117 | 0.632 | 0.3484 / 0.3476 |
+| SONAR recoloured | 0.0206 (0.0048) | 0.0751 (0.0508) | 22% / 10% | 0.0016 | 0.072 | 1.369 | 0.3241 / 0.3236 |
+| SONAR, TPU | 0.0169 (0.0048) | 0.0692 (0.0507) | | 0.0013 | 0.043 | 1.533 | 0.4593 / 0.4585 |
+| Untrained LCM | 0.0155 (0.0048) | 0.0749 (0.0509) | −8% / 9% | 0.0012 | 0.057 | 0.766 | 0.4370 / 0.4370 |
+
+**What it means.**
+- **The dictionaries use the readout's own coordinate axes.** The readout writes block 4's state, so
+  its coordinates are block 4's. Mixing them at random costs about 70% of what the rotation costs
+  (31 of 43 points on all heads, 9 of 13 within a language), and evening out their scales costs the
+  rest. What the axes carry, these runs do not say. One candidate is the shape of each coordinate's
+  own distribution, which a rotation blends toward a Gaussian and a rescaling keeps.
+- **Reconstruction follows the same order.** FVU_w is 0.248 unrotated, 0.257 rescaled and 0.268
+  rotated. The rotated arm's figure is under weights that are not quite flat.
+
+**Caveats.**
+- **Seeds.** Two training seeds per arm, and one pair of them scored. The LCM's three seeds give
+  three pairs, whose 38 slow heads match within 0.0017 of one another on all rows. Rescaling moves
+  the within-language score of those heads by 0.0016, about that spread. The all-heads scores are
+  means over 380 heads, and no arm has a second pair scored on them.
+
+```bash
+A=data/activations/lcm-organism
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/weightframe.py --scale-like $A/lcm_readout_x_rot_b4.npy
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/spectrum.py \
+    --arm lcm_readout_x_wf_b4 $A/lcm_readout_x_wf_b4.npy $A/lcm_readout_x_wf_b4.mse_weights_matched.npy \
+    --out data/out/lcm-organism/spectrum_readout_x_wf
+ARMS=lcm_readout_x_wf experiments/lcm-organism/phase2.sh train
+ARMS=lcm_readout_x_wf experiments/lcm-organism/phase2.sh score
+```
+
 ## 2026-11-22: the readout from x_n alone under a random rotation: the coordinate basis carries half its lead on all heads
 
 **In short.**
@@ -18,8 +91,9 @@
 - **The map.** `recolour.py` with the readout as both source and target, under its matched weights.
   Recolouring a cache to its own spectrum is a rotation times a scale
   (`test_recolouring_to_its_own_spectrum_is_a_scaled_rotation`) of its rows in the frame its loss
-  weighs: y_rot = c R Uᵀ (√w ⊙ y). So the loss measures errors as it does on the readout, and only
-  the basis changes. Rotation seed 0, nothing zeroed, written into `lcm_readout_x_rot_b4.npy` with
+  weighs: y_rot = c R Uᵀ (√w ⊙ y). So the loss measures errors nearly as it does on the readout
+  (its own weights, next bullet, are not quite flat), and only the basis changes. ("Nearly" added
+  2026-11-22, the same session.) Rotation seed 0, nothing zeroed, written into `lcm_readout_x_rot_b4.npy` with
   its own matched weights.
 - **The weights move into the rows.** The trainer weights each coordinate by its inverse variance.
   The readout's weights span a factor of 19 (coefficient of variation 0.24). The rotated cache
@@ -59,9 +133,10 @@ readout arms: seeds 42 and 43 to step 46,250.
     lower-dimensional one (participation ratio 98 against 141).
 
   So this run does not isolate the directions.
-- **The change of basis has two steps, not yet told apart.** Each coordinate is scaled by √w_j,
-  which evens out the input's scales (they span a factor of 4.4), and then the coordinates are mixed.
-  The rows after the first step alone (`weightframe.py`) would separate the two.
+- **The change of basis has two steps.** Each coordinate is scaled by √w_j, which evens out the
+  input's scales (they span a factor of 4.4), and then the coordinates are mixed. The rows after the
+  first step alone (`weightframe.py`) separate the two: they close 72% on all heads and 35% within a
+  language, so the mixing costs most of the lead (2026-11-22, the entry above).
 
   (Corrected 2026-11-22, the same session: this bullet first said the rotation changed how the loss
   weighs the coordinates, and proposed training the unrotated readout with flat weights. The map
