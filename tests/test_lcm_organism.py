@@ -590,6 +590,18 @@ def test_the_fixed_mix_adds_the_earlier_mean_and_keeps_the_sources_weights(tmp_p
         assert os.path.samefile(tmp_path / ("h" + suf), side(suf))
 
 
+def test_recolouring_to_its_own_spectrum_is_a_scaled_rotation():
+    r = np.random.default_rng(8)
+    d = 32
+    U = np.linalg.qr(r.standard_normal((d, d)))[0]
+    C = (U * np.geomspace(20, 0.05, d)) @ U.T
+    A, info = recolour.recolour_map(C, C, seed=3)
+    c = info["scale"]
+    # only the basis changes: distances in the weighted frame are kept, up to c
+    np.testing.assert_allclose(A @ A.T, c ** 2 * np.eye(d), atol=1e-9 * c ** 2)
+    assert info["zeroed"] == 0 and info["unmatched_target_share"] == 0
+
+
 def test_a_source_laid_out_as_the_target_is_recoloured_row_for_row(tmp_path):
     import ctxmean
     c, x, tgt, P, T, rows, F = planted_harvest(tmp_path)

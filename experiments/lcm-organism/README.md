@@ -61,6 +61,11 @@ A=data/activations/lcm-organism
 JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/recolour.py --source $A/sonar_ctxmean_b4.npy \
     --source-weights $A/sonar_ctxmean_b4.mse_weights_matched.npy --out $A/sonar_ctxmean_recol_b4.npy
 ARMS=sonar_ctxmean_recol experiments/lcm-organism/phase2.sh train && ARMS=sonar_ctxmean_recol experiments/lcm-organism/phase2.sh score
+# the readout from x_n alone under a random rotation: recoloured to its own spectrum, only the basis changes
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/recolour.py --source $A/lcm_readout_x_b4.npy \
+    --source-weights $A/lcm_readout_x_b4.mse_weights_matched.npy --target $A/lcm_readout_x_b4.npy \
+    --target-weights $A/lcm_readout_x_b4.mse_weights_matched.npy --out $A/lcm_readout_x_rot_b4.npy
+ARMS=lcm_readout_x_rot experiments/lcm-organism/phase2.sh train && ARMS=lcm_readout_x_rot experiments/lcm-organism/phase2.sh score
 ```
 
 On a TPU (`experiments/cloud`), stage the float16 cache with the sidecars the scripts read

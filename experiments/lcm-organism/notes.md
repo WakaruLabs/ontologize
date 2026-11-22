@@ -1,5 +1,84 @@
 # lcm-organism: notes
 
+## 2026-11-22: the readout from x_n alone under a random rotation: the coordinate basis carries half its lead on all heads
+
+**In short.**
+- **A random rotation halves the readout's lead on all heads.** Dictionaries on the readout from x_n
+  alone, rotated at random with its spectrum kept, close 41% of SONAR's gap to the LCM on all heads,
+  against 84% unrotated. Within a language they close 26%, against 38%.
+- **The rest of the lead survives the rotation.** Rotated, the readout still beats SONAR recoloured to
+  block 4's spectrum, the other randomly rotated linear map of SONAR's rows: 41% against 22% on all
+  heads, and 26% against 10% within a language.
+- **The head-specific part falls** from the LCM's level, 0.0026, to 0.0019. SONAR's is 0.0013.
+- **The share of variance between languages does not carry the lead.** The rotation keeps the share
+  (0.145 against 0.147) and loses half the lead. Over the nine arms, the correlation of agreement
+  with that share falls to 0.83 on all heads and 0.78 within a language.
+
+**The control.**
+- **The map.** `recolour.py` with the readout as both source and target, under its matched weights.
+  Recolouring a cache to its own spectrum is a rotation times a scale
+  (`test_recolouring_to_its_own_spectrum_is_a_scaled_rotation`), so only the basis changes. Rotation
+  seed 0, nothing zeroed, written into `lcm_readout_x_rot_b4.npy` with its own matched weights.
+- **The weights change with the basis.** The trainer weights each coordinate by its inverse variance.
+  The readout's weights span a factor of 19 (coefficient of variation 0.24), and the rotated cache's
+  a factor of 2.5 (0.13).
+- **Its spectrum** on the tail, under its own weights, is the readout's:
+
+| Arm (the tail) | Participation ratio | Effective rank | Directions for 50% / 90% | Share between languages | Within-language participation ratio |
+|---|---|---|---|---|---|
+| Readout, x_n alone | 98 | 212 | 41 / 263 | 0.147 | 108 |
+| Readout, x_n alone, rotated | 103 | 217 | 42 / 265 | 0.145 | 113 |
+
+**Runs.** `ARMS=lcm_readout_x_rot phase2.sh train`, then `score`, on the RTX 3090, as for the other
+readout arms: seeds 42 and 43 to step 46,250.
+
+**The readouts,** beside every other arm's seeds 42 and 43:
+
+| Arm | All 380 heads: matched NMI (null) | First 38 heads, within language (null) | Gap closed, all heads / within | Head-specific part | Share between languages | Copy baseline | FVU_w, each seed |
+|---|---|---|---|---|---|---|---|
+| LCM, block 4 | 0.0340 (0.0048) | 0.1269 (0.0495) | | 0.0026 | 0.154 | 0.439 | 0.2820 / 0.2812 |
+| Readout, x_n and context | 0.0316 (0.0048) | 0.1043 (0.0494) | 86% / 62% | 0.0026 | 0.153 | 0.454 | 0.2746 / 0.2727 |
+| Readout, x_n alone | 0.0313 (0.0048) | 0.0907 (0.0495) | 84% / 38% | 0.0026 | 0.147 | 1.056 | 0.2481 / 0.2475 |
+| **Readout, x_n alone, rotated** | **0.0240** (0.0048) | **0.0842** (0.0506) | **41% / 26%** | **0.0019** | 0.145 | 1.063 | 0.2677 / 0.2670 |
+| Fixed mix | 0.0197 (0.0048) | 0.0812 (0.0508) | 17% / 20% | 0.0015 | 0.090 | 0.731 | 0.4364 / 0.4356 |
+| Fixed mix recoloured | 0.0163 (0.0048) | 0.0810 (0.0510) | −3% / 19% | 0.0015 | 0.117 | 0.632 | 0.3484 / 0.3476 |
+| SONAR recoloured | 0.0206 (0.0048) | 0.0751 (0.0508) | 22% / 10% | 0.0016 | 0.072 | 1.369 | 0.3241 / 0.3236 |
+| SONAR, TPU | 0.0169 (0.0048) | 0.0692 (0.0507) | | 0.0013 | 0.043 | 1.533 | 0.4593 / 0.4585 |
+| Untrained LCM | 0.0155 (0.0048) | 0.0749 (0.0509) | −8% / 9% | 0.0012 | 0.057 | 0.766 | 0.4370 / 0.4370 |
+
+**What it means.**
+- **The basis is about half the readout's lead on all heads,** and about a third of it within a
+  language.
+- **What survives the rotation is more than the spectrum.** The rotated readout and the recoloured
+  SONAR are both randomly rotated linear maps of SONAR's rows. They differ by 19 points on all heads
+  and 16 within a language, in two ways:
+  - **which directions get the variance;**
+  - **the spectrum itself:** the recoloured SONAR has block 4's, and the readout its own
+    lower-dimensional one (participation ratio 98 against 141).
+
+  So this run does not isolate the directions.
+- **"The basis" includes the weights.** The rotation changed both the coordinates the heads read and
+  how the loss weighs them. This run cannot tell which of the two mattered. The unrotated readout
+  trained with uniform weights would: the rotated cache's weights are nearly uniform already.
+- **Reconstruction is about as hard.** FVU_w is 0.268 against 0.248, each under its own weights. The
+  copy baseline reads 1.063 against 1.056, and the next-sentence FVU_w 0.970 against 0.97 (ridge
+  0.719).
+
+**Caveats.**
+- **Seeds.** Two training seeds, and one rotation seed.
+
+```bash
+A=data/activations/lcm-organism
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/recolour.py --source $A/lcm_readout_x_b4.npy \
+    --source-weights $A/lcm_readout_x_b4.mse_weights_matched.npy --target $A/lcm_readout_x_b4.npy \
+    --target-weights $A/lcm_readout_x_b4.mse_weights_matched.npy --out $A/lcm_readout_x_rot_b4.npy
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/spectrum.py \
+    --arm lcm_readout_x_rot_b4 $A/lcm_readout_x_rot_b4.npy $A/lcm_readout_x_rot_b4.mse_weights_matched.npy \
+    --out data/out/lcm-organism/spectrum_readout_x_rot
+ARMS=lcm_readout_x_rot experiments/lcm-organism/phase2.sh train
+ARMS=lcm_readout_x_rot experiments/lcm-organism/phase2.sh score
+```
+
 ## 2026-11-21: the fixed mix recoloured to the LCM's spectrum agrees no more than the fixed mix
 
 **In short.**
@@ -49,7 +128,8 @@ written its scores, and the score stage was rerun for `eval_next.py`.
     top eigenvalues. The readout gives them to whichever directions the LCM weighs up.
   - **The coordinate basis.** The recoloured arms are rotated at random, while the readouts come out
     in the LCM's own coordinates, and the trainer weights each coordinate by its inverse variance.
-- **The readout from x_n alone under a random rotation separates the two.** It is running.
+- **The readout from x_n alone under a random rotation separates the two.** It closes 41% on all
+  heads and 26% within a language (2026-11-22, the entry above).
 
 **Caveats.**
 - **Seeds.** Two, and one rotation seed for the recolouring.
