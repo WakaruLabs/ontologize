@@ -181,6 +181,15 @@ null with one partition's rows shuffled, and each seed's FVU.
 
 - `--gauss` runs the same on the Gaussian copy: training rows from its
   training stream, the tail from `eval.npy`.
+- `--mixture` runs it on a copy that keeps each language's mean and
+  covariance (`gausscopy.py mixture` writes `mixture.npz` from the
+  `.langs.npy` sidecar), with every row drawn under the real row's
+  language. Its pooled covariance is the cache's, so it differs from the
+  Gaussian copy by the language structure alone.
+- `--within-language` (the same `mixture.npz`) runs it on the cache's own
+  rows less their language's mean.
+- For every data set but the Gaussian copy, each seed's cells are also
+  scored against the rows' languages (NMI, `language_nmi`).
 - `--ckpt` adds, per layer of a stack, each head's best NMI against the
   k-means partitions at the model's k.
 
@@ -188,12 +197,20 @@ null with one partition's rows shuffled, and each seed's FVU.
 JAX_PLATFORMS=cpu uv run python experiments/seed-stability/kmeans_seeds.py \
     --gauss data/out/sonar/gausscopy \
     --ckpt data/out/sonar/recipe_ladder/ste_h76_init01_med837_nobcos_nosupp_nol1f_nohm
+uv run python experiments/seed-stability/gausscopy.py mixture
+JAX_PLATFORMS=cpu uv run python experiments/seed-stability/kmeans_seeds.py \
+    --mixture data/out/sonar/gausscopy/mixture.npz \
+    --within-language data/out/sonar/gausscopy/mixture.npz \
+    --out data/out/sonar/kmeans_seeds_language
 ```
 
 Output: `data/out/sonar/kmeans_seeds/summary.json`.
 `tests/test_kmeans_seeds.py` checks the assignment against brute force,
 agreement on separated clusters and along a dominant direction, its
 absence on an isotropic Gaussian, and that every cell ends up used.
+`tests/test_gausscopy.py` checks the per-language moments against numpy's,
+their total covariance against the pooled one, and that mixture rows
+follow their language's moments and depend only on its stream.
 
 ## Summed heads against a cascade (`kmeans_structure.py`)
 
@@ -223,6 +240,26 @@ Output: `data/out/sonar/kmeans_structure/aq.json` and `rvq.json`.
 `tests/test_kmeans_structure.py` checks the cascade's falling prefix error
 and a shared first stage, the head matching, and the unpacking of FAISS's
 codes.
+
+## Agreement against width in the trained stack (`width_seeds.sh`)
+
+LSQ's agreement halves with each doubling of its codebooks. The trained
+counterpart is a one-layer stack of h heads of 32. `width_seeds.sh` trains
+one with the recipe ladder's all-off flags on `mc4_sent16` at seeds 42 and
+43 for each h in `WIDTHS` (default 1, 4, 16, 76), 50,000 steps each. It
+scores each pair with `partition.py` and `ratecurve.py` in
+`data/out/sonar/width_seeds/scores/`. It waits for an idle GPU and trains
+one run at a time, so it runs as a systemd unit, as `gauss_seeds.sh` does.
+A one-head stack needs `DictBlock.support_overlap` to read 0 at h = 1,
+which it now does (`tests/test_support.py`).
+
+```bash
+systemd-run --user --unit width-seeds -p Restart=on-failure -p RestartSec=120 \
+    --working-directory=$PWD \
+    -p StandardOutput=append:$PWD/experiments/logs/width_seeds.log \
+    -p StandardError=append:$PWD/experiments/logs/width_seeds.log \
+    /usr/bin/bash experiments/seed-stability/width_seeds.sh
+```
 
 ## Cost
 

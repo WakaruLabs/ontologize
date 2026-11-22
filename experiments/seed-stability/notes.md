@@ -562,3 +562,74 @@ tells "beyond the covariance" from "within it", not which higher-order structure
 **Memory.** The unit's cgroup peak was 97.6 GB over training and scoring. That count includes page
 cache, and the ladder's training unit read 52.6 GB. Which step drove it was not traced. Run heavy
 CPU jobs beside such a unit with care.
+
+## 2026-11-21: SONAR's reproducible k-means cells are not language
+
+**Short version.** k-means partitions of SONAR reproduce across seeds beyond its Gaussian copy's
+(above, 2026-11-20). Language is the obvious candidate for the structure, so two copies test it.
+- A mixture that keeps each language's mean and covariance and nothing else reproduces at 32
+  cells as SONAR does (0.596 against 0.607).
+- But SONAR's own rows less their language's mean reproduce just as well (0.673), and their cells
+  barely follow language (NMI 0.038).
+
+So the mixture's match was a match of strength, not of structure. SONAR's reproducible cells are
+mostly something other than language. In a one-seed check they are not segment kind, length or
+position in the document either, which leaves content (topic or genre) as the likely candidate,
+unchecked. Language means add agreement only at 128 cells (0.737 against 0.659).
+
+**Setup** (`kmeans_seeds.py`, CPU). As the 2026-11-20 section: the `med837` whitened frame, seeds
+42–46 (ten pairs), fit on 131,072 rows drawn from the first 12.8M, assigned on the last 32,768.
+- **The mixture copy** (`gausscopy.py mixture`, `mixture.npz`) holds each of the 86 languages'
+  mean and covariance over the training prefix. The rarest language has 38,033 rows there, 37
+  times the dimension, so no shrinkage was needed. Each training and tail row is drawn under the
+  real row's language, so the language composition is the cache's. Its pooled covariance is the
+  cache's (relative error 1e-15, `mixture.meta.json`). The language means carry 4.6% of the
+  variance, in the raw frame.
+- **Within** is the cache's own rows less their language's mean (`--within-language`).
+- **The cells' NMI with language** is each seed's tail partition against the rows' languages (86
+  values), averaged over the five seeds.
+
+| data | seed NMI, k = 8 | 32 | 128 | cells' NMI with language, k = 8 | 32 | 128 |
+|---|---|---|---|---|---|---|
+| SONAR | 0.533 | 0.607 | 0.737 | 0.106 | 0.179 | 0.248 |
+| SONAR less language means | 0.666 | 0.673 | 0.659 | 0.018 | 0.038 | 0.089 |
+| language mixture | 0.690 | 0.596 | 0.581 | 0.188 | 0.290 | 0.355 |
+| Gaussian copy (2026-11-20) | 0.555 | 0.396 | 0.391 | | | |
+
+The shuffled nulls are at most 0.0104. The FVUs at 32 cells are 0.948 (SONAR), 0.960 (within)
+and 0.951 (mixture).
+
+- **Removing the language means raises agreement at 8 and 32 cells.** One reading, untested: with
+  the means in, some cells follow language, and those cells reproduce less well than the rest.
+- **The mixture's cells follow language more than SONAR's** (0.29 against 0.18 at 32). They are
+  language cells that happen to reproduce about as well.
+- **What the within-language cells are, exploratory** (one seed, 42, a scratch script not in the
+  repository; NMI with each label on the tail):
+
+| data, k | segment kind (3) | norm decile (10) | position in document (16) | language (86) |
+|---|---|---|---|---|
+| SONAR, 8 | 0.088 | 0.034 | 0.007 | 0.057 |
+| SONAR, 32 | 0.067 | 0.122 | 0.007 | 0.185 |
+| within, 8 | 0.096 | 0.039 | 0.009 | 0.014 |
+| within, 32 | 0.090 | 0.080 | 0.009 | 0.029 |
+
+  None comes close to explaining a partition that reproduces at 0.67. `partition.py`'s NMI
+  divides by the mean of the two entropies, so against kind (0.96 nats on the tail) a 32-cell
+  partition (about 3.47) reads at most about 0.43; kind's 0.09 is about a fifth of that, not
+  nothing.
+
+**For the stack.** Layer 0's agreement beyond the Gaussian copy (the last section) need not be
+language either. The language mixture is a cheaper next copy for a stack pair than SONAR less
+its means, but this result says it would test the wrong structure. A pair on the within-language
+rows would test whether the heads' small agreement survives losing the language means.
+
+Output: `data/out/sonar/kmeans_seeds_language/summary.json` and `run.log`, and
+`data/out/sonar/gausscopy/mixture.npz` and `mixture.meta.json`.
+
+```bash
+uv run python experiments/seed-stability/gausscopy.py mixture
+JAX_PLATFORMS=cpu uv run python experiments/seed-stability/kmeans_seeds.py \
+    --mixture data/out/sonar/gausscopy/mixture.npz \
+    --within-language data/out/sonar/gausscopy/mixture.npz \
+    --out data/out/sonar/kmeans_seeds_language
+```

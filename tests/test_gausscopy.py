@@ -12,7 +12,8 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "experiments"
                        / "seed-stability"))
-from gausscopy import BLOCK, GaussianSource, factor, moments, write_rows  # noqa: E402
+from gausscopy import (BLOCK, GaussianSource, factor, label_moments,  # noqa: E402
+                       mixture_rows, moments, write_rows)
 
 
 def _planted(tmp_path, d=6, seed=0):
@@ -101,3 +102,45 @@ def test_heldout_file_is_the_generator_under_its_own_stream(tmp_path):
                        np.stack([held[0], held[BLOCK], held[n - 1]]))
     train = GaussianSource(path, n, seed=0)
     assert not np.allclose(E[0], train[0])
+
+
+def test_label_moments_match_numpy_per_label_across_ragged_chunks():
+    rng = np.random.default_rng(3)
+    X = rng.normal(size=(1003, 4)) + 7.0
+    labels = rng.choice(np.array(["b", "a", "c"]), size=1003, p=[0.6, 0.3, 0.1])
+    names, cnt, means, covs = label_moments(X, labels, chunk=97)
+    assert names.tolist() == ["a", "b", "c"]
+    for j, name in enumerate(names):
+        R = X[labels == name]
+        assert cnt[j] == len(R)
+        assert np.allclose(means[j], R.mean(0))
+        assert np.allclose(covs[j], np.cov(R.T, bias=True), atol=1e-10)
+    # the law of total covariance recovers the pooled moments
+    p = cnt / cnt.sum()
+    mu = p @ means
+    total = (np.einsum("l,lij->ij", p, covs)
+             + np.einsum("l,li,lj->ij", p, means - mu, means - mu))
+    assert np.allclose(total, moments(X, chunk=97)[1], atol=1e-10)
+
+
+def test_mixture_rows_follow_their_labels_and_are_deterministic():
+    names = np.array(["x", "y"])
+    means = np.array([[0.0, 0.0], [10.0, -10.0]], np.float32)
+    factors = np.stack([np.eye(2), np.diag([0.1, 2.0])]).astype(np.float32)
+    labels = np.array(["y", "x"] * 20000)
+    R = mixture_rows(labels, names, means, factors, seed=0)
+    Y = R[labels == "y"]
+    assert np.allclose(Y.mean(0), [10, -10], atol=0.05)
+    assert np.allclose(Y.std(0), [0.1, 2.0], rtol=0.03)
+    assert np.allclose(R[labels == "x"].std(0), [1, 1], rtol=0.03)
+    assert np.array_equal(R, mixture_rows(labels, names, means, factors, 0))
+    assert not np.allclose(R, mixture_rows(labels, names, means, factors, 1))
+    # a row depends on its label's stream, not on the other label's rows
+    alone = mixture_rows(labels[labels == "y"], names, means, factors, 0)
+    assert np.array_equal(alone, Y)
+    try:
+        mixture_rows(np.array(["z"]), names, means, factors, 0)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("an unknown label was drawn")

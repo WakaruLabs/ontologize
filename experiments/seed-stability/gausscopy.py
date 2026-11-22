@@ -19,7 +19,14 @@ keyed by (seed, block), so a run that resumes sees the rows it would have
 seen, and two seeds of an arm see the same rows in the same order, as two
 seeds of a cache arm do.
 
+`mixture` keeps one more thing: each language's own mean and covariance
+(mixture.npz, from the `.langs.npy` sidecar), so a copy drawn with the real
+rows' languages (`mixture_rows`) has the data's language structure and
+nothing beyond it. Its pooled covariance is the cache's, by the law of
+total covariance, which `mixture.meta.json` checks against `prepare`'s.
+
     uv run python experiments/seed-stability/gausscopy.py prepare
+    uv run python experiments/seed-stability/gausscopy.py mixture
 """
 import argparse
 import json
@@ -29,7 +36,7 @@ from pathlib import Path
 
 import grain.python as gp
 import numpy as np
-from jaxtyping import Float
+from jaxtyping import Float, Int
 
 ROOT = Path(__file__).resolve().parents[2]
 CACHE = ROOT / "data/sonar_embeddings/mc4_sent16.npy"
@@ -59,6 +66,54 @@ def factor(cov: Float[np.ndarray, "d d"]) -> Float[np.ndarray, "d d"]:
     too ill-conditioned for Cholesky still has a square root."""
     lam, V = np.linalg.eigh(cov)
     return V * np.sqrt(np.clip(lam, 0.0, None))
+
+
+def label_moments(X: Float[np.ndarray, "n d"], labels: np.ndarray,
+                  chunk: int = 131072
+                  ) -> tuple[np.ndarray, Int[np.ndarray, "L"],
+                             Float[np.ndarray, "L d"],
+                             Float[np.ndarray, "L d d"]]:
+    """(the labels in sorted order, each label's row count, mean and
+    biased covariance), in float64, over the rows of X with their labels,
+    in chunks shifted by the first chunk's mean as `moments` is."""
+    n, d = X.shape
+    names = np.unique(np.asarray(labels[:n]))
+    shift = np.asarray(X[:min(chunk, n)], np.float64).mean(0)
+    cnt = np.zeros(len(names), np.int64)
+    s1, s2 = np.zeros((len(names), d)), np.zeros((len(names), d, d))
+    for i in range(0, n, chunk):
+        Xc = np.asarray(X[i:i + chunk], np.float64) - shift
+        lab = np.searchsorted(names, np.asarray(labels[i:i + chunk]))
+        for j in np.unique(lab):
+            R = Xc[lab == j]
+            cnt[j] += len(R)
+            s1[j] += R.sum(0)
+            s2[j] += R.T @ R
+    m = s1 / cnt[:, None]
+    cov = s2 / cnt[:, None, None] - m[:, :, None] * m[:, None, :]
+    return names, cnt, shift + m, cov
+
+
+def mixture_rows(labels: np.ndarray, names: np.ndarray,
+                 means: Float[np.ndarray, "L d"],
+                 factors: Float[np.ndarray, "L d d"], seed: int
+                 ) -> Float[np.ndarray, "n d"]:
+    """One row per entry of `labels`, drawn from that label's Gaussian
+    (mean + F z). Label j's rows come from the stream keyed (seed, j), in
+    the order they appear, so a row depends only on its label, its rank
+    among that label's rows and the seed."""
+    labels = np.asarray(labels)
+    j_of = np.searchsorted(names, labels)
+    if (j_of >= len(names)).any() or (names[np.minimum(j_of, len(names) - 1)]
+                                      != labels).any():
+        raise ValueError("a label has no moments")
+    out = np.empty((len(labels), means.shape[1]), np.float32)
+    for j in np.unique(j_of):
+        idx = np.flatnonzero(j_of == j)
+        z = np.random.default_rng([seed, int(j)]).standard_normal(
+            (len(idx), factors.shape[2]), dtype=np.float32)
+        out[idx] = means[j] + z @ factors[j].T
+    return out
 
 
 def block(mean: Float[np.ndarray, "d"], F: Float[np.ndarray, "d d"],
@@ -156,6 +211,39 @@ def prepare(cfg: argparse.Namespace) -> None:
     print(json.dumps(meta, indent=1))
 
 
+def mixture(cfg: argparse.Namespace) -> None:
+    """Per-language moments of the training prefix, for a copy that keeps
+    each language's mean and covariance and nothing else: mixture.npz."""
+    out = Path(cfg.out)
+    out.mkdir(parents=True, exist_ok=True)
+    X = np.load(cfg.cache, mmap_mode="r")
+    L = np.load(Path(cfg.cache).with_suffix(".langs.npy"), mmap_mode="r")
+    print(f"per-language moments of the first {cfg.rows:,} rows of "
+          f"{Path(cfg.cache).name}")
+    names, cnt, means, covs = label_moments(X[:cfg.rows], L[:cfg.rows])
+    factors = np.stack([factor(c) for c in covs]).astype(np.float32)
+    np.savez(out / "mixture.npz", names=names, counts=cnt,
+             means=means.astype(np.float32), factors=factors)
+    # the law of total covariance against the pooled moments, as a check
+    p = cnt / cnt.sum()
+    mu = p @ means
+    within = np.einsum("l,lij->ij", p, covs)
+    between = np.einsum("l,li,lj->ij", p, means - mu, means - mu)
+    meta = {"kind": "language mixture copy", "cache": str(cfg.cache),
+            "rows": cfg.rows, "languages": len(names),
+            "rows_min": int(cnt.min()), "rows_max": int(cnt.max()),
+            "between_share": float(np.trace(between)
+                                   / np.trace(within + between))}
+    pooled = out / "moments.npz"
+    if pooled.exists():   # `prepare`'s moments, of the same prefix
+        z = np.load(pooled)
+        meta["total_cov_rel_err"] = float(
+            np.linalg.norm(within + between - z["cov"])
+            / np.linalg.norm(z["cov"]))
+    (out / "mixture.meta.json").write_text(json.dumps(meta, indent=1))
+    print(json.dumps(meta, indent=1))
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -169,8 +257,12 @@ def main() -> None:
     q.add_argument("--eval-seed", type=int, default=1,
                    help="its stream (training uses seed 0)")
     q.add_argument("--out", default=str(OUT))
+    m = sub.add_parser("mixture", help="per-language moments (mixture.npz)")
+    m.add_argument("--cache", default=str(CACHE))
+    m.add_argument("--rows", type=int, default=12_800_000)
+    m.add_argument("--out", default=str(OUT))
     cfg = p.parse_args()
-    prepare(cfg)
+    {"prepare": prepare, "mixture": mixture}[cfg.cmd](cfg)
 
 
 if __name__ == "__main__":

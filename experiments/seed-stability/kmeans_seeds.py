@@ -9,12 +9,20 @@ fit on training rows at several seeds and assigned on the held-out tail.
 Between every pair of seeds it reports the tail partitions' NMI
 (`partition.py`'s `nmi_matrix`, so the numbers sit beside the heads'),
 beside the null with one partition's rows shuffled, and each seed's FVU on
-the tail.
+the tail. For every data set whose tail rows stand for the cache's (all
+but `--gauss`), it also gives each seed's NMI between its cells and the
+rows' languages (the `.langs.npy` sidecar).
 
 `--gauss` runs the same on the Gaussian copy (`gausscopy.py`), whose
 training rows are the training stream and whose tail is the held-out file:
 the agreement a partition reaches when nothing beyond the covariance is
-there to agree on. `--ckpt` adds, per layer of a stack, each head's best
+there to agree on. `--mixture` runs it on a copy that keeps each
+language's mean and covariance too (`gausscopy.py mixture`), each row drawn
+with the real row's language: if it reproduces as SONAR does, language is
+the structure that makes SONAR's partitions reproducible.
+`--within-language` runs it on the cache's own rows less each row's
+language mean (from the same mixture.npz), which removes the part of that
+structure the means carry. `--ckpt` adds, per layer of a stack, each head's best
 NMI against the k-means partitions at the model's k: whether the heads are
 near the data's own k-means cells.
 
@@ -152,6 +160,23 @@ def rows(cfg) -> dict:
         E = np.asarray(np.load(g / "eval.npy", mmap_mode="r")[-cfg.tail_rows:],
                        np.float32)
         out["gauss"] = (T * sw, E * sw, E)
+    if cfg.mixture:
+        from gausscopy import mixture_rows
+        z = np.load(cfg.mixture)
+        L = np.load(Path(cfg.cache).with_suffix(".langs.npy"), mmap_mode="r")
+        moments_ = (z["names"], z["means"], z["factors"])
+        T = mixture_rows(np.asarray(L[idx]), *moments_, seed=0)
+        E = mixture_rows(np.asarray(L[-cfg.tail_rows:]), *moments_, seed=1)
+        out["mixture"] = (T * sw, E * sw, E)
+    if cfg.within_language:
+        z = np.load(cfg.within_language)
+        names, means = z["names"], z["means"]
+        L = np.load(Path(cfg.cache).with_suffix(".langs.npy"), mmap_mode="r")
+        Mt = means[np.searchsorted(names, np.asarray(L[idx]))]
+        Me = means[np.searchsorted(names, np.asarray(L[-cfg.tail_rows:]))]
+        T = np.asarray(X[idx], np.float32) - Mt
+        E = np.asarray(X[-cfg.tail_rows:], np.float32) - Me
+        out["within"] = (T * sw, E * sw, E)
     return out
 
 
@@ -168,6 +193,12 @@ def main() -> None:
     p.add_argument("--ks", type=int, nargs="+", default=[8, 32, 128])
     p.add_argument("--seeds", type=int, nargs="+", default=[42, 43, 44, 45, 46])
     p.add_argument("--gauss", default=None, help="gausscopy.py's output directory")
+    p.add_argument("--mixture", default=None,
+                   help="gausscopy.py mixture's mixture.npz: a copy that keeps "
+                        "each language's mean and covariance")
+    p.add_argument("--within-language", default=None,
+                   help="mixture.npz again: the cache's own rows less their "
+                        "language's mean")
     p.add_argument("--ckpt", default=None, help="a stack whose heads to compare")
     p.add_argument("--step", type=int, default=0)
     p.add_argument("--temperature", type=float, default=0.00015)
@@ -177,6 +208,9 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
 
     data = rows(cfg)
+    L = np.load(Path(cfg.cache).with_suffix(".langs.npy"), mmap_mode="r")
+    _, lang = np.unique(np.asarray(L[-cfg.tail_rows:]), return_inverse=True)
+    n_lang = int(lang.max()) + 1
     heads = None
     if cfg.ckpt:
         from partition import codes
@@ -192,6 +226,13 @@ def main() -> None:
                   f"FVU {np.mean(t['fvu']):.4f} [{min(t['fvu']):.4f}, "
                   f"{max(t['fvu']):.4f}]", flush=True)
             row = {key: v for key, v in t.items() if key != "labels"}
+            if name != "gauss":   # rows that stand for the tail's own rows
+                from partition import nmi_matrix
+                row["language_nmi"] = [
+                    float(nmi_matrix(lab[None], k, lang[None], n_lang)[0, 0])
+                    for lab in t["labels"]]
+                print(f"         cells' NMI with the rows' language: mean "
+                      f"{np.mean(row['language_nmi']):.4f}")
             if heads is not None and name == "cache" and heads[2] == k:
                 A, layer, _, used = heads
                 row["heads"] = head_table(A, layer, t["labels"], k)

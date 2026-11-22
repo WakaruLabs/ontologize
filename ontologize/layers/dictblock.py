@@ -429,7 +429,11 @@ class DictBlock(Sparse):
 
         Measured in the dictionary space, which is where the partition is
         defined; decoding does not preserve it. O(h k d + h^2 d), weights
-        and a batch mean only, against the per-sample cosine's O(b h^2 d)."""
+        and a batch mean only, against the per-sample cosine's O(b h^2 d).
+        A single head has no pairs and reads 0, where the mean would be
+        0/0 and its NaN would reach the loss through a zero weight."""
+        if self.h < 2:
+            return jnp.zeros((), self.dtype)
         P = P_0.astype(self.dtype).reshape(-1, self.h, self.k).mean(0)
         W = jnp.abs(self.dicts())
         if not self.support_loss:

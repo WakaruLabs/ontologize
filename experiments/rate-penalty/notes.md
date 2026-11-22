@@ -151,7 +151,56 @@ layer at 0.6045.
   65,536. The plain codes did not need more.
 - **Not run:** RQ with fewer, larger stages (for example 190 of 1,024) and a beam above 1; LSQ at
   1,900 bits (380 codebooks), which the Faiss paper finds does not scale to long codes; OPQ.
+  *(The 190 stages of 1,024 ran later the same day; see the next section.)*
 
 ```bash
 JAX_PLATFORMS=cpu uv run --with faiss-cpu python experiments/rate-penalty/plainquant.py
+```
+
+## 2026-11-21: a greedy residual quantizer of fewer, larger stages beats the stack at every rate
+
+**Short version.** At the same bits, 190 stages of 1,024 entries replace the 380 stages of 32 of
+the last section. With nothing else changed (greedy encoding, one k-means per stage, no
+classifier), FVU falls by 0.07–0.08 at every prefix, and the code passes the stack at all five of
+its rates. The margin is 0.039 at 380 bits and 0.009 at 1,900, against the stack's float gains.
+This is the trade the Faiss paper advises: fewer, larger codebooks at a fixed size. The stack's 76
+heads of 32 per layer are the far end of it. PQ 256 × 7 is still the best plain code near 1,900
+bits (0.149 at 1,792).
+
+| code | 380 bits | 760 | 1,140 | 1,520 | 1,900 |
+|---|---|---|---|---|---|
+| RQ, 190 stages of 1,024, greedy (prefixes at stages 38–190) | **0.5657** | **0.4012** | **0.2911** | **0.2138** | **0.1588** |
+| all-off hard stack, float gains | 0.6045 | 0.4278 | 0.3106 | 0.2278 | 0.1681 |
+| the same, gains pinned | 0.6373 | 0.4553 | 0.3360 | 0.2511 | 0.1894 |
+| RQ, 380 stages of 32, greedy | 0.6425 | 0.4841 | 0.3702 | 0.2869 | 0.2257 |
+
+- **Larger stages are worth more than joint training here.** The stack beat the small-stage RQ by
+  0.04–0.06 at every prefix. Making each greedy stage 32 times larger at the same rate is worth
+  0.07–0.08, more than that.
+- **The stack's per-layer budget would fit a different shape.** Each of its layers spends 380 bits
+  as 76 heads of 5 bits. RQ spends a layer's 380 bits as 38 stages of 10. The direct k = 128 arm
+  (`--h 54 --k 128 --signed --direct`, 378 bits a layer) is the trained stack's step in this
+  direction. The ladder trained it at the all-off recipe with a seed-43 replica
+  (`ste_k128_h54_direct_med837_nobcos_nosupp_nol1f_nohm`). On this rate curve (`ratecurve.py`,
+  float gains, the same tail and weights) it reads 0.5954, 0.4191, 0.3020, 0.2199 and 0.1611 at
+  373, 749, 1,125, 1,501 and 1,878 bits. The seed-43 replica agrees to 0.0003. That is 0.007–0.009
+  below the k = 32 stack at 5–13 fewer bits, and still above the 1,024-entry RQ at every prefix
+  (0.030 at one layer, 0.002 at five). Pinned, it reads 0.6279 to 0.1866.
+- **The trained stack gains much less from larger codebooks than greedy RQ does.** Going from 32
+  to 128 entries gains it 0.007–0.009. Going from 32 to 1,024 gains greedy RQ 0.07–0.08. The k =
+  128 arm also differs in being signed and decoder-free, and 128 is not 1,024, so this does not
+  say where the stack's shortfall lies. A trained arm at k = 1,024 (38 heads a layer) would.
+- **Cost.** 6,448 s on 12 CPU threads, on a machine shared with other jobs, against minutes for
+  the 32-entry stages. FAISS's k-means of 1,024 centroids on 65,536 rows runs 190 times.
+
+**Not run:** a beam above 1 on these stages; 2,048- or 4,096-entry stages; the same shape at
+`med837`. Output in `data/out/sonar/rate_penalty/plainquant_rq190x10/` (`summary.json`,
+`run.log`), and the k = 128 arm's curve in `data/out/sonar/rate_penalty/ratecurve_direct_alloff/`.
+
+```bash
+OMP_NUM_THREADS=12 JAX_PLATFORMS=cpu uv run --with faiss-cpu python experiments/rate-penalty/plainquant.py \
+    --pq --rq-stages 190 --rq-nbits 10 --out data/out/sonar/rate_penalty/plainquant_rq190x10
+R=data/out/sonar/recipe_ladder; A=ste_k128_h54_direct_med837_nobcos_nosupp_nol1f_nohm
+JAX_PLATFORMS=cpu uv run python experiments/rate-penalty/ratecurve.py --ckpt $R/$A $R/${A}_s43 \
+    --out data/out/sonar/rate_penalty/ratecurve_direct_alloff
 ```

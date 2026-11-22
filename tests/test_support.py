@@ -89,6 +89,18 @@ def test_unused_entries_do_not_count():
     assert float(db.apply(params, P, method=DictBlock.support_overlap)) == 0.0
 
 
+def test_a_single_head_reads_zero_not_nan():
+    """One head has no pairs. The mean over h(h-1) pairs would be 0/0, and
+    its NaN reached the loss through `s_support`'s zero weight, so a
+    one-head stack trained to NaN from its first step."""
+    kw = {**DB_KW, "h": 1}
+    db = DictBlock(**kw, select="ste")
+    W = jax.random.normal(jax.random.PRNGKey(0), (1, kw["k"], kw["d"]))
+    P = jax.nn.one_hot(jnp.zeros((64, 1), int), kw["k"])
+    got = db.apply({"params": {"weights": W}}, P, method=DictBlock.support_overlap)
+    assert float(got) == 0.0
+
+
 def test_concat_is_zero_by_construction():
     W = jax.random.normal(jax.random.PRNGKey(0),
                           (DB_KW["h"], DB_KW["k"], DB_KW["d"] // DB_KW["h"]))
