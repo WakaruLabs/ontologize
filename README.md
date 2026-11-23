@@ -31,16 +31,17 @@ This aims at several advantages over SAEs:
 3. The representative vectors can be statically interpreted.
 4. Feature space is structured.
 
-We present the `Ontologizer` architecture, which aims to embed activations in an 
-interpretable-by-construction feature space. It consists of a stack of `l` 
-dictionary learning layers, each of which has `h` heads and `k` labels per head.
+We present multi-head categorical dictionary learning, which aims to embed activations in an 
+interpretable-by-construction feature space. A trained model, a *multi-head categorical
+dictionary* (the class `DictStack`, with `Ontologizer` kept as an alias), is a stack of `l`
+layers, each of which has `h` heads and `k` labels per head.
 Each layer has two subnets. A classifier network encodes the input as soft label
 assignments. A dictionary network reconstructs the input as a weighted average of
 representative vectors for each label.
 The goal is for each classifier to partition latent space into simplices where the 
 vertices represent contrastive concepts.
 
-The result decomposes the activations of a frozen pretrained model into a structured code — `l` layers × `h` heads, each head classifying its input over `k` learned dictionary entries ("ontofeatures" or *tags*). Unlike a sparse autoencoder, whose features must be read off activations after the fact, the Ontologizer's interpretable objects *are* its parameters: every tag is an explicit weight vector you can decode, every classification is a point on a product of simplices you can intervene on, and the classifiers are bilinear, so the encoding computation itself admits closed-form weight analysis.
+The result decomposes the activations of a frozen pretrained model into a structured code — `l` layers × `h` heads, each head classifying its input over `k` learned dictionary entries ("ontofeatures" or *tags*). Unlike a sparse autoencoder, whose features must be read off activations after the fact, a categorical dictionary's interpretable objects *are* its parameters: every tag is an explicit weight vector you can decode, every classification is a point on a product of simplices you can intervene on, and the classifiers are bilinear, so the encoding computation itself admits closed-form weight analysis.
 
 The main target is the [SONAR](https://github.com/facebookresearch/SONAR) multilingual sentence-embedding space (1024-d, ~86 languages of mC4). Because SONAR embeddings pair with an M2M100 *decoder*, the learned ontology is directly legible: dictionary entries decode to text, and causal interventions on the code (force a tag, ablate a head) decode to *changed* text. GPT-2 small's residual stream (layer 8) serves as a second substrate, where sparse dictionary learning is known to work and a reconstruction can be scored by the loss GPT-2 recovers when it is spliced back in.
 
@@ -54,7 +55,7 @@ The working write-up is [`latex/findings.tex`](latex/findings.tex) (compiled: `l
 - **A soft code's argmax is not its code.** The softmax model reconstructs well, but its discrete reading is orders of magnitude worse. Training with hard, straight-through selection (`select="ste"`) makes the discrete code the model: on SONAR, 1900 index bits reach whitened FVU 0.154, and 0.158 with the four per-layer gains (its only continuous numbers) pinned to their means. A top-k SAE held to the same 1900 bits cannot get below 0.236 however its coefficients are coded, but with every code's coefficients quantized and entropy-coded (`quantrate.py`) an L1 SAE reaches 0.128: its latents fire unevenly and are cheap to name, while the hard code's entries are used almost uniformly. On GPT-2, an 800-bit hard code with signed entries in activation space recovers 97.6% of GPT-2's loss, against 96.2% for a k=32 SAE at nearly the same FVU.
 - **Depth helps reconstruction and costs addressability.** At equal bits, parameters and code utilization, the residual stack beats a single wide layer by 1.79× in error — but any input-space push reclassifies ~60% of downstream heads, where a flat layer's heads are independently addressable.
 - **Individual heads are not yet reproducible.** Two seeds reach identical error, yet past the first layer no head's partition or contribution reproduces above a same-shape null (on SONAR and on GPT-2, under two different designs). Per-head interpretations should be read with that in mind.
-- **Per-latent evaluation lenses mis-measure classifier codes.** k-sparse probing ranks the Ontologizer worst, and blinded auto-interp detection F1 mostly tracks code density.
+- **Per-latent evaluation lenses mis-measure classifier codes.** k-sparse probing ranks the categorical dictionary worst, and blinded auto-interp detection F1 mostly tracks code density.
 - **Heads follow meaning before language.** The strongest SONAR head encodes topic and genre, as a language-agnostic semantic embedding should be organized. Language — probed because it has free labels, not because a head was expected to encode it — is carried as neighbourhoods across heads.
 
 ## Background
@@ -102,7 +103,7 @@ Requires Python ≥ 3.13 and [`uv`](https://docs.astral.sh/uv/). From the reposi
 uv sync
 ```
 
-JAX/Flax owns the Ontologizer; PyTorch + HuggingFace `transformers` are used only to run frozen pretrained models (the SONAR encoder/decoder, GPT-2), bridged into JAX zero-copy via `dlpack`. A CUDA GPU is used when available (`jax[cuda12]` is a hard dependency); training from a prebuilt activation cache is the intended GPU workload, and analysis/tests run fine on CPU.
+JAX/Flax owns the categorical dictionary; PyTorch + HuggingFace `transformers` are used only to run frozen pretrained models (the SONAR encoder/decoder, GPT-2), bridged into JAX zero-copy via `dlpack`. A CUDA GPU is used when available (`jax[cuda12]` is a hard dependency); training from a prebuilt activation cache is the intended GPU workload, and analysis/tests run fine on CPU.
 
 ## Quickstart
 
@@ -111,9 +112,9 @@ JAX/Flax owns the Ontologizer; PyTorch + HuggingFace `transformers` are used onl
 #    (resumable; also writes a .langs.npy language sidecar)
 uv run python encode_corpus.py
 
-# 2. Train an Ontologizer from the cache (configuration: edit the constants
-#    at the top of sonar.py, or override some with ONTO_* environment
-#    variables; writes checkpoints + loss.csv to the `out` dir)
+# 2. Train a categorical dictionary from the cache (configuration: edit
+#    the constants at the top of sonar.py, or override some with ONTO_*
+#    environment variables; writes checkpoints + loss.csv to the `out` dir)
 uv run python sonar.py
 
 # 3. Interactive reconstruction + intervention REPL against the checkpoint
@@ -178,7 +179,7 @@ A `DictBlock` whose heads write disjoint slices of the output (`d // h` each) an
 
 An `NLinearBlock` classifier followed by a `DictBlock`, with the optional router and fiber branches.
 
-## `Ontologizer` architecture
+## `DictStack` architecture
 
 One layer (`DictEnc`) is classifier → dictionary, with two optional branches:
 
@@ -193,7 +194,7 @@ input ỹ (d)
   └─ Σₕ (or concatenate) ── × G ──► layer output (e)
 ```
 
-The `Ontologizer` stacks `l` of these on a shared residual, with a shared linear decoder at the top:
+A `DictStack` stacks `l` of these on a shared residual, with a shared linear decoder at the top:
 
 - **Residual forwarding** (`forward="resid"`): layer *i+1* classifies the stop-gradiented reconstruction residual `X − decode(R_i)` — each layer explains what its prefix missed. (The stop-gradient prevents lower layers from writing a communication code into the residual instead of reducing it. The alternative `forward="labels"`, where each layer reads the previous layer's flattened classification, starves upper layers once codes harden.)
 - **Residual conditioning**: bilinear logits scale with ‖input‖² and are even functions of their input, so raw residuals leave upper classifiers untrainable and sign-blind. `resid_gain` (on by default) classifies the unit direction of each layer's input and scales the layer's output by its norm; `resid_const` appends a constant coordinate, giving the quadratic form linear terms while preserving the eigendecomposition analysis (over d+1 dims). `resid_norm` is the older normalization without the gain.
@@ -214,13 +215,13 @@ Every classifier logit is a quadratic form: for head *h*, entry *k*, the logit i
 - `bilinearTensor()` — the symmetric interaction tensor `(h, k, d, d)`;
 - `decompose()` — its eigendecomposition: each tag's logit is a weighted sum of squared projections onto orthogonal *eigenfeatures*, readable directly from weights;
 - `jacobian(x)` / `interactionMat(Y)` — local linearization and output-weighted interaction matrices;
-- `rev(Y)` — an approximate adjoint mapping classification deltas back to input space along each logit's top-|eigenvalue| eigenfeature; this is what `Ontologizer.intervene` uses for input-space steering. Eigenvector signs are fixed by `nlinear.orient` (by the eigenvalue's sign, with a leading-coordinate tie-break), so `rev` is well-defined.
+- `rev(Y)` — an approximate adjoint mapping classification deltas back to input space along each logit's top-|eigenvalue| eigenfeature; this is what `DictStack.intervene` uses for input-space steering. Eigenvector signs are fixed by `nlinear.orient` (by the eigenvalue's sign, with a leading-coordinate tie-break), so `rev` is well-defined.
 
 For steering from the input, the direction matters: on the SONAR straight-through arm the classifier's own gradient works where the input reaches the classifier directly (layer 0), while moving the input toward what the model emits with the tag active (`decode`) works best deeper in the stack (`experiments/ste-arm/steerembed.py`).
 
 ## `DictBlock` feature intervention
 
-`DictBlock.intervene` operates on classifications in place; `Ontologizer.withArgs` applies one `DictIntervention` per layer during a forward pass:
+`DictBlock.intervene` operates on classifications in place; `DictStack.withArgs` applies one `DictIntervention` per layer during a forward pass:
 
 | field | effect on head(s) |
 |---|---|
@@ -292,7 +293,7 @@ Encapsulates `Hyperparams`, `Metadata`, `Ontostate`.
 
 ### Serialization
 
-Checkpointing uses an `orbax` `CheckpointManager` with two items per step: `state` (the full `TrainState`, including optimizer state and the rolling stats buffer) and `spec` (the `Ontologizer` dataclass as a plain dict, so `Ontologizer(**spec)` rebuilds the architecture without the training script). On startup, `TrainingEnv` resumes from the latest checkpoint in `out` automatically — annealing schedules are indexed by absolute step, `loss.csv`/`log.jsonl` are truncated to the resumed step, and the setpoint controllers pick up their last multipliers from `loss.csv`. Rolling checkpoints are kept every `save_each` steps (last 10), permanent ones every `checkpoint_each`.
+Checkpointing uses an `orbax` `CheckpointManager` with two items per step: `state` (the full `TrainState`, including optimizer state and the rolling stats buffer) and `spec` (the `DictStack` dataclass as a plain dict, so `DictStack(**spec)` rebuilds the architecture without the training script). On startup, `TrainingEnv` resumes from the latest checkpoint in `out` automatically — annealing schedules are indexed by absolute step, `loss.csv`/`log.jsonl` are truncated to the resumed step, and the setpoint controllers pick up their last multipliers from `loss.csv`. Rolling checkpoints are kept every `save_each` steps (last 10), permanent ones every `checkpoint_each`.
 
 Every loader rebuilds a model through `serialize.migrate_spec`, which maps renamed fields forward (including the `headline` branch's `signed_dict` and `private_heads`) and drops `headline`-only fields only when they are switched off, so a checkpoint either rebuilds as the model that was trained or refuses to.
 
@@ -302,7 +303,7 @@ Each protocol is a standalone script scoring on the cache's held-out tail; most 
 
 | script | measures |
 |---|---|
-| `pareto.py` | reconstruction against code capacity (coefficients and index bits), Ontologizer against SAEs |
+| `pareto.py` | reconstruction against code capacity (coefficients and index bits), categorical dictionaries against SAEs |
 | `headstruct.py`, `headcoh.py` | whether groups behave as categorical heads; whether a head's entries cohere or form a contrast set |
 | `splitting.py` | feature splitting and seed-to-seed reproducibility |
 | `textfid.py` | text fidelity of reconstructions through the M2M100 decoder |
@@ -315,7 +316,7 @@ Each protocol is a standalone script scoring on the cache's held-out tail; most 
 
 `experiments/ste-arm/` adds diagnostics for the straight-through arm and for head-level analysis — among them `steerembed.py` (steering scored in embedding space), `partition.py` and `headcontrib.py` (seed reproducibility of head partitions and contributions), `entryshare.py` and `bigatoms.py` (how entries share a layer), `headlang.py` (language per head) and `dictgeom.py` (dictionary geometry). The results are in `latex/`.
 
-## Interventions on `Ontologized` model
+## Interventions on a categorical dictionary
 
 ### Chat CLI
 
@@ -334,7 +335,7 @@ ChatEnv> help
 
 ## Feature annotation
 
-`decode_tags.py` decodes the dictionary itself: for each (layer, head, entry) it builds the synthetic code where that entry is one-hot and every other head sits at the uniform mixture (`Ontologizer.decodeUniform`; `decodeEntries` decodes raw entries), pushes it through the shared decoder into embedding space, rescales to the decoder's reference norm, and generates text with the M2M100 decoder — a per-tag text annotation of the learned ontology, produced entirely from weights.
+`decode_tags.py` decodes the dictionary itself: for each (layer, head, entry) it builds the synthetic code where that entry is one-hot and every other head sits at the uniform mixture (`DictStack.decodeUniform`; `decodeEntries` decodes raw entries), pushes it through the shared decoder into embedding space, rescales to the decoder's reference norm, and generates text with the M2M100 decoder — a per-tag text annotation of the learned ontology, produced entirely from weights.
 
 Interpretation caveats, from the findings:
 

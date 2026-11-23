@@ -1,5 +1,6 @@
 \documentclass[11pt]{article}
-% A short summary of the Ontologizer for readers new to the project,
+% A short summary of multi-head categorical dictionary learning for readers
+% new to the project,
 % answering a reviewer's request for: what the method does, what it is for,
 % what it assumes and why, how it works, and how it compares with existing
 % steering methods. Kept in plain language on purpose: every term is defined
@@ -45,13 +46,14 @@ in an audit.
 
 \section*{What the method does}
 
-The method, which we call an \emph{Ontologizer}, encodes a neural
+The method, \emph{multi-head categorical dictionary learning}, trains a
+\emph{multi-head categorical dictionary}, which encodes a neural
 network's internal representation at a given layer as a short list of
 discrete categorical choices and reconstructs the representation from
 those choices. Each round of the encoder consists of a bank of small
-classifiers, each of which assigns every input to one of $k$ categories
-associated with a learned vector. The representation is reconstructed by
-summing the vectors of the selected categories. In the main GPT-2 models
+classifiers, or heads, each of which assigns every input to one of $k$
+categories associated with a learned vector. The representation is
+reconstructed by summing the vectors of the selected categories. In the main GPT-2 models
 described below, the encoder stacks 5 rounds of 32 classifiers with 32
 categories each, describing each input with 160 discrete choices (800
 bits) and one scalar per round that scales that round's contribution.
@@ -252,8 +254,8 @@ by the same judge on concept presence, task preservation, and fluency.
 each model's native step size, stepping along an active feature of a
 standard SAE (32 active features per input) activates that feature on
 46--50\% of inputs, compared to 8--19\% for the five-round hard
-Ontologizer, with both models disturbing unrelated features or classifiers
-about as much as a random step of the same norm. A single-round linear
+categorical dictionary, with both models disturbing unrelated features or
+classifiers about as much as a random step of the same norm. A single-round linear
 variant of the hard method reaches its target category on 41\% of inputs
 while flipping only 1.4\% of other classifiers (vs.\ 18\% for a random
 step). On GPT-2, replacing a first-round classifier's choice with its mean
@@ -272,10 +274,10 @@ precondition rather than an end in itself.
 & \begin{tabular}[b]{@{}r@{}}unexplained\\variance\end{tabular}
 & \begin{tabular}[b]{@{}r@{}}loss\\recovered\end{tabular} \\
 \midrule
-Ontologizer, 32 categories (10M) & 800 bits + 5 numbers & 0.217 & 97.0\% \\
-Ontologizer, 32 categories (40M) & 800 bits + 5 numbers & 0.195 & 97.6\% \\
-Ontologizer, 32 categories, concat. & 800 bits + 5 numbers & 0.186 & 97.5\% \\
-Ontologizer, 64 categories, concat. & 960 bits + 5 numbers & 0.164 & 97.9\% \\
+Categorical dictionary, 32 categories (10M) & 800 bits + 5 numbers & 0.217 & 97.0\% \\
+Categorical dictionary, 32 categories (40M) & 800 bits + 5 numbers & 0.195 & 97.6\% \\
+Categorical dictionary, 32 categories, concat. & 800 bits + 5 numbers & 0.186 & 97.5\% \\
+Categorical dictionary, 64 categories, concat. & 960 bits + 5 numbers & 0.164 & 97.9\% \\
 SAE, 32 active features & 32 indices + 32 numbers & 0.189 & 96.2\% \\
 SAE, 128 active features & 128 indices + 128 numbers & 0.116 & 98.6\% \\
 \bottomrule
@@ -301,14 +303,14 @@ features and leaves at least 24\% of variance unexplained under any
 quantization of its 160 magnitudes. By contrast, a weakly penalized L1 SAE
 whose quantized magnitudes are entropy-coded reaches 13\% unexplained
 variance at an average rate of 1900 bits, because its skewed firing rates
-make active feature indices cheaper to transmit than the Ontologizer's
-near-uniform categories; on a second sentence-split SONAR cache, a wider
-standard SAE with 256 active features and entropy coding similarly reaches
+make active feature indices cheaper to transmit than the categorical
+dictionary's near-uniform categories; on a second sentence-split SONAR
+cache, a wider standard SAE with 256 active features and entropy coding similarly reaches
 13\% unexplained variance against 16\% for the hard code.
 
 \section*{What we can claim}
 
-Across both GPT-2 and SONAR, the Ontologizer compresses internal
+Across both GPT-2 and SONAR, a categorical dictionary compresses internal
 activations into a compact set of discrete choices with reconstruction
 accuracy competitive with moderate-width sparse autoencoders: at a matched
 bit budget it outperforms standard SAEs up to 160 active features,

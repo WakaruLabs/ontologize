@@ -236,7 +236,7 @@ ax.plot(taus, selfmatch, color=PINK50, ls=(0, (2, 2)), lw=1.2, marker="o",
 ax.plot(taus, sae, color=INK, lw=1.2, marker="o", ms=2.6,
         label="SAE k32, seed pair")
 ax.plot(taus, onto, color=PINK, lw=1.4, marker="o", ms=2.8,
-        label="Ontologizer, seed pair")
+        label="categorical dictionary, seed pair")
 ax.set_xlabel(r"match threshold $\tau$ (activation frame)")
 ax.set_ylabel("matched-entry fraction")
 ax.set_xticks(taus)
@@ -359,12 +359,12 @@ fig, (a, b, c) = plt.subplots(1, 3, figsize=(6.0, 1.9))
 fig.subplots_adjust(wspace=0.42, bottom=0.30, top=0.80, left=0.10, right=0.99)
 
 # (a) unsupervised steering on the shared frame (steer_overlay medians)
-arms = ["probe", "onto", "dm"]
+arms = ["probe", "swap", "dm"]
 effs = [0.072, 0.302, 0.474]
 cols = [PINK50, PINKDARK, INK]
 a.bar(range(3), effs, color=cols, width=0.62)
 a.set_xticks(range(3))
-a.set_xticklabels(["probe", "onto", "dm\n(superv.)"], fontsize=6.8,
+a.set_xticklabels(["probe", "swap", "dm\n(superv.)"], fontsize=6.8,
                   family="monospace")
 a.set_ylabel("steering effect (dm frame)")
 a.text(1, 0.315, "4× probe", ha="center", fontsize=6.6,
@@ -385,7 +385,7 @@ monoticks(b)
 eyebrow(b, "interventions compose")
 
 # (c) code round-trip text fidelity (working notes, forced-English decodes)
-names = ["k32", "k160", "onto\nsoft", "k5120\n(dense)"]
+names = ["k32", "k160", "soft\ncode", "k5120\n(dense)"]
 chrfs = [0.228, 0.282, 0.552, 0.841]
 ccols = [INKMUT, INKMUT, PINKDARK, PINK25]
 c.bar(range(4), chrfs, color=ccols, width=0.62)
@@ -557,8 +557,8 @@ save(fig, "fig-kcos")
 # ---- headline results, from the eval scripts' own outputs -------------------
 # extract_results.py copies each figure's numbers out of data/out, so none is
 # restated from a table; the GPT-2 seed pair is the one exception, below.
-# Families keep one color across these figures: Ontologizers PINK, SAEs ink,
-# the single-layer variants muted, references dashed.
+# Families keep one color across these figures: categorical dictionaries
+# PINK, SAEs ink, the single-layer variants muted, references dashed.
 
 def load_rows(name):
     with open(os.path.join(RESULTS, name)) as f:
@@ -790,7 +790,7 @@ H = load_rows("headcoh_z.csv")
 GROUPS = [
     ("g160top1", "g160top1\n(trained, hard)", INKMUT),
     ("k32 discovered", "$\\mathtt{TopK}$ SAE groups\n(discovered)", INK),
-    ("onto heads", "Ontologizer heads\n(trained, soft)", PINK),
+    ("onto heads", "Categorical dictionary\nheads (trained, soft)", PINK),
     ("g160softmax", "g160softmax\n(trained, soft)", INKMUT),
 ]
 rng = np.random.default_rng(0)
@@ -826,7 +826,7 @@ save(fig, "fig-headcoh")
 
 # describability against code density: (a) activation descriptions by
 # nominal density, (b) contrastive descriptions by firing rate, fitted on the
-# sae.py runs with the Ontologizer held out
+# sae.py runs with the categorical dictionary held out
 A = load_rows("autointerp_density.csv")
 FAM = {"onto": (PINK, "o"), "k32": (INK, "s"), "k32_bl": (INK, "s"),
        "k5120": (INK, "s"), "g160top1": (INKMUT, "v"),
@@ -892,7 +892,7 @@ eyebrow(b, "contrastive descriptions")
 handles = [Line2D([], [], ls="none", color=c, marker=m, ms=4.6, **RING)
            for c, m in ((PINK, "o"), (INK, "s"), (INKMUT, "v"))]
 handles += [Line2D([], [], color=INK, lw=0.8)]
-fig.legend(handles, ["Ontologizer", "SAEs", "single-layer variants",
+fig.legend(handles, ["Categorical dictionary", "SAEs", "single-layer variants",
                      "fit to the sae.py runs"],
            loc="lower center", ncols=4, handlelength=1.8, fontsize=6.6,
            bbox_to_anchor=(0.5, 0.0))
@@ -1043,7 +1043,7 @@ def ratio(r):
 fig, (a, b) = plt.subplots(1, 2, figsize=(6.0, 2.5),
                            gridspec_kw=dict(width_ratios=[1, 1.15]))
 fig.subplots_adjust(wspace=0.55, bottom=0.30, top=0.88, left=0.23, right=0.98)
-ON_X = [("Ontologizer", "0", "Ontologizer, layer 0"),
+ON_X = [("Ontologizer", "0", "Categorical dictionary,\nlayer 0"),
         ("Matryoshka, trained heads", "0", "Matryoshka, trained"),
         ("Matryoshka, discovered groups", "0", "Matryoshka, discovered"),
         ("flat, trained heads", "", "flat, trained"),
@@ -1087,7 +1087,7 @@ handles = [Line2D([], [], ls="none", color=c, marker=m, ms=4.2, **RING)
            for c, m in (MOD_STYLE["Ontologizer"],
                         MOD_STYLE["Matryoshka, trained heads"],
                         MOD_STYLE["Matryoshka, discovered groups"])]
-fig.legend(handles, ["Ontologizer heads", "SAE trained heads",
+fig.legend(handles, ["Categorical dictionary heads", "SAE trained heads",
                      "SAE discovered groups"], loc="lower center", ncols=3,
            handlelength=1.0, fontsize=6.6, bbox_to_anchor=(0.6, 0.0))
 letters((a, b))

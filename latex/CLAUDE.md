@@ -8,8 +8,8 @@ This directory holds the LaTeX sources of three documents that share one house s
 one set of macros, one bibliography, and the same diagrams and figures:
 
 - `findings.tex`, the **findings writeup**, "Dictionary Learning as Unsupervised
-  Steering-Vector Generation: Ontologizers vs. Sparse Autoencoders on SONAR Sentence
-  Embeddings". It is the results record of the research campaign in the parent
+  Steering-Vector Generation: Multi-Head Categorical Dictionaries vs. Sparse Autoencoders
+  on SONAR Sentence Embeddings". It is the results record of the research campaign in the parent
   `ontologize` repo; see `../CLAUDE.md` for the JAX/Flax implementation it describes. Its
   sections are in `findings/sections/`.
 - `brief.tex`, a two-page summary for readers new to the project (below).
@@ -463,7 +463,7 @@ is added, renamed or retired, change both.
 | $\mathbf{u}_\ell$, $\mathbf{u}$ | layer $\ell$'s shape: its input's unit direction with the constant coordinate (code: `U` from `gainshape_in`); $\mathbf{u}$ within one layer. Replaces the former $\tilde{\mathbf{y}}_\ell$ |
 | $n_{\mathrm{bits}}$ | bit budget in the Gaussian reference $\mathrm{FVU}_{w,\mathrm{G}}$ |
 | $n_{\mathrm{const}}$ | number of trailing constant input coordinates |
-| $k_{\mathrm{SAE}}$ | an SAE's active-latent count; $k$ alone is always Ontologizer entries |
+| $k_{\mathrm{SAE}}$ | an SAE's active-latent count; $k$ alone is always a categorical dictionary's entries |
 | $\topk$ | the SAE family, written "$\topk$ SAE" (never "top-$k$ SAE", whose $k$ would read as entries); $\mathrm{L0}$ its sparsity |
 | $k_{\mathrm{sel}}$ | entries kept by the `top`$k_{\mathrm{sel}}$ selection rule |
 | $\nu$ | Pareto deviations per head (`pareto.py --ms`), support set $\mathcal{S}_\nu$ |
@@ -494,6 +494,14 @@ computing the whole feature space) cites `gao2024` and `mudide2025`.
 
 ## Terminology
 
+- **multi-head categorical dictionary learning**: the method. A trained model is a
+  **categorical dictionary** (plural categorical dictionaries), introduced in each
+  document as a **multi-head categorical dictionary**. It is a common noun: lowercase
+  mid-sentence, "Multi-Head Categorical Dictionaries" in a title. "Multi-head" is always
+  hyphenated. Its class in the code is `DictStack` (alias `Ontologizer`), and run,
+  script and package names keep their spelling. Because "dictionary" also names a
+  layer's atom tensor $\mathsf{D}$, never let one sentence use the word in both senses;
+  call the tensor "its atoms" there.
 - **head**: anything with a head axis, `sae.py --groups` included.
 - **entry**: the slot a head selects, index $k$ of head $h$. Not "tag", "label" or "class".
 - **atom**: the vector an entry writes; **decoded atom** once mapped into output space.

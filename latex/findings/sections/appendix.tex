@@ -88,7 +88,7 @@ $q$ & coordinates & $d$, $e$ & input dimension, dictionary width \\
 \end{tabular}
 \end{center}
 Throughout the paper, $k$ without a subscript denotes the number of
-Ontologizer entries per head.
+entries per head of a categorical dictionary.
 
 \paragraph{Symbols.}
 The table below lists all symbols grouped by the component of the paper
@@ -203,9 +203,9 @@ reconstruction error, with nearly all of the shift specific to individual
 rows rather than a per-language offset. Ground-truth language accounts for
 6.7\% of embedding variance under the English tag vs.\ 7.4\% under the
 native tags, and reconstruction error on the re-tagged embeddings increases
-by 4--12\% across both the hard-code Ontologizer and the SAEs. Throughout
-the main SONAR experiments, ``SONAR embeddings'' refers to embeddings
-computed under these cached tags, and the language results
+by 4--12\% across both the hard-code categorical dictionary and the SAEs.
+Throughout the main SONAR experiments, ``SONAR embeddings'' refers to
+embeddings computed under these cached tags, and the language results
 inherit the difference (Appendix~\ref{sec:langlocal}). The embedding
 distribution lies on the unit sphere without being centered:
 $\lVert\bar{\mathbf{x}}\rVert = 0.564$, forming a spherical cap in which a
@@ -237,8 +237,9 @@ constant mean predictor,
 where $\mathbf{w}$ is the per-dimension inverse variance normalized to mean
 one, evaluated on the final 32{,}768 rows of the cache. This evaluation
 tail is held out from training for all SAEs and all straight-through arms.
-Because the softmax Ontologizers (\texttt{resid\_nc} and the selection
-sweep) predate the holdout split and were trained on the full cache, we
+Because the softmax categorical dictionaries (\texttt{resid\_nc} and the
+selection sweep) predate the holdout split and were trained on the full
+cache, we
 encoded the next 131{,}072 mC4 stream rows following the training corpus
 under the identical pipeline (\texttt{encode\_fresh.py}), yielding an
 out-of-sample set that no model observed during training. On these fresh
@@ -248,9 +249,9 @@ shifts by at most 0.3\% (one near-exact SAE at $\fvu = 10^{-4}$ shifts by
 0.9\%), and every operational rate in Appendix~\ref{sec:quantrate} shifts
 by at most 0.0004 in $\fvu$, confirming that the softmax models' tail
 scores are not inflated by training overlap. Where feature activations are
-required, Ontologizer features are the flattened per-head assignment
-probabilities $P \in \Delta^{k}{}^{\,l\cdot h}$ evaluated at the run's
-final temperature (entry $j$ of head $i$ in layer $\ell$ corresponds to
+required, a categorical dictionary's features are the flattened per-head
+assignment probabilities $P \in \Delta^{k}{}^{\,l\cdot h}$ evaluated at
+the run's final temperature (entry $j$ of head $i$ in layer $\ell$ corresponds to
 feature $(\ell h + i)k + j$, with firing threshold $2/k$), and SAE features
 are latent activations (with firing threshold $0$, except that runs with
 softmax heads use the above-uniform threshold $2/(m/h)$ for $h$ heads to
@@ -303,9 +304,10 @@ matching \texttt{k32} SAEs), retaining $w_{837}$ leaves 265 SAE latents
 dead ($16\times$ as many as in the masked run), whereas the SAE's decoder
 bias absorbs the constant offset so that coordinate~837 contributes only
 $0.03\%$ of its error compared to $2.0$--$3.4\%$ for the bias-free
-Ontologizer. Masking $w_{837}$ resolves this pathology---improving $\fvu$
-on the remaining 1{,}023 coordinates from $0.1489$ to $0.1462$ for the
-Ontologizer and from $0.4596$ to $0.4538$ for the SAE---and reconstructing
+categorical dictionary. Masking $w_{837}$ resolves this
+pathology---improving $\fvu$ on the remaining 1{,}023 coordinates from
+$0.1489$ to $0.1462$ for the categorical dictionary and from $0.4596$ to
+$0.4538$ for the SAE---and reconstructing
 coordinate~837 analytically from the LayerNorm hyperplane prior to M2M100
 decoding recovers the $0.03$ chrF2 lost when it is left unconstrained.
 
@@ -315,8 +317,8 @@ decoding recovers the $0.03$ chrF2 lost when it is left unconstrained.
 Full configurations for all models are tabulated in
 Appendix~\ref{app:configs}.
 
-\paragraph{Softmax Ontologizers.}
-The reference Ontologizer (\texttt{resid\_nc}) instantiates the
+\paragraph{Softmax categorical dictionaries.}
+The reference categorical dictionary (\texttt{resid\_nc}) instantiates the
 architecture of Section~\ref{sec:arch} with softmax selection across
 $l{=}5$ residual layers of $h{=}32$ heads and $k{=}32$ entries per head.
 Layers 0--3 trained cleanly (reducing prefix $\fvu$ from $0.129$ to
@@ -361,7 +363,7 @@ sparsity penalty and periodic neuron resampling.
 To attribute empirical differences to individual architectural choices
 rather than to complete architectures, we train a ladder of SAE variants at
 $m{=}5120$ on the same data and objective, each introducing a single
-Ontologizer-style constraint:
+constraint borrowed from categorical dictionaries:
 
 \begin{center}
 \begin{tabular}{@{}llll@{}}
@@ -378,15 +380,15 @@ rung & run & added structure & analogue \\
 \end{center}
 
 Rungs 2a and 2b partition the $m{=}5120$ latents into 160 heads of 32
-entries, and we treat them as simplified Ontologizer variants rather than
-external baselines. Per-head competition over a shared decoder reduces to a
-single layer of linear classifiers selecting dictionary entries, omitting
-the bilinear classifier, the residual stack, and the non-negative
-dictionary. Specifically, \texttt{g160softmax} is a one-layer softmax
-Ontologizer whose per-head coefficients sum to one, leaving each head
+entries, and we treat them as simplified categorical dictionary variants
+rather than external baselines. Per-head competition over a shared decoder
+reduces to a single layer of linear classifiers selecting entries, omitting
+the bilinear classifier, the residual stack, and the non-negative atoms.
+Specifically, \texttt{g160softmax} is a one-layer softmax categorical
+dictionary whose per-head coefficients sum to one, leaving each head
 without an independent magnitude. Conversely, \texttt{g160top1} is a
-one-layer hard-code Ontologizer with a scalar router fused into its
-classifier: each head selects one entry by argmax, and the ReLU of the
+one-layer hard-code categorical dictionary with a scalar router fused into
+its classifier: each head selects one entry by argmax, and the ReLU of the
 winning logit scales that entry's unit-norm atom. This winning activation
 plays the role of the per-head router scale
 (Section~\ref{sec:router-fiber}), computed directly by the classifier
@@ -421,7 +423,8 @@ SAE~\cite{bussmann2025} with five equal prefix blocks of 1024 latents,
 rather than blocks that roughly double in width.
 
 We also train wider SAE baselines at $m{=}11{,}264$ (parameter-matched to
-the Ontologizer): \texttt{k32}, \texttt{k160} (coefficient-matched to one
+the categorical dictionary): \texttt{k32}, \texttt{k160}
+(coefficient-matched to one
 deviation per head), and \texttt{k5120} (coefficient-matched to the full
 soft code; here the $\topk$ constraint never binds, with measured
 $\mathrm{L0} \approx 1520$, so the model reduces to a dense ReLU
@@ -537,7 +540,8 @@ and the evaluation question it addresses.
 \caption[What validates what]{\textbf{What validates what.} Columns denote
 	the artifacts consumed by each evaluation script: the embedding or
 	activation cache (whose final rows form the evaluation split held out by
-	\texttt{sae.py}) together with its sidecars; Ontologizer checkpoints;
+	\texttt{sae.py}) together with its sidecars; categorical dictionary
+	checkpoints;
 	\texttt{sae.py} baselines; and the frozen SONAR encoder and M2M100
 	decoder. Filled markers indicate required inputs, and open markers
 	indicate optional or alternative inputs (most scripts accept either
@@ -551,8 +555,9 @@ and the evaluation question it addresses.
 
 \paragraph{Capacity Pareto (\texttt{pareto.py}).}
 Code capacity is measured by the number of continuous coefficients
-transmitted per sample together with the index bits naming them. Ontologizer
-operating points are generated by \emph{top-$\nu$ deviation truncation}:
+transmitted per sample together with the index bits naming them. A
+categorical dictionary's operating points are generated by
+\emph{top-$\nu$ deviation truncation}:
 within each head, we retain the $\nu$ entries with the largest absolute
 deviation $\lvert p_j - o_j\rvert$ from an origin distribution $\mathbf{o}$,
 pin the remaining entries to $\mathbf{o}$, and renormalize,
@@ -645,15 +650,15 @@ within $\Delta_j/2$ of $o_j$ map to the origin symbol and every active
 coordinate incurs approximately equal whitened quantization error
 ($\Delta^2/12$ at fine step sizes). The origin $o_j$ is $0$ for sparse
 codes and the training-set mean for dense codes (matching $\mathbf{o}$ from
-Eq.~\eqref{eq:topdev} for a soft Ontologizer). The operational rate
-$H_{\mathrm{op}}$ (in bits per sample) encodes each slot's symbol under its
-own marginal distribution, estimated by plug-in entropy on the evaluation
-tail with the Miller--Madow correction; codebooks fitted on held-out
+Eq.~\eqref{eq:topdev} for a soft categorical dictionary). The operational
+rate $H_{\mathrm{op}}$ (in bits per sample) encodes each slot's symbol
+under its own marginal distribution, estimated by plug-in entropy on the
+evaluation tail with the Miller--Madow correction; codebooks fitted on held-out
 training rows agree to within $0.5$ bits. A grouped top-1 SAE encodes one
 joint symbol per head representing either silence or its winning entry and
-quantized level. Ontologizers are quantized inside the forward pass so that
-each subsequent layer classifies the residual of the quantized prefix; a
-hard code's selected entries are charged their realized entropy
+quantized level. Categorical dictionaries are quantized inside the forward
+pass so that each subsequent layer classifies the residual of the quantized
+prefix; a hard code's selected entries are charged their realized entropy
 (Eq.~\eqref{eq:realized}), and its per-layer gains are quantized in the
 same way as coefficients. No parameters are refitted after quantization,
 and sweeping $\Delta$ traces out each model's operational rate--distortion
@@ -663,10 +668,10 @@ with the combinatorial index cost $\log_2\binom{m}{\mathrm{L0}}$ per sample
 entropy-coding the quantized values.
 
 \paragraph{Categorical form (\texttt{headstruct.py}).}
-An Ontologizer head is both exhaustive (firing on every input) and mutually
-exclusive (selecting a single winner). To test whether flat SAE latents
-self-organize into analogous categorical units, we split the evaluation
-rows in half: on the discovery half, latents are clustered under a
+A categorical dictionary's head is both exhaustive (firing on every input)
+and mutually exclusive (selecting a single winner). To test whether flat
+SAE latents self-organize into analogous categorical units, we split the
+evaluation rows in half: on the discovery half, latents are clustered under a
 group-size cap by \emph{paradigmatic} affinity (the product of co-firing
 profile similarity across the rest of the dictionary and pairwise
 anti-correlation, gated at $\mathrm{PMI} < 1$); on the held-out half, each
@@ -692,14 +697,15 @@ a model's explicitly trained heads under the same protocol.
 Complementing the test of categorical firing form, we evaluate whether a
 head's entries encode semantically similar meanings or form a contrastive
 set. Every entry possesses an exact decode direction in SONAR output space
-(for the Ontologizer, the corresponding column of the linear map
+(for a categorical dictionary, the corresponding column of the linear map
 $W_{\mathrm{flat}}$ satisfying
 $\hat{\mathbf{x}} = W_{\mathrm{flat}}\mathbf{p}_{\mathrm{flat}}$; for SAEs,
 the decoder directions), and because SONAR is a semantic sentence space,
 within-head directional similarity directly reflects semantic similarity
 among decoded entries. For any head whose assignments sum to one (including
-the Ontologizer and \texttt{g160softmax}), the forward map determines these
-columns only up to a per-head vector shift whose shifts across heads sum to
+the categorical dictionary and \texttt{g160softmax}), the forward map
+determines these columns only up to a per-head vector shift whose shifts
+across heads sum to
 zero: because $\mathbf{p}_{\mathrm{flat}}$ sums to one within each head,
 such shifts leave $\hat{\mathbf{x}}$ invariant. Consequently, raw column
 cosines reflect the trained parameterization, whereas only within-head
@@ -709,7 +715,7 @@ map (Section~\ref{sec:prelim-orth}). By contrast, standard SAE latents and
 gauge freedom. For each head or group $\mathcal{G}$, we report the mean
 pairwise cosine and the top-singular-value energy fraction, standardized as
 $\zeta$ against size-matched random subsets drawn from the same pool (the
-same layer for Ontologizer heads),
+same layer for a categorical dictionary's heads),
 \begin{equation}
 	\kappa(\mathcal{G}) := \mathbb{E}_{j \neq j' \in \mathcal{G}}\cos\angle(\mathbf{v}_j, \mathbf{v}_{j'}),
 	\qquad
@@ -778,13 +784,14 @@ against a ground-truth probe in which the absorbing latent's decoder
 direction retains only a small component of the general feature direction.
 When applied to two runs of identical architecture differing only in random
 seed, the match fractions measure cross-seed feature reproducibility. For
-hard-code Ontologizers, \texttt{partition.py} matches heads across runs by
-the normalized mutual information (NMI) of their sample partitions (what
-each head separates), while \texttt{headcontrib.py} matches heads by the
+hard-code categorical dictionaries, \texttt{partition.py} matches heads
+across runs by the normalized mutual information (NMI) of their sample
+partitions (what each head separates), while \texttt{headcontrib.py}
+matches heads by the
 cosine similarity of their output contributions (what each head writes),
 defined as each head's whitened decoded output minus
 $\mathrm{dec}(\mathbf{0})$ and centered across rows (without row centering,
-the shared non-negative dictionary offset induces spurious cross-run
+the shared offset of the non-negative atoms induces spurious cross-run
 agreement). Letting $q^{(1)}_{ni}$ denote the entry selected by head $i$ of
 run~(1) on row $n$, $\mathbf{q}^{(1)}_i$ the vector of selections across
 all rows, and $\boldsymbol{\phi}^{(1)}_{ni}$ the head's whitened decoded
@@ -919,8 +926,8 @@ where the columns of $W$ are the code's decode directions and $\mathbf{b}$
 is its constant offset, and compare the resulting $\fvu$ against the
 unrefitted reconstruction. The gap between raw and refitted $\fvu$ measures
 magnitude (shrinkage) error, whereas the refitted $\fvu$ isolates support
-selection error. The Ontologizer is evaluated under the same solver via its
-exact linearity $\hat{\mathbf{x}} = W_{\mathrm{flat}}
+selection error. A categorical dictionary is evaluated under the same
+solver via its exact linearity $\hat{\mathbf{x}} = W_{\mathrm{flat}}
 \mathbf{p}_{\mathrm{flat}}$ (with $W_{\mathrm{flat}}$ extracted by decoding
 constant one-hot codes), taking the top-$\nu$ deviation entries as active
 supports; operating points with support size at least $d$ are excluded as
@@ -933,9 +940,10 @@ residual.
 \paragraph{Steering fidelity in text (\texttt{steerfid.py}).}
 To evaluate steering fidelity in decoded text, we perturb embeddings along
 unit-normalized native steering directions (SAE decoder directions, bilinear
-eigenfeatures, or the Ontologizer's \texttt{withArgs} entry-forcing output
-delta) at matched embedding norm multiples. Steering effect is measured by
-cycle consistency: the steered text decode is re-encoded through SONAR, and
+eigenfeatures, or the categorical dictionary's \texttt{withArgs}
+entry-forcing output delta) at matched embedding norm multiples. Steering
+effect is measured by cycle consistency: the steered text decode is
+re-encoded through SONAR, and
 the target feature's activation gain is normalized by its
 firing-conditioned quantiles relative to the \emph{cycled} unsteered decode
 so that both terms experience identical round-trip degradation. Collateral
@@ -960,8 +968,8 @@ its positive eigenvalue, the direction along which the form grows, via
 classification change), and \texttt{random}. Step strength $\alpha$ is
 specified as a fraction of each sample's norm. We also evaluate each
 model's \emph{native} step size: the output delta of forcing the entry in
-an Ontologizer, or the decoder direction scaled by the latent's mean
-nonzero activation in an SAE. Algorithm~\ref{alg:steerembed} gives the full
+a categorical dictionary, or the decoder direction scaled by the latent's
+mean nonzero activation in an SAE. Algorithm~\ref{alg:steerembed} gives the full
 procedure.
 
 \input{algorithms/steerembed}
@@ -1074,8 +1082,8 @@ feature subsets, and parameter-derived decode embeddings), text recovery
 (deterministic mC4 stream replay by row index, verified per row against the
 language sidecar), description generation, and blinded detection scoring.
 Five description modes are supported: \texttt{params}, the M2M100 text
-decode of a parameter-derived embedding (for Ontologizer entries, the
-origin $\mathbf{o}$ with one head forced one-hot; for SAE latents,
+decode of a parameter-derived embedding (for a categorical dictionary's
+entries, the origin $\mathbf{o}$ with one head forced one-hot; for SAE latents,
 $\mathbf{b}_{\mathrm{dec}} + \alpha\,\mathbf{w}^{\mathrm{dec}}_j$);
 \texttt{pdev}, the M2M100 decode obtained after subtracting the pure-origin
 embedding decode; \texttt{eig}, the M2M100 decode of a bilinear latent's
@@ -1094,9 +1102,9 @@ with rate metering and bounded reply lengths, so describer and judge are a
 single model without an independent LLM or human rater; failed API
 judgments are omitted rather than recorded (avoiding an earlier outage
 artifact that scored empty responses as $\mathrm{F1}=0$). Six models are
-evaluated: the Ontologizer, ladder rungs \texttt{k32}, \texttt{k32\_bl},
-\texttt{g160top1}, and \texttt{g160softmax}, and the dense control
-\texttt{k5120}.
+evaluated: the categorical dictionary, ladder rungs \texttt{k32},
+\texttt{k32\_bl}, \texttt{g160top1}, and \texttt{g160softmax}, and the
+dense control \texttt{k5120}.
 
 \paragraph{Modularity (\texttt{headstruct.py --modularity}).}
 A head's assignments partition samples into soft cells, and soft
@@ -1120,9 +1128,10 @@ with the graph and degrees restricted to the samples on which the head or
 group is active so that sparse groups are not penalized for incomplete
 coverage. This restriction evaluates cells as communities of the induced
 active subgraph, whereas Newman's subdivision retains the parent graph's
-degrees~\cite{newman2006}. Each Ontologizer layer is scored on its own
-input ($\mathbf{x}$ at layer 0, and the corresponding residual at deeper
-layers); prefix block $\ell$ of a Matryoshka SAE is scored on its prefix
+degrees~\cite{newman2006}. Each layer of a categorical dictionary is
+scored on its own input ($\mathbf{x}$ at layer 0, and the corresponding
+residual at deeper layers); prefix block $\ell$ of a Matryoshka SAE is
+scored on its prefix
 residual ($\mathbf{x}$ minus the decoded reconstruction of blocks prior to
 $\ell$, so block 0 is scored on $\mathbf{x}-\mathbf{b}_{\mathrm{dec}}$);
 and flat models are scored on $\mathbf{x}$, with each SAE group's soft
@@ -1273,7 +1282,7 @@ atom norm), and \texttt{bigatoms.py} (analyzing how large-norm atoms are
 distributed across heads and whether the heads containing them reproduce
 across seeds).
 
-\section{Supplementary results: the softmax Ontologizer against SAEs}
+\section{Supplementary results: the softmax categorical dictionary against SAEs}
 \label{app:soft}
 
 \subsection{Categorical form}
@@ -1299,9 +1308,9 @@ rather than mutually exclusive categorical slots, even when the discovery
 affinity explicitly selects for anti-correlated same-context pairs.
 Meanwhile, \texttt{g160softmax} never fires sparsely: no coefficient
 exceeds $2/32$ on any test row. Instead, soft per-head codes converge to
-dense, near-uniform mixtures, just as the softmax Ontologizer does (where
-the mean assignment $\mathbf{o}$ lies within $0.06$--$0.16$ bits of
-uniform in unfrozen layers, and matching the full soft reconstruction
+dense, near-uniform mixtures, just as the softmax categorical dictionary
+does (where the mean assignment $\mathbf{o}$ lies within $0.06$--$0.16$
+bits of uniform in unfrozen layers, and matching the full soft reconstruction
 requires roughly 16 of the 32 deviations per head). Thus, categorical
 structure appears precisely when trained in as hard selection; it does
 not emerge from softmax competition under a
@@ -1371,9 +1380,10 @@ latents rather than a single discrete slot.
 \label{sec:coherence}
 
 Under the whitened inner product that the training objective optimizes,
-the softmax Ontologizer's mean within-head coherence $\zeta_{\cos}$ is
-$-24.4$ (vs.\ $-17.6$ unwhitened, with the fraction of heads below $-2$
-unchanged at $0.96$), the single-layer soft variant's mean is $-14.7$
+the softmax categorical dictionary's mean within-head coherence
+$\zeta_{\cos}$ is $-24.4$ (vs.\ $-17.6$ unwhitened, with the fraction of
+heads below $-2$ unchanged at $0.96$), the single-layer soft variant's
+mean is $-14.7$
 (unchanged), and the single-layer hard variant's mean is $+179.3$ (vs.\
 $+161.3$ unwhitened).
 
@@ -1387,23 +1397,24 @@ during training---rather than genuine semantic coherence; we have not
 inspected them further.
 
 Measuring within-head coherence via text similarity of plain autointerp
-summaries is uninformative because roughly 77\% of Ontologizer entries
-and 49\% of $k_{\mathrm{SAE}}{=}32$ SAE latents receive generic
-summaries, inflating the permutation null (yielding $\zeta{=}{+}0.14$ for
-Ontologizer heads). Switching to contrastive descriptions recovers a
-modest signal: within-head description similarity exceeds the
-head-membership permutation null for the softmax Ontologizer
-($\zeta{=}{+}2.03$ across 155 within-head pairs), is marginal for the
-single-layer hard variant ($\zeta{=}{+}1.55$, 62 pairs), and is weaker
+summaries is uninformative because roughly 77\% of the categorical
+dictionary's entries and 49\% of $k_{\mathrm{SAE}}{=}32$ SAE latents
+receive generic summaries, inflating the permutation null (yielding
+$\zeta{=}{+}0.14$ for the categorical dictionary's heads). Switching to
+contrastive descriptions recovers a modest signal: within-head
+description similarity exceeds the head-membership permutation null for
+the softmax categorical dictionary ($\zeta{=}{+}2.03$ across 155
+within-head pairs), is marginal for the single-layer hard variant
+($\zeta{=}{+}1.55$, 62 pairs), and is weaker
 still for the single-layer soft variant ($\zeta{=}{+}1.09$, 217 pairs).
 Combined with the geometric results, this matches the pattern expected
 for mutually exclusive values of a shared attribute: decoded entry
-directions within an Ontologizer head repel one another geometrically
-while their contrastive descriptions weakly cohere. This metric is also
-the first to separate the stacked softmax Ontologizer from its
-single-layer soft counterpart, although the evidence remains suggestive
-given the limited sample coverage (a single global $\zeta$ per model
-computed over the sampled features).
+directions within a head of a categorical dictionary repel one another
+geometrically while their contrastive descriptions weakly cohere. This
+metric is also the first to separate the stacked softmax categorical
+dictionary from its single-layer soft counterpart, although the evidence
+remains suggestive given the limited sample coverage (a single global
+$\zeta$ per model computed over the sampled features).
 
 \subsection{Heads as communities of their input}
 \label{sec:modularity}
@@ -1414,24 +1425,26 @@ input---concentrating more pairwise affinity within cells than expected
 under a degree-preserving null graph---we compute soft modularity
 (Eq.~\eqref{eq:modularity}) relative to size-matched random regroupings
 of the same entries (Figure~\ref{fig:modularity}, using one checkpoint
-per model). We compare the softmax Ontologizer \texttt{bl\_ctl\_full}
-against two Matryoshka SAEs, \texttt{m5120\_g160top1\_p5} (trained heads)
+per model). We compare the softmax categorical dictionary
+\texttt{bl\_ctl\_full} against two Matryoshka SAEs,
+\texttt{m5120\_g160top1\_p5} (trained heads)
 and \texttt{m5120\_k32\_p5} (discovered groups), as well as their flat
 counterparts \texttt{m5120\_g160top1} and \texttt{m5120\_k32}.
 
 On the raw input graph itself, none of the models form modular
-communities: layer 0 of the Ontologizer reaches $1.25\times$ its null
-modularity, while every SAE sits between $0.76\times$ and $1.06\times$.
-When each deeper layer is evaluated on its own residual input, however,
-layers 1--4 of the Ontologizer achieve $2.1$--$2.9\times$ the modularity
+communities: layer 0 of the categorical dictionary reaches $1.25\times$
+its null modularity, while every SAE sits between $0.76\times$ and
+$1.06\times$. When each deeper layer is evaluated on its own residual
+input, however, layers 1--4 of the categorical dictionary achieve
+$2.1$--$2.9\times$ the modularity
 of random entry regroupings. By contrast, Matryoshka SAEs evaluated on
 matched prefix-residual graphs remain at chance, whether using trained
 heads ($0.96$--$1.06\times$) or post hoc discovered groups
 ($0.88$--$1.03\times$ across blocks with sufficient coverage). Thus,
 residual modularity does not arise merely from evaluating on residual
 graphs or from imposing coarse-to-fine prefix losses on a head-structured
-dictionary. Instead, the key distinction is that each Ontologizer layer
-directly classifies the residual on which it is evaluated, whereas a
+SAE. Instead, the key distinction is that each layer of the categorical
+dictionary directly classifies the residual on which it is evaluated, whereas a
 Matryoshka block is encoded from the original input and only trained to
 reconstruct that residual. Because unnormalized modularity increases with
 depth in both the learned partitions and the nulls (reaching $0.218$ vs.\
@@ -1446,14 +1459,15 @@ necessarily sharing the one selected by that head.
 \begin{figure}[tp]
 \centering
 \includegraphics[width=\linewidth]{figures/fig-modularity.pdf}
-\caption[Head partitions as communities of their input]{\textbf{Ontologizer
-	heads form communities on the residual they classify, whereas SAE
-	heads and groups do not.} Ratio of soft modularity to its
+\caption[Head partitions as communities of their input]{\textbf{Categorical
+	dictionary heads form communities on the residual they classify,
+	whereas SAE heads and groups do not.} Ratio of soft modularity to its
 	size-matched regrouping null (\texttt{headstruct.py --modularity},
 	Eq.~\eqref{eq:modularity}; one checkpoint per model), with error bars
 	indicating $\pm2$ null standard deviations. (a) Models evaluated on
-	the unreduced input graph: layer 0 of the softmax Ontologizer, block
-	0 of the two Matryoshka SAEs (evaluated on the centered encoder input
+	the unreduced input graph: layer 0 of the softmax categorical
+	dictionary, block 0 of the two Matryoshka SAEs (evaluated on the
+	centered encoder input
 	$\mathbf{x}-\mathbf{b}_{\mathrm{dec}}$), and the two flat SAEs. (b)
 	Modularity ratio across depth, evaluating each layer or prefix block
 	on the affinity graph of its own residual input. Hollow markers
@@ -1486,8 +1500,8 @@ prominent organizational pattern. For an unsupervised steering-vector
 generator, however, the relevant unit of reproducibility is the
 head-level partition rather than an isolated feature vector;
 Section~\ref{sec:seeds} evaluates partition reproducibility in the
-hard-code Ontologizer and shows that it is substantially lower than
-cross-seed latent matching in SAEs.
+hard-code categorical dictionary and shows that it is substantially lower
+than cross-seed latent matching in SAEs.
 
 \subsection{Text-space fidelity (collateral ceiling)}
 \label{sec:textfid}
@@ -1501,13 +1515,14 @@ corpus-mean floor & 0.176 & 0 & 3.999 \\
 k32 tier (incl.\ p5, m11264) & 0.23 & 0.00 & 3.16--3.18 \\
 k32\_bl          & 0.204 & 0.00 & 3.365 \\
 k160 / g160top1  & 0.27--0.28 & 0.00 & 2.41--2.43 \\
-onto soft        & 0.552 & 0.070 & 1.585 (gap 0.025) \\
+resid\_nc        & 0.552 & 0.070 & 1.585 (gap 0.025) \\
 g160softmax      & 0.591 & 0.094 & 1.568 (gap 0.008) \\
 k5120            & 0.841 & 0.562 & 1.560 (gap 0.000) \\
 \bottomrule
 \end{tabular}
 \caption{Downstream text fidelity on 512 held-out tail rows under forced
-English decoding. The NLL ceiling ($1.560$) is shared across all models
+English decoding; \texttt{resid\_nc} is the softmax categorical
+dictionary. The NLL ceiling ($1.560$) is shared across all models
 and corresponds to scoring the unperturbed embedding's decode under the
 unperturbed embedding.}
 \end{table}
@@ -1516,10 +1531,10 @@ The relationship between $\fvu$ and decoded text fidelity is strongly
 nonlinear: reconstructions at $\fvu \approx 0.5$ decode to text that
 preserves rough topic while altering factual content, scoring only
 slightly above the corpus-mean floor, whereas both the softmax
-Ontologizer and \texttt{g160softmax} remain close to the likelihood
-ceiling and preserve nearly all decodable content. Across the eleven
-Ontologizer runs for which both metrics were evaluated (spanning the
-selection-rule sweep and the straight-through arms in
+categorical dictionary and \texttt{g160softmax} remain close to the
+likelihood ceiling and preserve nearly all decodable content. Across the
+eleven categorical dictionaries for which both metrics were evaluated
+(spanning the selection-rule sweep and the straight-through arms in
 Table~\ref{tab:steerfid}), downstream ``loss recovered'' is strictly
 monotonic in $\fvu$ (Spearman rank correlation $-1$). Text-space fidelity
 therefore confirms that the whitened embedding objective transfers
@@ -1549,7 +1564,7 @@ k32\_p5          & 0.061 & 0.322 & 0.456 & 0.625 & 0.862 & 0.870 \\
 g160top1         & 0.066 & 0.207 & 0.302 & 0.592 & 0.542 & 0.700 \\
 g160softmax      & 0.067 & 0.162 & 0.328 & 0.432 & 0.437 & 0.433 \\
 k5120            & 0.064 & 0.130 & 0.237 & 0.439 & 0.448 & 0.447 \\
-softmax Ontologizer (entries) & 0.022 & 0.022 & 0.135 & 0.333 & 0.333 & 0.333 \\
+softmax categorical dictionary (entries) & 0.022 & 0.022 & 0.135 & 0.333 & 0.333 & 0.333 \\
 hard-code stack (entries) & \textbf{0.121} & 0.153 & 0.362 & 0.685 & 0.804 & 0.806 \\
 hard-code flat (entries) & 0.120 & 0.141 & 0.319 & 0.609 & 0.798 & 0.703 \\
 \bottomrule
@@ -1564,7 +1579,7 @@ five-language subsets, where the always-positive baseline scores $0.333$:
 English, French, Spanish, German, and Chinese, which were encoded under
 their own SONAR source tags (Appendix~\ref{app:data}), alongside two
 composition-matched subsets encoded under the English tag. The softmax
-Ontologizer is \texttt{resid\_nc}, and the hard-code models are
+categorical dictionary is \texttt{resid\_nc}, and the hard-code models are
 \texttt{ste\_h76\_init01} and \texttt{ste\_l1\_h380\_i01}.}
 \label{tab:langlocal}
 \end{table}
@@ -1574,12 +1589,12 @@ Language identity remains distributed across features in every model
 $0.121$, compared to a dense-probe ceiling of $0.676$ (script-distinctive
 languages such as Chinese reach roughly $0.98$ from a single latent,
 whereas languages sharing a script overlap heavily). Individual entry
-probabilities in the softmax Ontologizer do not localize language at all,
-remaining at the always-positive baseline at both 1 and 4 entries. By
-contrast, the hard-code models' one-hot entries match the best SAE at a
-single entry ($0.121$ and $0.120$ vs.\ $0.119$), though they trail at 4
-and 16 entries. Under a single-feature SAE lens, the soft code's baseline
-score is an indictment; under a categorical-classifier lens it is
+probabilities in the softmax categorical dictionary do not localize
+language at all, remaining at the always-positive baseline at both 1 and
+4 entries. By contrast, the hard-code models' one-hot entries match the
+best SAE at a single entry ($0.121$ and $0.120$ vs.\ $0.119$), though they
+trail at 4 and 16 entries. Under a single-feature SAE lens, the soft
+code's baseline score is an indictment; under a categorical-classifier lens it is
 expected, since a soft head encodes a factor in its \emph{assignment}
 distribution rather than in any single entry's scalar probability.
 Consistent with this view, partition-level analysis of \texttt{resid\_nc}
@@ -1702,15 +1717,15 @@ $k_{\mathrm{SAE}}{=}32$ variants, $8.5\%$ for \texttt{k160}, $0.6\%$ for
 the bilinear SAE (\texttt{k32\_bl}), and $1.9\%$ for the Matryoshka SAE
 (\texttt{k32\_p5}). Similarly, \texttt{g160top1} is nearly perfectly
 calibrated ($0.3\%$ reduction), indicating that its reconstruction gap
-stems purely from support selection. For the softmax Ontologizer's
-truncated deviation codes, support-frozen refitting removes $16\%$ of the
-error at $\nu{=}1$ and $33\%$ at $\nu{=}2$, about the fraction
+stems purely from support selection. For the softmax categorical
+dictionary's truncated deviation codes, support-frozen refitting removes
+$16\%$ of the error at $\nu{=}1$ and $33\%$ at $\nu{=}2$, about the fraction
 $\lvert\mathcal{S}\rvert / d$ ($160/1024$ and $320/1024$ across
 \texttt{resid\_nc}'s $5\times32$ heads) that any $\lvert\mathcal{S}\rvert$
 unconstrained coefficients would remove from an isotropic whitened
 residual. Size-matched random supports remove more error
-than the models' chosen supports: $19\%$ and $36\%$ for the Ontologizer
-($\nu$ random entries per head), and $20\%$, $13\%$, and $4.6\%$ for
+than the models' chosen supports: $19\%$ and $36\%$ for the categorical
+dictionary ($\nu$ random entries per head), and $20\%$, $13\%$, and $4.6\%$ for
 \texttt{k160}, \texttt{g160top1}, and \texttt{k32}, compared to $8.5\%$,
 $0.3\%$, and $2.2\%$ on their own supports (\texttt{refit.py}; supports
 of size $\geq d$ are excluded as underdetermined). Because no model's
@@ -1734,9 +1749,9 @@ perturbations while also inducing widespread downstream collateral flips
 \label{sec:steertext}
 
 Table~\ref{tab:steerfid} reports text-space reconstruction fidelity and
-text-cycle steering across the Ontologizer selection-rule sweep, the
-straight-through arm, and the $k_{\mathrm{SAE}}{=}32$ SAE, evaluated on 64
-features per run.
+text-cycle steering across the selection-rule sweep of categorical
+dictionaries, the straight-through arm, and the $k_{\mathrm{SAE}}{=}32$
+SAE, evaluated on 64 features per run.
 
 \begin{table}[htbp]\centering\small\setlength{\tabcolsep}{4pt}
 \begin{tabular}{@{}lrrrrrrrr@{}}
@@ -1757,9 +1772,9 @@ SAE \texttt{k32} & 0.4994 & 0.228 & 0.345 & 0.048 & 0.187 & 0.402 & 0.260 & 0.01
 \bottomrule
 \end{tabular}
 \caption{Text fidelity and text-cycle steering (\texttt{steerfid.py},
-\texttt{--n-features 64}) across Ontologizer selection rules and the
-$k_{\mathrm{SAE}}{=}32$ SAE under the same protocol. Net effect is feature
-effect minus the random-direction control. An additional run
+\texttt{--n-features 64}) across the categorical dictionary's selection
+rules and the $k_{\mathrm{SAE}}{=}32$ SAE under the same protocol. Net
+effect is feature effect minus the random-direction control. An additional run
 (\texttt{topk4\_rev}, $\fvu = 0.164$) achieves a net effect of $0.636$ at
 magnitude $1.0$.}
 \label{tab:steerfid}
@@ -1814,15 +1829,16 @@ perturbations~\cite{lcmteam2024largeconceptmodelslanguage}. Thus, whereas
 embedding-space reconstruction remains reliable, text generation obscures
 most of the code-level signal.
 
-\section{Supplementary results: training, reproducibility, and steering of the softmax Ontologizer}
+\section{Supplementary results: training, reproducibility, and steering of the softmax categorical dictionary}
 \label{app:softdyn}
 
 The experiments in this section originate from the project proposal's
 evaluation suite and examine the training dynamics, cross-seed
-reproducibility, and steering behavior of the softmax Ontologizer. Two
-models appear throughout: \texttt{resid\_nc} (trained for 372{,}600
-steps), which serves as the reference softmax model in the comparisons
-above, and \texttt{resid\_nc\_hm}, which differs from it in three settings
+reproducibility, and steering behavior of the softmax categorical
+dictionary. Two models appear throughout: \texttt{resid\_nc} (trained for
+372{,}600 steps), which serves as the reference softmax model in the
+comparisons above, and \texttt{resid\_nc\_hm}, which differs from it in
+three settings
 (Table~\ref{tab:cfg-softmax}): half the dictionary width ($e{=}2048$
 rather than $4096$), the batch-mean uniformity term $\mathrm{KL}_m$
 (weighted by $s_{\mathrm{KL}_m}$) from the start of training, and the
@@ -2055,9 +2071,9 @@ match is not due to metric insensitivity: comparing the primary run
 against an earlier checkpoint of itself $2{,}600$ steps apart yields
 $1.000$ geometric matching at every threshold and $0.65$ activation
 containment at $\tau{=}0.3$ ($0.20$ at $\tau{=}0.9$). At matched training
-steps, soft Ontologizer partitions are therefore less reproducible across
-seeds than individual SAE latents, consistent with the partition-NMI and
-output-contribution results for the straight-through arm in
+steps, the soft categorical dictionary's partitions are therefore less
+reproducible across seeds than individual SAE latents, consistent with
+the partition-NMI and output-contribution results for the straight-through arm in
 Section~\ref{sec:seeds}. Training a second seed to the full 4.4M-step
 horizon remains an open control.
 
@@ -2067,7 +2083,8 @@ horizon remains an open control.
 containment across thresholds $\tau$. Comparing checkpoints from the same
 run establishes the metric's detection ceiling ($0.65$ at $\tau{=}0.3$);
 the $k_{\mathrm{SAE}}{=}32$ SAE pair reproduces partially, whereas the
-softmax Ontologizer's entries show virtually no cross-seed matching.}
+softmax categorical dictionary's entries show virtually no cross-seed
+matching.}
 \label{fig:softseed}
 \end{figure}
 
@@ -2190,11 +2207,11 @@ at $-0.894$ with activation-description F1, accounting for roughly 80\% of
 the cross-model variance. Fitting a linear regression of
 contrastive-description F1 on log empirical firing rate across the four
 \texttt{sae.py} runs with nonzero thresholded firing rates (slope
-$-0.069$, correlation $-0.766$) while holding out the softmax Ontologizer
-predicts an F1 of $0.421$ vs.\ the observed $0.392$ (a residual of $-1.8$
-standard errors); thus, the Ontologizer lies close to the empirical
-density trend whereas \texttt{g160top1} sits $0.120$ above it. However,
-this four-point regression is fragile: the underlying correlation is
+$-0.069$, correlation $-0.766$) while holding out the softmax categorical
+dictionary predicts an F1 of $0.421$ vs.\ the observed $0.392$ (a residual
+of $-1.8$ standard errors); thus, the categorical dictionary lies close to
+the empirical density trend whereas \texttt{g160top1} sits $0.120$ above
+it. However, this four-point regression is fragile: the underlying correlation is
 modest, \texttt{g160softmax} is excluded because its firing rate above the
 $2/k$ threshold is identically zero, and that fixed threshold does not
 vary monotonically with effective activation density.
@@ -2212,8 +2229,9 @@ positive examples evaluated by the judge, compared to roughly $1\%$ of the
 negative examples and contrastive background draws. Restricting the
 log-firing-rate regression of contrastive F1 to multilingual features
 spanning 13--15 languages reduces \texttt{g160top1}'s residual above the
-trend from $+0.120$ to $+0.018$ and shifts the softmax Ontologizer from
-$0.029$ below the trend to $+0.049$ above it. Across individual features,
+trend from $+0.120$ to $+0.018$ and shifts the softmax categorical
+dictionary from $0.029$ below the trend to $+0.049$ above it. Across
+individual features,
 modal-language purity explains roughly one fifth of the variance in
 detection F1 ($0.20$ for activation descriptions and $0.22$ for
 contrastive descriptions), whereas log firing rate explains only
@@ -2230,7 +2248,7 @@ language-matched negative and background examples---implemented in
 \cmidrule(lr){2-5}\cmidrule(l){7-8}
 model & 1--3 & 4--9 & 10--12 & 13--15 & purity & \texttt{acts} & \texttt{cacts} \\
 \midrule
-onto (resid\_nc)   & 0  & 5  & 43 & 177 & 0.158 & 0.473 / 0.460 & 0.392 / 0.380 \\
+resid\_nc          & 0  & 5  & 43 & 177 & 0.158 & 0.473 / 0.460 & 0.392 / 0.380 \\
 k32                & 63 & 55 & 68 & 64  & 0.466 & 0.645 / 0.564 & 0.603 / 0.482 \\
 k32\_bl            & 9  & 9  & 10 & 47  & 0.277 & 0.578 / 0.502 & 0.470 / 0.338 \\
 g160top1           & 41 & 24 & 32 & 53  & 0.440 & 0.646 / 0.467 & 0.594 / 0.383 \\
@@ -2243,7 +2261,7 @@ number of distinct languages among each feature's 15 evaluated rows (the
 10 examples from which each description was generated and the 5 held-out
 positives; 15 random rows span an average of $13.8$ languages). Purity is
 the fraction of the 10 description rows belonging to their modal language.
-One seed per run.}
+\texttt{resid\_nc} is the softmax categorical dictionary. One seed per run.}
 \label{tab:autointerp-lang}
 \end{table}
 
@@ -2441,7 +2459,7 @@ code & \stackhead[r]{$\fvu$\\unquantized} & \stackhead[r]{1900 bits,\\entropy-co
 \midrule
 straight-through, $5\times76$ & 0.1536 & \textbf{0.155} & \textbf{0.158} & 0.158 \\
 L1 SAE, $s_{\mathrm{L1}}{=}3\times10^{-6}$ & 0.0052 & \textbf{0.129} & 0.182 & \textbf{0.152} \\
-softmax Ontologizer & 0.0054 & 0.145 & 0.239 & --- \\
+softmax categorical dictionary & 0.0054 & 0.145 & 0.239 & --- \\
 L1 SAE, $s_{\mathrm{L1}}{=}10^{-5}$ & 0.048 & 0.175 & 0.180 & 0.200 \\
 L1 SAE, $s_{\mathrm{L1}}{=}3\times10^{-5}$ & 0.219 & 0.242 & 0.243 & 0.250 \\
 $\topk$ SAE, $k_{\mathrm{SAE}}{=}5120$ & 0.0001 & 0.243 & --- & 0.281 \\
@@ -2486,8 +2504,9 @@ plateaus at its unquantized error from roughly 1900 bits onward---consistent
 with its unquantized least-squares support floor of $0.236$---and already
 reaches $\fvu = 0.275$ at 1{,}121 bits, indicating that its coefficients
 convey little beyond support identity; the single-layer hard variant
-\texttt{g160top1} behaves similarly. Quantizing the softmax Ontologizer's
-assignments around their mean reaches $\fvu = 0.145$ at 1900 average bits,
+\texttt{g160top1} behaves similarly. Quantizing the softmax categorical
+dictionary's assignments around their mean reaches $\fvu = 0.145$ at 1900
+average bits,
 with the same value on freshly encoded out-of-sample rows held out from
 all models. In the hard stack, quantizing the four scalar gains requires 4.8
 bits at a step size of two standard deviations (reducing $\fvu$ from
@@ -2548,7 +2567,8 @@ variants are \texttt{g160top1} (flat) and \texttt{g160softmax}
 (downward-sloping). The straight-through stack spans 1895--1923 bits. The
 vertical dotted line marks 1900 bits and the dashed curve shows the
 Gaussian rate--distortion reference (Eq.~\eqref{eq:ratefloor}). Although
-the softmax Ontologizer included the evaluation tail during training,
+the softmax categorical dictionary included the evaluation tail during
+training,
 re-evaluating on freshly encoded rows held out from all models changes
 every curve's $\fvu$ at 1900 bits by at most $0.0004$
 (Appendix~\ref{app:data}).
@@ -2853,8 +2873,9 @@ over 1{,}000-step windows.}
 
 Whereas Table~\ref{tab:steersup} compares steering directions at a fixed
 step size, each native intervention also carries a natural step magnitude:
-for an Ontologizer, the decoded output change produced by forcing the
-target entry; for an SAE latent, its decoder direction scaled by its mean
+for a categorical dictionary, the decoded output change produced by
+forcing the target entry; for an SAE latent, its decoder direction
+scaled by its mean
 nonzero activation; and for the difference of means, the unrescaled
 mean-difference vector itself, matching the step taken by activation
 addition. Evaluating each direction at its native step length yields the
@@ -3009,8 +3030,8 @@ the unablated reconstruction ($-0.011$ nats, vs.\ $+0.036$ nats when
 frozen and $+0.016$ nats for a random step toward another
 row of the frozen change's length), even though scoring against the unablated reconstruction's own
 decoded text registers substantial divergence ($+0.139$ vs.\ $+0.040$
-nats). In the reference softmax Ontologizer, downstream layers cancel a
-layer-0 uniform ablation almost completely: frozen ablation increases
+nats). In the reference softmax categorical dictionary, downstream layers
+cancel a layer-0 uniform ablation almost completely: frozen ablation increases
 error by $505\%$, whereas live ablation increases it by only $0.5\%$.
 These text evaluations execute in \texttt{float32} precision on CPU;
 under JAX's default GPU matrix-multiplication precision, 226 of the hard
@@ -3053,8 +3074,8 @@ frozen (\texttt{cka\_floor.py}). At the training batch size, this bias
 floor exceeded genuine inter-head dependence, leaving the penalty nothing
 to reduce except estimator bias---which decreases only by concentrating
 or freezing heads. Reconstruction pressure resisted that in the
-hard-code stack, whereas replacing the softmax Ontologizer's auxiliary
-losses with this biased penalty froze an entire layer
+hard-code stack, whereas replacing the softmax categorical dictionary's
+auxiliary losses with this biased penalty froze an entire layer
 (Section~\ref{sec:freeze}).
 
 We therefore updated \texttt{hsic.pairwise\_head\_cka} to normalize Song
@@ -3189,7 +3210,8 @@ conditionals are linearly independent, and generically whenever each view
 has at least as many outcomes as latent classes~\cite{allman2009}. While
 Unsupervised Disentanglement Ranking uses pairwise cross-seed similarity
 to select identifiable models without ground-truth labels~\cite{udr2020},
-in the Ontologizer the heads are learned partitions rather than fixed
+in a categorical dictionary the heads are learned partitions rather than
+fixed
 external views. An established alternative is to train on paired
 observations---such as adjacent sentences or augmented views---where
 identifiability up to permutation follows from temporal
@@ -3209,7 +3231,8 @@ linear baseline achieves $\mathrm{FVU}_{\mathrm{next}} = 0.8962$
 ($\alpha{=}10^3$; predicting $\hat{\mathbf{x}}_{t+1} = \mathbf{x}_t$
 yields $1.418$), indicating that $\mathbf{x}_t$ linearly explains $10.4\%$
 of $\mathbf{x}_{t+1}$'s whitened variance, and encoding $\mathbf{x}_t$
-first through the trained Ontologizer or \texttt{k32} SAE reaches
+first through the trained categorical dictionary or \texttt{k32} SAE
+reaches
 $0.9035$ and $0.9186$ ($93\%$ and $78\%$ of the linear signal,
 respectively). Directly analyzing transition geometry
 (\texttt{transitions.py}) shows that this cross-sentence signal is
@@ -3783,7 +3806,7 @@ flat & $1\times380$ & 0.277 & 0.276 & 0.102 & 0.259 \\
 \quad + collinearity setpoint & $1\times380$ & 0.247 & 0.246 & 0.080 & 0.273 \\
 \bottomrule
 \end{tabular}
-\caption{Source-language probing across Ontologizer arms
+\caption{Source-language probing across categorical dictionary arms
 (\texttt{headlang.py}). Heads are ranked by NMI on the probe-training
 rows and evaluated on the held-out tail, with each probe's ridge penalty
 selected on a validation split of the training rows. Because a 5-bit head

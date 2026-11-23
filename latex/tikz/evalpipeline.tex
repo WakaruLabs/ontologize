@@ -29,7 +29,7 @@
   \node[art] at (1*\dx, 0.25) {\texttt{.langs.npy}};
   \node[art] at (2*\dx, 0.25) {\texttt{.index.npy}};
   \node[art] at (3*\dx, 0.25) {\texttt{.mse\_weights.npy}};
-  \node[art] at (4*\dx, 0.25) {Ontologizer ckpt};
+  \node[art] at (4*\dx, 0.25) {checkpoint};
   \node[art] at (5*\dx, 0.25) {\texttt{sae.py} \texttt{params.npz}};
   \node[art] at (6*\dx, 0.25) {SONAR\,/\,M2M100};
 
@@ -55,7 +55,7 @@
   % reconstruction
   \marks{1}{0,3,4,5}{}
   \node[proc] (s1) at (\px,-1*\dy) {pareto.py};
-  \node[qn]   (q1) at (\qx,-1*\dy) {whitened FVU vs.\ code capacity, Ontologizer vs.\ $\topk$ SAEs};
+  \node[qn]   (q1) at (\qx,-1*\dy) {whitened FVU vs.\ code capacity, against $\topk$ SAEs};
   \marks{2}{0,4}{3}
   \node[proc] (s2) at (\px,-2*\dy) {selection.py};
   \node[qn]   (q2) at (\qx,-2*\dy) {noise2self score and FVU over a sweep, vs.\ trivial baselines};

@@ -31,8 +31,8 @@ models do not form a coordinate partition (Section~\ref{sec:disjoint}).
 \centering
 \resizebox{\linewidth}{!}{\input{tikz/ontologizer}}
 \caption[\texttt{DictStack} architecture]{\textbf{\texttt{DictStack} architecture.}
-	A \texttt{DictStack}, the Ontologizer's class in the code, consists of $l$
-	stacked \texttt{DictEnc} layers.
+	A \texttt{DictStack}, the categorical dictionary's class in the code,
+	consists of $l$ stacked \texttt{DictEnc} layers.
 	Each returns a pooled feature vector $\mathbf{f}'_\ell\in\mathbb{R}^{e}$,
 	which is written, scaled by its input's gain $g_\ell$, to a residual
 	accumulator $\mathbf{r}$.
@@ -351,13 +351,14 @@ sweep over the $\omega$ penalty on GPT-2.
 
 \subsection{Evaluation}
 \label{sec:eval}
-We evaluate Ontologizer models against $\topk$ SAEs~\cite{gao2024}
+We evaluate categorical dictionaries against $\topk$ SAEs~\cite{gao2024}
 trained on the same cached embeddings under the same whitened MSE
 objective, reporting whitened fraction of variance unexplained
 ($\mathrm{FVU}_w$) on a held-out evaluation tail. A structural-ablation
-ladder of SAE variants introduces Ontologizer components one step at a
-time; two rungs that add per-head competition over a shared decoder are
-equivalent to single-layer Ontologizers with linear classifiers
+ladder of SAE variants introduces the categorical dictionary's components
+one step at a time; two rungs that add per-head competition over a shared
+decoder are equivalent to single-layer categorical dictionaries with
+linear classifiers
 (\texttt{g160top1} with hard selection and \texttt{g160softmax} with
 softmax) and are treated as simplified model variants rather than
 external baselines. Our evaluation suite measures:
@@ -365,7 +366,7 @@ external baselines. Our evaluation suite measures:
 	\item reconstruction error against code capacity and a Gaussian
 	rate--distortion baseline~\cite{cover2006};
 	\item within-head semantic coherence of decoded atoms against
-	size-matched random subsets from the same dictionary;
+	size-matched random subsets of the same model's atoms;
 	\item steering efficacy and collateral in embedding space (how often
 	a step along a target direction realizes the target entry and how
 	many other heads it flips, relative to a random step of equal norm),

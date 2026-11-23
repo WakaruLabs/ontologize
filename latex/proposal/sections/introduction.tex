@@ -25,11 +25,13 @@ with probes ahead on concept detection and the difference of means ahead
 on steering~\cite{wu2025axbenchsteeringllmssimple}, but both require
 contrastive datasets built around a concept someone has already
 named~\cite{burns2023ccs}. In the spirit of MoEfication~\cite{zhang2022}, we
-propose a technique based on decomposing a representation space into a
-set of contrastive classifiers. Each entry corresponds to a
-representative vector (an atom). Inputs are encoded as a series of
-classifier assignments and reconstructed from the atoms those
-assignments select. This has several advantages over SAEs:
+propose \emph{multi-head categorical dictionary learning}, a technique
+based on decomposing a representation space into a set of contrastive
+classifiers. Each entry corresponds to a representative vector (an
+atom). In a trained model, a \emph{multi-head categorical dictionary},
+inputs are encoded as a series of classifier assignments and
+reconstructed from the atoms those assignments select. This has several
+advantages over SAEs:
 \begin{enumerate}
 	\item It effectively gives steering for free: changing a
 	head's entry is a steering move.
@@ -45,8 +47,9 @@ including where the results do not support these hypotheses.
 
 \begin{figure}[tp]\centering
 \includegraphics[width=\linewidth]{figures/fig-teaser.pdf}
-\caption[Steering and reconstruction in the softmax Ontologizer]{Steering
-and reconstruction in the softmax Ontologizer. (a) Forcing an entry moves
+\caption[Steering and reconstruction in the softmax categorical
+dictionary]{Steering and reconstruction in the softmax categorical
+dictionary. (a) Forcing an entry moves
 decodes along the supervised difference-of-means direction $0.64\times$
 as far as supervised steering itself and $4\times$ as far as probe
 directions (Table~\ref{tab:steer-overlay}). (b) Joint two-head

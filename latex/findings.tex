@@ -45,9 +45,9 @@ detection and steering, but supervised methods only test concepts that an
 experimenter already suspects. We argue that unsupervised SAEs struggle in
 part because of the form of their features: each latent either fires or stays silent,
 absorption makes silence uninformative, and effective steering vectors
-instead contrast alternative values of a variable. The Ontologizer learns
-categorical variables directly via stacked layers of competitive classifier
-heads, each assigning every input to one of $k$ entries associated with a
+instead contrast alternative values of a variable. A multi-head categorical
+dictionary learns such variables directly: stacked layers of competitive
+classifier heads each assign every input to one of $k$ entries with a
 learned atom. Forcing a head to another entry swaps one atom for another, an
 unsupervised analogue of a difference-of-means vector, so steering can test a
 discovered variable, though only against arbitrary partitions of the same
@@ -107,27 +107,28 @@ all SAEs and straight-through models. Coordinate~837, which is fixed on
 raw SONAR embeddings by the final LayerNorm hyperplane, encodes
 $1/\lVert\mathbf{x}^{\mathrm{raw}}\rVert$ after L2 normalization and
 accounts for at most $0.41\%$ of whitened error in any sparse model
-(Appendix~\ref{app:data}). Although the softmax Ontologizers were trained
-before that holdout split was introduced, re-evaluating them on freshly
-encoded out-of-sample rows changes their $\fvu$ by at most 0.3\%
-(Appendix~\ref{app:data}). Every evaluation uses each run's final training
-temperature.
+(Appendix~\ref{app:data}). Although the softmax categorical dictionaries
+were trained before that holdout split was introduced, re-evaluating them
+on freshly encoded out-of-sample rows changes their $\fvu$ by at most
+0.3\% (Appendix~\ref{app:data}). Every evaluation uses each run's final
+training temperature.
 
 \paragraph{Models.}
-The reference softmax Ontologizer (\texttt{resid\_nc}) stacks $l{=}5$
-residual layers of $h{=}32$ heads with $k{=}32$ entries each; a
+The reference softmax categorical dictionary (\texttt{resid\_nc}) stacks
+$l{=}5$ residual layers of $h{=}32$ heads with $k{=}32$ entries each; a
 selection-rule sweep varies only its per-head selection operator, and the
 straight-through arm (Section~\ref{sec:ste}) replaces soft assignments
 with discrete one-hot codes. Our baselines are $\topk$ SAEs following
 Gao et al.~\cite{gao2024}, alongside a structural-ablation ladder that
-introduces Ontologizer constraints one step at a time. Two rungs of that
-ladder---\texttt{g160top1} and \texttt{g160softmax}, which apply hard or
-softmax competition across 160 heads over a shared decoder
-(\texttt{g160top1} fusing a scalar router into its classifier)---are
-single-layer Ontologizers without bilinear classifiers, residual stacking,
-or non-negative dictionaries, and are treated as simplified model variants
-rather than external baselines (Appendix~\ref{sec:models}; full
-configurations in Appendix~\ref{app:configs}).
+introduces the categorical dictionary's constraints one step at a time.
+Two rungs of that ladder---\texttt{g160top1} and \texttt{g160softmax},
+which apply hard or softmax competition across 160 heads over a shared
+decoder (\texttt{g160top1} fusing a scalar router into its
+classifier)---are single-layer categorical dictionaries without bilinear
+classifiers, residual stacking, or non-negative atoms, and are treated as
+simplified model variants rather than external baselines
+(Appendix~\ref{sec:models}; full configurations in
+Appendix~\ref{app:configs}).
 
 \paragraph{Evaluations.}
 Each evaluation is implemented as a standalone script run on the shared

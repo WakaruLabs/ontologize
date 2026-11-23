@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Ontologizer is a JAX/Flax implementation of dictionary learning for neural network interpretability. It trains sparse autoencoder-like models (`Ontologizer`) to decompose activations from pretrained transformer encoders (currently SONAR/M2M100 sentence embeddings, or raw MNIST pixels) into sparse combinations of learned "ontofeatures," and supports causal interventions on those features for mechanistic interpretability experiments.
+`ontologize` is a JAX/Flax implementation of multi-head categorical dictionary learning for neural network interpretability. It trains categorical dictionaries (the class `DictStack`, alias `Ontologizer`) to decompose activations from pretrained transformer encoders (currently SONAR/M2M100 sentence embeddings, or raw MNIST pixels) into sparse combinations of learned "ontofeatures," and supports causal interventions on those features for mechanistic interpretability experiments.
+
+Below, and in the experiments' notes, "Ontologizer" still names the model, as the code's alias and the run names do. New prose (the writeup, READMEs) calls the method multi-head categorical dictionary learning and a model a categorical dictionary; `latex/CLAUDE.md`'s Terminology has the rules.
 
 **The codebase is research-grade and in active flux.** Expect dead code, half-migrated modules, and root-level scratch scripts alongside the real package — see "Known dead/stale code" below before assuming a file is load-bearing.
 

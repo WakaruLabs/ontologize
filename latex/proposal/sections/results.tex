@@ -4,15 +4,16 @@ Our evaluation is ongoing and the results so far are mixed. This section
 summarizes the headline result for each line of work; full experimental
 protocols, ablations, and secondary analyses are reported in the working
 notes\footnote{K.~Wiechecki et al., \emph{Dictionary
-learning as unsupervised steering-vector generation: Ontologizers vs.\
-sparse autoencoders on SONAR sentence embeddings}, working notes, in
-preparation; distributed with this proposal.}.
+learning as unsupervised steering-vector generation: multi-head
+categorical dictionaries vs.\ sparse autoencoders on SONAR sentence
+embeddings}, working notes, in preparation; distributed with this
+proposal.}.
 
 Three model families appear throughout the SONAR comparisons:
 \begin{itemize}
-	\item the softmax Ontologizer \texttt{resid\_nc}, which stacks
+	\item the softmax categorical dictionary \texttt{resid\_nc}, which stacks
 	$l{=}5$ layers of $h{=}32$ heads with $k{=}32$ entries (a soft code);
-	\item the straight-through Ontologizer \texttt{ste\_h76\_init01},
+	\item the straight-through categorical dictionary \texttt{ste\_h76\_init01},
 	which stacks $5\times76$ heads at $k{=}32$ (a 1900-bit hard code); and
 	\item $\topk$ SAEs trained on the same embedding cache under the same
 	whitened MSE objective.
@@ -25,19 +26,19 @@ code's reconstruction error, but changes the share of variance explained
 by language only slightly (from 7.4\% to 6.7\%). Reconstruction is
 scored by $\mathrm{FVU}_w$ on the final 32{,}768 rows of the cache,
 which are held out from training for all SAEs and straight-through
-models. Although the softmax Ontologizers were trained before that split
-was introduced, re-evaluating them on freshly encoded out-of-sample rows
-changes their $\mathrm{FVU}_w$ by at most 0.3\%.
+models. Although the softmax categorical dictionaries were trained before
+that split was introduced, re-evaluating them on freshly encoded
+out-of-sample rows changes their $\mathrm{FVU}_w$ by at most 0.3\%.
 
 \subsection{The price of a soft code}
 \label{sec:prelim-pareto}
 Imposing contrast-set structure on a soft code carries a steep
 reconstruction penalty. Across all capacities tested, standard $\topk$
-SAEs dominate the softmax Ontologizer's truncated deviation code, which
-retains the $\nu$ entries per head furthest from the mean assignment and
-pins the rest to the mean (Table~\ref{tab:prelim-pareto}). At
-$\mathrm{FVU}_w \approx 0.49$, an SAE transmits 32 active coefficients
-whereas the Ontologizer requires 320, and at matched capacity the
+SAEs dominate the softmax categorical dictionary's truncated deviation
+code, which retains the $\nu$ entries per head furthest from the mean
+assignment and pins the rest to the mean (Table~\ref{tab:prelim-pareto}).
+At $\mathrm{FVU}_w \approx 0.49$, an SAE transmits 32 active coefficients
+whereas the categorical dictionary requires 320, and at matched capacity the
 unstructured SAE reconstructs roughly $50\times$ more accurately.
 Furthermore, taking the one-hot argmax of the softmax model fails to
 reconstruct the input at all, yielding $\mathrm{FVU}_w = 17.34$. That is
@@ -52,24 +53,25 @@ carries the reconstruction, which motivates training hard codes directly.
 \toprule
 point & coeffs & index bits & $\mathrm{FVU}_w$ \\
 \midrule
-onto $\nu{=}0$ (mean-assignment origin) & 0 & 0 & 1.001 \\
-onto hard (argmax)                  & 0 & 800 & 17.34 \\
+\texttt{resid\_nc} $\nu{=}0$ (mean-assignment origin) & 0 & 0 & 1.001 \\
+\texttt{resid\_nc} hard (argmax)    & 0 & 800 & 17.34 \\
 \emph{Gaussian reference, 800 bits} & 0 & 800 & \emph{0.226} \\
 SAE $k_{\mathrm{SAE}}{=}32$ tier    & 32 & 276--313 & 0.494--0.509 \\
-onto dev $\nu{=}1$                  & 160 & 800 & 0.677 \\
+\texttt{resid\_nc} $\nu{=}1$        & 160 & 800 & 0.677 \\
 SAE $k_{\mathrm{SAE}}{=}160$        & 160 & 1206 & 0.258 \\
-onto dev $\nu{=}4$                  & 640 & 2421 & 0.289 \\
-onto dev $\nu{=}8$                  & 1280 & 3732 & 0.094 \\
+\texttt{resid\_nc} $\nu{=}4$        & 640 & 2421 & 0.289 \\
+\texttt{resid\_nc} $\nu{=}8$        & 1280 & 3732 & 0.094 \\
 SAE $k_{\mathrm{SAE}}{=}5120$ ($\mathrm{L0}{\approx}1520$) & 1520 & 6423 & \textbf{0.00011} \\
 1-layer soft variant \texttt{g160softmax} & 5120 & 0 & 0.00436 \\
-onto soft ($\nu{=}32$)              & 5120 & 0 & 0.00538 \\
+\texttt{resid\_nc} soft ($\nu{=}32$) & 5120 & 0 & 0.00538 \\
 \bottomrule
 \end{tabular}
 \caption{Reconstruction against code capacity for the softmax
-Ontologizer \texttt{resid\_nc}. Ontologizer points truncate each head to
-its $\nu$ largest deviations from the mean assignment; SAE points use
-measured $\mathrm{L0}$. Index bits specify the active coefficient set:
-$l\,h\log_2\binom{k}{\nu}$ for the Ontologizer and
+categorical dictionary \texttt{resid\_nc}. The categorical dictionary's
+points truncate each head to its $\nu$ largest deviations from the mean
+assignment; SAE points use measured $\mathrm{L0}$. Index bits specify the
+active coefficient set: $l\,h\log_2\binom{k}{\nu}$ for the categorical
+dictionary and
 $\log_2\binom{m}{\mathrm{L0}}$ for an SAE of $m$ latents. The Gaussian
 reference is computed by reverse water-filling on the evaluation tail's
 whitened covariance~\cite[Thm.~10.3.3]{cover2006} and gives the minimum
@@ -81,9 +83,9 @@ distortion at that rate for a Gaussian source with the same covariance.}
 \label{sec:prelim-orth}
 Within each head, the learned atoms exhibit the negative cosine
 similarity expected of a contrast set. In 96\% of the softmax
-Ontologizer's heads, the decoded atoms have lower pairwise cosine
-similarity than size-matched random subsets of atoms drawn from the same
-dictionary (Table~\ref{tab:prelim-headcoh}), and this repulsion is even
+categorical dictionary's heads, the decoded atoms have lower pairwise
+cosine similarity than size-matched random subsets of atoms drawn from
+the same model (Table~\ref{tab:prelim-headcoh}), and this repulsion is even
 stronger under the whitened inner product used in training. Thus, a
 soft head's entries represent separated alternatives rather than a
 cluster of similar directions. The hard-code stack shows a similar
@@ -118,7 +120,7 @@ heads or grouping & count & mean $\zeta_{\cos}$ & frac $\zeta{>}2$ & frac $\zeta
 \midrule
 \texttt{g160top1} (trained, hard)   & 160 & $+161.3$ & 1.00 & 0.00 \\
 $k_{\mathrm{SAE}}{=}32$ SAE, discovered groups & 359 & $+1.7$ & 0.36 & 0.02 \\
-Ontologizer heads (trained, soft)   & 160 & $-17.6$ & 0.04 & \textbf{0.96} \\
+Categorical dictionary heads (trained, soft) & 160 & $-17.6$ & 0.04 & \textbf{0.96} \\
 \texttt{g160softmax} (trained, soft) & 160 & $-14.7$ & 0.00 & \textbf{1.00} \\
 \bottomrule
 \end{tabular}
@@ -170,7 +172,7 @@ block coding~\cite{cover2006}.
 \toprule
 code & coeffs & index bits & $\mathrm{FVU}_w$ & at 1900 bits & every row \\
 \midrule
-\textbf{straight-through Ontologizer, $5\times76$} & \textbf{4 gains} & \textbf{1900} & \textbf{0.154} & \textbf{0.155} & --- \\
+\textbf{straight-through categorical dictionary, $5\times76$} & \textbf{4 gains} & \textbf{1900} & \textbf{0.154} & \textbf{0.155} & --- \\
 \quad gains pinned to their means & 0 & 1900 & 0.158 & --- & 0.158 \\
 SAE, $\topk$, $k_{\mathrm{SAE}}{=}160$ & 160 & 1206 & 0.258 (0.236) & 0.259 & 0.258 \\
 SAE, ReLU+L1 $3\times10^{-5}$ & 519 & 2418 & 0.219 & 0.242 & 0.250 \\
@@ -286,7 +288,7 @@ random direction       & --    & --    & --   & 0.705 \\
 \bottomrule
 \end{tabular}
 \caption{Language steering under matched intervention budgets on the
-softmax Ontologizer \texttt{resid\_nc\_hm}; medians over 24
+softmax categorical dictionary \texttt{resid\_nc\_hm}; medians over 24
 language--magnitude conditions per arm. Effect is displacement along the
 arm's own direction (native) and along the shared difference-of-means
 direction (dm frame); hit rate is the fraction of steered decodes
@@ -313,7 +315,8 @@ $k_{\mathrm{SAE}}{=}32$ SAE. Thus, heads stabilize within a training run
 but converge to different decompositions across seeds. The same pattern
 holds on GPT-2, where only layer-0 heads show above-chance cross-seed
 agreement (at less than a fifth of the within-run control), and in the
-softmax Ontologizer, where at most 0.1\% of entries match across seeds
+softmax categorical dictionary, where at most 0.1\% of entries match
+across seeds
 compared to 3--31\% for a $k_{\mathrm{SAE}}{=}32$ SAE pair.
 
 Because layer 0 is the only layer whose input is not conditioned on
@@ -416,7 +419,8 @@ residual mean-ablated as the floor; FVU is unwhitened here. Concatenated
 heads write disjoint 48-dimensional blocks through a shared decoder. SAEs
 train 10 epochs over the 10M-token cache (556--588 total bits for
 $k_{\mathrm{SAE}}{=}32$ at $\sim$5 bits per coefficient). One seed per
-Ontologizer (10M direct seed-43 replica: $\mathrm{FVU}$ $0.219$, $96.9\%$).}
+categorical dictionary (10M direct seed-43 replica: $\mathrm{FVU}$
+$0.219$, $96.9\%$).}
 \label{tab:prelim-gpt2}
 \end{table}
 
@@ -448,17 +452,18 @@ downstream map to the logits is locally nearly linear.
 Standard per-latent autointerp metrics evaluate individual directions in
 isolation rather than contrastive partitions, and across six models
 blinded detection F1 tracks log activation density (correlation $-0.89$)
-rather than architecture, with the Ontologizer lying on the same
-density trend as the SAEs. Much of the apparent advantage of sparse SAEs
+rather than architecture, with the categorical dictionary lying on the
+same density trend as the SAEs. Much of the apparent advantage of sparse SAEs
 on the multilingual cache comes from single-language features: latents
 whose top activating examples come from a single language can be
 described simply by naming that language, achieving detection F1 of
 $0.90$--$0.97$ against random negative examples, and restricting the
 comparison to features with corpus-typical language diversity narrows the
-sparse SAE's F1 lead over the Ontologizer from $0.17$ to $0.10$. Finally,
-generating descriptions by decoding atom directions from parameters alone
-without activating examples fails across all models (F1 $0.04$ for the
-Ontologizer and at most $0.14$ for any model, below the $0.67$
+sparse SAE's F1 lead over the categorical dictionary from $0.17$ to
+$0.10$. Finally, generating descriptions by decoding atom directions from
+parameters alone without activating examples fails across all models (F1
+$0.04$ for the categorical dictionary and at most $0.14$ for any model,
+below the $0.67$
 always-positive baseline), confirming that a single decoded atom vector
 does not suffice to name a category without activation examples.
 

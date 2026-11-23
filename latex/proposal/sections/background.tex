@@ -97,8 +97,8 @@ penalizing the cosine similarity between each SAE decoder direction and
 its nearest neighbor reduces feature absorption by roughly two thirds
 relative to BatchTopK SAEs at a small cost in explained variance and
 unchanged autointerp scores~\cite{korznikov2025}; whereas that penalty is
-unstructured, the Ontologizer enforces competition within heads and
-seeks orthogonality between them.
+unstructured, a categorical dictionary enforces competition within heads
+and seeks orthogonality between them.
 
 Existing attempts to route activations to expert SAEs focus on routing
 similar inputs to the same expert~\cite{mudide2025}, and score an expert

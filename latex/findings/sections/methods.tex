@@ -3,8 +3,9 @@
 
 \subsection{Architecture}
 \label{sec:arch}
-We propose a method that encodes samples as classifications mapped to
-contrastive vectors. This directly constrains a model's representations,
+We propose \emph{multi-head categorical dictionary learning}, a method
+that encodes samples as classifications mapped to contrastive vectors.
+This directly constrains a model's representations,
 and classifications can natively be used for steering.
 Appendix~\ref{app:notation} summarizes our notation.
 
@@ -60,8 +61,8 @@ those atoms (Section~\ref{sec:dict}).
 \centering
 \resizebox{\linewidth}{!}{\input{tikz/ontologizer}}
 \caption[\texttt{DictStack} architecture]{\textbf{\texttt{DictStack} architecture.}
-	A \texttt{DictStack}, the Ontologizer's class in the code, stacks $l$
-	\texttt{DictEnc} layers, each writing
+	A \texttt{DictStack}, the categorical dictionary's class in the code,
+	stacks $l$ \texttt{DictEnc} layers, each writing
 	its gain-scaled pooled output $g_\ell\mathbf{f}'_\ell$ into a shared
 	residual accumulator $\mathbf{r}$. Accumulator states are indexed by the
 	number of layers applied: layer $\ell$ receives $\mathbf{r}_\ell$ and the
@@ -689,7 +690,7 @@ noise terms $\varepsilon_K$ and $\varepsilon_F$ regularize assignments
 and features, respectively.
 
 \subsection{Evaluation}
-We evaluate Ontologizer models against $\topk$ SAEs~\cite{gao2024}
+We evaluate categorical dictionaries against $\topk$ SAEs~\cite{gao2024}
 trained on identical cached SONAR embeddings under the same whitened
 reconstruction objective. Following SAEBench~\cite{karvonen2025}, our
 evaluation suite assesses learned dictionaries across multiple
@@ -702,9 +703,9 @@ structure: reconstruction--capacity Pareto frontiers, categorical-form
 and semantic-coherence tests of head structure, cross-model feature
 splitting and cross-seed reproducibility, coefficient shrinkage
 decomposition, and steering fidelity. A structural-ablation ladder of SAE
-variants introduces Ontologizer constraints one step at a time to
-attribute performance differences to specific architectural components.
-Finally, because AxBench~\cite{wu2025axbenchsteeringllmssimple} found
+variants introduces the categorical dictionary's constraints one step at a
+time to attribute performance differences to specific architectural
+components. Finally, because AxBench~\cite{wu2025axbenchsteeringllmssimple} found
 that prompting, fine-tuning, and supervised difference-of-means vectors
 outperform SAE latents at steering while linear probes do not, we compare
 our unsupervised steering primitives directly against both

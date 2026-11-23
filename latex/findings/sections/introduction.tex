@@ -116,28 +116,26 @@ score an expert as specialized when its features resemble one another and
 differ from those of other
 experts~\cite{xu2025redundancydiversespecializedmultiexpert}. Contrastive
 learning requires the opposite structure, grouping inputs that lie at
-opposite ends of a shared axis. The Ontologizer\footnote{Gene Ontology
-terms were a source of inspiration for the name, which this work shares
-with Ontologizer, a tool for Gene Ontology term enrichment
-analysis~\cite{bauer2008}; the two are separate projects.} decomposes a
-representation space into a set of such contrastive classifiers. Each
-\emph{head} is a $k$-way classifier over its input, and each of its
-\emph{entries} corresponds to a representative vector, its \emph{atom}.
-An input is encoded as one \emph{assignment} per head and reconstructed
-from the atoms that those assignments select across a stack of layers,
-each of which takes as input the residual left unexplained by earlier
+opposite ends of a shared axis. A multi-head categorical dictionary
+decomposes a representation space into a set of such contrastive
+classifiers. Each \emph{head} is a $k$-way classifier over its input, and
+each of its \emph{entries} corresponds to a representative vector, its
+\emph{atom}. An input is encoded as one \emph{assignment} per head and
+reconstructed from the atoms that those assignments select across a stack
+of layers, each of which takes as input the residual left unexplained by earlier
 layers. Interpretability is then expected from \emph{MoEfication} in an
 extended sense~\cite{zhang2022}: decomposing the representation space
 into small classification tasks, one per head, each nameable in
 isolation, where within-head entry swaps act as steering moves.
 Figure~\ref{fig:teaser} summarizes the steering and reconstruction
-behavior of the softmax Ontologizer.
+behavior of the softmax categorical dictionary.
 
 \begin{figure}[tp]\centering
 \includegraphics[width=\linewidth]{figures/fig-teaser.pdf}
-\caption[Steering and reconstruction in the softmax Ontologizer]{\textbf{Steering
-	and reconstruction in the softmax Ontologizer.} (a) Forcing an entry moves
-decodes along the supervised difference-of-means direction $0.64\times$
+\caption[Steering and reconstruction in the softmax categorical
+	dictionary]{\textbf{Steering and reconstruction in the softmax
+	categorical dictionary.} (a) Forcing an entry moves decodes along the
+supervised difference-of-means direction $0.64\times$
 as far as supervised steering itself and $4\times$ as far as probe
 directions (\texttt{resid\_nc\_hm}; Table~\ref{tab:steer-overlay}).
 (b) Joint two-head interventions align with the sum of the individual
@@ -258,10 +256,10 @@ of $0.186$ ($0.164$ at $k{=}64$), outperforming direct atoms at $0.195$
 \subsection{This document}
 
 This document serves as the working record of our experimental campaign.
-It compares a softmax (soft-code) Ontologizer and a straight-through
-(hard-code) arm against $\topk$ SAEs on SONAR sentence embeddings under a
-shared whitened reconstruction objective, and evaluates hard-code
-variants on GPT-2 small residual-stream activations.
+It compares a softmax (soft-code) categorical dictionary and a
+straight-through (hard-code) arm against $\topk$ SAEs on SONAR sentence
+embeddings under a shared whitened reconstruction objective, and evaluates
+hard-code variants on GPT-2 small residual-stream activations.
 Section~\ref{sec:background} situates the architecture relative to prior
 work, Section~\ref{sec:frame} defines our evaluation questions,
 Section~\ref{sec:methods} presents the architecture and training
@@ -357,9 +355,10 @@ assignment toward a stop-gradient average of its neighbors' assignments,
 analogous to DEC's self-training target~\cite{xie2016dec} and SCAN's
 neighbor-consistency loss. Whereas deep-clustering methods learn a single
 partition of a trainable representation and are evaluated against
-ground-truth labels, the Ontologizer trains many heads simultaneously to
-partition a frozen representation through reconstruction loss alone, with
-the resulting partitions serving directly as the representation code.
+ground-truth labels, a categorical dictionary trains many heads
+simultaneously to partition a frozen representation through
+reconstruction loss alone, with the resulting partitions serving directly
+as the representation code.
 
 \paragraph{Structured SAEs.}
 Sparse autoencoders aim to recover features in
@@ -400,8 +399,8 @@ ablation ladder (\texttt{k32\_p5}) incorporates the Matryoshka
 nested-prefix loss using five equal-width blocks rather than the
 geometrically doubling prefixes of Bussmann et al.~\cite{bussmann2025}, a
 logarithmic spacing that Matryoshka representation learning found
-superior to uniform spacing~\cite{kusupati2022}. By contrast, the
-Ontologizer structures the dictionary by \emph{partitioning features into
+superior to uniform spacing~\cite{kusupati2022}. By contrast, a
+categorical dictionary is structured by \emph{partitioning features into
 exhaustive, mutually exclusive heads}. This design mirrors the geometry
 observed in toy models of superposition, where mutually exclusive
 features share a low-dimensional subspace with negative internal
@@ -422,7 +421,7 @@ tests whether architectural inductive biases yield interpretability
 beyond what code density alone explains. In our autointerp evaluations
 below, per-latent describability shows no such gain; head structure only
 shows a suggestive effect in within-head description coherence on the
-single Ontologizer checkpoint evaluated.
+single categorical dictionary checkpoint evaluated.
 
 \paragraph{Embedding-space substrate.}
 Training SAEs on dense text embeddings has recently attracted growing
@@ -540,7 +539,7 @@ clusterings of SAE latents against permuted labels).
 Many of the comparisons below follow standard SAE evaluation criteria
 (per-feature monosemanticity, sparse probing, and reconstruction at
 matched sparsity), and we report those measurements unchanged. However,
-the goal of the Ontologizer is not to learn a monosemantic dictionary of
+the goal of a categorical dictionary is not to learn monosemantic,
 independent latents, but rather to serve as an \emph{unsupervised
 generator of steering vectors}. Each head is trained solely via
 reconstruction loss with the aim of partitioning the representation space
@@ -570,8 +569,9 @@ that test whether \emph{individual latents} align with isolated concepts
 remain informative for the SAE baselines, but are ill-suited to
 evaluating classifier codes; we note this distinction wherever such
 metrics appear. Figure~\ref{fig:teaser} illustrates the softmax
-Ontologizer on three criteria under question~(d), whereas the hard code
-steers less reliably than the soft code (Section~\ref{sec:steer}).
+categorical dictionary on three criteria under question~(d), whereas the
+hard code steers less reliably than the soft code
+(Section~\ref{sec:steer}).
 
 Question~(c) depends on a prerequisite that our initial evaluation
 battery took for granted: an individual head can be assigned a stable

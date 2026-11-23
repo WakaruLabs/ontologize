@@ -9,8 +9,8 @@ models explicit clarifies what each evaluation metric in our battery does
 and does not estimate.
 
 \paragraph{Definitions.}
-The high-level model is the Ontologizer's forward pass, treated as a
-causal model over the input and the heads: each head $(\ell,i)$ is a
+The high-level model is the categorical dictionary's forward pass, treated
+as a causal model over the input and the heads: each head $(\ell,i)$ is a
 candidate \emph{variable} with value space $\{1,\dots,k\}$, the input
 $\mathbf{x}$ is a parent of every head, and under residual forwarding
 every earlier head is a parent of every later head because layer
@@ -102,9 +102,9 @@ causal inner product~\cite{park2025}. Our within-head repulsion finding
 is invariant to this choice: under the inverse-variance inner product of
 the whitened training objective (which whitens the data rather than
 estimating a causal inner product), within-head repulsion in the softmax
-Ontologizer strengthens ($\zeta_{\cos}$ of $-24.4$ vs.\ $-17.6$ under the
-Euclidean inner product), while the coherence profiles of both comparison
-models remain unchanged. However, this measurement does depend on the
+categorical dictionary strengthens ($\zeta_{\cos}$ of $-24.4$ vs.\ $-17.6$
+under the Euclidean inner product), while the coherence profiles of both
+comparison models remain unchanged. However, this measurement does depend on the
 parameterization: because a soft head's assignments sum to one, its
 decoded directions are determined by the forward function only up to a
 shared per-head offset, meaning that uncentered cosines characterize the
@@ -167,9 +167,9 @@ effect of an input-space step.
 
 \begin{enumerate}
 \item \textbf{The trained atoms form contrast sets.} In the softmax
-Ontologizer, within-head decoded directions repel relative to random
-subsets in 96\% of heads, and in the hard-code stack, within-head decoded
-atoms are roughly orthogonal to slightly negatively correlated, so each
+categorical dictionary, within-head decoded directions repel relative to
+random subsets in 96\% of heads, and in the hard-code stack, within-head
+decoded atoms are roughly orthogonal to slightly negatively correlated, so each
 head's entries represent well-separated alternatives. Because the forward
 function determines within-head atoms only up to a shared per-head
 offset, this repulsion characterizes the trained parameters; isolating
@@ -190,13 +190,14 @@ only mechanism that guarantees disjoint support, doing so by
 construction.
 \item \textbf{A discrete ontology is viable, though not by discretizing a
 softmax model.} Taking the one-hot argmax of a trained softmax
-Ontologizer fails to reconstruct the input, yielding at least $77\times$
-higher error than the 800-bit Gaussian reference on \texttt{resid\_nc}
-and nine orders of magnitude higher error on \texttt{softmax\_shm}. By
-contrast, training a straight-through arm with $2.4\times$ as many heads
-makes the discrete code the forward pass itself: with its four per-layer
-gains pinned to their held-out means, it forms a purely discrete 1900-bit
-code at $\fvu = 0.158$. At a matched 1900-bit rate, neither the converged
+categorical dictionary fails to reconstruct the input, yielding at least
+$77\times$ higher error than the 800-bit Gaussian reference on
+\texttt{resid\_nc} and nine orders of magnitude higher error on
+\texttt{softmax\_shm}. By contrast, training a straight-through arm with
+$2.4\times$ as many heads makes the discrete code the forward pass
+itself: with its four per-layer gains pinned to their held-out means, it
+forms a purely discrete 1900-bit code at $\fvu = 0.158$. At a matched
+1900-bit rate, neither the converged
 $k_{\mathrm{SAE}}{=}160$ $\topk$ SAE nor the single-layer hard variant
 can improve on $\fvu = 0.236$--$0.273$ under any coefficient
 quantization. However, a coarsely quantized, entropy-coded L1 SAE reaches
@@ -254,10 +255,10 @@ show several-fold lower cross-seed reproducibility than single-layer
 heads across every layer, including layer~0. Although the single-layer
 softmax variant \texttt{g160softmax} matches the reference checkpoint
 \texttt{resid\_nc} in reconstruction, a configuration-matched softmax
-Ontologizer achieves $6\times$ lower error both on out-of-sample rows
-that no model saw during training and on the evaluation tail, indicating
-that \texttt{resid\_nc}'s lack of a depth advantage was
-checkpoint-specific.
+categorical dictionary achieves $6\times$ lower error both on
+out-of-sample rows that no model saw during training and on the
+evaluation tail, indicating that \texttt{resid\_nc}'s lack of a depth
+advantage was checkpoint-specific.
 \item \textbf{Steering succeeds in embedding space, whereas text
 round-tripping obscures it.} Stepping along a decoded atom at strength
 $0.25$ realizes the target entry on 79\% of rows in the softmax model
@@ -326,14 +327,14 @@ learned partitions align with known attributes above chance; directly
 testing whether heads recover natural semantic variables will require
 topic and genre annotations.
 \item \textbf{Per-latent metrics mischaracterize classifier codes.}
-Standard sparse probing ranks the Ontologizer lowest even where
+Standard sparse probing ranks the categorical dictionary lowest even where
 partition-level analysis identifies verified causal language structure.
 Across models, per-feature autointerp detection F1 is roughly 80\%
 explained by activation density, and even more strongly by how many
 languages a feature's top activating examples span, which covaries with
 density. When restricted to features spanning as many languages as random
-draws, the sparse SAE's F1 lead over the Ontologizer narrows to $0.10$ or
-less. Furthermore, parameter-only decodes generate single example
+draws, the sparse SAE's F1 lead over the categorical dictionary narrows
+to $0.10$ or less. Furthermore, parameter-only decodes generate single example
 sentences rather than category descriptions and become legible only after
 subtracting the head's mean atom, consistent with simplex models of
 categorical concepts in which value vectors share a parent offset and
@@ -368,14 +369,15 @@ unsupervised steering and auditing.
 \item \textbf{Head identifiability first.} Before individual heads can be
 interpreted or used in audits, we must either make them reproducible
 across training runs or identify the subset of heads that reproduce.
-Cross-seed partition comparisons on the softmax Ontologizer at 370k steps
-show virtually no head-level agreement (Appendix~\ref{sec:softseed}). A
-controlled $k{=}128$ experiment sharpens the source of this sensitivity:
-two distinct architectures trained from the same random seed (one with a
-learned decoder and one with direct atoms) learn matching partitions head
-for head (matched NMI $0.18$, with every head pairing with the co-indexed
-head), whereas each architecture compared across two seeds reaches only
-$0.064$ vs.\ a $0.059$ null. Because seed replicas iterate through the
+Cross-seed partition comparisons on the softmax categorical dictionary at
+370k steps show virtually no head-level agreement
+(Appendix~\ref{sec:softseed}). A controlled $k{=}128$ experiment sharpens
+the source of this sensitivity: two distinct architectures trained from
+the same random seed (one with a learned decoder and one with direct
+atoms) learn matching partitions head for head (matched NMI $0.18$, with
+every head pairing with the co-indexed head), whereas each architecture
+compared across two seeds reaches only $0.064$ vs.\ a $0.059$ null.
+Because seed replicas iterate through the
 same training examples in the exact same order, the random seed acts
 solely through parameter initialization and training noise; those two
 factors, rather than the dataset or downstream parameterization past the
@@ -501,9 +503,10 @@ Reducing input-space collateral appears to need larger classifier margins
 more than better steering directions. Even with multi-layer
 residual reclassification excluded, input-space collateral is largely
 direction-blind: linearized within a single layer, stepping along any
-Ontologizer's decoded atom flips other heads at the same rate as a random
-step of equal norm, and in decoded text, ablating a head's contribution
-perturbs outputs no more than a norm-matched random step. Because hard-code classifiers lie close to their decision boundaries (a
+categorical dictionary's decoded atom flips other heads at the same rate
+as a random step of equal norm, and in decoded text, ablating a head's
+contribution perturbs outputs no more than a norm-matched random step.
+Because hard-code classifiers lie close to their decision boundaries (a
 within-layer linearized random step of $0.25\lVert\mathbf{x}\rVert$ flips
 30\% of same-layer heads), distance from the boundary looks like the
 lever. Consistent with this hypothesis, \texttt{ste\_k2\_h380}
@@ -532,22 +535,23 @@ across all of its entries and scores blinded assignment accuracy against
 sibling entries, found no above-chance signal across 20 unscreened heads
 per condition (Appendix~\ref{sec:headautointerp}). By contrast, when
 scored by graph modularity on a nearest-neighbor graph of each layer's
-input residual, partitions in layers~1--4 of the softmax Ontologizer are
-two to three times as modular as size-matched random regroupings of their
-entries, whereas neither post hoc discovered groups nor the trained heads
-of a Matryoshka SAE~\cite{bussmann2025} exceed null modularity on matched
-prefix-residual graphs (evaluated on one checkpoint per model;
-Appendix~\ref{sec:modularity}). Remaining task-reconstruction experiments
-include measuring mutual information between head partitions and metadata
-label libraries (prioritizing topic and genre from labeled corpora or
-unsupervised topic clusters to match SONAR's primary semantic axes,
-alongside length, formatting or noise, and script as secondary
+input residual, partitions in layers~1--4 of the softmax categorical
+dictionary are two to three times as modular as size-matched random
+regroupings of their entries, whereas neither post hoc discovered groups
+nor the trained heads of a Matryoshka SAE~\cite{bussmann2025} exceed null
+modularity on matched prefix-residual graphs (evaluated on one checkpoint
+per model; Appendix~\ref{sec:modularity}). Remaining task-reconstruction
+experiments include measuring mutual information between head partitions
+and metadata label libraries (prioritizing topic and genre from labeled
+corpora or unsupervised topic clusters to match SONAR's primary semantic
+axes, alongside length, formatting or noise, and script as secondary
 attributes), re-running head-level autointerp on heads that pass
 cross-seed reproducibility screening with sufficient sample size to
 resolve above-null accuracy, and evaluating invariance across parallel
 translations in FLORES to separate semantic-content heads from
-surface-form heads. Each protocol should be run identically on stacked
-Ontologizer heads and on the single-layer \texttt{g160softmax} heads.
+surface-form heads. Each protocol should be run identically on a stacked
+categorical dictionary's heads and on the single-layer
+\texttt{g160softmax} heads.
 \item \textbf{Hierarchy as MoE routing.} Measuring conditional mutual
 information between successive layers' partitions would test whether
 residual depth constructs compositional tasks, while evaluating
@@ -615,9 +619,9 @@ neural audio codecs~\cite{zeghidour2021} (already supported by neuron
 resampling in \texttt{sae.py}).
 \item \textbf{Training for progressive truncation.} Adding a
 deviation-sparsity penalty during soft-model training would test whether
-the soft Ontologizer's Pareto frontier can shift toward lower capacity,
-analogous to multi-sparsity training for progressive $\topk$ SAE
-codes~\cite{gao2024}.
+the soft categorical dictionary's Pareto frontier can shift toward lower
+capacity, analogous to multi-sparsity training for progressive $\topk$
+SAE codes~\cite{gao2024}.
 \item \textbf{Completing the structural ablation ladder and baselines.}
 Combining head grouping with nested prefixes (\texttt{groups+prefixes},
 rungs 2a+3) has now been trained for the modularity control above, as

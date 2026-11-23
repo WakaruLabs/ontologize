@@ -1,5 +1,5 @@
-% Softmax Ontologizers on SONAR. Values from each run's log.jsonl
-% (final env_config) and checkpoint spec.
+% Softmax categorical dictionaries on SONAR. Values from each run's
+% log.jsonl (final env_config) and checkpoint spec.
 \begin{table}[tp]\centering\small
 \begin{tabular}{@{}l>{\raggedright\arraybackslash}p{0.78\linewidth}@{}}
 \toprule
@@ -33,9 +33,10 @@ run & selection & $e$ & $s_{\mathrm{KL}_m}$ & other & steps \\
 \texttt{sweep\_*\_shm} & softmax, top-$k_{\mathrm{sel}}$, $k_{\mathrm{sel}} \in \{2, 4, 8, 16\}$ & 2048 & $3\times10^{-5}$ & $s_{\mathrm{cossim}_h}{=}10^{-6}$ & 369.5k \\
 \bottomrule
 \end{tabular}}
-\caption{Softmax Ontologizer configurations. $^\dagger$Changed at a resume:
-\texttt{resid\_nc} acquired $s_{\mathrm{KL}_m}$ and its $s_{\mathrm{cossim}_h}$
-mid-run, and \texttt{resid\_nc\_hm} lowered $s_{\mathrm{cossim}_h}$.
+\caption{Softmax categorical dictionary configurations. $^\dagger$Changed
+at a resume: \texttt{resid\_nc} acquired $s_{\mathrm{KL}_m}$ and its
+$s_{\mathrm{cossim}_h}$ mid-run, and \texttt{resid\_nc\_hm} lowered
+$s_{\mathrm{cossim}_h}$.
 $^\ddagger$Latest checkpoint; results attributed to \texttt{resid\_nc\_hm}
 in Appendix~\ref{app:softdyn} use its 4.38M-step checkpoint.
 $\mathrm{cossim}_h$ is the retired between-head cosine

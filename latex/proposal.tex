@@ -56,10 +56,10 @@ already suspects. Unsupervised SAEs struggle in part because of the form of
 their features: each latent either fires or stays silent, feature absorption
 makes silence uninformative, and effective steering vectors instead contrast
 alternative values of a variable. We propose learning categorical variables
-directly by decomposing a representation space into competitive classifier
-heads, each of which assigns every input to one of $k$ entries associated
-with a learned atom. Forcing a head from one entry to another swaps one
-atom for another, an unsupervised analogue of a difference-of-means vector,
+directly with a multi-head categorical dictionary, which decomposes a
+representation space into competitive classifier heads, each assigning
+every input to one of $k$ entries associated with a learned atom. Forcing
+a head from one entry to another swaps one atom for another, an unsupervised analogue of a difference-of-means vector,
 though swaps between arbitrary partitions of the same space steer their own
 cells just as specifically. In preliminary experiments on SONAR and GPT-2,
 trained heads learn contrastive atoms, a

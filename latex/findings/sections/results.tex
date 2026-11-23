@@ -1,4 +1,4 @@
-\section{Results: the softmax Ontologizer against SAEs}
+\section{Results: the softmax categorical dictionary against SAEs}
 \label{sec:results}
 
 \subsection{The price of structure: reconstruction--capacity Pareto}
@@ -10,14 +10,15 @@
 capacity on the shared evaluation tail, plotted against index bits in (a)
 and active continuous coefficients in (b): truncated codes of the reference
 softmax model (\texttt{resid\_nc}), $\topk$ and L1 SAEs (including all five
-L1 weights in Table~\ref{tab:cfg-sae}), single-layer Ontologizer variants,
-and the straight-through stack (\texttt{ste\_h76\_init01},
-Section~\ref{sec:ste}). Each code is plotted only on axes where its size is
-nonzero: soft codes appear only in (b), the softmax argmax appears only in
-(a), and the straight-through stack (whose only continuous values are four
-scalar per-layer gains) appears as a horizontal level in (b). The dashed
-curve shows the Gaussian rate--distortion reference
-(Eq.~\eqref{eq:ratefloor}). Index bits represent the entire discrete rate of
+L1 weights in Table~\ref{tab:cfg-sae}), single-layer categorical
+dictionary variants, and the straight-through stack
+(\texttt{ste\_h76\_init01}, Section~\ref{sec:ste}). Each code is plotted
+only on axes where its size is nonzero: soft codes appear only in (b), the
+softmax argmax appears only in (a), and the straight-through stack (whose
+only continuous values are four scalar per-layer gains) appears as a
+horizontal level in (b). The dashed curve shows the Gaussian
+rate--distortion reference (Eq.~\eqref{eq:ratefloor}). Index bits
+represent the entire discrete rate of
 a hard code (up to those four gains), whereas for codes that also transmit
 continuous coefficients they measure only support indexing, which allows the
 $k_{\mathrm{SAE}}{=}32$ and $k_{\mathrm{SAE}}{=}5120$ SAEs to reach the
@@ -32,14 +33,15 @@ $k_{\mathrm{SAE}}{=}32$ SAE's seed-43 replica.}
 \end{figure}
 
 Across all capacities tested, the SAE frontier dominates the softmax
-Ontologizer's truncated deviation code, which retains the $\nu$ entries per
-head furthest from the mean assignment and pins the rest to the mean
-(Figure~\ref{fig:pareto}b; Appendix~\ref{app:protocols}). To reach
-$\fvu \approx 0.49$, the Ontologizer requires 320 active coefficients
-whereas the $k_{\mathrm{SAE}}{=}32$ SAEs require only 32. Even its coarsest
-nontrivial truncation, retaining one deviation per head (160 coefficients,
-$\fvu = 0.677$), incurs higher error than the 32-coefficient SAE, leaving
-the high-sparsity regime inaccessible. Unstructured reconstruction is more
+categorical dictionary's truncated deviation code, which retains the $\nu$
+entries per head furthest from the mean assignment and pins the rest to
+the mean (Figure~\ref{fig:pareto}b; Appendix~\ref{app:protocols}). To
+reach $\fvu \approx 0.49$, the categorical dictionary requires 320 active
+coefficients whereas the $k_{\mathrm{SAE}}{=}32$ SAEs require only 32.
+Even its coarsest nontrivial truncation, retaining one deviation per head
+(160 coefficients, $\fvu = 0.677$), incurs higher error than the
+32-coefficient SAE, leaving the high-sparsity regime inaccessible.
+Unstructured reconstruction is more
 accurate at high capacity as well: the dense control reaches
 $\fvu = 1.1\times10^{-4}$ using $3.4\times$ fewer active coefficients than
 the full soft code, achieving roughly $50\times$ lower error at a matched
@@ -98,7 +100,7 @@ Soft per-head competition accounts for most of the reconstruction gap
 relative to unstructured codes: the single-layer soft variant
 \texttt{g160softmax} incurs roughly $40\times$ the error of the dense
 control ($\fvu = 0.0044$ vs.\ $1.1\times10^{-4}$). The remaining components
-of the reference Ontologizer (bilinear classifiers, five residual layers,
+of the reference model (bilinear classifiers, five residual layers,
 and a shared 2048-dimensional dictionary space) provide no additional
 reconstruction benefit on the reference run despite using $2.2\times$ as
 many parameters. A selection-sweep checkpoint of the same five-layer
@@ -170,8 +172,8 @@ similarity than size-matched random subsets, indicating that a soft head's
 entries act as separated alternatives rather than similar directions. This
 within-head repulsion does not depend on the choice of inner product: under
 the whitened inner product used in training, repulsion strengthens in the
-Ontologizer (mean $\zeta_{\cos}$ of $-24.4$ vs.\ $-17.6$) and remains
-essentially unchanged in the single-layer variants
+categorical dictionary (mean $\zeta_{\cos}$ of $-24.4$ vs.\ $-17.6$) and
+remains essentially unchanged in the single-layer variants
 (Appendix~\ref{sec:coherence}).
 
 However, soft and hard heads differ in how strongly the model's input--output
@@ -191,14 +193,15 @@ centering decode directions within each head and evaluating against a
 similarly centered null, since centering alone shifts mean pairwise cosines
 below zero.
 
-The five-layer hard-code Ontologizer exhibits the same within-head separation
-in its weights, subject to the same offset caveat because heads within a
-layer share a single scalar gain. Decoded into output space, its mean
-within-head atom cosine is $0.023$ in layer 0 and $-0.015$ to $-0.020$ in
-layers 1--4, so decoded atoms within each head are roughly orthogonal to
-slightly negatively correlated; when computed directly in dictionary space,
-by contrast, the statistic is dominated by the decoder's null space
-(Appendix~\ref{sec:rowcos}). Of the two orthogonality conditions introduced
+The five-layer hard-code categorical dictionary exhibits the same
+within-head separation in its weights, subject to the same offset caveat
+because heads within a layer share a single scalar gain. Decoded into
+output space, its mean within-head atom cosine is $0.023$ in layer 0 and
+$-0.015$ to $-0.020$ in layers 1--4, so decoded atoms within each head are
+roughly orthogonal to slightly negatively correlated; when computed
+directly in dictionary space, by contrast, the statistic is dominated by
+the decoder's null space (Appendix~\ref{sec:rowcos}). Of the two
+orthogonality conditions introduced
 in Section~\ref{sec:disjoint}, within-head contrast holds in both soft and
 hard stacks, whereas between-head coordinate partitioning holds in neither:
 no summed model partitions dictionary coordinates across heads. The
@@ -419,19 +422,20 @@ sixth of the way toward Burmese under a language probe
 \label{sec:autointerp}
 
 Evaluated individually, sparse SAE latents yield specific natural-language
-descriptions roughly twice as often as Ontologizer entries. Under an
-identical plain summarization prompt, 51\% of $k_{\mathrm{SAE}}{=}32$ SAE
-latents receive a specific description (20\% naming a language or script),
-compared to 23\% of entries in the reference softmax model (8\% naming a
-language or script). Blinded detection across the full six-model campaign
-shows the same ordering (Table~\ref{tab:autointerp}).
+descriptions roughly twice as often as categorical dictionary entries.
+Under an identical plain summarization prompt, 51\% of
+$k_{\mathrm{SAE}}{=}32$ SAE latents receive a specific description (20\%
+naming a language or script), compared to 23\% of entries in the
+reference softmax model (8\% naming a language or script). Blinded
+detection across the full six-model campaign shows the same ordering
+(Table~\ref{tab:autointerp}).
 
 \begin{table}[htbp]\centering\small
 \begin{tabular}{@{}lrrrrrrr@{}}
 \toprule
 model & density & freq & \texttt{params} & \texttt{eig} & \texttt{acts} & \texttt{cacts} & features \\
 \midrule
-onto (resid\_nc)   & 100\%  & 10.80\% & 0.039 & ---   & 0.473 & 0.392 & 225 \\
+resid\_nc          & 100\%  & 10.80\% & 0.039 & ---   & 0.473 & 0.392 & 225 \\
 k32                & 0.6\%  & 0.61\%  & 0.139 & ---   & 0.645 & 0.603 & 250 \\
 k32\_bl            & 0.6\%  & 2.62\%  & 0.136 & 0.025 & 0.578 & 0.470 & 75 \\
 g160top1           & 3.1\%  & 5.08\%  & 0.111 & ---   & 0.646 & 0.594 & 150 \\
@@ -440,7 +444,8 @@ k5120 (dense ctrl) & 45.5\% & 17.97\% & 0.010 & ---   & 0.470 & 0.332 & 256 \\
 \bottomrule
 \end{tabular}
 \caption{Mean per-feature blinded detection F1 by description mode
-(Appendix~\ref{app:protocols}). Because detection sets are class-balanced,
+(Appendix~\ref{app:protocols}); \texttt{resid\_nc} is the softmax
+categorical dictionary, the other rows \texttt{sae.py} runs. Because detection sets are class-balanced,
 an indiscriminate description that matches every item achieves the
 always-match baseline of ${\sim}0.67$, inflating scores for overly generic
 summaries. Density denotes nominal code density, and \texttt{freq} denotes
@@ -459,9 +464,10 @@ fraction of nonzero coefficients). (b) Contrastive activation descriptions
 (\texttt{cacts}) against empirical firing rate above the $2/k$ threshold,
 with a log-linear fit across the four \texttt{sae.py} runs that cross the
 threshold (\texttt{g160softmax} never crosses $2/k$ and is omitted, and the
-Ontologizer \texttt{resid\_nc} is held out of the fit). Because detection
-sets contain equal numbers of positives and negatives, matching every item
-yields the always-match baseline of $2/3$ (dotted line). One seed per run.}
+categorical dictionary \texttt{resid\_nc} is held out of the fit). Because
+detection sets contain equal numbers of positives and negatives, matching
+every item yields the always-match baseline of $2/3$ (dotted line). One
+seed per run.}
 \label{fig:autointerp-density}
 \end{figure}
 
@@ -470,9 +476,9 @@ tracks activation density rather than model architecture (raw base-model
 units score lower at comparable sparsity~\cite{paulo2025}). Plain
 activation descriptions rank the sparse codes ($0.65$ for both the
 $k_{\mathrm{SAE}}{=}32$ SAE and \texttt{g160top1}) above the bilinear SAE
-($0.58$), the reference Ontologizer and dense SAE control ($0.47$), and the
-single-layer soft variant ($0.45$), with nominal density alone accounting
-for roughly 80\% of the variance across runs
+($0.58$), the reference categorical dictionary and dense SAE control
+($0.47$), and the single-layer soft variant ($0.45$), with nominal density
+alone accounting for roughly 80\% of the variance across runs
 (Figure~\ref{fig:autointerp-density}a). Much of this gap reflects language
 selectivity on the multilingual corpus. Because mC4 cycles across 86
 languages and neither the contrastive background nor the detection negatives
@@ -488,17 +494,18 @@ purity accounts for 93\% of the variance in mean activation-description F1
 with density.
 Restricting the comparison to features whose top examples span 13--15
 languages (matching random draws from the corpus) narrows the
-activation-description F1 lead over the reference Ontologizer from $0.17$ to
-$0.10$ for the $k_{\mathrm{SAE}}{=}32$ SAE and to $0.01$ for
-\texttt{g160top1}. Likewise, the reference Ontologizer lies directly on the
-SAEs' log-density trend, and \texttt{g160top1}, which sits $0.12$ above
-that trend across all features (Figure~\ref{fig:autointerp-density}b), sits
-only $0.02$ above a trend refitted on multilingual features
+activation-description F1 lead over the reference categorical dictionary
+from $0.17$ to $0.10$ for the $k_{\mathrm{SAE}}{=}32$ SAE and to $0.01$ for
+\texttt{g160top1}. Likewise, the reference categorical dictionary lies
+directly on the SAEs' log-density trend, and \texttt{g160top1}, which sits
+$0.12$ above that trend across all features
+(Figure~\ref{fig:autointerp-density}b), sits only $0.02$ above a trend
+refitted on multilingual features
 (Appendix~\ref{sec:headautointerp}). Standard per-feature detection F1
 therefore cannot compare architectures fairly across mismatched densities or
-language distributions, and soft Ontologizers are dense by construction;
-distribution-based monosemanticity metrics exhibit the same confound,
-increasing as $\mathrm{L0}$ decreases at fixed dictionary
+language distributions, and soft categorical dictionaries are dense by
+construction; distribution-based monosemanticity metrics exhibit the same
+confound, increasing as $\mathrm{L0}$ decreases at fixed SAE
 width~\cite{fereidouni2025evaluatingsparseautoencodersmonosemantic}.
 Contrastive descriptions (\texttt{cacts}), though also evaluated without
 language-matched backgrounds, mitigate generic-summary inflation: they score
@@ -508,13 +515,14 @@ codes ($0.04$--$0.05$) and most on the dense control ($0.14$).
 Generating descriptions by decoding parameter vectors alone without
 activating examples fails across all models. Parameter-only decodes
 (\texttt{params}) achieve at most $0.14$ F1 (on the linear and bilinear
-SAEs) and $0.04$ on the reference Ontologizer, compared to $0.45$--$0.65$
-for activation-based descriptions of the same features. Decoding each
-bilinear latent's exciting eigenvector, the direction along which its
-pre-activation grows (\texttt{eig}; Appendix~\ref{sec:models}), scores
-$0.025$ against a $0.009$ null that grades each latent with another
-latent's description; the judge detects only 3 of the 75 latents at all.
-An Ontologizer's parameter decodes are further hindered by
+SAEs) and $0.04$ on the reference categorical dictionary, compared to
+$0.45$--$0.65$ for activation-based descriptions of the same features.
+Decoding each bilinear latent's exciting eigenvector, the direction along
+which its pre-activation grows (\texttt{eig};
+Appendix~\ref{sec:models}), scores $0.025$ against a $0.009$ null that
+grades each latent with another latent's description; the judge detects
+only 3 of the 75 latents at all.
+A categorical dictionary's parameter decodes are further hindered by
 shared within-head offsets: in the hard-code stack's topic head, an atom
 has a mean cosine similarity of $0.849$ with its head's mean atom, so raw atom decodes produce a single template
 sentence with minor variations. Subtracting the origin decode makes the
@@ -670,13 +678,14 @@ rate and $0.129$ under a strict 1900-bit per-row cap, compared to $0.161$
 and $0.164$ for the stronger hard stack; the hard stack leads only when the
 SAE is restricted to a single global quantization step that must fit every
 row ($0.164$ vs.\ $0.185$; Appendix~\ref{sec:quantrate}). Finally, for a
-hard Ontologizer, code capacity is governed directly by $l\cdot h\log_2 k$:
-post hoc truncation toward the mean-assignment origin injects untrained
-mixture weights and degrades reconstruction ($\fvu = 0.259$ at $\nu{=}1$).
-Per bit, the five-layer stack is less efficient than a single layer, sitting
-at $3.08\times$ the Gaussian reference at 1900 bits compared to $1.28\times$
-for a single layer's 380-bit prefix, and total bit count alone does not
-fully determine accuracy: replacing 32-entry heads with 380 binary heads
+hard categorical dictionary, code capacity is governed directly by
+$l\cdot h\log_2 k$: post hoc truncation toward the mean-assignment origin
+injects untrained mixture weights and degrades reconstruction
+($\fvu = 0.259$ at $\nu{=}1$). Per bit, the five-layer stack is less
+efficient than a single layer, sitting at $3.08\times$ the Gaussian
+reference at 1900 bits compared to $1.28\times$ for a single layer's
+380-bit prefix, and total bit count alone does not fully determine
+accuracy: replacing 32-entry heads with 380 binary heads
 ($k{=}2$) at the same 1900-bit budget raises error to $\fvu = 0.1844$
 (Appendix~\ref{sec:capacity}).
 
@@ -846,11 +855,11 @@ selections. Specifically, a single layer-0 head reproduces across seeds: the
 topic head analyzed in Section~\ref{sec:lang}, which forms the strongest
 layer-0 partition in both seeds (at different head indices) and matches
 across seeds at NMI $0.41$, compared to a median of $0.01$ across all other
-heads. Cross-seed reproducibility is equally low in the softmax Ontologizer,
-where a matched seed replica aligns on at most 0.1\% of entries compared to
-3--31\% for the $k_{\mathrm{SAE}}{=}32$ SAE seed pair
-(Figure~\ref{fig:softseed}). The SAE pair's own agreement is low under
-lenient metrics too, so the gap to language-model SAEs is not this
+heads. Cross-seed reproducibility is equally low in the softmax
+categorical dictionary, where a matched seed replica aligns on at most
+0.1\% of entries compared to 3--31\% for the $k_{\mathrm{SAE}}{=}32$ SAE
+seed pair (Figure~\ref{fig:softseed}). The SAE pair's own agreement is
+low under lenient metrics too, so the gap to language-model SAEs is not this
 thresholded containment metric's doing. A third of its latents (0.33) have
 a decoder-cosine twin above $0.7$ in the other seed, against 94\% for
 same-size GPT-2 SAEs~\cite{leask2025}; its Hungarian-matched decoder
@@ -1117,12 +1126,12 @@ concatenated heads, $k{=}64$ & 48-dimensional blocks, shared decoder & 960 bits 
 \midrule
 $\topk$ SAE, $k_{\mathrm{SAE}}{=}32$, $m{=}5120$ & --- & 32 coeffs + $\sim$276 bits & 0.189 & 96.2\% \\
 $\topk$ SAE, $k_{\mathrm{SAE}}{=}128$, $m{=}5120$ & --- & 128 coeffs + $\sim$859 bits & 0.116 & 98.6\% \\
-soft Ontologizer (1 epoch) & --- & 4960 mixture weights & 0.016 & 99.85\% \\
+soft categorical dictionary (1 epoch) & --- & 4960 mixture weights & 0.016 & 99.85\% \\
 \bottomrule
 \end{tabular}
 \caption{GPT-2 small, residual stream entering block 8, evaluated on
-held-out documents. Ontologizers run for one pass over 10M or 40M tokens on
-a single seed (the 10M direct run's seed-43 replica reaches
+held-out documents. Categorical dictionaries run for one pass over 10M or
+40M tokens on a single seed (the 10M direct run's seed-43 replica reaches
 $\mathrm{FVU} = 0.219$ and $96.9\%$ loss recovered). SAEs train for 10
 epochs over the 10M-token cache under \texttt{sae.py}'s unwhitened
 objective; quantizing active coefficients to ${\sim}5$ bits each gives the
@@ -1139,20 +1148,21 @@ training cache ($97.0\%$ vs.\ $96.2\%$, despite higher unwhitened
 $\mathrm{FVU}$ of $0.217$ vs.\ $0.189$) and after one pass over 40M tokens
 ($97.6\%$ at $\mathrm{FVU} = 0.195$; Table~\ref{tab:gpt2hard}). However,
 when the SAE's 32 active coefficients are quantized to ${\sim}5$ bits each
-(556--588 total bits vs.\ $800 + {\sim}25$ for the Ontologizer), the SAE
-achieves lower $\mathrm{FVU}$ per bit. Across model families, raw
-$\mathrm{FVU}$ therefore does not monotonically order downstream loss
-recovery, whereas within the Ontologizer family on SONAR, downstream text
-fidelity varied monotonically with $\fvu$ (Appendix~\ref{sec:textfid}). Part
-of this cross-entropy deficit can reflect functional mismatch rather than
-lost information, as low-rank adaptation of the downstream model to a
-frozen SAE closes 30--55\% of its cross-entropy
-gap~\cite{chen2025lowrankadaptingmodelssparse}. Expanding each head to 64
-entries (960 bits) surpasses the $k_{\mathrm{SAE}}{=}32$ SAE on both
-$\mathrm{FVU}$ and loss recovery. Across the stack, every layer contributes
-nontrivially, entry usage remains near uniform, and the observed residual
-norm closely tracks the optimal per-sample layer scale. One-epoch ablations
-confirm that the gain-shape decomposition and direct atoms each improve
+(556--588 total bits vs.\ $800 + {\sim}25$ for the categorical
+dictionary), the SAE achieves lower $\mathrm{FVU}$ per bit. Across model
+families, raw $\mathrm{FVU}$ therefore does not monotonically order
+downstream loss recovery, whereas within the categorical dictionary family
+on SONAR, downstream text fidelity varied monotonically with $\fvu$
+(Appendix~\ref{sec:textfid}). Part of this cross-entropy deficit can
+reflect functional mismatch rather than lost information, as low-rank
+adaptation of the downstream model to a frozen SAE closes 30--55\% of its
+cross-entropy gap~\cite{chen2025lowrankadaptingmodelssparse}. Expanding
+each head to 64 entries (960 bits) surpasses the $k_{\mathrm{SAE}}{=}32$
+SAE on both $\mathrm{FVU}$ and loss recovery. Across the stack, every
+layer contributes nontrivially, entry usage remains near uniform, and the
+observed residual norm closely tracks the optimal per-sample layer scale.
+One-epoch ablations confirm that the gain-shape decomposition and direct
+atoms each improve
 reconstruction (direct atoms most strongly), that temperature annealing is
 critical, and that replacing the shared decoder in a twin of the 40M
 concatenated-head model with separate per-layer decoders reduces $\mathrm{FVU}$ from $0.186$
