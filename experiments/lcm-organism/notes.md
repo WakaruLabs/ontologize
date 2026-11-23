@@ -1,16 +1,19 @@
 # lcm-organism: notes
 
-## 2026-11-23: templated sentences don't carry the LCM's within-language lead
+## 2026-11-23: dropping verbatim repeats leaves the LCM's within-language lead as it was
 
 **In short.**
 - **The question.** mC4 has many templated pages: footers, timestamps, shop carts, spam. Do the
   templated sentences in the scored rows carry the LCM's lead over SONAR within a language?
-- **Dropping them leaves the lead as it was.** 6.0% of the held-out tail's rows repeat text from
-  another document, or have a near-twin in one. Without them, the LCM's within-language excess over
-  SONAR's is 0.0595, against 0.0589 on all rows. The readouts close the same share of the gap as
-  before.
-- **On the templated rows alone, both models agree much more** (excess 0.178 for the LCM and 0.105
+- **Dropping repeated text leaves the lead as it was.** 6.0% of the held-out tail's rows repeat
+  text from another document, or have a near-twin in one. Without them, the LCM's within-language
+  excess over SONAR's is 0.0595, against 0.0589 on all rows. The readouts close the same share of
+  the gap as before.
+- **On the flagged rows alone, both models agree much more** (excess 0.178 for the LCM and 0.105
   for SONAR). The LCM still leads there, by 1.7 times SONAR's excess, against 4.2 times on all rows.
+- **This rules out verbatim repeats, not templates in general.** Templates whose slots vary in
+  words largely survive the cut: about half of the Irish currency-converter sentences, which differ
+  only in the currency's name, are flagged, and none by the twin flag.
 
 **The flags** (`templates.py`, on the last 262,144 rows, which are the same sentences in every arm's
 cache).
@@ -54,19 +57,26 @@ cache).
     the last 32,768.
 
 **What it means.**
-- **The lead sits in the ordinary rows.** Without the templated rows, both arms' within-language
-  excess falls a little, SONAR's more (0.0186 to 0.0163) than the LCM's (0.0774 to 0.0758), so the
-  lead grows slightly.
-- **Templated rows are easy to agree on.** Both models' seeds agree far more on them, and the LCM's
+- **The lead isn't in the verbatim repeats.** Without them, both arms' within-language excess falls
+  a little, SONAR's more (0.0186 to 0.0163) than the LCM's (0.0774 to 0.0758), so the lead grows
+  slightly.
+- **Repeated rows are easy to agree on.** Both models' seeds agree far more on them, and the LCM's
   margin there is smaller relative to SONAR's. They are 6% of the rows, so they add to both arms'
   scores and do little to the difference.
-- **The low-resource languages' template farms don't carry it either.** The flags reach a fifth to
-  a third of the rows in the most templated languages, and the within-language score weighs each
-  language by its rows, so those languages count little in it, with or without their templates.
+- **The most templated languages count little in this score.** It weighs each language by its rows,
+  and the three most flagged (Maltese, Scottish Gaelic, Cebuano) hold 0.9–1.4% of the scored rows
+  each.
 
 **Caveats.**
-- **The flags are a lower bound.** Templates whose slots vary in more than digits, and that SONAR
-  doesn't place at cosine 0.95 or above, are missed.
+- **The flags are a lower bound, and a loose one for templates with word slots.** One template
+  family, checked by its text in the tail's Irish rows:
+  - sentences with "fachtóir tiontaithe" (a converter page's conversion factor): 14 of 29 flagged,
+    all by repeated text;
+  - sentences with "airgeadra" (currency): 13% of 85 flagged;
+  - Wikipedia's "Aisghafa ó" (retrieved from) footers, whose URL differs: 1 of 6 flagged.
+
+  Their centered SONAR cosines to their nearest other-document row have medians of 0.67–0.79, far
+  below the twin threshold. Of the 16 converter pages' 168 tail rows, 30% are flagged.
 - **Few rows on the templated side.** The templated-only scores rest on 7,299 rows in 23 languages
   at 200 or more rows each, where NMI over 32 entries is biased upward (their nulls are 0.24–0.27).
   Read that row by its difference between the arms, not by its level.
