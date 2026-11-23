@@ -32,7 +32,9 @@ only the first:
             is x'Bx, whose derivative is 2Bx, so this is the classifier's
             own Jacobian at the sample: (V.u)W + (W.u)V differenced
             between the two entries. Needs no eigendecomposition.
-  adjoint   `Ontologizer.intervene`'s path, via `BilinearBlock.rev`:
+  adjoint   the signed classification delta reversed through
+            `BilinearBlock.rev`, as `Ontologizer.intervene` did before it
+            took the positive part (now `adjoint_pos`'s path):
             each entry's exciting direction, the eigenvector of its
             form's positive eigenvalue (`nlinear.excite`). An eigenvector
             is the dominant QUADRATIC direction, not the first-order one,
@@ -404,9 +406,10 @@ def main_onto(cfg: argparse.Namespace) -> None:
 
     def adjoint_dir(module, X: Float[Array, "b d_in"], li: int, hi: int,
                     ki: int, positive: bool = False) -> Float[Array, "b d_out"]:
-        """Input-space direction that would cause head hi to select ki:
-        `Ontologizer.intervene`'s reverse of the classification delta,
-        through the classifier's own `BilinearBlock.rev`. That delta is the
+        """Input-space direction that would cause head hi to select ki: the
+        classification delta reversed through the classifier's own
+        `BilinearBlock.rev`, as `Ontologizer.intervene` did with the signed
+        delta (it now reverses the positive part, `positive`). That delta is the
         target's one-hot minus the current assignment, so the incumbent
         enters as minus its exciting eigenvector; a quadratic form is even,
         so that step excites the incumbent too. `positive` reverses only

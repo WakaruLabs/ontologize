@@ -112,6 +112,38 @@ def test_input_space_intervene_noop_is_identity(build, X, flags):
     assert jnp.allclose(Y_int, Y0, atol=1e-5)
 
 
+def _steering_delta(module, X, layer, positive, **kwargs):
+    """The input-space delta `Ontologizer.intervene` steers along, rebuilt
+    here with the incumbent's share kept (positive=False) or dropped."""
+    E, _ = module.encode(X, 0.0, None)
+    R = module.resid(E)
+    E = module.constinput(E)
+    for i in range(layer):
+        R, K = module.dictencs[i].withClusts(R, E, temperature=0.5)
+        E = module.nextinput(X, R, K)
+    de = module.dictencs[layer]
+    P = de.classify(E, 0.5)
+    dP = de.dict.intervene(P, **kwargs) - P
+    if positive:
+        dP = jnp.maximum(dP, 0.0)
+    return de.classifier.rev(dP)[..., :module.d_out]
+
+
+def test_bilinear_intervene_reverses_only_the_raised_entries(conditioned, X):
+    # a bilinear form is even, so the incumbent's negative share of the
+    # delta would excite it too: the steered input must lie along the
+    # positive part's reverse, not the signed delta's
+    model, params = conditioned
+    kw = dict(h_set=jnp.array([2]), k_set=jnp.array([5]))
+    _, X_int, _ = model.apply(params, X, 1, temperature=0.5, strength=0.3,
+                              method=Ontologizer.intervene, **kw)
+    unit = lambda A: A / jnp.linalg.norm(A, axis=-1, keepdims=True)
+    for positive, aligned in ((True, True), (False, False)):
+        D = model.apply(params, X, 1, positive, method=_steering_delta, **kw)
+        cos = (unit(X + 0.3 * D) * unit(X_int)).sum(-1)
+        assert bool(jnp.all(cos > 1 - 1e-5)) == aligned
+
+
 def test_input_space_intervene_steers_bilinear(conditioned, X):
     # a real intervention through the bilinear adjoint: input changes,
     # norm is preserved by construction, everything stays finite

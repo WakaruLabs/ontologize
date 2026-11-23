@@ -4964,8 +4964,10 @@ pointed out the mechanism.
 entry's exciting eigenvector (`nlinear.excite`) weighted by the delta. With Y = e_target − P the
 incumbent enters as −v̂₊(cur). Along a direction v a form changes by 2ε·λ·(x·v) + ε²·λ (`orient`'s
 docstring), so along −v̂₊(cur) the incumbent's form gains +ε²·λ₊(cur) whatever the sign. Only the
-first-order term can lower it, and its sign belongs to the sample. `Ontologizer.intervene` passes the
-same signed delta and has not been changed.
+first-order term can lower it, and its sign belongs to the sample. `Ontologizer.intervene` passed the
+same signed delta. *(Changed later the same day: it now reverses the delta's positive part for
+bilinear classifiers, as the next paragraphs measure, and keeps the signed delta for linear ones.
+`steerembed.py`'s `adjoint` row keeps the old rule, and `adjoint_pos` is the new path.)*
 
 **Setup** (`steerembed.py`, CPU). Both hard stacks were run at step 369,500 with the defaults: 60
 entries stratified by layer, 32 rows each, seed 42. Strengths are fractions of the row's norm, and
@@ -5025,9 +5027,11 @@ At 0.1 the oriented positive part reads 0.67–0.97 by layer, against 0.18–0.3
 - **Suppressing the incumbent as well does not help.** Below strength 0.25 it trails the oriented
   positive part, since half its length goes into suppression, and from 0.25 on it is within 0.02
   of it.
-- **What would change in the code.** `rev` should take the delta's positive part for bilinear
-  heads and keep the signed delta for linear ones (n = 1), where negating an entry does lower it.
-  The writeup's adjoint rows come from the current rule and would change with it.
+- **What changes in the code.** `Ontologizer.intervene` now reverses the delta's positive part for
+  bilinear heads and keeps the signed delta for linear ones (n = 1), where negating an entry does
+  lower it. A test checks that the steered input lies along the positive part's reverse and not
+  the signed delta's (`tests/test_interventions.py`). The writeup's adjoint rows come from the old
+  rule. Its softmax column (`sweep_softmax_shm`) has not been rerun with the positive part.
 
 Output: `data/out/sonar/steerembed_pos/{ste_h76,ste_h76_init01}/` (`steer.csv`, `summary.json`,
 `geometry.csv`) and the `.log` beside each.

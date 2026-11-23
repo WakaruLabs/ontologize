@@ -91,15 +91,16 @@ def assign(X: Float[np.ndarray, "n d"], C: Float[np.ndarray, "k d"],
 
 
 def kmeans(X: Float[np.ndarray, "n d"], k: int, seed: int,
-           iters: int = 300, seed_rows: Int[np.ndarray, "m"] | None = None
-           ) -> Float[np.ndarray, "k d"]:
+           iters: int = 300, seed_rows: Int[np.ndarray, "m"] | None = None,
+           init: Float[np.ndarray, "k d"] | None = None) -> Float[np.ndarray, "k d"]:
     """Lloyd's iterations from k-means++ until no row changes cell (or
     `iters`). An emptied cell is reseeded at the row farthest from its
     centre, so every run ends with k cells. `seed_rows` draws the
     k-means++ centres from those rows only (`trimmed_rows`), and Lloyd's
-    iterations then run on every row."""
+    iterations then run on every row; `init` starts from those centres."""
     rng = np.random.default_rng(seed)
-    C = kmeans_pp(X if seed_rows is None else X[seed_rows], k, rng)
+    C = (np.array(init, X.dtype) if init is not None else
+         kmeans_pp(X if seed_rows is None else X[seed_rows], k, rng))
     lab = None
     for _ in range(iters):
         new = assign(X, C)
@@ -547,11 +548,14 @@ def seed_table(train: Float[np.ndarray, "n d"], tail: Float[np.ndarray, "m d"],
     largest cell, and every pair's NMI beside the rows-shuffled null.
     `method` "spherical" partitions the rows less the training mean, scaled
     to unit length (`spherical_kmeans`), and scores the FVU against each
-    cell's mean training row. `trim` seeds Euclidean k-means++ from the
-    training rows within that quantile of distance from the mean."""
+    cell's mean training row; "spherical_lloyd" then runs Euclidean Lloyd's
+    iterations from those means, which asks whether Euclidean k-means
+    could reach that basin from a better start. `trim` seeds Euclidean
+    k-means++ from the training rows within that quantile of distance from
+    the mean."""
     from partition import nmi_matrix
     labs, fv, big = [], [], []
-    if method == "spherical":
+    if method in ("spherical", "spherical_lloyd"):
         mu = train.astype(np.float64).mean(0)
         Ut, Ue = unit_rows(train, mu), unit_rows(tail, mu)
     elif method != "euclidean":
@@ -562,6 +566,10 @@ def seed_table(train: Float[np.ndarray, "n d"], tail: Float[np.ndarray, "m d"],
             C = spherical_kmeans(Ut, k, s)
             lab = assign_cos(Ue, C)
             M = cell_means(train, assign_cos(Ut, C), k)
+        elif method == "spherical_lloyd":
+            C = spherical_kmeans(Ut, k, s)
+            M = kmeans(train, k, s, init=cell_means(train, assign_cos(Ut, C), k))
+            lab = assign(tail, M)
         else:
             M = kmeans(train, k, s, seed_rows=seed_rows)
             lab = assign(tail, M)
@@ -741,10 +749,12 @@ def main() -> None:
     p.add_argument("--scale-copy", action="store_true",
                    help="a copy that keeps each row's scale shared by its "
                         "FastICA sources and shuffles the sources apart under it")
-    p.add_argument("--kmeans", default="euclidean", choices=["euclidean", "spherical"],
+    p.add_argument("--kmeans", default="euclidean",
+                   choices=["euclidean", "spherical", "spherical_lloyd"],
                    help="spherical: cosine cells on the rows less the training "
                         "mean, scaled to unit length, with FVU against each "
-                        "cell's mean row")
+                        "cell's mean row; spherical_lloyd: Euclidean Lloyd's "
+                        "iterations started from those means")
     p.add_argument("--trim-seed", type=float, default=None,
                    help="seed Euclidean k-means++ from the training rows within "
                         "this quantile of distance from the mean (e.g. 0.99)")

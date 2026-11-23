@@ -679,7 +679,11 @@ class Ontologizer(nn.Module):
 
         Reversing only the change (rather than the full intervened
         classification) makes a no-op intervention the identity, and leaves
-        heads already agreeing with the intervention untouched. `strength`
+        heads already agreeing with the intervention untouched. A bilinear
+        classifier reverses only the change's positive part, the entries
+        being raised: its forms are even, so stepping along minus an entry's
+        exciting eigenvector excites that entry as well, and the signed
+        change would hold the incumbent in place. `strength`
         scales the delta; because the adjoint chain does not preserve scale,
         the value needed to realize a tag assignment depends on the trained
         weights — compare the returned classifications against the intended
@@ -706,7 +710,10 @@ class Ontologizer(nn.Module):
         # classification of layer i; with residual forwarding, the layer's
         # input X - decode(R) passes input-space deltas through identically,
         # so the classifier adjoint already lands in input space.
-        D = dictenc.classifier.rev(P_int - P)
+        dP = P_int - P
+        if getattr(dictenc.classifier, "n", 1) == 2:
+            dP = jnp.maximum(dP, 0.0)
+        D = dictenc.classifier.rev(dP)
         if self.forward in ("resid", "resid_labels"):
             # keep only the residual block of the adjoint; the constant
             # and, under resid_labels, the code block are not input-space

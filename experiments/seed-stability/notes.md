@@ -1265,13 +1265,19 @@ JAX_PLATFORMS=cpu uv run python experiments/seed-stability/ica_seeds.py \
 ## 2026-11-22: under spherical k-means SONAR's cells reproduce at 0.73, and the scale copy closes about half of its lead
 
 **Short version.** An outside check of these notes offered an account of the scale copy's two oddities, its poor fit and its unequal cells. On rows whose lengths vary, Euclidean k-means spends cells on the long rows and lumps the short ones into one large cell. Spherical k-means, which clusters directions, should not. Both tests were run on SONAR and every copy.
-- **The oversized cell comes from the Euclidean objective, not from seeding.**
+- **The oversized cell is not a few far rows taking seeds.**
   - Seeding k-means++ only from rows within the 99th percentile of distance from the mean leaves the cell in place. At 32 cells the largest holds 15–16% of SONAR's and of the scale copy's tail rows, where equal cells would hold 3.1%.
   - It also leaves the scale copy's fit where it was (FVU 0.953 at 128 cells).
   - Spherical k-means gives near-equal cells on every data set: the largest holds 4–5% at 32 cells and 1.2–1.9% at 128.
 - **Euclidean k-means also stops at worse Euclidean optima on these rows.**
   - Score spherical k-means' partition by Euclidean FVU, with each cell's mean as its centre. It fits SONAR better than Euclidean k-means' own partition: 0.903 against 0.922 at 128 cells. On the scale copy it reaches 0.936 against 0.953.
   - On the ICA and Gaussian copies, whose rows nearly share one length, the two methods tie.
+  - So on these rows the oversized cell is a worse local optimum, which Lloyd's iterations reach
+    from k-means++ starts, trimmed or not. The Euclidean objective scores the balanced partition
+    better here. That isn't general: on rays of widely varying length (`tests/test_kmeans_seeds.py`)
+    one k-means++ start finds a lower Euclidean error with one huge cell.
+    *(Corrected the same day: first written, and committed in de649e9, as "comes from the
+    Euclidean objective", which this bullet contradicts.)*
 - **Under spherical k-means SONAR's cells reproduce more**: 0.732 at both 32 and 128 cells, against 0.607 and 0.737 under Euclidean k-means. The Gaussian copy is unchanged (0.395 and 0.387).
 - **The scale copy closes about half of SONAR's lead, at both k.** It covers 47% of SONAR's excess over the Gaussian copy at 32 and at 128 cells, against the ICA copy's 27% and 37%. Under Euclidean k-means the order between the two had flipped with k. So the shared scale is part of what SONAR's cells reproduce on, not most of it.
 

@@ -72,6 +72,11 @@ def test_spherical_kmeans_follows_direction_and_trimming_drops_the_far_rows():
     assert min(t["nmi"]) > 0.95 and max(t["largest_cell"]) < 0.35
     e = seed_table(X[:6000], X[6000:], 4, [1, 2, 3])
     assert min(e["largest_cell"]) > 0.8
+    # Euclidean Lloyd's iterations started from the spherical cells' means
+    # lose no fit and keep the cells balanced (here they are already a fixed
+    # point; one k-means++ start finds a lower error with one huge cell)
+    sl = seed_table(X[:6000], X[6000:], 4, [1, 2, 3], method="spherical_lloyd")
+    assert max(sl["fvu"]) <= max(t["fvu"]) + 1e-3 and max(sl["largest_cell"]) < 0.35
     keep = trimmed_rows(X, 0.9)
     rad = np.linalg.norm(X - X.mean(0), axis=1)
     assert abs(len(keep) / n - 0.9) < 0.01 and rad[keep].max() <= np.quantile(rad, 0.9)
