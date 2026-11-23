@@ -1309,8 +1309,19 @@ The Euclidean columns are the earlier sections' runs. Under spherical k-means ev
 - **Trimmed seeding moves the copies' agreement by 0.03 at most, and SONAR's at 32 cells by 0.05** (0.607 to 0.653). Its FVUs equal the plain Euclidean run's, and its cells are as unequal. The scale copy's pairs at 32 cells range widely, from 0.386 to 0.742, so its means are noisy.
 - **For a gain-shape stack, spherical k-means is the closer baseline.** The stack's heads classify the shape of their input, its direction. So the width ladder's one trained head (0.418) falls further short of k-means than against the 0.607 that section used. The 2026-11-20 test of whether layer-0 heads lie near k-means cells used Euclidean cells; spherical ones were not tried.
 
-Output: `data/out/sonar/kmeans_seeds_spherical/` and `data/out/sonar/kmeans_seeds_trim99/`
-(`summary.json`, `run.log`).
+**Euclidean Lloyd from the spherical cells.** This is `--kmeans spherical_lloyd`: Euclidean Lloyd's iterations, started from each spherical solution's cell means and run to a fixed point. The test is an outside suggestion. It asks whether Euclidean k-means itself can reach a better basin from a better start.
+
+| data | FVU, 32 / 128: Euclidean from k-means++ | from the spherical cells | largest cell, 32 / 128 | seed NMI, 32 / 128 |
+|---|---|---|---|---|
+| SONAR | 0.948 / 0.922 | **0.930 / 0.901** | 0.076 / 0.020 | 0.728 / 0.737 |
+| scale copy | 0.962 / 0.953 | **0.949 / 0.933** | 0.064 / 0.017 | 0.557 / 0.545 |
+| ICA copy | 0.954 / 0.940 | 0.954 / 0.938 | 0.045 / 0.016 | 0.494 / 0.506 |
+
+- **The same Euclidean algorithm reaches much better optima from this start**, and keeps the cells nearly equal. On SONAR it goes 0.001–0.002 below the spherical partition's own Euclidean FVU (0.9315 and 0.9027). So the oversized cell is a basin that k-means++ starts fall into. It is not where Euclidean k-means' own objective is lowest.
+- **Seed agreement in that basin is the spherical one's**, within 0.01 on SONAR and the scale copy. So the 0.73 belongs to the basin, not to the cosine objective.
+
+Output: `data/out/sonar/kmeans_seeds_spherical/`, `data/out/sonar/kmeans_seeds_trim99/` and
+`data/out/sonar/kmeans_seeds_sphlloyd/` (`summary.json`, `run.log`).
 
 ```bash
 F=data/out/sonar/kmeans_seeds_ica/frame_ica.iter800.npz
@@ -1319,4 +1330,7 @@ for opt in "--kmeans spherical" "--trim-seed 0.99"; do
       --gauss data/out/sonar/gausscopy --marginals ica --groups 0.1 --scale-copy \
       --ica-init $F --ica-iters 0 --out <dir>
 done
+JAX_PLATFORMS=cpu uv run python experiments/seed-stability/kmeans_seeds.py --kmeans spherical_lloyd \
+    --ks 32 128 --marginals ica --scale-copy --ica-init $F --ica-iters 0 \
+    --out data/out/sonar/kmeans_seeds_sphlloyd
 ```

@@ -242,12 +242,14 @@ five-layer stack achieves $1.79\times$ lower reconstruction error, driven
 by conditioning each stage on the sample's remaining residual error
 (rather than by utilization, input conditioning, or the scalar gain
 side-channel, though deep supervision on prefixes has not yet been
-ablated separately). Conversely, an input-space perturbation flips 66\%
-of unrelated heads in the five-layer stack vs.\ 33\% in the single-layer
-model, and realizes its target entry on only 37\% of rows vs.\ 99.6\%; in
-both models, off-target collateral matches that of a norm-matched random
-step because hard-code classifiers sit close to their decision
-boundaries. Moreover, at matched head contribution size, stacked heads
+ablated separately). Conversely, a step along a target entry's decoded atom
+flips 66\% of unrelated heads in the five-layer stack vs.\ 33\% in the
+single-layer model, and realizes its target entry on only 37\% of rows vs.\
+99.6\%. Along the target entry's exciting eigenvector the stack realizes 99\%
+of targets at the same strength, at the same collateral, so depth costs
+selectivity rather than reach. In both models, off-target collateral matches
+that of a norm-matched random step because hard-code classifiers sit close to
+their decision boundaries. Moreover, at matched head contribution size, stacked heads
 show several-fold lower cross-seed reproducibility than single-layer
 heads across every layer, including layer~0. Although the single-layer
 softmax variant \texttt{g160softmax} matches the reference checkpoint
@@ -266,9 +268,10 @@ low collateral, the soft code is more steerable than the hard code.
 Steerability does not track reconstruction error. The classifier's input
 gradient provides an effective steering direction only in layer~0, where
 the raw input enters the classifier directly, but the eigenvector along
-which each entry's bilinear form grows steers at every depth, and on the
-softmax model it realizes 90\% of targets at strength $1.0$, more than any
-other direction.
+which each entry's bilinear form grows steers at every depth. On the hard
+code it realizes 99\% of targets at strength $0.25$ and all of them from
+$0.5$, and on the softmax model 90\% at strength $1.0$, more than any other
+direction there.
 \item \textbf{Individual heads beyond layer~0 do not reproduce across
 seeds, and layer~0 reproduces only partially.} Independent seeds converge
 to identical held-out reconstruction error to four decimal places while
@@ -491,8 +494,9 @@ stack and the single-layer hard arm; testing bilinear eigenfeatures as
 steering directions; measuring across-context consistency of entry-swap
 effects, which for SAE features is partially predictable prior to
 intervening~\cite{duan2026}; and weighing the single-layer hard arm's
-near-perfect target realization, halved collateral, and higher cross-seed
-reproducibility against its $1.79\times$ higher reconstruction error.
+halved collateral at near-perfect target realization, and its higher
+cross-seed reproducibility, against its $1.79\times$ higher reconstruction
+error.
 Reducing input-space collateral appears to need larger classifier margins
 more than better steering directions. Even with multi-layer
 residual reclassification excluded, input-space collateral is largely

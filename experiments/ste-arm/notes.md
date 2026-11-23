@@ -5031,10 +5031,39 @@ At 0.1 the oriented positive part reads 0.67–0.97 by layer, against 0.18–0.3
   bilinear heads and keeps the signed delta for linear ones (n = 1), where negating an entry does
   lower it. A test checks that the steered input lies along the positive part's reverse and not
   the signed delta's (`tests/test_interventions.py`). The writeup's adjoint rows come from the old
-  rule. Its softmax column (`sweep_softmax_shm`) has not been rerun with the positive part.
+  rule.
 
-Output: `data/out/sonar/steerembed_pos/{ste_h76,ste_h76_init01}/` (`steer.csv`, `summary.json`,
-`geometry.csv`) and the `.log` beside each.
+**The softmax model gains nothing from the fix** (`sweep_softmax_shm`, step 369,500, temperature
+0.03, the same 60 entries × 32 rows). The old rule's rows reproduce the 2026-11-19 section exactly
+(0.707 / 0.904, and oriented 0.772 / 0.963).
+
+| direction | 0.02 | 0.05 | 0.1 | 0.25 | 0.5 | 1.0 |
+|---|---|---|---|---|---|---|
+| adjoint (old rule) | 0.035 | 0.124 | 0.324 | 0.707 | 0.859 | 0.904 |
+| adjoint, oriented | 0.037 | 0.140 | 0.367 | 0.772 | 0.918 | 0.963 |
+| positive part | 0.029 | 0.098 | 0.282 | 0.691 | 0.855 | 0.901 |
+| positive part, oriented | 0.032 | 0.121 | 0.328 | 0.756 | 0.917 | 0.961 |
+| positive part + suppression | 0.042 | 0.117 | 0.276 | 0.613 | 0.819 | 0.887 |
+| grad | 0.088 | 0.339 | 0.583 | 0.415 | 0.426 | 0.453 |
+| decode | 0.038 | 0.136 | 0.388 | 0.785 | 0.697 | 0.573 |
+| random | 0.003 | 0.005 | 0.011 | 0.013 | 0.026 | 0.029 |
+| collateral: adjoint variants / random | 0.085 / 0.060 | 0.20 / 0.14 | 0.35 / 0.27 | 0.63–0.64 / 0.54 | 0.80 / 0.75 | 0.89 / 0.86 |
+
+- **The positive part is level with the old rule, 0.01–0.03 lower at small steps.** On this
+  model the incumbent's term costs nothing. Its assignments are soft, so the subtracted part is
+  spread over every entry by its probability. Whether the forms here are also negative-dominant,
+  as `bilinspec.py` found for the hard stack, was not checked.
+- **Here collateral does depend on the direction.** The adjoint variants move more of the other
+  heads than a random step does (0.63–0.64 against 0.54 at strength 0.25), and decode moves fewer
+  (0.55). On the hard stacks every direction matched the random step.
+- **By layer at strength 1.0** the oriented positive part realizes 1.000, 1.000, 0.833, 0.990 and
+  0.984 from layer 0 to 4, against the old rule's 1.000, 0.833, 0.844, 0.992 and 0.849.
+
+So the fix matters for the hard stacks and is neutral on the softmax model. Changing `intervene`
+costs that model nothing.
+
+Output: `data/out/sonar/steerembed_pos/{ste_h76,ste_h76_init01,sweep_softmax_shm}/`
+(`steer.csv`, `summary.json`, `geometry.csv`) and the `.log` beside each.
 
 ```bash
 for m in ste_h76 ste_h76_init01; do
@@ -5042,6 +5071,9 @@ for m in ste_h76 ste_h76_init01; do
       --model data/out/sonar/multilingual/$m --temperature 0.00015 \
       --strengths 0.02 0.05 0.1 0.25 0.5 1.0 --out data/out/sonar/steerembed_pos/$m
 done
+JAX_PLATFORMS=cpu uv run python experiments/ste-arm/steerembed.py \
+    --model data/out/sonar/multilingual/sweep_softmax_shm --temperature 0.03 \
+    --strengths 0.02 0.05 0.1 0.25 0.5 1.0 --out data/out/sonar/steerembed_pos/sweep_softmax_shm
 ```
 
 ## Run

@@ -254,7 +254,9 @@ null with one partition's rows shuffled, and each seed's FVU.
   is most aligned with (`spherical_kmeans`). FVU is still Euclidean, against
   each cell's mean training row (`cell_means`). On rows whose lengths vary,
   Euclidean k-means lumps the short rows into one oversized cell and stops
-  at worse optima. `--trim-seed Q` draws Euclidean k-means++'s centres only
+  at worse optima. `--kmeans spherical_lloyd` runs Euclidean Lloyd's
+  iterations from the spherical solution's cell means, which asks whether
+  Euclidean k-means can reach that basin from a better start. `--trim-seed Q` draws Euclidean k-means++'s centres only
   from the training rows within the Q quantile of distance from the mean
   (`trimmed_rows`). Every table also gives the share of the tail in its
   largest cell (`largest_cell`).

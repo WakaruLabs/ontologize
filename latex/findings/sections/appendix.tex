@@ -956,7 +956,8 @@ input gradient of the target logit), \texttt{margin} (the input gradient of
 the target entry's logit margin over the head's incumbent winner),
 \texttt{adjoint} (the eigenvector of the target entry's bilinear form with
 its positive eigenvalue, the direction along which the form grows, via
-\texttt{BilinearBlock.rev}), and \texttt{random}. Step strength $\alpha$ is
+\texttt{BilinearBlock.rev} applied to the positive part of the
+classification change), and \texttt{random}. Step strength $\alpha$ is
 specified as a fraction of each sample's norm. We also evaluate each
 model's \emph{native} step size: the output delta of forcing the entry in
 an Ontologizer, or the decoder direction scaled by the latent's mean
@@ -981,8 +982,25 @@ $\mathbf{w}\cdot\mathbf{v} < 0$, which holds for 97.9--99.9\% of the
 hard-code stack's entries and 63.3--98.6\% of the softmax stack's. Under
 that rule the adjoint realizes $0.001$ of targets on the hard code at
 strength $0.25$, below the random direction, and $0.38$ on the softmax
-model; under the positive-eigenvalue rule it realizes $0.48$ and $0.71$
-(Table~\ref{tab:steerembed}).
+model.
+
+Which part of the classification change is reversed matters as much.
+\texttt{Ontologizer.intervene} reverses the change between the intervened
+and the current assignment, $\Delta P = P^{\mathrm{int}} - P$, and
+\texttt{rev} is linear in it, so the signed change subtracts the
+incumbent entry's exciting eigenvector. The incumbent's form is even, so a
+step along minus that eigenvector excites the incumbent as well. Reversing
+the signed change, the positive-eigenvalue adjoint realizes $0.48$ of
+targets on the hard code at strength $0.25$ and $0.71$ on the softmax
+model. \texttt{intervene} therefore reverses only the change's positive part,
+$\max(\Delta P, 0)$, the entries being raised, for a bilinear classifier;
+for a linear one ($n{=}1$) the signed change stays, since negating an entry
+there does lower it. Reversed this way the adjoint realizes $0.99$ and $0.69$
+(Table~\ref{tab:steerembed}). On the softmax model, whose assignments are
+soft, the incumbent's term spreads over every entry and costs nothing. On the
+hard code it caps realization near one half however large the step, and
+without it the adjoint realizes every target from strength $0.5$, in every
+layer.
 
 The eigenvector's sign is still free, since the form is even, and a step of
 size $\alpha$ along $\mathbf{v}$ changes $\mathbf{x}^\top B\mathbf{x}$ to
@@ -994,8 +1012,8 @@ roughly half of the draws. On SONAR it does better, because the embedding
 cloud is uncentered and anisotropic, so $\mathbf{x}\cdot\mathbf{v}$ is
 dominated by $\bar{\mathbf{x}}\cdot\mathbf{v}$, which has a consistent sign
 across the corpus. Orienting each step per sample instead raises
-realization at strength $0.25$ from $0.71$ to $0.77$ on the softmax model
-and from $0.48$ to $0.57$ on the hard code.
+realization at strength $0.25$ from $0.69$ to $0.76$ on the softmax model
+and from $0.99$ to $1.00$ on the hard code.
 
 \paragraph{Linearized collateral (\texttt{steergeom.py}).}
 To separate the direct within-layer effect of an input perturbation on
@@ -2742,11 +2760,11 @@ aggregate ranking of steering directions:
 \toprule
 layer & decode & grad & margin & adjoint & random \\
 \midrule
-0 & 0.203 & \textbf{0.589} & 0.549 & 0.461 & 0.034 \\
-1 & 0.451 & 0.099 & 0.409 & \textbf{0.547} & 0.008 \\
-2 & \textbf{0.753} & 0.125 & 0.188 & 0.500 & 0.026 \\
-3 & \textbf{0.997} & 0.094 & 0.112 & 0.500 & 0.036 \\
-4 & 0.331 & 0.044 & 0.049 & \textbf{0.581} & 0.026 \\
+0 & 0.203 & 0.589 & 0.549 & \textbf{1.000} & 0.034 \\
+1 & 0.451 & 0.099 & 0.409 & \textbf{1.000} & 0.008 \\
+2 & 0.753 & 0.125 & 0.188 & \textbf{1.000} & 0.026 \\
+3 & 0.997 & 0.094 & 0.112 & \textbf{1.000} & 0.036 \\
+4 & 0.331 & 0.044 & 0.049 & \textbf{1.000} & 0.026 \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -2762,11 +2780,12 @@ input toward the vector emitted when the target entry is active, remaining
 self-consistent across the residual cascade, and leads at layers 2 and 3.
 The \texttt{adjoint}, the eigenvector along which the target entry's
 bilinear form grows, is the one classifier-derived direction that holds at
-every depth, realizing $0.46$--$0.58$ in each layer ($0.55$--$0.67$ oriented
-per sample); at layer 4, where every other direction realizes at most
-$0.33$, it realizes $0.58$. Practically, layer 0 is best steered via
-classifier gradients, layers 2--3 via decoded atoms, and layers 1 and 4 via
-the adjoint. The table is the shipped initialization's stack
+every depth: it realizes every target in every layer, oriented per sample or
+not, where at layer 4 no other direction realizes more than $0.33$.
+Reversing the signed classification change instead realizes $0.46$--$0.58$
+per layer (Appendix~\ref{sec:eigorient}). So the adjoint steers every layer;
+of the other directions, classifier gradients steer layer 0 best and decoded
+atoms layers 2--3. The table is the shipped initialization's stack
 (\texttt{ste\_h76}); one seed.
 
 \paragraph{Head-health levers and steering.} We tried three training
@@ -2786,7 +2805,7 @@ within-head atom cosine at $0.5$ (compared to $0.774$ in the uncontrolled
 run) raises embedding-space realization at strength $0.25$ for the
 gradient directions (\texttt{grad} $+17\%$, \texttt{margin} $+49\%$) and
 by $6\%$ for \texttt{decode}, leaves the \texttt{adjoint} about unchanged
-($-3\%$, and $+7\%$ oriented per sample), and reduces collateral
+($-6\%$, and $0\%$ oriented per sample, where both realize $1.00$), and reduces collateral
 ($0.588 \to 0.552$) while slightly improving held-out $\fvu$ ($0.2157$ vs.\
 $0.2293$). The setpoint controller acts only transiently during early
 training (Figure~\ref{fig:kcos}): as the maximum within-head atom cosine
@@ -2902,9 +2921,9 @@ hard-code flat  & 0.367 & 0.315 & 0.309 & 0.521 & 0.328 & 0.274 \\
 
 Compared to the covariance-shaped random controls, the softmax stack's
 \texttt{decode} direction flips $0.14$ more unrelated heads, its gradient
-and margin directions $0.15$--$0.20$ more, and its adjoint $0.23$ more; the
+and margin directions $0.15$--$0.20$ more, and its adjoint $0.22$ more; the
 gradient directions remain within $0.07$ of the isotropic baseline, and the
-adjoint sits $0.10$ above it. In the five-layer
+adjoint sits $0.09$ above it. In the five-layer
 hard-code stack, every steering direction stays within $0.025$ of the
 data-shaped controls. In the single-layer flat arm, the \texttt{decode}
 direction and the difference of means remain within $0.041$ of the

@@ -206,13 +206,16 @@ on the error left by previous layers, as in multi-stage residual
 quantization~\cite{zeghidour2021}, while also applying deep supervision
 to each prefix.
 
-However, residual depth makes individual heads harder to target via
-input-space perturbations. Stepping in embedding space by
+However, residual depth makes individual heads harder to target
+selectively with input-space perturbations. Stepping in embedding space by
 $0.25\lVert\mathbf{x}\rVert$ along a target entry's decoded atom flips
 the target head to that entry on 99.6\% of rows in the single-layer model
 while flipping 33\% of other heads, whereas in the five-layer stack it
 realizes the target entry on 37\% of rows while flipping 66\% of other
-heads. In both models, stepping along a decoded atom flips as many
+heads. Stepping instead along the eigenvector of the target entry's
+bilinear form with positive eigenvalue, the direction in which its logit
+grows, the stack realizes 99\% of targets at the same step, still flipping
+66\% of other heads, so depth costs selectivity rather than reach. In both models, stepping along a decoded atom flips as many
 unrelated heads as a random step of the same norm, both because the hard
 classifiers sit close to their decision boundaries (median logit margin
 $1.5\times10^{-4}$ between winner and runner-up) and because changes to
