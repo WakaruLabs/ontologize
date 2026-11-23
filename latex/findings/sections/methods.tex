@@ -59,8 +59,9 @@ those atoms (Section~\ref{sec:dict}).
 \begin{figure}[tp]
 \centering
 \resizebox{\linewidth}{!}{\input{tikz/ontologizer}}
-\caption[\texttt{Ontologizer} architecture]{\textbf{\texttt{Ontologizer} architecture.}
-	An \texttt{Ontologizer} stacks $l$ \texttt{DictEnc} layers, each writing
+\caption[\texttt{DictStack} architecture]{\textbf{\texttt{DictStack} architecture.}
+	A \texttt{DictStack}, the Ontologizer's class in the code, stacks $l$
+	\texttt{DictEnc} layers, each writing
 	its gain-scaled pooled output $g_\ell\mathbf{f}'_\ell$ into a shared
 	residual accumulator $\mathbf{r}$. Accumulator states are indexed by the
 	number of layers applied: layer $\ell$ receives $\mathbf{r}_\ell$ and the

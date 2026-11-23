@@ -30,8 +30,9 @@ models do not form a coordinate partition (Section~\ref{sec:disjoint}).
 \begin{figure}[tp]
 \centering
 \resizebox{\linewidth}{!}{\input{tikz/ontologizer}}
-\caption[\texttt{Ontologizer} architecture]{\textbf{\texttt{Ontologizer} architecture.}
-	An \texttt{Ontologizer} consists of $l$ stacked \texttt{DictEnc} layers.
+\caption[\texttt{DictStack} architecture]{\textbf{\texttt{DictStack} architecture.}
+	A \texttt{DictStack}, the Ontologizer's class in the code, consists of $l$
+	stacked \texttt{DictEnc} layers.
 	Each returns a pooled feature vector $\mathbf{f}'_\ell\in\mathbb{R}^{e}$,
 	which is written, scaled by its input's gain $g_\ell$, to a residual
 	accumulator $\mathbf{r}$.

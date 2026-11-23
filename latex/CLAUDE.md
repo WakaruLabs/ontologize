@@ -205,7 +205,7 @@ Paths in `\input` and `\includegraphics` are relative to this directory, where p
 runs, not to the section file that contains them: a section inputs `tikz/dict.tex` and
 `algorithms/dictblock.tex`, not `../../tikz/dict.tex`.
 
-`algorithms/` holds the `DictBlock`, `DictEnc` and `Ontologizer` training passes
+`algorithms/` holds the `DictBlock`, `DictEnc` and `DictStack` training passes
 (`algorithm2e` floats, `\input` from `findings/sections/methods.tex`) and the `steerembed.py`
 evaluation (`\input` from the appendix). The appendix's Supplementary methods
 (`app:methods`) is the single full description of data, models and evaluation

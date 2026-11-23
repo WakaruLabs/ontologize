@@ -31,7 +31,7 @@ class DictIntervention:
 
 @dataclass
 class OntologizerIntervention:
-    """Container for specifying which `Ontologizer` layer to apply a `DictIntervention` to."""
+    """Container for specifying which `DictStack` layer to apply a `DictIntervention` to."""
     layer: int
     method: DictIntervention
 
@@ -40,11 +40,17 @@ class OntologizerIntervention:
         self.method.show()
 
 @dataclass
-class Ontologizer(nn.Module):
-    """Multilayer Ontologizer where each layer is a `DictEnc`. Uses `DictEnc.withClusts`
-    to add the output of each layer to a residual and pass either the flattened
-    classifications or the running reconstruction residual to the next layer
-    (see `forward`)."""
+class DictStack(nn.Module):
+    """A stack of `l` `DictEnc` layers between a shared encoder and decoder.
+    Uses `DictEnc.withClusts` to add the output of each layer to a residual
+    and pass either the flattened classifications or the running
+    reconstruction residual to the next layer (see `forward`).
+
+    `Ontologizer` is the same class under its earlier name, kept as an
+    alias so that code naming it, here and ported from repositories that
+    still use it, runs unchanged. A checkpoint stores the model's fields
+    and its parameters under attribute names (`dictencs_0`, ...), never the
+    class name, so every checkpoint loads under either name."""
     d_in: int = 0
     d_out: int = 0
     e_dec: int = 0
@@ -217,7 +223,7 @@ class Ontologizer(nn.Module):
 
     def dictenc(self, d_enc: int, n_const: int = 0, i: int = 0) -> DictEnc:
         """Initialize `DictEnc`s for a specified input dimension with all other properties
-        taken from the `Ontologizer`. `n_const` is the number of trailing
+        taken from the `DictStack`. `n_const` is the number of trailing
         constant input coordinates (resid_const) the layer's gain-shape
         split must exclude from the norm; `i` is the layer index, which
         places its output under `per_layer_dec`."""
@@ -735,3 +741,7 @@ class Ontologizer(nn.Module):
         E_int, _ = self.encode(X_int)
         F, Ps = self.classify(E_int, temperature=temperature)
         return self.decode(F), X_int, Ps
+
+
+#: The class's earlier name (see `DictStack`).
+Ontologizer = DictStack

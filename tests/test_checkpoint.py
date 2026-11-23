@@ -2,14 +2,15 @@
 # (the config.py/ontostate.py route, not serialize.py), including the
 # n_stats width migration: checkpoints written before a stat was added
 # carry a narrower (save_each, n) stats buffer and must restore into the
-# live-width state via load_params' shape-mismatch fallback.
+# live-width state via load_params' shape-mismatch fallback. Also that
+# neither of the class's names (`DictStack`, `Ontologizer`) is stored.
 import jax
 import jax.numpy as jnp
 import optax
 import orbax.checkpoint as ocp
 import pytest
 
-from ontologize.ontologizer import Ontologizer
+from ontologize.ontologizer import DictStack, Ontologizer
 from ontologize.training.ontostate import OntoState, state_init, load_params
 from flax.errors import ScopeParamShapeError
 
@@ -73,6 +74,30 @@ def test_spec_rebuilds_model(tmp_path):
     spec = manager.restore(0, items={'spec': None})['spec']
     rebuilt = Ontologizer(**migrate_spec(spec))
     assert rebuilt == state.model
+
+
+def test_the_class_name_is_never_stored(tmp_path):
+    """`Ontologizer` is `DictStack` under its earlier name. Neither name may
+    reach a checkpoint: the spec holds the fields and the parameters sit
+    under attribute names, so a checkpoint written under one name restores
+    under the other. A wrapper module that held the stack unnamed would
+    store it as `DictStack_0`, and this would catch it."""
+    assert Ontologizer is DictStack
+    state = make_state(OntoState.n_stats).replace(step=3)
+    manager = make_manager(tmp_path)
+    assert state.save(manager)
+    stored = {item: manager.restore(3, items={item: None})[item]
+              for item in ("state", "spec")}
+    paths = [jax.tree_util.keystr(p) for p, _ in
+             jax.tree_util.tree_flatten_with_path(stored)[0]]
+    assert "dictencs_0" in " ".join(paths)      # the walk reached the params
+    assert not any("Ontologizer" in p or "DictStack" in p for p in paths)
+    assert not any(isinstance(v, str) and ("Ontologizer" in v or "DictStack" in v)
+                   for v in jax.tree_util.tree_leaves(stored["spec"]))
+    rebuilt = DictStack(**restore_spec(manager, 3))
+    assert rebuilt == state.model
+    restored = load_params(make_state(OntoState.n_stats, seed=7), manager, 3)
+    assert params_equal(restored.params, state.params)
 
 
 def test_a_prerename_spec_still_rebuilds(tmp_path):
