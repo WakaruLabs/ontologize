@@ -1,5 +1,171 @@
 # lcm-organism: notes
 
+## 2026-11-22: 19 of block 4's coordinates kept on their axes, the rest rotated: keeping them undoes most of what mixing costs, and keeping 19 others undoes none of it
+
+**In short.**
+- **Three checks of what the readout's axes carry that a rotation removes:** each coordinate's marginal,
+  the dependence between pairs of coordinates' magnitudes, and the tail of their correlations. Only the
+  last tells the axes from random directions. It finds a group of 19 strongly correlated, heavy-tailed
+  coordinates, inherited from block 4.
+- **Keeping those 19 on their axes and rotating the other 1,005 among themselves** closes 69% of
+  SONAR's gap to the LCM on all heads and 34% within a language. The rescaled readout closes 72% and
+  35%, and the rotated one 41% and 26%. Unrounded, the partial rotation undoes 27 of the 30 points that
+  mixing costs on all heads, and 8 of 9 within a language: about 90%.
+- **It has to be these 19.** Keeping 19 coordinates drawn at random from outside the group, with the
+  same rotation of the rest, closes 40% and 25%, as the full rotation does.
+
+**The checks** (`axes.py`, output in `data/out/lcm-organism/axes`). Each arm is read on the same
+200,000 training rows (sample seed 0, from the first 4,400,014), in the frame its loss weighs. Each
+is compared with what a rotation would give: 1,024 random directions in the same frame, or five
+random rotations of the same covariance.
+- **Marginals.** On the readout from x_n alone, a typical coordinate has the shape of a random
+  direction: median excess kurtosis 0.32 on the axes against 0.33, median |skew| 0.09 against 0.10.
+  - **The same holds in every arm,** the LCM's heavy tails included (1.26 against 1.25).
+  - **Eight of the readout's axes fall outside the random directions' range,** with kurtosis up to
+    4.9 and skew up to 1.5. Among them are coordinates 532 and 709, block 4's most heavy-tailed. The
+    rotation removes all eight, and the rescaling keeps them.
+  - **Such axes don't track agreement across the arms.** The fixed mix has 8 and closes 17%, SONAR 6
+    and closes 0%, and the LCM 3 and closes 100%.
+  - So the candidate in the entry below, the shape of each coordinate's own distribution, is mostly
+    ruled out.
+- **Magnitude dependence.** Per pair of coordinates, the Spearman correlation of their absolute values
+  less a Gaussian's with the same covariance (about 524,000 pairs per arm; noise about 0.003 a pair).
+  - **On the readout, axes and random directions match from the mean to the maximum:** 0.029 against
+    0.030 on average, 0.065 for both at the 99.9th percentile, and 0.092 against 0.088 at the most. One
+    random scale per row would give this in any basis.
+  - **Block 4 has a little such structure on its own axes,** 64 pairs above 0.1 against 2 along
+    random directions. The readout doesn't inherit it.
+  - **The fixed mix has the most on its axes** (mean 0.058 against 0.052) and agrees poorly.
+- **The correlations' tail.** The readout's correlation matrix on its axes, against the correlations
+  of five random rotations of its covariance, which keep the spectrum:
+
+  | Readout, x_n alone | Axes | Rotated, mean [range] |
+  |---|---|---|
+  | Largest \|ρ\| | 0.93 | 0.48 [0.43, 0.56] |
+  | Pairs above 0.5 | 44 | 0.4 [0, 2] |
+  | Coordinates with a partner above 0.5 | 19 | 0.6 [0, 3] |
+  | Pairs above 0.3 | 1,730 | 756 |
+  | Participation (1/IPR) of the top principal direction | 304 | 395 |
+  | Median \|ρ\| | 0.063 | 0.063 |
+
+  - **The typical pair is unchanged, and the difference is all in the tail.** The rotated arm's own
+    cache reads as the rotations do: no pair above 0.5, the largest 0.44.
+  - **The group is block 4's.** It holds 13 of block 4's 14 coordinates with a partner above 0.5, and
+    26 of its 29 such pairs. Coordinates 532 and 709 correlate at −0.93, against −0.95 in block 4, and
+    369 and 611 at −0.89 in both. Seven of the eight outlying axes above are in it.
+  - **A group like it is not enough.** SONAR has one (10 coordinates, the largest |ρ| 0.74, the top
+    principal direction on 185 coordinates against 364 rotated) and closes 0%. The fixed mix has one
+    of 12 and closes 17%. Recolouring removes both groups, and agreement doesn't consistently fall:
+    SONAR goes from 0% to 22%, and the fixed mix from 17% to −3%.
+
+**The arm.**
+- **The rows.** `weightframe.py --rotate-except` writes the rescaled readout with the 19 coordinates
+  that have a partner above |ρ| 0.5 left on their axes:
+  `33,34,151,188,209,317,364,369,376,386,532,611,657,706,709,710,796,852,945`. The other 1,005 live
+  coordinates are mixed by one random rotation (seed 0, drawn as `recolour.py` draws its rotation). The
+  scale is the rescaled arm's, c = 376.83 (`--scale-like` on the rotated cache).
+- **The set.** A second, disjoint sample of rows gives the same 19. The threshold decides it: 33
+  coordinates have a partner above 0.45, and 12 above 0.55.
+- **The written cache.** The 19 columns are the rescaled cache's exactly, and row norms agree within
+  4e-5. 43 of the group's 44 pairs above 0.5 remain. Seven new pairs at 0.50–0.52 join three of the
+  group's hubs (317, 369, 611) to rotated coordinates. The hubs share much of their variance with the
+  top principal directions, so mixtures of the rotated coordinates still correlate with them.
+- **Its loss.** Mixing changes each mixed coordinate's variance, so the arm's own weights span a factor
+  of 2.37, against 2.46 for the rotated arm. Its loss is nearly the rotated arm's (copy baseline
+  1.0621, against 1.0633) and not the readout's. The 19 carry 1.8% of the weight, their share of the
+  coordinates.
+
+**The control** (`lcm_readout_x_rand19`) is this arm with 19 other coordinates kept:
+`30,61,277,315,320,330,359,385,426,438,450,550,591,731,797,868,888,933,1013`.
+- **The draw.** The 19 were drawn at seed 19 from the 991 live coordinates with no partner above
+  |ρ| 0.45, which leaves out the group at every threshold above. Each one's strongest partner has a
+  median |ρ| of 0.29, close to the pool's 0.30, against the group's 0.64. Among themselves they
+  correlate at a median |ρ| of 0.06, and at most 0.20.
+- **Otherwise the same:** the same rotation of the other 1,005 coordinates (seed 0, the same size),
+  and the same scale.
+- **The written cache,** on 20,000 rows:
+  - the 19 columns are the rescaled cache's exactly;
+  - row norms agree within 1.2e-4;
+  - a linear map from the rescaled rows reproduces the mixed block with a share of 8e-8 of its
+    variance left over;
+  - after mixing, no coordinate has a partner above |ρ| 0.5.
+- **Its loss.** Its own weights span a factor of 2.80 (copy baseline 1.0631). The 19 again carry 1.8%
+  of the weight.
+
+**Runs.** `ARMS=lcm_readout_x_keep19 phase2.sh train`, then `score`, on the RTX 3090, as for the other
+readout arms: seeds 42 and 43 to step 46,250, about 2 h and 2 h 20 min, and 4 h 26 min with
+scoring. The control ran the same way after it, at about 2 h a seed, and was scored on 2026-11-23. The
+stored spec computes in float32, and the GPU ran its matmuls at JAX's default precision, which is TF32
+there. Scoring ran at `highest`.
+
+**The readouts** from x_n alone:
+
+| Arm | All 380 heads: matched NMI (null) | First 38 heads, within language (null) | Gap closed, all heads / within | Head-specific part | Its loss | Copy baseline | FVU_w, each seed |
+|---|---|---|---|---|---|---|---|
+| Unrotated | 0.0313 (0.0048) | 0.0907 (0.0495) | 84% / 38% | 0.0026 | the readout's | 1.056 | 0.2481 / 0.2475 |
+| Rescaled | 0.0291 (0.0048) | 0.0891 (0.0500) | 72% / 35% | 0.0023 | the readout's | 1.056 | 0.2569 / 0.2559 |
+| **Keep the group of 19, rotate the rest** | **0.0287** (0.0048) | **0.0886** (0.0501) | **69% / 34%** | **0.0024** | weights span 2.37 | 1.062 | **0.2584 / 0.2586** |
+| **Keep 19 others, rotate the rest** | **0.0237** (0.0048) | **0.0837** (0.0506) | **40% / 25%** | **0.0020** | weights span 2.80 | 1.063 | **0.2676 / 0.2689** |
+| Rotated | 0.0240 (0.0048) | 0.0842 (0.0506) | 41% / 26% | 0.0019 | weights span 2.46 | 1.063 | 0.2677 / 0.2670 |
+
+Next-sentence FVU_w, each seed:
+- keeping the group, 0.9660 / 0.9661, with ridge baseline 0.7186;
+- keeping 19 others, 0.9702 / 0.9703, with ridge baseline 0.7193;
+- for comparison, rescaled 0.9610 / 0.9606 and rotated 0.9698 / 0.9697.
+
+**What it means.**
+- **The mixing's cost sits mostly in a small group of block 4's coordinates.** They are 1.8% of the
+  coordinates and of the loss weight. Keeping them undoes about 90% of what mixing costs, under a loss
+  nearly as uneven as the rotated arm's.
+- **Keeping a few axes unmixed is not what helps.** Nineteen other coordinates, kept the same way,
+  undo none of it: 40% / 25%, against the full rotation's 41% / 26%.
+- **Reconstruction moves with agreement.** FVU_w is 0.258 with the group kept, near the rescaled arm's
+  0.257. With 19 others kept it is 0.268, as when rotated.
+- **The three checks predicted this.** Only the correlations' tail found anything on the axes, and
+  it was this group.
+- **Why the trainer responds to them is untested.** Adam's per-coordinate step sizes make this recipe
+  sensitive to the basis. A rotation-equivariant recipe would give the rescaled and rotated arms the
+  same agreement, apart from the rotated arm's uneven weights, and keeping any coordinates would not
+  matter. The group's coordinates are both strongly correlated and heavy-tailed, and these runs don't
+  say which of the two the recipe uses.
+- **The group matters as part of block 4's map, not on its own.** SONAR and the fixed mix have groups
+  like it and agree poorly.
+
+**Caveats.**
+- **The group's own axes, or its being left unmixed?** Both arms leave the kept coordinates out of the
+  mixing and on their axes. A rotation of the 19 among themselves, with the rest left as they are,
+  would tell the two apart. It has not been run.
+- **One draw of 19 others.** The control is one random draw, so it shows that 19 coordinates outside
+  the group need not help, not that none would.
+- **Seeds.** One scored pair, as for every control arm. On all heads:
+  - keeping the group gives a matched NMI 0.0004 below the rescaled arm's and 0.0047 above the
+    rotated arm's;
+  - keeping 19 others gives 0.0003 below the rotated arm's.
+
+  The LCM's own seed pairs spread by 0.0017 on the 38 slow heads.
+- **The threshold.** The group is the coordinates with a partner above 0.5. How the result moves with
+  the threshold (33 coordinates at 0.45, 12 at 0.55) is untested.
+- **The checks' code.** The three checks and the control's draw first ran as one-off scripts.
+  `axes.py` reproduces their numbers to rounding, and the control's 19 coordinates exactly.
+- **Precision.** How much TF32 rounding adds to the recipe's dependence on the basis has not been
+  measured.
+
+```bash
+A=data/activations/lcm-organism
+# the three checks, the group, its disjoint-sample check and the control's draw
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/axes.py --disjoint --draw 19
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/weightframe.py --scale-like $A/lcm_readout_x_rot_b4.npy \
+    --rotate-except 33,34,151,188,209,317,364,369,376,386,532,611,657,706,709,710,796,852,945 \
+    --out $A/lcm_readout_x_keep19_b4.npy
+ARMS=lcm_readout_x_keep19 experiments/lcm-organism/phase2.sh train
+ARMS=lcm_readout_x_keep19 experiments/lcm-organism/phase2.sh score
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/weightframe.py --scale-like $A/lcm_readout_x_rot_b4.npy \
+    --rotate-except 30,61,277,315,320,330,359,385,426,438,450,550,591,731,797,868,888,933,1013 \
+    --out $A/lcm_readout_x_rand19_b4.npy
+ARMS=lcm_readout_x_rand19 experiments/lcm-organism/phase2.sh train
+ARMS=lcm_readout_x_rand19 experiments/lcm-organism/phase2.sh score
+```
+
 ## 2026-11-22: the readout rescaled to its loss's frame, unrotated: the rotation's cost is mostly the mixing
 
 **In short.**
@@ -53,7 +219,9 @@ readout arms: seeds 42 and 43 to step 46,250, a little over 2 hours each.
   its coordinates are block 4's. Mixing them at random costs about 70% of what the rotation costs
   (31 of 43 points on all heads, 9 of 13 within a language), and evening out their scales costs the
   rest. What the axes carry, these runs do not say. One candidate is the shape of each coordinate's
-  own distribution, which a rotation blends toward a Gaussian and a rescaling keeps.
+  own distribution, which a rotation blends toward a Gaussian and a rescaling keeps. (Later the same
+  day: the marginals check in the entry above finds a typical coordinate on the axes shaped like a
+  random direction, which mostly rules this out. The correlations' tail is what differs.)
 - **Reconstruction follows the same order.** FVU_w is 0.248 unrotated, 0.257 rescaled and 0.268
   rotated. The rotated arm's figure is under weights that are not quite flat.
 

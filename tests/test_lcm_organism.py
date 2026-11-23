@@ -26,6 +26,11 @@
 #   weights are the source's, scaled to the source's whitened base.
 # - recolour.py: a source already laid out as the target harvest is mapped
 #   row for row, by one linear map with no offset.
+# - axes.py: a skewed coordinate is outlying on the axes and not after a
+#   rotation; one random scale per row reads the same magnitude excess on the
+#   axes as along random directions, and a Gaussian none; a correlated group
+#   is found on the axes in the cache's numbering and not after a rotation,
+#   and the draw avoids it.
 import json
 import os
 import signal
@@ -696,3 +701,91 @@ def test_a_source_laid_out_as_the_target_is_recoloured_row_for_row(tmp_path):
     assert ((mix @ M - rec) ** 2).sum() < 1e-4 * (rec ** 2).sum()
     for suf in (".index.npy", ".langs.npy", ".docstart.npy"):
         assert os.path.samefile(tmp_path / ("h8" + suf), out / ("rec" + suf))
+
+
+# ---------------------------------------------------------------- axes.py
+
+def planted_group(n=20000, d=64, members=(3, 10, 41), seed=0):
+    """Gaussian rows whose `members` share a latent, correlating at 0.7 in pairs."""
+    r = np.random.default_rng(seed)
+    x = r.standard_normal((n, d))
+    z = r.standard_normal(n)
+    for j in members:
+        x[:, j] = np.sqrt(0.7) * z + np.sqrt(0.3) * x[:, j]
+    return x
+
+
+def test_a_skewed_coordinate_is_outlying_on_the_axes_and_not_after_a_rotation():
+    import axes
+    r = np.random.default_rng(1)
+    X = r.standard_normal((20000, 32))
+    X[:, 5] = r.exponential(size=20000)  # skew 2, excess kurtosis 6
+    X -= X.mean(0)
+    D = r.standard_normal((32, 1024))
+    D /= np.linalg.norm(D, axis=0)
+    a = axes.shape(X)
+    assert abs(a["skew"][5] - 2) < 0.3 and abs(a["kurt"][5] - 6) < 2
+    assert axes.outlying(a, axes.shape(X @ D)).tolist() == [5]
+    Y = X @ axes.haar(32, r)
+    assert len(axes.outlying(axes.shape(Y), axes.shape(Y @ D))) == 0
+
+
+def test_one_scale_per_row_reads_the_same_magnitude_excess_in_any_basis():
+    import axes
+    r = np.random.default_rng(2)
+    n, d = 20000, 16
+    Z = r.standard_normal((n, d))
+    Q = axes.haar(d, r)
+    for Y, scaled in ((Z * np.exp(0.5 * r.standard_normal((n, 1))), True), (Z, False)):
+        Y = Y - Y.mean(0)
+        G = axes.gaussian_copy(Y, r)
+        on, off = axes.excess(Y, G).mean(), axes.excess(Y @ Q, G @ Q).mean()
+        if scaled:
+            assert on > 0.1 and abs(on - off) < 0.01
+        else:
+            assert abs(on) < 0.01 and abs(off) < 0.01
+
+
+def test_a_correlated_group_is_found_on_the_axes_and_not_after_a_rotation():
+    import axes
+    x = planted_group()
+    w = np.ones(x.shape[1])
+    w[0] = 0  # a dead coordinate: the group keeps the cache's numbering
+    X, live = axes.weighted(x, w, np.arange(len(x)))
+    C = X.T @ X / len(X)
+    coords = np.flatnonzero(live)
+    g = axes.group(C, coords, 0.5)
+    assert g["coords"] == [3, 10, 41] and len(g["pairs"]) == 3
+    assert abs(abs(g["strongest"][0][2]) - 0.7) < 0.03
+    s = axes.corr_stats(C, 0.5)
+    assert s["coords_with_partner"] == 3 and s["pairs_over_threshold"] == 3
+    Q = axes.haar(len(C), np.random.default_rng(3))
+    rot = axes.corr_stats(Q.T @ C @ Q, 0.5)
+    assert rot["coords_with_partner"] == 0 and rot["rho_max"] < 0.5
+    np.testing.assert_allclose(np.linalg.eigvalsh(Q.T @ C @ Q), np.linalg.eigvalsh(C), atol=1e-8)
+    pick, about = axes.draw(C, coords, 5, 0.45, seed=0)
+    assert len(set(pick)) == 5 and not set(pick) & {0, 3, 10, 41}
+    assert pick == axes.draw(C, coords, 5, 0.45, seed=0)[0] and about["excluded"] == 3
+
+
+def test_the_axes_report_reads_every_check_and_draws_outside_the_group(tmp_path):
+    import axes
+    x = planted_group(n=4000, d=16, members=(3, 10, 12))
+    c = tmp_path / "a.npy"
+    np.save(c, x.astype(np.float32))
+    w = np.ones(16, np.float32)
+    w[0] = 0
+    np.save(tmp_path / "w.npy", w)
+    out = tmp_path / "out"
+    rep = axes.main(["--arm", "a", str(c), str(tmp_path / "w.npy"), "--rows", "1500",
+                     "--dirs", "64", "--rotations", "2", "--disjoint", "--draw", "4",
+                     "--draw-arm", "a", "--reference", "a", "--out", str(out)])
+    a = rep["arms"]["a"]
+    assert a["live"] == 15 and a["group"]["coords"] == [3, 10, 12]
+    assert a["group"]["disjoint"]["same"] and a["group"]["sizes"]["0.5"] == 3
+    assert a["covariance"]["axes"]["coords_with_partner"] == 3 and len(a["covariance"]["rotations"]) == 2
+    assert abs(a["energy"]["axes"]["mean"]) < 0.01 and a["marginals"]["axes"]["max_abs_skew"] < 0.3
+    assert len(rep["draw"]["coords"]) == 4 and not set(rep["draw"]["coords"]) & {0, 3, 10, 12}
+    assert json.loads((out / "axes.json").read_text())["draw"] == rep["draw"]
+    assert np.load(out / "a.npz")["cov"].shape == (15, 15)
+

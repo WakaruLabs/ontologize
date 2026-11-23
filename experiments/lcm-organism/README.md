@@ -19,9 +19,11 @@ arms. Results go in `notes.md`.
 | `recolour.py` | The effective-dimension control: SONAR's rows through one linear map that gives them a harvest's spectrum, laid out as that harvest. A source already laid out as the harvest, such as the fixed mix, is read row for row |
 | `readout.py` | The context-averaging control: Gate B's ridge readout of a harvest's state from x_n, the mean of its document's earlier rows and an indicator of n = 0, written at every row of the harvest and laid out as it. `--features row` reads from x_n alone |
 | `ctxmean.py` | The fixed-mix control: SONAR's row plus a fixed weight times its document's earlier mean, with no LCM, laid out as a harvest and weighted as SONAR |
+| `weightframe.py` | A cache's rows in the frame its loss weighs, c √w ⊙ y, unrotated. `--rotate-except J` mixes the live coordinates outside J among themselves with one random rotation and leaves J on their axes |
+| `axes.py` | What each arm's coordinate axes carry that a rotation would remove, in the frame its loss weighs: coordinate marginals beside random directions, magnitude dependence between coordinates beside random directions, and the correlations' tail beside random rotations; the group of strongly correlated coordinates, and a draw of coordinates outside it for `--rotate-except` |
 | `phase2.sh` | Phase 2 on one GPU: the harvests, then the arms' dictionaries (`ARMS`, default `lcm init`) trained and scored by the SONAR control's recipe |
 
-`tests/test_lcm_organism.py` covers the ten Python files.
+`tests/test_lcm_organism.py` covers the twelve Python files.
 
 ## Run
 
@@ -69,6 +71,15 @@ ARMS=lcm_readout_x_rot experiments/lcm-organism/phase2.sh train && ARMS=lcm_read
 # the same rows unrotated, each coordinate scaled by the root of its loss weight: the rotated arm is these rotated
 JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/weightframe.py --scale-like $A/lcm_readout_x_rot_b4.npy
 ARMS=lcm_readout_x_wf experiments/lcm-organism/phase2.sh train && ARMS=lcm_readout_x_wf experiments/lcm-organism/phase2.sh score
+# what the axes carry, with the strongly correlated group and a draw of 19 coordinates outside it
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/axes.py --disjoint --draw 19
+# the rescaled rows with the group kept on its axes and the rest rotated, and with the drawn 19 kept instead
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/weightframe.py --scale-like $A/lcm_readout_x_rot_b4.npy \
+    --rotate-except <group> --out $A/lcm_readout_x_keep19_b4.npy
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/weightframe.py --scale-like $A/lcm_readout_x_rot_b4.npy \
+    --rotate-except <drawn> --out $A/lcm_readout_x_rand19_b4.npy
+ARMS="lcm_readout_x_keep19 lcm_readout_x_rand19" experiments/lcm-organism/phase2.sh train
+ARMS="lcm_readout_x_keep19 lcm_readout_x_rand19" experiments/lcm-organism/phase2.sh score
 ```
 
 On a TPU (`experiments/cloud`), stage the float16 cache with the sidecars the scripts read
@@ -143,3 +154,18 @@ expired node loses only what had not reached the bucket.
   - **Weights.** SONAR's own (the SONAR arm's `no837`), scaled so the whitened error of predicting the
     mean equals SONAR's. Inverse-variance weights would differ from the SONAR arm's in more than the
     context, and would weigh up coordinate 837, which `no837` zeroes.
+- **The weighted frame, unrotated** (`weightframe.py`).
+  - **The map.** The trainer's loss weighs coordinate j by w_j, so it is plain squared error on
+    √w ⊙ y. Writing those rows, times the constant c that `--scale-like` takes from a recoloured
+    cache, gives an arm whose own weights are flat and whose loss is the source's. Recolouring a cache
+    to its own spectrum is these rows rotated, so the two arms differ by the rotation alone.
+  - **Partial rotations.** `--rotate-except J` rotates only the live coordinates outside J. That
+    changes each mixed coordinate's variance, so the arm's own weights are no longer flat, and its
+    loss is nearly, not exactly, the source's.
+- **The axes** (`axes.py`).
+  - **Why.** Adam's per-coordinate step sizes make the trainer sensitive to the basis, so a
+    rotation can change seed agreement although it keeps the spectrum. `axes.py` asks what on the axes
+    a rotation would remove, each statistic beside the same statistic in random directions or after
+    random rotations of the same covariance.
+  - **The nulls** are drawn in arm order from fixed seeds, so a run of the same arms in the same order
+    repeats its numbers.
