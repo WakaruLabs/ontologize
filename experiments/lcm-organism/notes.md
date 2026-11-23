@@ -1,5 +1,108 @@
 # lcm-organism: notes
 
+## 2026-11-23, later still: the group of 19 rotated among themselves keeps most of what keeping it gives, and Gaussianized keeps all of it
+
+**In short.**
+- **The question.** Keeping the group of 19 on its axes, with the other 1,005 coordinates rotated,
+  undoes about 90% of what mixing costs (the 2026-11-22 entry below). That arm left two questions
+  open:
+  - Is it the group's own axes, or that the group isn't mixed with the rest?
+  - Is it the group's strong correlations, or its heavy tails?
+
+  Two arms change one thing each about the 19 kept coordinates and leave everything else as in
+  that arm.
+- **Rotating the 19 among themselves** closes 66.2% of SONAR's gap to the LCM on all heads and 33.9%
+  within a language, against 68.8% and 33.8% with the group on its axes. That gives back 2.6 of the
+  27.4 points the group restores on all heads, and none within a language.
+- **Gaussianizing the 19,** which keeps each row's rank on each coordinate and removes the heavy
+  tails, closes 68.8% and 33.9%: the same to the last digit.
+- **So the heavy tails don't matter, and the group's particular axes matter little.** What matters
+  is that the group isn't mixed with the other 1,005 coordinates. The rotation within the block
+  weakens the group's correlations without removing them, so these arms don't rule the correlations
+  out.
+
+**The arms** (`weightframe.py`). Both are written as the group-kept arm is: the rescaled readout from
+x_n alone, the same 19 coordinates kept out of the mixing, the same rotation of the other 1,005
+(seed 0) and the same scale (c = 376.83).
+- **Block-rotated** (`lcm_readout_x_blk19`, `--rotate-block`). The 19 are mixed among themselves by
+  a random rotation of their own (block seed 1).
+  - **Its loss.** The arm's own inverse-variance weights would span a factor of 6.19, since the
+    rotation makes the block's variances uneven. A first build had them, and was rebuilt before
+    training with `--weights-like` the group-kept arm. Those weights are equal across the block, so
+    the loss is the group-kept arm's turned within the block.
+- **Gaussianized** (`lcm_readout_x_gauss19`, `--gaussianize`). Before the scaling, each of the 19 is
+  mapped onto a Gaussian with its own mean and standard deviation, through its empirical
+  distribution over the training prefix. The map keeps ties and the rows' order. The arm's own
+  weights are used. They are within 0.02% of the group-kept arm's, since the map keeps each
+  coordinate's variance.
+- **Both weightings** span a factor of 2.37, and the 19 carry 1.83% of the weight, as with the group
+  kept.
+
+**The written caches,** checked on 20,000 prefix rows (sample seed 0):
+
+| On these rows | Group kept | Block-rotated | Gaussianized |
+|---|---|---|---|
+| The other 1,005 columns | | equal to the group-kept arm's | equal to the group-kept arm's |
+| The 19 against the group-kept arm's | | an orthogonal map (residual share 9e-8), far from the identity (largest entry of M − I 1.50) | Spearman 1.00000 on each; variance within 0.995–1.008 |
+| Coordinates of the 19 with a partner above \|ρ\| 0.5 among them | 18 (19 on `axes.py`'s 200,000 rows) | 10 | 19 |
+| Largest \|ρ\| among the 19 | 0.93 | 0.75 | 0.90 |
+| Coordinates with a partner above 0.5 in the whole cache | 23 | 11 | 23 |
+| The 19's excess kurtosis, median / largest | 0.28 / 4.99 | 0.38 / 3.03 | −0.01 / 0.09 |
+
+**Runs.** `ARMS="lcm_readout_x_blk19 lcm_readout_x_gauss19" phase2.sh train`, then `score`, as one
+systemd unit on the RTX 3090, 03:24–11:12 on 2026-11-23: about 1 h 56 min a seed, and 7 h 48 min
+with scoring. As for the other readout arms, the stored spec computes in float32 with JAX's default
+TF32 matmuls, and scoring ran at `highest`.
+
+| Arm | All 380 heads: matched NMI (null) | First 38 heads, within language (null) | Gap closed, all heads / within | Head-specific part | Its loss | Copy baseline | FVU_w, each seed |
+|---|---|---|---|---|---|---|---|
+| Keep the group of 19, rotate the rest | 0.0287 (0.0048) | 0.0886 (0.0501) | 68.8% / 33.8% | 0.0024 | weights span 2.37 | 1.062 | 0.2584 / 0.2586 |
+| **The group rotated among itself** | **0.0282** (0.0048) | **0.0886** (0.0501) | **66.2% / 33.9%** | **0.0024** | the group-kept arm's, turned within the block | 1.062 | **0.2590 / 0.2587** |
+| **The group Gaussianized** | **0.0287** (0.0048) | **0.0886** (0.0501) | **68.8% / 33.9%** | **0.0024** | weights span 2.37 | 1.063 | **0.2584 / 0.2586** |
+| Rotated | 0.0240 (0.0048) | 0.0842 (0.0506) | 41.4% / 25.6% | 0.0019 | weights span 2.46 | 1.063 | 0.2677 / 0.2670 |
+
+Next-sentence FVU_w, each seed: block-rotated 0.9670 / 0.9672 and Gaussianized 0.9667 / 0.9668
+(ridge baselines 0.7186 and 0.7185), against 0.9660 / 0.9661 with the group kept.
+
+**What it means.**
+- **The heavy tails are not what the recipe responds to.** With the 19's marginals made Gaussian,
+  every seed-agreement score and FVU_w equals the group-kept arm's within 0.0001. The 2026-11-22 entry couldn't say whether
+  the group mattered for its strong correlations or for its heavy tails. These runs rule out the
+  tails.
+- **The group's own axes matter little.** Rotated among themselves, the 19 still restore about 90%
+  of what keeping them on their axes restores on all heads, and all of it within a language. What they need is
+  not to be mixed with the other 1,005 coordinates.
+- **The correlations remain the candidate.** Mixing the group into all 1,024 coordinates leaves no
+  pair above |ρ| 0.5 (the largest is 0.44). Mixing it within its 19 leaves 10 coordinates with such
+  a partner (the largest 0.75), and Gaussianizing leaves all 19 (the largest 0.90). Agreement
+  follows the same order. The block-rotated arm's 2.6-point loss on all heads may be the weaker
+  correlations, or seed noise.
+- **Reconstruction barely moves.** FVU_w averages 0.2588 rotated within the block, against 0.2585
+  with the group kept and with it Gaussianized. The difference is about the size of the gap between
+  one arm's two seeds (0.0003).
+
+**Caveats.**
+- **One seed pair per arm.** The block-rotated arm is 0.0005 below the group-kept arm in matched NMI
+  on all heads, about the gap between the group-kept and rescaled arms (0.0004). No arm has a second
+  pair scored on all heads, so the spread there is unmeasured.
+- **One rotation of the block** (block seed 1). Another would keep a different share of the
+  correlations.
+- **The correlations are untested directly.** No arm here removes them while keeping the group
+  unmixed and on its axes. Whitening the block would, but it would change the block's spectrum too.
+- **The checks of the written caches** ran as a one-off script, not in the repository.
+
+```bash
+A=data/activations/lcm-organism
+G=33,34,151,188,209,317,364,369,376,386,532,611,657,706,709,710,796,852,945
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/weightframe.py --scale-like $A/lcm_readout_x_rot_b4.npy \
+    --rotate-except $G --rotate-block $G --weights-like $A/lcm_readout_x_keep19_b4.npy \
+    --out $A/lcm_readout_x_blk19_b4.npy
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/weightframe.py --scale-like $A/lcm_readout_x_rot_b4.npy \
+    --rotate-except $G --gaussianize $G --out $A/lcm_readout_x_gauss19_b4.npy
+ARMS="lcm_readout_x_blk19 lcm_readout_x_gauss19" experiments/lcm-organism/phase2.sh train
+ARMS="lcm_readout_x_blk19 lcm_readout_x_gauss19" experiments/lcm-organism/phase2.sh score
+```
+
 ## 2026-11-23, later: templates with word slots don't carry the lead either, against a random-deletion control
 
 **In short.**
@@ -315,14 +418,17 @@ Next-sentence FVU_w, each seed:
   sensitive to the basis. A rotation-equivariant recipe would give the rescaled and rotated arms the
   same agreement, apart from the rotated arm's uneven weights, and keeping any coordinates would not
   matter. The group's coordinates are both strongly correlated and heavy-tailed, and these runs don't
-  say which of the two the recipe uses.
+  say which of the two the recipe uses. (2026-11-23: with the 19's marginals Gaussianized, the arm
+  scores the same, so it is not the tails. See the entry above.)
 - **The group matters as part of block 4's map, not on its own.** SONAR and the fixed mix have groups
   like it and agree poorly.
 
 **Caveats.**
 - **The group's own axes, or its being left unmixed?** Both arms leave the kept coordinates out of the
-  mixing and on their axes. A rotation of the 19 among themselves, with the rest left as they are,
-  would tell the two apart. It has not been run.
+  mixing and on their axes. A rotation of the 19 among themselves, with the other 1,005 rotated as in
+  this arm, would tell the two apart. (2026-11-23: this said "with the rest left as they are", which
+  read as leaving the 1,005 unrotated; corrected. The arm has run since: rotated among themselves,
+  the 19 close 66% and 34%. See the entry above.)
 - **One draw of 19 others.** The control is one random draw, so it shows that 19 coordinates outside
   the group need not help, not that none would.
 - **Seeds.** One scored pair, as for every control arm. On all heads:

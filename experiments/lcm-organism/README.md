@@ -19,7 +19,7 @@ arms. Results go in `notes.md`.
 | `recolour.py` | The effective-dimension control: SONAR's rows through one linear map that gives them a harvest's spectrum, laid out as that harvest. A source already laid out as the harvest, such as the fixed mix, is read row for row |
 | `readout.py` | The context-averaging control: Gate B's ridge readout of a harvest's state from x_n, the mean of its document's earlier rows and an indicator of n = 0, written at every row of the harvest and laid out as it. `--features row` reads from x_n alone |
 | `ctxmean.py` | The fixed-mix control: SONAR's row plus a fixed weight times its document's earlier mean, with no LCM, laid out as a harvest and weighted as SONAR |
-| `weightframe.py` | A cache's rows in the frame its loss weighs, c √w ⊙ y, unrotated. `--rotate-except J` mixes the live coordinates outside J among themselves with one random rotation and leaves J on their axes |
+| `weightframe.py` | A cache's rows in the frame its loss weighs, c √w ⊙ y, unrotated. `--rotate-except J` mixes the live coordinates outside J among themselves with one random rotation and leaves J on their axes. Within J, `--rotate-block K` rotates K among themselves and `--gaussianize K` gives each a Gaussian marginal, keeping the rows' order; `--weights-like` takes another cache's loss weights |
 | `axes.py` | What each arm's coordinate axes carry that a rotation would remove, in the frame its loss weighs: coordinate marginals beside random directions, magnitude dependence between coordinates beside random directions, and the correlations' tail beside random rotations; the group of strongly correlated coordinates, and a draw of coordinates outside it for `--rotate-except` |
 | `phase2.sh` | Phase 2 on one GPU: the harvests, then the arms' dictionaries (`ARMS`, default `lcm init`) trained and scored by the SONAR control's recipe |
 
@@ -82,6 +82,15 @@ JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/weightframe.py --scale-
     --rotate-except <drawn> --out $A/lcm_readout_x_rand19_b4.npy
 ARMS="lcm_readout_x_keep19 lcm_readout_x_rand19" experiments/lcm-organism/phase2.sh train
 ARMS="lcm_readout_x_keep19 lcm_readout_x_rand19" experiments/lcm-organism/phase2.sh score
+# the group kept apart and rotated among itself, under the group-kept arm's weights, and the group
+# kept on its axes with Gaussian marginals
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/weightframe.py --scale-like $A/lcm_readout_x_rot_b4.npy \
+    --rotate-except <group> --rotate-block <group> --weights-like $A/lcm_readout_x_keep19_b4.npy \
+    --out $A/lcm_readout_x_blk19_b4.npy
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/weightframe.py --scale-like $A/lcm_readout_x_rot_b4.npy \
+    --rotate-except <group> --gaussianize <group> --out $A/lcm_readout_x_gauss19_b4.npy
+ARMS="lcm_readout_x_blk19 lcm_readout_x_gauss19" experiments/lcm-organism/phase2.sh train
+ARMS="lcm_readout_x_blk19 lcm_readout_x_gauss19" experiments/lcm-organism/phase2.sh score
 # the tail's templated rows, then an arm's seeds scored without them
 uv run python experiments/lcm-organism/templates.py
 JAX_DEFAULT_MATMUL_PRECISION=highest uv run python experiments/next-sentence/seedmatch.py --a <seed 42> --b <seed 43> \
@@ -169,6 +178,18 @@ expired node loses only what had not reached the bucket.
   - **Partial rotations.** `--rotate-except J` rotates only the live coordinates outside J. That
     changes each mixed coordinate's variance, so the arm's own weights are no longer flat, and its
     loss is nearly, not exactly, the source's.
+  - **What the kept coordinates keep.** Two options change the coordinates J keeps, one property at
+    a time, each within J:
+    - *`--rotate-block K`* mixes K among themselves by a rotation of their own (`--block-seed`). They
+      stay apart from the rest, but not on their own axes.
+    - *`--gaussianize K`* maps each coordinate in K, before the scaling, onto a Gaussian with its own
+      mean and standard deviation, through its empirical distribution over the prefix. Ties and the
+      rows' order are kept, and values beyond the prefix's range take its end quantiles. The
+      coordinate keeps what it says about each row and loses its marginal's shape.
+  - **Borrowed weights.** A rotated block's variances are uneven, so the arm's own weights would
+    change the loss along with the basis. `--weights-like NPY` takes another cache's weights
+    instead. It is refused unless they are equal across the block, which makes the loss that
+    cache's, turned within the block.
 - **The axes** (`axes.py`).
   - **Why.** Adam's per-coordinate step sizes make the trainer sensitive to the basis, so a
     rotation can change seed agreement although it keeps the spectrum. `axes.py` asks what on the axes
