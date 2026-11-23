@@ -23,7 +23,9 @@ arms. Results go in `notes.md`.
 | `axes.py` | What each arm's coordinate axes carry that a rotation would remove, in the frame its loss weighs: coordinate marginals beside random directions, magnitude dependence between coordinates beside random directions, and the correlations' tail beside random rotations; the group of strongly correlated coordinates, and a draw of coordinates outside it for `--rotate-except` |
 | `phase2.sh` | Phase 2 on one GPU: the harvests, then the arms' dictionaries (`ARMS`, default `lcm init`) trained and scored by the SONAR control's recipe |
 
-`tests/test_lcm_organism.py` covers the twelve Python files.
+| `templates.py` | Which rows of the held-out tail are templates: a sentence that another document of the cache repeats (casefolded, digits alike, whitespace collapsed), or a SONAR near-twin in another tail document. Writes masks for `seedmatch.py --row-mask` and the flagged shares by language and kind |
+
+`tests/test_lcm_organism.py` covers the thirteen Python files.
 
 ## Run
 
@@ -80,6 +82,11 @@ JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/weightframe.py --scale-
     --rotate-except <drawn> --out $A/lcm_readout_x_rand19_b4.npy
 ARMS="lcm_readout_x_keep19 lcm_readout_x_rand19" experiments/lcm-organism/phase2.sh train
 ARMS="lcm_readout_x_keep19 lcm_readout_x_rand19" experiments/lcm-organism/phase2.sh score
+# the tail's templated rows, then an arm's seeds scored without them
+uv run python experiments/lcm-organism/templates.py
+JAX_DEFAULT_MATMUL_PRECISION=highest uv run python experiments/next-sentence/seedmatch.py --a <seed 42> --b <seed 43> \
+    --cache $A/lcm_b4.npy --labels $A/lcm_b4.langs.npy --label-rows 262144 --min-rows 1000 \
+    --row-mask data/out/lcm-organism/templates/keep_neither.npy --out <json>
 ```
 
 On a TPU (`experiments/cloud`), stage the float16 cache with the sidecars the scripts read
@@ -169,3 +176,11 @@ expired node loses only what had not reached the bucket.
     random rotations of the same covariance.
   - **The nulls** are drawn in arm order from fixed seeds, so a run of the same arms in the same order
     repeats its numbers.
+- **Templates** (`templates.py`).
+  - **Why.** mC4 holds many templated pages, whose repeated sentences two seeds can agree on easily.
+    Masks over the tail let `seedmatch.py` score the arms with those rows left out, or on them alone.
+  - **Two flags.** Repeated text catches exact repeats across the whole cache, digits aside. A SONAR
+    near-twin in another tail document catches templates whose slots vary in more than digits. Both
+    miss templates that differ more than that, so the flags are a lower bound.
+  - **The twin search** compares every tail row with every other on the default JAX device, in
+    full float32 precision, since a TF32 product could move a cosine across the threshold.

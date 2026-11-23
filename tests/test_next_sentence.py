@@ -341,6 +341,17 @@ def test_within_label_nmi_ignores_agreement_through_the_label():
     assert within_label_nmi(a, s, labels, k) < 0.01
 
 
+def test_a_row_mask_keeps_its_last_rows_and_refuses_to_cover_fewer():
+    from seedmatch import tail_keep
+    assert tail_keep(None, 3).tolist() == [True, True, True]
+    mask = np.array([False, True, False, True, True])
+    # aligned with the cache's last rows, so the last n of the mask
+    assert tail_keep(mask, 3).tolist() == [False, True, True]
+    assert tail_keep(mask, 5).tolist() == mask.tolist()
+    with pytest.raises(SystemExit, match="covers 5 rows"):
+        tail_keep(mask, 6)
+
+
 def test_next_with_residual_layers_is_refused():
     import train_next
     cfg = train_next.parser().parse_args([])

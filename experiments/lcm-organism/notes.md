@@ -1,5 +1,93 @@
 # lcm-organism: notes
 
+## 2026-11-23: templated sentences don't carry the LCM's within-language lead
+
+**In short.**
+- **The question.** mC4 has many templated pages: footers, timestamps, shop carts, spam. Do the
+  templated sentences in the scored rows carry the LCM's lead over SONAR within a language?
+- **Dropping them leaves the lead as it was.** 6.0% of the held-out tail's rows repeat text from
+  another document, or have a near-twin in one. Without them, the LCM's within-language excess over
+  SONAR's is 0.0595, against 0.0589 on all rows. The readouts close the same share of the gap as
+  before.
+- **On the templated rows alone, both models agree much more** (excess 0.178 for the LCM and 0.105
+  for SONAR). The LCM still leads there, by 1.7 times SONAR's excess, against 4.2 times on all rows.
+
+**The flags** (`templates.py`, on the last 262,144 rows, which are the same sentences in every arm's
+cache).
+- **Text.** A row's sentence, casefolded with every digit read as 0 and whitespace collapsed, is also
+  a sentence of another document anywhere in mc4_sent16. This flags 5.9% of the rows.
+- **Twin.** A row's SONAR embedding, centered on the tail's mean, has cosine 0.95 or more with a row
+  of another document in the tail. This flags 0.7% of the rows, and nine in ten of them repeat text
+  too. The share flagged at a threshold of 0.9 is 0.9%, and at 0.99 it is 0.6%.
+- **Either** flags 6.0% of all rows, and 5.9% of the rows in the 84 scored languages.
+- **What they are.** A sample of flagged rows reads as boilerplate: "Vytvořeno 27. 2. 2017 19:01",
+  "Winkelmand 0 producten €0.00", "コメントの読み込み中に問題が発生しました。", lists of spam URLs.
+  Some unflagged rows are boilerplate too, so the flags are a lower bound.
+- **Where they are.**
+  - By language: from 1% (English, Tamil) to 32% (Maltese), with 24% in Scottish Gaelic and 20% in
+    Cebuano.
+  - By kind: whole lines are flagged most (8.6% repeat text), then cap-made pieces (6.6%), then
+    sentences (4.7%).
+
+**The rescoring.**
+- **The arms.** `seedmatch.py --row-mask` drops the flagged rows from every score: the matching's
+  last 32,768 rows keep 30,830, and the within-language score's last 262,144 keep 246,534. Four arms
+  were rescored: the LCM's TPU pair, SONAR's GPU pair, and the two readouts.
+- **The SONAR pair.** Unmasked, SONAR's GPU pair reads 0.0168 (0.0048) on all heads and 0.0692
+  (0.0507) within a language. The TPU pair, which the gap is usually computed from, reads 0.0169 and
+  0.0692; it isn't on this machine.
+
+| Rows | Within language: LCM excess | SONAR excess | LCM's lead | Ratio | Readout (x_n and context) gap closed | Readout (x_n alone) |
+|---|---|---|---|---|---|---|
+| All | 0.0774 | 0.0186 | 0.0589 | 4.2 | 62% | 38% |
+| **Flagged rows dropped** | **0.0758** | **0.0163** | **0.0595** | **4.7** | **62%** | **37%** |
+| Flagged rows alone | 0.1776 | 0.1049 | 0.0727 | 1.7 | | |
+
+- **On all heads.** The lead is 0.0172 on all rows, 0.0183 with the flagged rows dropped, and 0.0338
+  on the flagged rows alone. The readouts close 86% and 84% of the gap on all rows, and 85% and 81%
+  with the flagged rows dropped.
+- **Scored rows and languages:**
+  - with the flagged rows dropped, 245,025 rows in the same 84 languages;
+  - on the flagged rows alone, 7,299 rows in 23 languages. That set needs at least 200 rows a
+    language (`--min-rows 200`), so it is read beside all rows at 200, where the LCM's excess is
+    0.0776 and SONAR's 0.0186, as at 1,000. Its all-heads score rests on the 1,938 flagged rows of
+    the last 32,768.
+
+**What it means.**
+- **The lead sits in the ordinary rows.** Without the templated rows, both arms' within-language
+  excess falls a little, SONAR's more (0.0186 to 0.0163) than the LCM's (0.0774 to 0.0758), so the
+  lead grows slightly.
+- **Templated rows are easy to agree on.** Both models' seeds agree far more on them, and the LCM's
+  margin there is smaller relative to SONAR's. They are 6% of the rows, so they add to both arms'
+  scores and do little to the difference.
+- **The low-resource languages' template farms don't carry it either.** The flags reach a fifth to
+  a third of the rows in the most templated languages, and the within-language score weighs each
+  language by its rows, so those languages count little in it, with or without their templates.
+
+**Caveats.**
+- **The flags are a lower bound.** Templates whose slots vary in more than digits, and that SONAR
+  doesn't place at cosine 0.95 or above, are missed.
+- **Few rows on the templated side.** The templated-only scores rest on 7,299 rows in 23 languages
+  at 200 or more rows each, where NMI over 32 entries is biased upward (their nulls are 0.24–0.27).
+  Read that row by its difference between the arms, not by its level.
+- **One seed pair per arm,** as before.
+
+```bash
+uv run python experiments/lcm-organism/templates.py
+A=data/activations/lcm-organism
+T=data/out/lcm-organism/templates
+TPU=data/out/lcm-organism/phase2_tpu
+# each arm scored as phase2.sh scores it, with the flagged rows dropped
+JAX_DEFAULT_MATMUL_PRECISION=highest uv run python experiments/next-sentence/seedmatch.py \
+    --a $TPU/lcm_b4_doc2_sp0_ph38_s42 --b $TPU/lcm_b4_doc2_sp0_ph38_s43 \
+    --cache $A/lcm_b4.npy --labels $A/lcm_b4.langs.npy --label-rows 262144 --min-rows 1000 \
+    --row-mask $T/keep_neither.npy --out $T/seedmatch/lcm_keep_neither_min1000.json
+# likewise SONAR (data/out/sonar/next-sentence/long/doc2_sp0_ph38 and _s43 on
+# data/sonar_embeddings/mc4_sent16.npy) and the two readouts (data/out/lcm-organism/phase2,
+# lcm_readout_b4 and lcm_readout_x_b4); then the LCM and SONAR with --row-mask $T/only_either.npy
+# and with no mask, both at --min-rows 200
+```
+
 ## 2026-11-22: 19 of block 4's coordinates kept on their axes, the rest rotated: keeping them undoes most of what mixing costs, and keeping 19 others undoes none of it
 
 **In short.**

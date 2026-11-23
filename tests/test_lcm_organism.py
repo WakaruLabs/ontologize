@@ -31,6 +31,9 @@
 #   axes as along random directions, and a Gaussian none; a correlated group
 #   is found on the axes in the cache's numbering and not after a rotation,
 #   and the draw avoids it.
+# - templates.py: a sentence is a template only when another document repeats
+#   it (case, spacing and digits aside), however the file is split among
+#   workers; a twin is the closest row of another document.
 import json
 import os
 import signal
@@ -789,3 +792,46 @@ def test_the_axes_report_reads_every_check_and_draws_outside_the_group(tmp_path)
     assert json.loads((out / "axes.json").read_text())["draw"] == rep["draw"]
     assert np.load(out / "a.npz")["cov"].shape == (15, 15)
 
+
+# ---------------------------------------------------------------- templates.py
+
+def test_a_sentence_is_a_template_only_when_another_document_repeats_it(tmp_path):
+    import templates
+    assert templates.normalize("  Price:\t12,50 EUR ") == templates.normalize("price: 99,00 eur")
+    docs = [{"doc": 0, "sents": [[1, 0, 5, "Retrieved from Wiki", "x", 1.0, "line", ""],
+                                 [2, 0, 5, "A sentence of its own.", "x", 1.0, "sentence", ""]]},
+            {"doc": 1, "sents": [[1, 0, 5, "retrieved  from wiki", "x", 1.0, "line", ""],
+                                 [3, 0, 5, "Said twice here.", "x", 1.0, "sentence", ""],
+                                 [4, 0, 5, "Said twice here.", "x", 1.0, "sentence", ""]]},
+            {"doc": 2, "sents": [[1, 0, 5, "Version 2 of 7", "x", 1.0, "line", ""]]},
+            {"doc": 3, "sents": [[2, 0, 5, "Version 5 of 9", "x", 1.0, "line", ""]]}]
+    path = tmp_path / "c.sentences.jsonl"
+    path.write_text("".join(json.dumps(d) + "\n" for d in docs))
+    for workers in (1, 3):  # spans that cut lines are read once each
+        h, d, s = templates.sentence_hashes(path, workers)
+        assert len(h) == 7 and sorted(zip(d.tolist(), s.tolist())) == sorted(
+            (x["doc"], t[0]) for x in docs for t in x["sents"])
+    row_doc = np.array([0, 0, 1, 1, 2, 3])
+    row_seg = np.array([1, 2, 3, 4, 1, 2])
+    # repeated across documents (case, spacing and digits aside) is flagged; within one is not
+    assert templates.text_flags(row_doc, row_seg, h, d, s).tolist() == [
+        True, False, False, False, True, True]
+    with pytest.raises(SystemExit, match="not in the sentences file"):
+        templates.text_flags(np.array([5]), np.array([1]), h, d, s)
+
+
+def test_a_twin_is_the_closest_row_of_another_document():
+    import templates
+    r = np.random.default_rng(4)
+    E = r.standard_normal((40, 16))
+    doc = np.repeat(np.arange(10), 4)
+    E[1] = E[0] + 1e-3 * r.standard_normal(16)  # a twin in its own document does not count
+    E[20] = E[5] + 1e-3 * r.standard_normal(16)  # one in another document does
+    cos = templates.twin_cos(E, doc, chunk=7)  # 40 rows: the last chunk is padded
+    assert cos[20] > 0.99 and cos[5] > 0.99
+    assert cos[0] < 0.9 and cos[1] < 0.9
+    X = E - E.mean(0)
+    X /= np.linalg.norm(X, axis=1, keepdims=True)
+    S = X @ X.T
+    S[doc[:, None] == doc[None, :]] = -2
+    np.testing.assert_allclose(cos, S.max(1), atol=1e-5)

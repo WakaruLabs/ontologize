@@ -21,6 +21,10 @@ weighted by rows, beside a null that shuffles B's rows within each label.
 Two heads that agree only because both track the label score near that
 null.
 
+`--row-mask` (booleans over the cache's last rows, as many as the array
+holds and at least as many as are scored) leaves the rows it marks False
+out of every score, the matching's and the within-label one's alike.
+
 `slow_specificity` asks whether the `slow` match is head by head or only
 block by block. A block of near-copies matches well under any pairing, so
 beside the matched NMI it gives a random one-to-one pairing's expected NMI
@@ -46,7 +50,7 @@ import argparse  # noqa: E402
 import json  # noqa: E402
 import sys  # noqa: E402
 from pathlib import Path  # noqa: E402
-from typing import Dict  # noqa: E402
+from typing import Dict, Optional  # noqa: E402
 
 import numpy as np  # noqa: E402
 from jaxtyping import Bool, Float, Int  # noqa: E402
@@ -106,6 +110,17 @@ def within_label_nmi(a: Int[np.ndarray, "n"], b: Int[np.ndarray, "n"],
             total += m.sum() * nmi(a[m], b[m], k)
             weight += int(m.sum())
     return total / max(weight, 1)
+
+
+def tail_keep(mask: Optional[np.ndarray], n: int) -> Bool[np.ndarray, "n"]:
+    """Which of the cache's last n rows a mask over its last len(mask) rows
+    keeps (all of them without one)."""
+    if mask is None:
+        return np.ones(n, bool)
+    if len(mask) < n:
+        raise SystemExit(f"--row-mask covers {len(mask)} rows, fewer than "
+                         f"the {n} scored")
+    return np.asarray(mask[-n:], bool)
 
 
 def shuffle_within(b: Int[np.ndarray, "n"], labels: np.ndarray,
@@ -193,13 +208,19 @@ def main() -> None:
                         "label, so this needs more rows than the matching "
                         "does; every row past the training prefix is "
                         "held out")
+    p.add_argument("--row-mask", default=None,
+                   help="booleans over the cache's last rows (e.g. "
+                        "lcm-organism/templates.py's keep_text.npy): rows "
+                        "marked False are left out of every score")
     p.add_argument("--out", default=None, help="JSON of the results")
     cfg = p.parse_args()
 
     sys.path.insert(0, str(ROOT / "experiments" / "ste-arm"))
     from partition import codes, nmi_matrix
 
-    X = np.asarray(np.load(cfg.cache, mmap_mode="r")[-cfg.rows:], np.float32)
+    mask = np.load(cfg.row_mask) if cfg.row_mask else None
+    keep = tail_keep(mask, cfg.rows)
+    X = np.asarray(np.load(cfg.cache, mmap_mode="r")[-cfg.rows:], np.float32)[keep]
     A, la, ka, sa = codes(cfg.a, cfg.step_a, cfg.temperature, X, cfg.batch)
     B, lb, kb, sb = codes(cfg.b, cfg.step_b, cfg.temperature, X, cfg.batch)
     ha = len(A) // (int(la.max()) + 1)
@@ -216,8 +237,10 @@ def main() -> None:
               "all": (np.arange(len(A)), np.arange(len(B)))}
     res = {"a": cfg.a, "b": cfg.b, "step_a": int(sa), "step_b": int(sb),
            "rows": cfg.rows, "slow_heads": cfg.slow_heads}
+    if mask is not None:
+        res["row_mask"] = {"path": cfg.row_mask, "rows_kept": int(keep.sum())}
     print(f"A {Path(cfg.a).name} step {sa}; B {Path(cfg.b).name} step {sb}; "
-          f"{cfg.rows} rows")
+          f"{cfg.rows} rows" + (f", {int(keep.sum())} kept" if mask is not None else ""))
     for name, (ra, cb) in blocks.items():
         res[name] = summarize(block_match(M, ra, cb), block_match(Mn, ra, cb))
         s = res[name]
@@ -262,9 +285,12 @@ def main() -> None:
     if cfg.labels:
         assert ka == kb, "within-label NMI needs one k"
         n = cfg.label_rows or cfg.rows
-        labels = np.asarray(np.load(cfg.labels, mmap_mode="r")[-n:])
+        keep_l = tail_keep(mask, n)
+        labels = np.asarray(np.load(cfg.labels, mmap_mode="r")[-n:])[keep_l]
+        if mask is not None:
+            res["row_mask"]["label_rows_kept"] = int(keep_l.sum())
         if n != cfg.rows:
-            XL = np.asarray(np.load(cfg.cache, mmap_mode="r")[-n:], np.float32)
+            XL = np.asarray(np.load(cfg.cache, mmap_mode="r")[-n:], np.float32)[keep_l]
             AL = codes(cfg.a, cfg.step_a, cfg.temperature, XL, cfg.batch)[0]
             BL = codes(cfg.b, cfg.step_b, cfg.temperature, XL, cfg.batch)[0]
         else:
