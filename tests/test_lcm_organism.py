@@ -667,6 +667,78 @@ def test_the_weighted_frame_rotates_all_but_the_coordinates_it_keeps(tmp_path):
     assert frame["rotate_except"] == keep and frame["rotated"] == len(rest)
 
 
+def test_a_kept_block_rotates_among_itself_or_takes_a_gaussian_marginal(tmp_path):
+    import weightframe
+    _, _, tgt, P, _, _, _ = planted_harvest(tmp_path)
+    d = np.load(tgt).shape[1]
+    w = harvest_lcm.inverse_variance(np.load(tgt), P)
+    np.save(tmp_path / "w.npy", w.astype(np.float32))
+    out = tmp_path / "out"
+    out.mkdir()
+    base = ["--source", str(tgt), "--source-weights", str(tmp_path / "w.npy"), "--chunk", "50",
+            "--rotate-except", "0,3,5"]
+    weightframe.main([*base, "--out", str(out / "keep.npy")])
+    weightframe.main([*base, "--rotate-block", "0,3", "--out", str(out / "blk.npy")])
+    weightframe.main([*base, "--gaussianize", "0,3", "--out", str(out / "gau.npy")])
+    keep, blk, gau = (np.load(out / f).astype(np.float64) for f in ("keep.npy", "blk.npy", "gau.npy"))
+    rest = [j for j in range(d) if j not in (0, 3, 5)]
+    # the rest is rotated as without the option, and coordinate 5 keeps its axis
+    for y in (blk, gau):
+        np.testing.assert_allclose(y[:, rest], keep[:, rest], rtol=2e-3, atol=1e-3)
+        np.testing.assert_allclose(y[:, 5], keep[:, 5], rtol=2e-3, atol=1e-3)
+    # the block is an orthogonal map of the kept columns, not the identity
+    M = np.linalg.lstsq(keep[:, [0, 3]], blk[:, [0, 3]], rcond=None)[0]
+    assert ((keep[:, [0, 3]] @ M - blk[:, [0, 3]]) ** 2).sum() < 1e-4 * (blk ** 2).sum()
+    np.testing.assert_allclose(M @ M.T, np.eye(2), atol=1e-2)
+    assert np.abs(M - np.eye(2)).max() > 0.1
+    # a Gaussianized coordinate keeps the rows' order and the prefix's mean and spread, and loses
+    # its marginal's shape
+    src = np.load(tgt).astype(np.float64)
+    for j in (0, 3):
+        a, b = keep[:, j], gau[:, j]
+        assert (np.diff(b[np.argsort(src[:, j], kind="stable")]) >= 0).all()   # by the source's values
+        assert abs(b[:P].mean() - a[:P].mean()) < 0.05 * a[:P].std()
+        assert abs(b[:P].std() / a[:P].std() - 1) < 0.05
+        z = (b[:P] - b[:P].mean()) / b[:P].std()
+        assert abs((z ** 3).mean()) < 0.1 and abs((z ** 4).mean() - 3) < 0.3
+    frame = json.loads((out / "gau.meta.json").read_text())["frame"]
+    assert frame["gaussianize"] == [0, 3] and frame["rotate_block"] is None
+    assert json.loads((out / "blk.meta.json").read_text())["frame"]["rotate_block"] == [0, 3]
+    # a coordinate outside the kept ones is refused, so nothing is rotated twice
+    with pytest.raises(SystemExit, match="only coordinates --rotate-except keeps"):
+        weightframe.main([*base, "--rotate-block", "0,1", "--out", str(out / "bad.npy")])
+    # another cache's weights, when even across the block, make the loss that cache's turned
+    # within the block; uneven ones are refused
+    kw = np.load(out / "keep.mse_weights.npy")
+    np.save(tmp_path / "even.mse_weights.npy", np.r_[kw[:1], kw[1:3], kw[:1], kw[4:]].astype(np.float32))
+    np.save(tmp_path / "even.mse_weights_matched.npy", 2 * np.load(tmp_path / "even.mse_weights.npy"))
+    weightframe.main([*base, "--rotate-block", "0,3", "--weights-like", str(tmp_path / "even.npy"),
+                      "--out", str(out / "blkw.npy")])
+    np.testing.assert_array_equal(np.load(out / "blkw.mse_weights_matched.npy"),
+                                  np.load(tmp_path / "even.mse_weights_matched.npy"))
+    assert json.loads((out / "blkw.meta.json").read_text())["frame"]["weights_like"] == "even.npy"
+    uneven = np.load(tmp_path / "even.mse_weights.npy")
+    uneven[3] *= 2
+    np.save(tmp_path / "uneven.mse_weights.npy", uneven)
+    np.save(tmp_path / "uneven.mse_weights_matched.npy", uneven)
+    with pytest.raises(SystemExit, match="differ across the block"):
+        weightframe.main([*base, "--rotate-block", "0,3", "--weights-like", str(tmp_path / "uneven.npy"),
+                          "--out", str(out / "bad2.npy")])
+
+
+def test_the_gaussian_map_is_fitted_on_the_prefix_and_keeps_ties():
+    import weightframe
+    r = np.random.default_rng(9)
+    fit = weightframe.gaussian_fit(r.exponential(size=5000))
+    v = np.array([0.5, 0.5, -1.0, 1e9, 2.0])
+    g = weightframe.gaussianize(v, fit)
+    assert g[0] == g[1]                               # equal values stay equal
+    assert g[2] == g.min() and g[3] == g.max()        # beyond the range, the end quantiles
+    assert g[2] < g[0] < g[4] < g[3]                  # the order is kept
+    n = len(fit[0])
+    assert np.isclose(g[3], fit[1] + fit[2] * weightframe.ndtri(1 - 0.5 / n), rtol=1e-5)
+
+
 def test_recolouring_to_its_own_spectrum_is_a_scaled_rotation():
     r = np.random.default_rng(8)
     d = 32
