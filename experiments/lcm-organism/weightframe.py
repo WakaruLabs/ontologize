@@ -28,11 +28,21 @@ inverse variances, and the mixed coordinates' variances are no longer even,
 so its loss is only nearly the source's. A dictionary on it tells whether the
 coordinates in J carry what the basis gives.
 
-Two options change the coordinates J keeps, so that what about them matters
+Three options change the coordinates J keeps, so that what about them matters
 can be told apart; with `--rotate-except` each list must lie in J:
 - `--rotate-block K` mixes the coordinates K among themselves by a rotation of
   their own (`--block-seed`). They stay a block apart from the rest, but no
-  longer on their own axes.
+  longer on their own axes. With `--block-basis principal` the rotation is
+  the one onto the block's principal axes over the prefix rows, in the frame
+  the loss weighs, largest first: the block's coordinates are then
+  uncorrelated there, and their variances are its covariance's eigenvalues.
+- `--whiten-block K` maps the block, centered on its prefix mean (which is
+  added back), by the symmetric whitening of its prefix covariance (ZCA),
+  scaled to keep the block's total variance. Its coordinates are then
+  uncorrelated with equal variances, as near their own axes as a whitening
+  leaves them, and the block's spectrum is flat. Within a block, uncorrelated
+  coordinates can keep equal variances or the spectrum, not both, so this and
+  the principal rotation change one each.
 - `--gaussianize K` maps each coordinate in K, before the scaling, onto a
   Gaussian with its own mean and standard deviation, through its empirical
   distribution over the prefix rows: a value goes to the Gaussian quantile at
@@ -40,8 +50,9 @@ can be told apart; with `--rotate-except` each list must lie in J:
   the order of the rows is kept, and values beyond the prefix's range take
   its end quantiles. Each row keeps what that coordinate says about it, and
   the coordinate loses its marginal's shape.
-The map is fitted on the prefix alone, so the held-out rows inform none of it.
-`--gaussianize` applies before `--rotate-block`.
+Each map is fitted on the prefix alone, so the held-out rows inform none of it.
+`--gaussianize` applies before the block's map, whose fit sees the
+Gaussianized values.
 
 A rotated block's coordinates no longer have even variances, so the
 output's own inverse-variance weights would change the loss along with the
@@ -114,6 +125,29 @@ def gaussianize(v: Float[np.ndarray, "n"], fit: Tuple[np.ndarray, float, float]
     return (mu + sd * ndtri(np.clip(q, 0.5 / n, 1 - 0.5 / n))).astype(np.float32)
 
 
+def principal_axes(C: Float[np.ndarray, "k k"]) -> Float[np.ndarray, "k k"]:
+    """A covariance's eigenvectors as columns, largest eigenvalue first, each signed so that its
+    largest entry is positive: y @ V puts rows y on the principal axes."""
+    V = np.linalg.eigh(C)[1][:, ::-1]
+    return V * np.sign(V[np.abs(V).argmax(0), np.arange(V.shape[1])])
+
+
+def zca(C: Float[np.ndarray, "k k"]) -> Float[np.ndarray, "k k"]:
+    """The symmetric whitening C^(-1/2), times the root of C's mean eigenvalue, so that rows of
+    covariance C mapped by it have covariance (tr C / k) I."""
+    lam, V = np.linalg.eigh(C)
+    if lam.min() <= 1e-12 * lam.max():
+        raise SystemExit("the block's covariance on the prefix is singular")
+    return (V * np.sqrt(lam.mean() / lam)) @ V.T
+
+
+def block_moments(Y: Float[np.ndarray, "p k"]) -> Tuple[Float[np.ndarray, "k"], Float[np.ndarray, "k k"]]:
+    """The mean and covariance of a block's prefix rows, in float64."""
+    Y = np.asarray(Y, np.float64)
+    mu = Y.mean(0)
+    return mu, (Y - mu).T @ (Y - mu) / len(Y)
+
+
 def prefix_columns(x: np.ndarray, cols: List[int], P: int, chunk: int
                    ) -> Dict[int, Float[np.ndarray, "p"]]:
     """The listed columns of the first P rows, read in one pass of row chunks."""
@@ -138,6 +172,12 @@ def main(argv=None) -> Path:
                    help="comma-separated coordinates to rotate among themselves, apart from "
                         "the rest")
     p.add_argument("--block-seed", type=int, default=1)
+    p.add_argument("--block-basis", choices=("random", "principal"), default="random",
+                   help="--rotate-block's rotation: random, from --block-seed, or onto the block's "
+                        "principal axes over the prefix")
+    p.add_argument("--whiten-block", default=None, metavar="K",
+                   help="comma-separated coordinates to whiten among themselves (ZCA on the "
+                        "prefix, the block's total variance kept), apart from the rest")
     p.add_argument("--gaussianize", default=None, metavar="K",
                    help="comma-separated coordinates to map monotonically onto a Gaussian of "
                         "their own mean and standard deviation, fitted on the prefix")
@@ -171,33 +211,49 @@ def main(argv=None) -> Path:
     sw = (c * np.sqrt(w)).astype(np.float32)
     keep = coordinates(cfg.rotate_except, d, "--rotate-except")
     block = coordinates(cfg.rotate_block, d, "--rotate-block")
+    whiten = coordinates(cfg.whiten_block, d, "--whiten-block")
     gauss = coordinates(cfg.gaussianize, d, "--gaussianize")
-    for flag, js in (("--rotate-block", block), ("--gaussianize", gauss)):
+    if block is not None and whiten is not None:
+        raise SystemExit("--rotate-block and --whiten-block each map the block; give one")
+    for flag, js in (("--rotate-block", block), ("--whiten-block", whiten),
+                     ("--gaussianize", gauss)):
         if js is None:
             continue
         if keep is not None and not set(js) <= set(keep):
             raise SystemExit(f"{flag} must list only coordinates --rotate-except keeps")
         if not live[js].all():
             raise SystemExit(f"{flag} names a coordinate the weights zero")
-    rot = R = B = None
+    rot = R = B = W = mu = lam = None
     if keep is not None:
         rot = np.flatnonzero(live & ~np.isin(np.arange(d), keep))
         R = rotation(len(rot), cfg.rotation_seed)
+    principal = block is not None and cfg.block_basis == "principal"
+    fitted = block if principal else whiten
+    cols = sorted(set(gauss or []) | set(fitted or []))
+    V = prefix_columns(x, cols, P, cfg.chunk) if cols else {}
+    fits = {j: gaussian_fit(V[j]) for j in gauss} if gauss is not None else {}
+    if fitted is not None:
+        Y = np.stack([gaussianize(V[j], fits[j]) if j in fits else V[j] for j in fitted], 1)
+        mu, C = block_moments(Y * sw[fitted])
+        lam = np.linalg.eigvalsh(C)[::-1]
+    del V
     if block is not None:
-        B = rotation(len(block), cfg.block_seed)
-    fits = ({j: gaussian_fit(v) for j, v in prefix_columns(x, gauss, P, cfg.chunk).items()}
-            if gauss is not None else {})
+        B = (principal_axes(C) if principal else rotation(len(block), cfg.block_seed)
+             ).astype(np.float32)
+    if whiten is not None:
+        W, mu = zca(C).astype(np.float32), mu.astype(np.float32)
+    mapped = block if block is not None else whiten
     like_w = None
     if cfg.weights_like:
         like = stem(resolve(cfg.weights_like))
         like_w = (np.load(f"{like}.mse_weights.npy"), np.load(f"{like}.mse_weights_matched.npy"))
         if like_w[0].shape != (d,):
             raise SystemExit(f"{cfg.weights_like}'s weights don't have {d} coordinates")
-        if block is not None:
-            wb = like_w[0][block].astype(np.float64)
+        if mapped is not None:
+            wb = like_w[0][mapped].astype(np.float64)
             if wb.max() > wb.min() * (1 + 1e-3):
                 raise SystemExit(f"{cfg.weights_like}'s weights differ across the block, so its "
-                                 "loss would change with the block's rotation")
+                                 "loss would change with the block's map")
 
     part = dst.with_name(dst.name + ".partial")
     out = np.lib.format.open_memmap(part, mode="w+", dtype=np.float16, shape=(m, d))
@@ -211,6 +267,8 @@ def main(argv=None) -> Path:
         y32 = xs * sw
         if B is not None:
             y32[:, block] = y32[:, block] @ B
+        if W is not None:
+            y32[:, whiten] = (y32[:, whiten] - mu) @ W + mu
         if R is not None:
             y32[:, rot] = y32[:, rot] @ R
         y16, st = to_f16(y32)
@@ -256,7 +314,12 @@ def main(argv=None) -> Path:
                       "rotation_seed": cfg.rotation_seed if keep is not None else None,
                       "rotated": int(len(rot)) if rot is not None else 0,
                       "rotate_block": block,
-                      "block_seed": cfg.block_seed if block is not None else None,
+                      "block_basis": cfg.block_basis if block is not None else None,
+                      "block_seed": (cfg.block_seed if block is not None and not principal
+                                     else None),
+                      "whiten_block": whiten,
+                      "block_spectrum": (None if lam is None
+                                         else [float(v) for v in lam / lam.mean()]),
                       "gaussianize": gauss,
                       "weights_like": Path(cfg.weights_like).name if cfg.weights_like else None},
             "mse_weights": {"rows": P, "live": int(live.sum()), "span": span},

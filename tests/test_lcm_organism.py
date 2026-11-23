@@ -739,6 +739,53 @@ def test_the_gaussian_map_is_fitted_on_the_prefix_and_keeps_ties():
     assert np.isclose(g[3], fit[1] + fit[2] * weightframe.ndtri(1 - 0.5 / n), rtol=1e-5)
 
 
+def test_a_kept_block_rotates_onto_its_principal_axes_or_is_whitened(tmp_path):
+    import weightframe
+    _, _, tgt, P, _, _, _ = planted_harvest(tmp_path)
+    d = np.load(tgt).shape[1]
+    w = harvest_lcm.inverse_variance(np.load(tgt), P)
+    np.save(tmp_path / "w.npy", w.astype(np.float32))
+    out = tmp_path / "out"
+    out.mkdir()
+    J = [0, 3, 5]
+    base = ["--source", str(tgt), "--source-weights", str(tmp_path / "w.npy"), "--chunk", "50",
+            "--rotate-except", "0,3,5"]
+    weightframe.main([*base, "--out", str(out / "keep.npy")])
+    weightframe.main([*base, "--rotate-block", "0,3,5", "--block-basis", "principal",
+                      "--out", str(out / "pca.npy")])
+    weightframe.main([*base, "--whiten-block", "0,3,5", "--out", str(out / "zca.npy")])
+    keep, pca, zca = (np.load(out / f).astype(np.float64) for f in ("keep.npy", "pca.npy", "zca.npy"))
+    rest = [j for j in range(d) if j not in J]
+    for y in (pca, zca):
+        np.testing.assert_allclose(y[:, rest], keep[:, rest], rtol=2e-3, atol=1e-3)
+    cov = lambda y: np.cov(y[:P][:, J], rowvar=False, bias=True)  # noqa: E731
+    corr = lambda C: C / np.sqrt(np.outer(np.diag(C), np.diag(C)))  # noqa: E731
+    C = cov(keep)
+    assert np.abs(corr(C) - np.eye(3)).max() > 0.1          # the planted block is correlated
+    lam = np.linalg.eigvalsh(C)[::-1]
+    # rotated onto its principal axes: an orthogonal map, after which the block is uncorrelated on
+    # the prefix and its variances are the eigenvalues, largest first
+    M = np.linalg.lstsq(keep[:, J], pca[:, J], rcond=None)[0]
+    np.testing.assert_allclose(M @ M.T, np.eye(3), atol=1e-2)
+    Cp = cov(pca)
+    np.testing.assert_allclose(corr(Cp), np.eye(3), atol=1e-2)
+    np.testing.assert_allclose(np.diag(Cp), lam, rtol=1e-2)
+    # whitened: uncorrelated with equal variances, keeping the block's total variance and its mean
+    Cz = cov(zca)
+    np.testing.assert_allclose(Cz, np.eye(3) * lam.mean(), atol=1e-2 * lam.mean())
+    np.testing.assert_allclose(zca[:P][:, J].mean(0), keep[:P][:, J].mean(0),
+                               atol=1e-2 * np.sqrt(lam.mean()))
+    frame = json.loads((out / "pca.meta.json").read_text())["frame"]
+    assert frame["block_basis"] == "principal" and frame["block_seed"] is None
+    np.testing.assert_allclose(frame["block_spectrum"], lam / lam.mean(), rtol=1e-2)
+    assert json.loads((out / "zca.meta.json").read_text())["frame"]["whiten_block"] == J
+    with pytest.raises(SystemExit, match="give one"):
+        weightframe.main([*base, "--rotate-block", "0,3", "--whiten-block", "5",
+                          "--out", str(out / "bad.npy")])
+    with pytest.raises(SystemExit, match="only coordinates --rotate-except keeps"):
+        weightframe.main([*base, "--whiten-block", "0,1", "--out", str(out / "bad.npy")])
+
+
 def test_recolouring_to_its_own_spectrum_is_a_scaled_rotation():
     r = np.random.default_rng(8)
     d = 32
