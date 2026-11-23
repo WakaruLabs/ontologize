@@ -2788,6 +2788,18 @@ of the other directions, classifier gradients steer layer 0 best and decoded
 atoms layers 2--3. The table is the shipped initialization's stack
 (\texttt{ste\_h76}); one seed.
 
+Realization scores only whether the requested head switched. Reaching a deep
+target from the input rewrites the layers below it. At the table's strength
+the adjoint changes 48--78\% of the heads below a layer-1 to layer-4 target,
+as a random step of the same length does, and it moves the reconstruction
+$2.5\times$ (layer 0) to $47\times$ (layer 4) as far as the head's own write
+does. That write is the clamp: the target entry forced at its layer, with the
+layers above recomputed. The direction still decides what moves: at layer 4
+the adjoint's output change lies at cosine $0.27$ to the clamped head's
+write, and a random step's at $0.01$. In deep layers, then, an input-space
+step switches a head only together with most of the stack, and the head's own
+effect is the clamp's.
+
 \paragraph{Head-health levers and steering.} We tried three training
 levers on the shipped stack. First, \emph{batch-mean uniformity pressure from
 $\mathrm{KL}_m$ does not account for reduced steerability}: a twin

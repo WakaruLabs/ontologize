@@ -5062,6 +5062,52 @@ At 0.1 the oriented positive part reads 0.67–0.97 by layer, against 0.18–0.3
 So the fix matters for the hard stacks and is neutral on the softmax model. Changing `intervene`
 costs that model nothing.
 
+**What a realized switch costs in the layers below, and how much of the output change is the
+head's** (the clamp comparison, later the same day). This is an outside suggestion, also run
+outside the repository; this run is `steerembed.py`'s own.
+- **Collateral split** by where it falls: `up` (the layers below the target), `peer` (the target
+  layer's other heads) and `down` (the layers above).
+- **The clamp** forces the target entry at its layer and recomputes the layers above. That is the
+  head's own effect, and the decode direction's output delta.
+- **The comparison,** in the loss's whitened frame: the median ratio of the steered output
+  change's size to the clamp's (`dy_ratio`), and the median cosine between the two (`cos_clamp`).
+- The same draws as above; every realization rate matches the earlier run exactly.
+
+`ste_h76_init01` at strength 0.25, the oriented positive part against a random step, by target
+layer (12 entries × 32 rows per layer):
+
+| layer | realized | up | peer | down | output change ÷ clamp's | cosine with the clamp: adjoint / random |
+|---|---|---|---|---|---|---|
+| 0 | 1.00 | — | 0.31 | 0.74 | 1.53 | 0.34 / 0.32 |
+| 1 | 1.00 | 0.32 | 0.57 | 0.79 | 2.03 | 0.27 / 0.25 |
+| 2 | 1.00 | 0.45 | 0.71 | 0.83 | 2.97 | 0.21 / 0.16 |
+| 3 | 1.00 | 0.54 | 0.80 | 0.85 | 5.72 | 0.20 / 0.08 |
+| 4 | 1.00 | 0.61 | 0.85 | — | 17.67 | 0.33 / 0.01 |
+
+The random step's up, peer, down and size ratio are the adjoint's within 0.01 and 0.5. At
+strength 0.1, where the oriented positive part realizes 0.81–0.97, `up` is 0.14–0.46 and the size
+ratio 1.24–14.1. On `ste_h76` the pattern is the same: at 0.25 `up` is 0.17–0.53 and the ratio
+1.5–24.7, and at 1.0 (the by-layer table above) 0.48–0.78 and 2.5–46.8.
+
+- **A deep target is reached by rewriting the layers below it.** The share of upstream heads that
+  change rises with depth, from a third below layer 1 to 61% below layer 4 at strength 0.25, for
+  every direction. So realization scores whether the requested head switched, and the share of
+  upstream heads kept is a separate measure of how specific the edit is.
+- **The output moves by about the step, whatever the direction.** The size ratio is the random
+  step's too: an input step of a quarter of the row's norm moves the reconstruction by about that
+  much, while a layer-4 head's own write is about a seventeenth of it.
+- **The cosine is what tells the directions apart.** At layer 4 the adjoint's output change lies at
+  cosine 0.33 to the head's own write, a random step's at 0.01. At layer 0 the two are alike (0.34
+  against 0.32), because a step there shares most of its effect with any switch of a layer-0 head.
+- **The decode direction aligns best** (cosine 0.51–0.72 at 0.25), because it steps along the
+  clamp's own output delta. That direction realizes far less, though (0.04–0.93 by layer).
+- **So in deep layers, clamping the head is the intervention whose effect is the head's.** An
+  input-space step switches it only with most of the stack and of the output moving too.
+
+Output: `data/out/sonar/steerembed_clamp/{ste_h76_init01,ste_h76}/` (`steer.csv` with `up`,
+`peer`, `down`, `dy_ratio` and `cos_clamp` per target, direction and strength; `summary.json`'s
+`clamp_by_layer`).
+
 Output: `data/out/sonar/steerembed_pos/{ste_h76,ste_h76_init01,sweep_softmax_shm}/`
 (`steer.csv`, `summary.json`, `geometry.csv`) and the `.log` beside each.
 

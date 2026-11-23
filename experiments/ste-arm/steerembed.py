@@ -21,7 +21,19 @@ selected and whether anything else moved.
   collateral   the share of OTHER heads whose argmax changed. The
                embedding-space analogue of 1 - chrF, and a sharper one:
                a steering claim is that ONE variable moved, and this
-               counts the ones that moved by accident.
+               counts the ones that moved by accident. Split by where
+               they are: `up` (the layers below the target, which a step
+               must cross to reach a deep target), `peer` (the target
+               layer's other heads) and `down` (the layers above).
+  clamp match  how close the steered output change comes to the change
+               the head's own switch makes, the clamp: the entry forced at
+               the target layer with the layers above recomputed (the same
+               output delta the decode direction steps along). In the
+               loss's whitened frame, the median ratio of their sizes
+               (`dy_ratio`) and the cosine between them (`cos_clamp`). Two
+               codes can differ in many heads and decode alike, or in one
+               and decode far apart, so flips alone don't say how much of
+               the output change is the target's.
 
 Two directions, since they are not the same object and steerfid uses
 only the first:
@@ -268,6 +280,7 @@ def main_onto(cfg: argparse.Namespace) -> None:
     metric, ranks = load_metric(cfg)
     Sh, Sih, Q = (jnp.asarray(a, jnp.float32)
                   for a in (metric.Sh, metric.Sih, metric.Q))
+    w_sqrt = np.sqrt(metric.w)       # the loss's whitened frame, for the clamp match
     pair_rng = np.random.default_rng([cfg.seed, 2])
 
     def codes(module, X: Float[Array, "b d_in"]
@@ -546,17 +559,22 @@ def main_onto(cfg: argparse.Namespace) -> None:
         }
         geo += geometry_rows(dirs, metric, ranks,
                              dict(layer=li, head=hi, entry=ki))
+        dY_clamp = np.asarray(delta)
         for s in cfg.strengths:
             for kind, D in dirs.items():
                 Xi = X + s * n * D
                 Xi = Xi * n / (jnp.linalg.norm(Xi, axis=-1, keepdims=True) + 1e-9)
-                A = np.asarray(jnp.argmax(f_codes(params, Xi)[0], -1))
+                C, Yi = f_codes(params, Xi)
+                A = np.asarray(jnp.argmax(C, -1))
                 rows.append(dict(
                     kind=kind, layer=li, head=hi, entry=ki, strength=s,
                     hit=float((A[li, :, hi] == ki).mean()),
-                    collateral=float(_collateral(A, A0, li, hi))))
+                    collateral=float(_collateral(A, A0, li, hi)),
+                    **collateral_split(A, A0, li, hi),
+                    **clamp_match(np.asarray(Yi - Yb), dY_clamp, w_sqrt)))
 
     _write_csv(out / "steer.csv", rows)
+    clamp = _clamp_summary(rows, cfg.strengths)
     _write_csv(out / "geometry.csv", geo)
     summary = _swept_summary(rows, cfg.strengths)
     summary.update(_native_summary(rows))
@@ -566,7 +584,7 @@ def main_onto(cfg: argparse.Namespace) -> None:
     (out / "summary.json").write_text(json.dumps(
         {"model": str(cfg.model), "step": int(step), "T": T,
          "n_features": len(feats), "n_samples": cfg.n_samples,
-         "chance": 1 / k, "results": summary,
+         "chance": 1 / k, "results": summary, "clamp_by_layer": clamp,
          **_metric_summary(cfg, metric, ranks), "geometry": geometry},
         indent=2))
     print(f"-> {out}")
@@ -1043,9 +1061,41 @@ def geometry_rows(dirs: Dict[str, Float[Array, "b d"]], metric: DataMetric,
 
 def _write_csv(path: Path, rows: List[Dict[str, Any]]) -> None:
     with open(path, "w", newline="") as fh:
-        w = csv.DictWriter(fh, fieldnames=list(rows[0]))
+        # rows of different kinds carry different fields
+        w = csv.DictWriter(fh, fieldnames=list(dict.fromkeys(k for r in rows for k in r)))
         w.writeheader()
         w.writerows(rows)
+
+
+def _clamp_summary(rows: List[Dict[str, Any]], strengths: Sequence[float]
+                   ) -> Dict[str, Dict[str, Dict[str, float]]]:
+    """Per swept kind and strength, and per target layer: realization, the
+    collateral split by where it falls, and the median over targets of how
+    close the output change is to the clamp's (`clamp_match`). Prints the
+    adjoint's oriented positive part, decode and random."""
+    kinds = list(dict.fromkeys(r["kind"] for r in rows if "dy_ratio" in r))
+    out = {}
+    for kind in kinds:
+        for s in strengths:
+            R = [r for r in rows if r["kind"] == kind and r["strength"] == s]
+            out[f"{kind}@{s}"] = {
+                str(li): {"hit": float(np.mean([r["hit"] for r in L])),
+                          **{f: float(np.nanmean([r[f] for r in L]))
+                             for f in ("up", "peer", "down")},
+                          **{f: float(np.median([r[f] for r in L]))
+                             for f in ("dy_ratio", "cos_clamp")}}
+                for li in sorted({r["layer"] for r in R})
+                for L in [[r for r in R if r["layer"] == li]]}
+    show = [k for k in ("adjoint_pos_or", "decode", "random") if k in kinds]
+    print(f"\n{'kind':>15} {'str':>5} {'layer':>5} {'hit':>6} {'up':>6} {'peer':>6} "
+          f"{'down':>6} {'|dY|/clamp':>11} {'cos':>6}")
+    for kind in show:
+        for s in strengths:
+            for li, v in out[f"{kind}@{s}"].items():
+                print(f"{kind:>15} {s:5.2f} {li:>5} {v['hit']:6.3f} {v['up']:6.3f} "
+                      f"{v['peer']:6.3f} {v['down']:6.3f} {v['dy_ratio']:11.2f} "
+                      f"{v['cos_clamp']:6.3f}")
+    return out
 
 
 def _swept_summary(rows: List[Dict[str, Any]], strengths: Sequence[float]
@@ -1154,6 +1204,37 @@ def _collateral(A: Int[np.ndarray, "l b h"], A0: Int[np.ndarray, "l b h"],
     ch = A != A0
     ch[li, :, hi] = False
     return ch.sum() / (ch.size - ch.shape[1])
+
+
+def collateral_split(A: Int[np.ndarray, "l b h"], A0: Int[np.ndarray, "l b h"],
+                     li: int, hi: int) -> Dict[str, float]:
+    """The share of argmaxes that moved in the layers below the target
+    (`up`), in its own layer's other heads (`peer`) and in the layers above
+    (`down`); NaN where there are none. A step that reaches a deep target
+    from the input must cross every layer below it, and a switch at the
+    target moves the layers above through the residual."""
+    ch = A != A0
+    peer = np.delete(ch[li], hi, axis=-1)
+    return {"up": float(ch[:li].mean()) if li else float("nan"),
+            "peer": float(peer.mean()) if peer.size else float("nan"),
+            "down": float(ch[li + 1:].mean()) if li + 1 < len(ch) else float("nan")}
+
+
+def clamp_match(dY_steer: Float[np.ndarray, "b d"], dY_clamp: Float[np.ndarray, "b d"],
+                w_sqrt: Float[np.ndarray, "d"]) -> Dict[str, float]:
+    """How close a steered input's output change comes to the change the
+    head's own switch makes: the clamp, which forces the entry at the
+    target layer and recomputes the layers above (`forced_decode`). In the
+    loss's whitened frame, the median over rows of the ratio of their sizes
+    and of the cosine between them; a ratio of 1 and a cosine of 1 is the
+    clamp exactly."""
+    a = dY_steer * w_sqrt
+    b = dY_clamp * w_sqrt
+    na, nb = np.linalg.norm(a, axis=-1), np.linalg.norm(b, axis=-1)
+    ok = nb > 1e-12
+    return {"dy_ratio": float(np.median(na[ok] / nb[ok])),
+            "cos_clamp": float(np.median((a * b).sum(-1)[ok]
+                                         / np.maximum(na[ok] * nb[ok], 1e-30)))}
 
 
 if __name__ == "__main__":

@@ -268,7 +268,8 @@ positive eigenvalue is the direction along which the entry's logit grows
 target's eigenvector realizes $0.99$ of targets at strength $0.25$ and every
 target from $0.5$ on, at every depth and from the weights alone, while it
 disturbs the other heads as much as a random step of the same length (within
-$0.01$);
+$0.01$), which for a deep target includes most of the heads below it
+(Appendix~\ref{sec:steerlayer});
 oriented per sample it realizes every target at $0.25$. On the softmax model
 it realizes $0.69$ of targets at strength $0.25$ and $0.90$ at $1.0$, where
 the decode step has fallen to $0.57$; oriented per sample it reaches $0.96$,

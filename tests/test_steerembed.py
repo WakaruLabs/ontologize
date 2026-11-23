@@ -3,7 +3,9 @@
 # are only a fair baseline if they recover a direction that is there and
 # never see the rows they are about to steer. Then its data-shaped
 # controls, the on/off split of a direction by the data's principal
-# subspaces, and the geometry it reports for every direction.
+# subspaces, and the geometry it reports for every direction. And where
+# collateral falls (below, beside or above the target) and how close a
+# steered output change comes to the clamp's.
 import sys
 from pathlib import Path
 
@@ -13,11 +15,39 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "experiments"
                        / "ste-arm"))
-from steerembed import (controls, data_metric, lsh_dirs, lsh_select,  # noqa: E402
-                        partners, pct, principal_ranks, split_dirs,
-                        step_geometry, supervised_dirs)
+from steerembed import (clamp_match, collateral_split, controls,  # noqa: E402
+                        data_metric, lsh_dirs, lsh_select, partners, pct,
+                        principal_ranks, split_dirs, step_geometry,
+                        supervised_dirs)
 
 D, N = 32, 4096
+
+
+def test_collateral_splits_by_where_the_heads_are():
+    # 3 layers of 4 heads, 5 rows; the target is layer 1, head 2
+    A0 = np.zeros((3, 5, 4), int)
+    A = A0.copy()
+    A[0, :, :] = 1          # every upstream head moved
+    A[1, :2, 0] = 1         # 2 of the 15 peer slots moved
+    A[1, :, 2] = 1          # the target itself, not counted
+    s = collateral_split(A, A0, 1, 2)
+    assert s == {"up": 1.0, "peer": 2 / 15, "down": 0.0}
+    # no layers below layer 0, none above the last
+    assert np.isnan(collateral_split(A, A0, 0, 2)["up"])
+    assert np.isnan(collateral_split(A, A0, 2, 2)["down"])
+
+
+def test_clamp_match_reads_the_clamp_as_one_and_reads_size_and_angle():
+    rng = np.random.default_rng(0)
+    dc = rng.standard_normal((6, 8))
+    ws = np.abs(rng.standard_normal(8)) + 0.1           # the frame's scaling
+    assert np.allclose(list(clamp_match(dc, dc, ws).values()), [1.0, 1.0])
+    big = clamp_match(3 * dc, dc, ws)
+    assert np.isclose(big["dy_ratio"], 3.0) and np.isclose(big["cos_clamp"], 1.0)
+    # a change orthogonal to the clamp's in that frame reads cosine 0
+    a, b = rng.standard_normal((6, 8)), dc * ws
+    o = (a - (a * b).sum(-1, keepdims=True) / (b * b).sum(-1, keepdims=True) * b) / ws
+    assert abs(clamp_match(o, dc, ws)["cos_clamp"]) < 1e-9
 
 
 def planted(seed=0):
