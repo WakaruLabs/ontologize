@@ -27,8 +27,9 @@ the margin over them, as a probe is read against its control task.
 | `input` | the input itself, by a linear probe |
 
 The probe is one multinomial ridge per source on the code's one-hot
-features, solved in closed form for all of A's heads at once (float64
-Cholesky in torch, on the GPU when there is one), with a relative penalty
+features, solved in closed form for all of A's heads at once (a float64
+Cholesky in JAX, on the GPU when there is one, with 64-bit types on only
+inside the probe so the models make their codes as trained), with a relative penalty
 chosen on validation rows. `same` uses the source's heads of the target's
 layer and `all` the whole stack's.
 

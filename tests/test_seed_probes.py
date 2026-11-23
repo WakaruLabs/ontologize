@@ -6,32 +6,42 @@
 import sys
 from pathlib import Path
 
+import jax.numpy as jnp
 import numpy as np
-import torch
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "experiments"
                        / "seed-probes"))
 from bandagree import band_scores, principal_basis, rotate  # noqa: E402
 from translate import (gram, head_accuracy, lsh_codes, majority,  # noqa: E402
-                       mlp_probe, onehot, probe, ridge)
+                       mlp_probe, onehot, padded, probe, ridge)
 
 
 def test_onehot_layout():
-    S = torch.tensor([[0, 2], [1, 0]])
+    S = jnp.array([[0, 2], [1, 0]])
     F = onehot(S, 3, True)
     assert F.tolist() == [[1, 0, 0, 0, 0, 1, 1], [0, 1, 0, 1, 0, 0, 1]]
     assert onehot(S, 3, False).shape == (2, 6)
+    # a padding row's -1 is no entry at all
+    assert onehot(jnp.array([[-1, 1]]), 3, False).tolist() == [[0, 0, 0, 0, 1, 0]]
 
 
-def test_gram_accumulates_over_chunks():
+def test_padding_fills_a_short_chunk_to_the_others_shape():
+    A = jnp.arange(6).reshape(3, 2)
+    P = padded(A, 5, -1)
+    assert P.shape == (5, 2) and P.tolist() == [[0, 1], [2, 3], [4, 5], [-1, -1], [-1, -1]]
+    assert padded(A, 3).tolist() == A.tolist()
+
+
+def test_gram_accumulates_over_chunks_in_float64():
     rng = np.random.default_rng(0)
-    S = torch.as_tensor(rng.integers(0, 4, (50, 3)))
-    T = torch.as_tensor(rng.integers(0, 4, (50, 2)))
+    S = jnp.asarray(rng.integers(0, 4, (50, 3)))
+    T = jnp.asarray(rng.integers(0, 4, (50, 2)))
     F_of = lambda i, j: onehot(S[i:j], 4, True)
     Y_of = lambda i, j: onehot(T[i:j], 4, False)
-    G, B = gram(F_of, Y_of, 50, 7)
-    F, Y = F_of(0, 50).double(), Y_of(0, 50).double()
-    assert torch.allclose(G, F.T @ F) and torch.allclose(B, F.T @ Y)
+    G, B = gram(F_of, Y_of, 50, 7)   # 50 rows in chunks of 7: the last is padded
+    assert G.dtype == np.float64 and B.dtype == np.float64
+    F, Y = np.asarray(F_of(0, 50), np.float64), np.asarray(Y_of(0, 50), np.float64)
+    assert np.allclose(np.asarray(G), F.T @ F) and np.allclose(np.asarray(B), F.T @ Y)
 
 
 def planted(n=6000, seed=0):
@@ -42,7 +52,7 @@ def planted(n=6000, seed=0):
     S = rng.integers(0, 4, (n, 4))
     T = np.stack([(S[:, 0] + S[:, 1]) % 4, S[:, 2],
                   rng.integers(0, 4, n)], 1)
-    return torch.as_tensor(S), torch.as_tensor(T)
+    return jnp.asarray(S), jnp.asarray(T)
 
 
 def test_probe_reads_a_copied_head_and_not_noise():
@@ -62,7 +72,7 @@ def test_mlp_probe_reads_a_joint_function():
     """The head the ridge cannot read (a sum of two source heads mod 4)
     is within a hidden layer's reach; noise still is not."""
     S, T = planted()
-    T = T.int()                     # the codes arrive as int32 from the model
+    T = T.astype(jnp.int32)         # the codes arrive as int32 from the model
     acc, epoch = mlp_probe(lambda i, j: onehot(S[i:j], 4, False), T, 4,
                            4000, 1000, 6000, 64, 30, 0, batch=256)
     assert acc[0] > 0.9 and acc[1] > 0.99
@@ -74,9 +84,8 @@ def test_probe_scores_only_rows_past_fit_and_validation():
     """Targets are a copy on the fit and validation rows and noise on the
     test rows: a probe scored on what it was fitted to would read 1."""
     S, T = planted(seed=1)
-    T = T.clone()
-    T[5000:, 1] = torch.as_tensor(
-        np.random.default_rng(2).integers(0, 4, 1000))
+    T = T.at[5000:, 1].set(jnp.asarray(
+        np.random.default_rng(2).integers(0, 4, 1000)))
     acc, _ = probe(lambda i, j: onehot(S[i:j], 4, True), T, 4,
                    4000, 1000, 6000, [1e-2], 512)
     assert abs(acc[1] - 0.25) < 0.06
@@ -84,20 +93,23 @@ def test_probe_scores_only_rows_past_fit_and_validation():
 
 def test_ridge_penalty_is_relative_to_the_gram():
     rng = np.random.default_rng(3)
-    F = torch.as_tensor(rng.normal(size=(200, 5)))
-    Y = torch.as_tensor(rng.normal(size=(200, 2)))
+    F = rng.normal(size=(200, 5))
+    Y = rng.normal(size=(200, 2))
     W = ridge(F.T @ F, F.T @ Y, 0.1)
+    assert W.dtype == np.float64            # solved in float64
     Ws = ridge((10 * F).T @ (10 * F), (10 * F).T @ Y, 0.1)
-    assert torch.allclose(10 * Ws, W)       # rescaled features, same fit
+    assert np.allclose(10 * np.asarray(Ws), np.asarray(W))  # rescaled features, same fit
+    lam = 0.1 * np.diag(F.T @ F).mean()
+    assert np.allclose(np.asarray(W), np.linalg.solve(F.T @ F + lam * np.eye(5), F.T @ Y))
 
 
 def test_head_accuracy_and_majority():
-    T = torch.tensor([[0, 1], [1, 1], [2, 1], [0, 0]])
-    W = torch.eye(6, dtype=torch.float64)   # features are the targets
+    T = jnp.array([[0, 1], [1, 1], [2, 1], [0, 0]])
+    W = np.eye(6)                           # features are the targets
     acc = head_accuracy(lambda i, j: onehot(T[i:j], 3, False), W, T, 3, 0, 4,
                         3)
     assert acc.tolist() == [1.0, 1.0]
-    assert majority(T.numpy(), 3).tolist() == [0.5, 0.75]
+    assert majority(np.asarray(T), 3).tolist() == [0.5, 0.75]
 
 
 def test_lsh_codes_are_deterministic_partitions():

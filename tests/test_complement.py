@@ -5,8 +5,8 @@
 import sys
 from pathlib import Path
 
+import jax.numpy as jnp
 import numpy as np
-import torch
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "experiments"
                        / "seed-probes"))
@@ -32,7 +32,7 @@ def fit_all(codes, Y, conds, n_fit, n_val, lams=(1e-6,)):
     others = [c for c in codes if c != "A"]
     pairs = ([("A", "A")] + [(x, x) for x in others]
              + [("A", x) for x in others])
-    Yt = torch.as_tensor(Y - Y[:n_fit].mean(0))
+    Yt = jnp.asarray(Y - Y[:n_fit].mean(0))
     S, FY, G, sy, nf = moments(codes, pairs, Yt, K, 0, n_fit, 1000)
     return {"+".join(c): readout(codes, c, S, FY, G, sy, nf, Yt, K, n_val,
                                  len(Y), lams, 1000) for c in conds}
@@ -47,7 +47,7 @@ def test_a_relabelled_copy_overlaps_fully():
     rng = np.random.default_rng(1)
     relabel = np.stack([rng.permutation(K) for _ in range(3)])
     copy = relabel[np.arange(3), A]
-    codes = {"A": torch.as_tensor(A), "copy": torch.as_tensor(copy)}
+    codes = {"A": jnp.asarray(A), "copy": jnp.asarray(copy)}
     ev = evs(fit_all(codes, Y, [("A",), ("copy",), ("A", "copy")],
                      4000, 1000))
     assert abs(ev["A"] - ev["copy"]) < 1e-3
@@ -56,7 +56,7 @@ def test_a_relabelled_copy_overlaps_fully():
 
 def test_independent_information_does_not_overlap():
     A, X, Y = planted(6000, 2)
-    codes = {"A": torch.as_tensor(A), "X": torch.as_tensor(X)}
+    codes = {"A": jnp.asarray(A), "X": jnp.asarray(X)}
     ev = evs(fit_all(codes, Y, [("A",), ("X",), ("A", "X")], 4000, 1000))
     assert ev["A+X"] > ev["A"] + 0.3
     assert abs(overlap(ev["A"], ev["X"], ev["A+X"])) < 0.05
@@ -64,20 +64,23 @@ def test_independent_information_does_not_overlap():
 
 def test_block_system_is_the_ridge_on_centered_features():
     A, X, Y = planted(500, 3)
-    codes = {"A": torch.as_tensor(A), "X": torch.as_tensor(X)}
-    Yt = torch.as_tensor(Y)
+    codes = {"A": jnp.asarray(A), "X": jnp.asarray(X)}
+    Yt = jnp.asarray(Y)
+    # 400 rows in chunks of 64: the last chunk is padded
     S, FY, G, sy, n = moments(codes, [("A", "A"), ("X", "X"), ("A", "X")],
                               Yt, K, 0, 400, 64)
     Gc, Bc, mu = system(("A", "X"), S, FY, G, sy, n)
-    F = torch.cat([onehot(codes[c][:400], K, False) for c in "AX"], 1)
-    Fc, y = F.double() - F.double().mean(0), Yt[:400].double()
-    assert torch.allclose(Gc, Fc.T @ Fc, atol=1e-8)
-    assert torch.allclose(Bc, Fc.T @ (y - y.mean(0)), atol=1e-6)
-    assert torch.allclose(mu, F.double().mean(0))
+    assert Gc.dtype == np.float64
+    F = np.concatenate([np.asarray(onehot(codes[c][:400], K, False), np.float64)
+                        for c in "AX"], 1)
+    Fc, y = F - F.mean(0), Y[:400].astype(np.float64)
+    assert np.allclose(np.asarray(Gc), Fc.T @ Fc, atol=1e-8)
+    assert np.allclose(np.asarray(Bc), Fc.T @ (y - y.mean(0)), atol=1e-6)
+    assert np.allclose(np.asarray(mu), F.mean(0))
 
 
 def test_the_penalty_is_chosen_on_validation_rows():
     A, X, Y = planted(3000, 4)
-    codes = {"A": torch.as_tensor(A), "X": torch.as_tensor(X)}
+    codes = {"A": jnp.asarray(A), "X": jnp.asarray(X)}
     res = fit_all(codes, Y, [("A",)], 2000, 500, lams=(1e-6, 10.0))
     assert res["A"]["lambda"] == 1e-6

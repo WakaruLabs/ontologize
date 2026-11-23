@@ -54,6 +54,9 @@ Seed 43's margin over the better of the two controls, head by head:
 With the two seeds' roles swapped the table is the same to the third
 decimal (margins +0.014, +0.030, +0.004).
 
+(2026-11-23: rerun after the port to JAX, every row reproduces except the
+earlier checkpoint's mlp row, which reads 0.325; see that day's entry.)
+
 **Flat pair.**
 
 | source | ridge | mlp |
@@ -232,4 +235,43 @@ was not measured.
 JAX_PLATFORMS=cpu uv run python experiments/seed-probes/complement.py \
     --a data/out/sonar/multilingual/ste_h76_init01 \
     --b data/out/sonar/multilingual/ste_h76_i01_s43 --earlier 350000
+```
+
+## 2026-11-23: `translate.py` and `complement.py` in JAX: the ridge reproduces, the hidden-layer probe within noise
+
+**The port.** Both scripts now compute with `jax.numpy`, not torch.
+- **The ridge.** The Grams are summed in float32 at full precision and kept in float64, and solved by
+  a float64 Cholesky. JAX's 64-bit types are on only inside the probe functions, so the models make
+  their codes as they were trained.
+- **Chunks.** Each loop's last, shorter chunk is padded to the others' shape: zero rows in the sums,
+  and target entry −1, which no argmax is, in the accuracies.
+- **The hidden-layer probe** is the same network, trained by optax's Adam at learning rate 1e-3 on
+  the same batches in the same order. Its weights and biases start uniform on ±1/√fan_in, drawn from
+  JAX's generator, so its runs are new draws.
+- **Threads.** `complement.py --threads` now sets the process's CPU affinity, which JAX's thread pool
+  follows.
+
+**The reruns**, of the stack pair of 2026-11-11 (`--mlp --earlier 350000`) and of the complement run
+of 2026-11-21, against the saved torch outputs:
+- **`translate.py`** (8 min 47 s on the RTX 3090):
+  - every ridge column has the same mean to four decimals and the same penalty; per head they differ
+    by at most 0.0004 (`untrained/all`);
+  - every hidden-layer probe stops at the same epoch, and their means agree within 0.0001, except
+    the earlier checkpoint's, 0.327 then and 0.325 now (by layer 0.714, 0.434, 0.245, 0.142,
+    0.089). Per head they differ by at most 0.017;
+  - seed 43's margins over the better control are +0.0138 (all), +0.0040 (same) and +0.0303 (mlp,
+    +0.0304 before).
+- **`complement.py`** (23 min on 16 CPU cores): every FVU, explained variance, overlap and gain
+  within 1e-10 of the torch run's, at the same penalties.
+
+So the tables above stand, except that the earlier checkpoint's hidden-layer row would read 0.325.
+
+Output: `data/out/sonar/seedprobes/jnp_check/` (`translate_stack/`, `complement/`).
+
+```bash
+M=data/out/sonar/multilingual
+uv run python experiments/seed-probes/translate.py --mlp --earlier 350000 \
+    --a $M/ste_h76_init01 --b $M/ste_h76_i01_s43 --out data/out/sonar/seedprobes/jnp_check/translate_stack
+JAX_PLATFORMS=cpu uv run python experiments/seed-probes/complement.py --earlier 350000 \
+    --a $M/ste_h76_init01 --b $M/ste_h76_i01_s43 --out data/out/sonar/seedprobes/jnp_check/complement
 ```

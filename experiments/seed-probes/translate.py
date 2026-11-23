@@ -38,10 +38,11 @@ os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
 import argparse
 import csv
+import functools
 import json
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Sequence, Tuple
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
@@ -50,8 +51,11 @@ sys.path.insert(0, str(ROOT / "experiments" / "ste-arm"))
 import numpy as np
 import jax
 import jax.numpy as jnp
-import torch
+import jax.scipy.linalg as jsl
+import optax
 from jaxtyping import Array, Float, Int
+
+HIGHEST = jax.lax.Precision.HIGHEST
 
 from pareto import load_onto
 
@@ -133,56 +137,99 @@ def lsh_codes(X: Float[np.ndarray, "n d"], heads: int, k: int, seed: int,
 
 # ---------- the probe (pure) ----------
 
-def onehot(S: Int[torch.Tensor, "n heads"], k: int, const: bool
-           ) -> Float[torch.Tensor, "n f"]:
+def x64(f: Callable) -> Callable:
+    """Runs `f` with JAX's 64-bit types on, for its float64 sums and
+    solves; outside them a float64 array would turn float32 again. Only
+    these functions turn them on, so the models that make the codes run as
+    they were trained."""
+    @functools.wraps(f)
+    def run(*args, **kwargs):
+        with jax.enable_x64(True):
+            return f(*args, **kwargs)
+    return run
+
+
+def padded(A: Array, rows: int, fill: float = 0) -> Array:
+    """`A` with `fill` rows appended up to `rows`, so that a loop's last,
+    shorter chunk has the others' shape."""
+    short = rows - A.shape[0]
+    if short == 0:
+        return jnp.asarray(A)
+    return jnp.concatenate([jnp.asarray(A),
+                            jnp.full((short,) + A.shape[1:], fill, A.dtype)])
+
+
+def onehot(S: Int[Array, "n heads"], k: int, const: bool
+           ) -> Float[Array, "n f"]:
     """Dense one-hot code, head by head, with a constant column last when
     `const`."""
     n, H = S.shape
-    F = torch.zeros((n, H * k + int(const)), dtype=torch.float32,
-                    device=S.device)
-    F.scatter_(1, S + k * torch.arange(H, device=S.device), 1.0)
+    F = jax.nn.one_hot(S, k, dtype=jnp.float32).reshape(n, H * k)
     if const:
-        F[:, -1] = 1.0
+        F = jnp.concatenate([F, jnp.ones((n, 1), jnp.float32)], 1)
     return F
 
 
+@jax.jit
+def products(F: Float[Array, "c f"], Y: Float[Array, "c t"]
+             ) -> Tuple[Float[Array, "f f"], Float[Array, "f t"]]:
+    """A chunk's `F'F` and `F'Y`, summed in float32 and returned in
+    float64."""
+    return (jnp.matmul(F.T, F, precision=HIGHEST).astype(jnp.float64),
+            jnp.matmul(F.T, Y, precision=HIGHEST).astype(jnp.float64))
+
+
+@x64
 def gram(F_of, Y_of, n: int, chunk: int
-         ) -> Tuple[Float[torch.Tensor, "f f"], Float[torch.Tensor, "f c"]]:
+         ) -> Tuple[Float[Array, "f f"], Float[Array, "f c"]]:
     """`F'F` and `F'Y` in float64, accumulated over row chunks; `F_of` and
-    `Y_of` return a chunk's feature and target matrices."""
+    `Y_of` return a chunk's feature and target matrices. The last chunk is
+    padded with zero rows, which add nothing."""
     G = B = None
     for i in range(0, n, chunk):
-        F, Y = F_of(i, min(i + chunk, n)), Y_of(i, min(i + chunk, n))
-        g, b = (F.T @ F).double(), (F.T @ Y).double()
+        j = min(i + chunk, n)
+        g, b = products(padded(F_of(i, j), chunk), padded(Y_of(i, j), chunk))
         G, B = (g, b) if G is None else (G + g, B + b)
     return G, B
 
 
-def ridge(G: Float[torch.Tensor, "f f"], B: Float[torch.Tensor, "f c"],
-          lam: float) -> Float[torch.Tensor, "f c"]:
+@x64
+def ridge(G: Float[Array, "f f"], B: Float[Array, "f c"],
+          lam: float) -> Float[Array, "f c"]:
     """`(G + lam s I)^{-1} B` by Cholesky, in float64, with `s` the mean
     diagonal of `G`: the penalty is relative, so one grid serves one-hot
     codes and the dense input alike."""
-    A = G + lam * G.diagonal().mean() * torch.eye(
-        len(G), dtype=G.dtype, device=G.device)
-    return torch.cholesky_solve(B, torch.linalg.cholesky(A))
+    G, B = jnp.asarray(G, jnp.float64), jnp.asarray(B, jnp.float64)
+    A = G + lam * jnp.diagonal(G).mean() * jnp.eye(len(G), dtype=G.dtype)
+    return jsl.cho_solve((jnp.linalg.cholesky(A), True), B)
 
 
-def head_accuracy(F_of, W: Float[torch.Tensor, "f c"],
-                  T: Int[torch.Tensor, "n heads"], k: int, lo: int, hi: int,
+@jax.jit
+def hits(F: Float[Array, "c f"], W: Float[Array, "f hk"],
+         T: Int[Array, "c heads"]) -> Int[Array, "heads"]:
+    """Per head, the chunk's rows whose highest-scoring entry is `T`'s."""
+    S = jnp.matmul(F, W, precision=HIGHEST).reshape(F.shape[0], T.shape[1], -1)
+    return (S.argmax(-1) == T).sum(0)
+
+
+@x64
+def head_accuracy(F_of, W: Float[Array, "f c"],
+                  T: Int[Array, "n heads"], k: int, lo: int, hi: int,
                   chunk: int) -> Float[np.ndarray, "heads"]:
     """Per target head, the share of rows `lo:hi` whose predicted entry
-    (the argmax of the head's `k` score columns) is the one selected."""
-    W = W.float()
-    hit = torch.zeros(T.shape[1], dtype=torch.float64, device=W.device)
+    (the argmax of the head's `k` score columns) is the one selected. The
+    last chunk's padding rows target entry -1, which no argmax is."""
+    W = jnp.asarray(W, jnp.float32)
+    hit = np.zeros(T.shape[1], np.int64)
     for i in range(lo, hi, chunk):
         j = min(i + chunk, hi)
-        S = (F_of(i, j) @ W).reshape(j - i, T.shape[1], k)
-        hit += (S.argmax(-1) == T[i:j]).double().sum(0)
-    return (hit / (hi - lo)).cpu().numpy()
+        hit += np.asarray(hits(padded(F_of(i, j), chunk), W,
+                               padded(T[i:j], chunk, -1)))
+    return hit / (hi - lo)
 
 
-def probe(F_of, T: Int[torch.Tensor, "n heads"], k: int, n_fit: int,
+@x64
+def probe(F_of, T: Int[Array, "n heads"], k: int, n_fit: int,
           n_val: int, n: int, lams: Sequence[float], chunk: int
           ) -> Tuple[Float[np.ndarray, "heads"], float]:
     """Held-out accuracy on every target head of a ridge from the features
@@ -203,46 +250,80 @@ def probe(F_of, T: Int[torch.Tensor, "n heads"], k: int, n_fit: int,
     return head_accuracy(F_of, W, T, k, n_fit + n_val, n, chunk), lam
 
 
-def mlp_probe(F_of, T: Int[torch.Tensor, "n heads"], k: int, n_fit: int,
+Layers = List[Tuple[Float[Array, "a b"], Float[Array, "b"]]]
+
+
+def mlp_init(key: Array, sizes: Sequence[int]) -> Layers:
+    """Each layer's weights and biases, uniform on +-1/sqrt(fan_in)."""
+    layers = []
+    for key, a, b in zip(jax.random.split(key, len(sizes) - 1), sizes[:-1],
+                         sizes[1:]):
+        kw, kb = jax.random.split(key)
+        s = 1.0 / np.sqrt(a)
+        layers.append((jax.random.uniform(kw, (a, b), jnp.float32, -s, s),
+                       jax.random.uniform(kb, (b,), jnp.float32, -s, s)))
+    return layers
+
+
+def mlp(layers: Layers, x: Float[Array, "b f"]) -> Float[Array, "b o"]:
+    """ReLU between the layers, none after the last."""
+    for i, (W, c) in enumerate(layers):
+        x = jnp.matmul(x, W, precision=HIGHEST) + c
+        if i < len(layers) - 1:
+            x = jax.nn.relu(x)
+    return x
+
+
+def mlp_probe(F_of, T: Int[Array, "n heads"], k: int, n_fit: int,
               n_val: int, n: int, hidden: int, epochs: int, seed: int,
               batch: int = 1024) -> Tuple[Float[np.ndarray, "heads"], int]:
     """Held-out accuracy on every target head of one network with a
-    hidden layer, trained on the mean cross-entropy over heads, and the
-    epoch it was read at: the one with the best mean validation accuracy.
-    Unlike `probe`, it can read a head that is a joint function of several
-    source heads. Rows are split as in `probe`."""
-    torch.manual_seed(seed)
-    dev, H = T.device, T.shape[1]
-    net = torch.nn.Sequential(
-        torch.nn.Linear(F_of(0, 1).shape[1], hidden), torch.nn.ReLU(),
-        torch.nn.Linear(hidden, H * k)).to(dev)
-    opt = torch.optim.Adam(net.parameters(), lr=1e-3)
+    hidden layer, trained by Adam on the mean cross-entropy over heads, and
+    the epoch it was read at: the one with the best mean validation
+    accuracy. Unlike `probe`, it can read a head that is a joint function
+    of several source heads. Rows are split as in `probe`. Batches are
+    padded to `batch` rows, which the loss weighs at zero."""
+    H = T.shape[1]
+    layers = mlp_init(jax.random.PRNGKey(seed), [F_of(0, 1).shape[1], hidden, H * k])
+    opt = optax.adam(1e-3)
+    state = opt.init(layers)
 
-    @torch.no_grad()
-    def acc(lo: int, hi: int) -> Float[torch.Tensor, "heads"]:
-        hit = torch.zeros(H, dtype=torch.float64, device=dev)
+    def loss(p: Layers, x, t, m) -> Float[Array, ""]:
+        ce = optax.softmax_cross_entropy_with_integer_labels(
+            mlp(p, x).reshape(x.shape[0], H, k), t)
+        return (ce.mean(1) * m).sum() / m.sum()
+
+    @jax.jit
+    def step(p: Layers, s, x, t, m):
+        u, s = opt.update(jax.grad(loss)(p, x, t, m), s, p)
+        return optax.apply_updates(p, u), s
+
+    @jax.jit
+    def hit(p: Layers, x, t) -> Int[Array, "heads"]:
+        return (mlp(p, x).reshape(x.shape[0], H, k).argmax(-1) == t).sum(0)
+
+    def acc(p: Layers, lo: int, hi: int) -> Float[np.ndarray, "heads"]:
+        out = np.zeros(H, np.int64)
         for i in range(lo, hi, 4 * batch):
             j = min(i + 4 * batch, hi)
-            hit += (net(F_of(i, j)).reshape(j - i, H, k).argmax(-1)
-                    == T[i:j]).double().sum(0)
-        return hit / (hi - lo)
+            out += np.asarray(hit(p, padded(F_of(i, j), 4 * batch),
+                                  padded(T[i:j], 4 * batch, -1)))
+        return out / (hi - lo)
 
     best, at, test = -1.0, 0, None
     starts = np.arange(0, n_fit, batch)
     rng = np.random.default_rng(seed)
     for ep in range(epochs):
         for i in rng.permutation(starts):
-            j = min(int(i) + batch, n_fit)
-            loss = torch.nn.functional.cross_entropy(
-                net(F_of(int(i), j)).reshape(-1, k),
-                T[int(i):j].reshape(-1).long())
-            opt.zero_grad()
-            loss.backward()
-            opt.step()
-        v = float(acc(n_fit, n_fit + n_val).mean())
+            i = int(i)
+            j = min(i + batch, n_fit)
+            m = padded(jnp.ones(j - i, jnp.float32), batch)
+            layers, state = step(layers, state, padded(F_of(i, j), batch),
+                                 padded(T[i:j], batch, 0), m)
+        v = float(acc(layers, n_fit, n_fit + n_val).mean())
         if v > best:
-            best, at, test = v, ep + 1, acc(n_fit + n_val, n)
-    return test.cpu().numpy(), at
+            best, at, test = v, ep + 1, acc(layers, n_fit + n_val, n)
+    return test, at
 
 
 def majority(T: Int[np.ndarray, "n heads"], k: int
@@ -256,7 +337,6 @@ def majority(T: Int[np.ndarray, "n heads"], k: int
 
 def main() -> None:
     cfg = parse_args()
-    dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     X = np.asarray(np.load(cfg.cache, mmap_mode="r"), np.float32)
     n = len(X)
     n_fit = n - cfg.val - cfg.test
@@ -287,16 +367,16 @@ def main() -> None:
     print(f"{n} rows of {Path(cfg.cache).name}: fit {n_fit}, validate "
           f"{cfg.val}, test {cfg.test}\n")
 
-    At = torch.as_tensor(A, device=dev)
+    At = jnp.asarray(A)
     layer = np.repeat(np.arange(l), h)
     cols: Dict[str, Float[np.ndarray, "heads"]] = {"majority": majority(A, k)}
     lam_used: Dict[str, Any] = {}
     chunk = 4096
 
-    Xt = torch.as_tensor(X, device=dev)
-    ones = torch.ones((n, 1), device=dev)
-    acc, lam = probe(lambda i, j: torch.cat([Xt[i:j], ones[i:j]], 1), At, k,
-                     n_fit, cfg.val, n, cfg.lams, chunk)
+    Xt = jnp.asarray(X)
+    ones = jnp.ones((n, 1), jnp.float32)
+    acc, lam = probe(lambda i, j: jnp.concatenate([Xt[i:j], ones[i:j]], 1),
+                     At, k, n_fit, cfg.val, n, cfg.lams, chunk)
     cols["input"], lam_used["input"] = acc, lam
     if cfg.mlp:
         cols["input/mlp"], lam_used["input/mlp"] = mlp_probe(
@@ -304,7 +384,7 @@ def main() -> None:
             n, cfg.mlp_hidden, cfg.mlp_epochs, cfg.seed)
 
     for name, S in src.items():
-        St = torch.as_tensor(S, device=dev)
+        St = jnp.asarray(S)
         acc, lam = probe(lambda i, j: onehot(St[i:j], k, True), At, k,
                          n_fit, cfg.val, n, cfg.lams, chunk)
         cols[f"{name}/all"], lam_used[f"{name}/all"] = acc, lam

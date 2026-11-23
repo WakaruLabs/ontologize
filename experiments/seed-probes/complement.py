@@ -60,11 +60,12 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "experiments" / "ste-arm"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import jax
+import jax.numpy as jnp
 import numpy as np
-import torch
-from jaxtyping import Float, Int
+from jaxtyping import Array, Float, Int
 
-from translate import onehot, ridge
+from translate import HIGHEST, onehot, padded, ridge, x64
 
 CONTROLS = ("earlier", "lsh", "untrained")
 
@@ -96,7 +97,8 @@ def parse_args() -> argparse.Namespace:
                    help="skip the whole-stack scope (layers only)")
     p.add_argument("--dict-init-scale", type=float, default=0.1)
     p.add_argument("--init-cache", default="data/sonar_embeddings/mc4_4M.npy")
-    p.add_argument("--threads", type=int, default=16)
+    p.add_argument("--threads", type=int, default=16,
+                   help="CPU cores the process may run on (its affinity)")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--batch", type=int, default=1024)
     p.add_argument("--out", default=None)
@@ -105,68 +107,89 @@ def parse_args() -> argparse.Namespace:
 
 # ---------- the readout (pure) ----------
 
-def moments(codes: Dict[str, Int[torch.Tensor, "n H"]],
-            pairs: Sequence[Tuple[str, str]], Y: Float[torch.Tensor, "n d"],
+@jax.jit
+def cross(P: Float[Array, "c f"], Q: Float[Array, "c g"]) -> Float[Array, "f g"]:
+    """A chunk's `P'Q`, summed in float32 and returned in float64."""
+    return jnp.matmul(P.T, Q, precision=HIGHEST).astype(jnp.float64)
+
+
+@x64
+def moments(codes: Dict[str, Int[Array, "n H"]],
+            pairs: Sequence[Tuple[str, str]], Y: Float[Array, "n d"],
             k: int, lo: int, hi: int, chunk: int
-            ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor],
-                       Dict[Tuple[str, str], torch.Tensor], torch.Tensor, int]:
+            ) -> Tuple[Dict[str, Array], Dict[str, Array],
+                       Dict[Tuple[str, str], Array], Array, int]:
     """Over rows lo:hi, in float64: each code's one-hot column sums and
     F'Y, F_p'F_q for each pair (p, q), the target's sum, and the row
-    count."""
-    S: Dict[str, torch.Tensor] = {}
-    FY: Dict[str, torch.Tensor] = {}
-    G: Dict[Tuple[str, str], torch.Tensor] = {}
-    sy = torch.zeros(Y.shape[1], dtype=torch.float64)
+    count. The last chunk is padded with zero rows, which add nothing."""
+    S: Dict[str, Array] = {}
+    FY: Dict[str, Array] = {}
+    G: Dict[Tuple[str, str], Array] = {}
+    sy = jnp.zeros(Y.shape[1], jnp.float64)
     for i in range(lo, hi, chunk):
         j = min(i + chunk, hi)
-        F = {c: onehot(T[i:j], k, False) for c, T in codes.items()}
-        y = Y[i:j]
-        sy += y.double().sum(0)
+        F = {c: padded(onehot(T[i:j], k, False), chunk) for c, T in codes.items()}
+        y = padded(Y[i:j], chunk)
+        sy = sy + y.astype(jnp.float64).sum(0)
         for c, f in F.items():
-            s, fy = f.sum(0).double(), (f.T @ y).double()
+            s, fy = f.astype(jnp.float64).sum(0), cross(f, y)
             S[c], FY[c] = ((s, fy) if c not in S
                            else (S[c] + s, FY[c] + fy))
         for p, q in pairs:
-            g = (F[p].T @ F[q]).double()
+            g = cross(F[p], F[q])
             G[(p, q)] = g if (p, q) not in G else G[(p, q)] + g
     return S, FY, G, sy, hi - lo
 
 
-def block(G: Dict[Tuple[str, str], torch.Tensor], p: str, q: str
-          ) -> torch.Tensor:
+def block(G: Dict[Tuple[str, str], Array], p: str, q: str) -> Array:
     return G[(p, q)] if (p, q) in G else G[(q, p)].T
 
 
+@x64
 def system(cond: Sequence[str], S, FY, G, sy, n: int
-           ) -> Tuple[Float[torch.Tensor, "f f"], Float[torch.Tensor, "f d"],
-                      Float[torch.Tensor, "f"]]:
+           ) -> Tuple[Float[Array, "f f"], Float[Array, "f d"],
+                      Float[Array, "f"]]:
     """The centered normal equations of a ridge on the codes in `cond`
     concatenated: (G_c, B_c, the fit rows' feature mean)."""
-    mu = torch.cat([S[c] / n for c in cond])
-    Gc = torch.cat([torch.cat([block(G, p, q) for q in cond], 1)
-                    for p in cond], 0) - n * torch.outer(mu, mu)
-    Bc = torch.cat([FY[c] for c in cond]) - torch.outer(mu, sy)
+    mu = jnp.concatenate([S[c] / n for c in cond])
+    Gc = jnp.concatenate([jnp.concatenate([block(G, p, q) for q in cond], 1)
+                          for p in cond], 0) - n * jnp.outer(mu, mu)
+    Bc = jnp.concatenate([FY[c] for c in cond]) - jnp.outer(mu, sy)
     return Gc, Bc, mu
 
 
-def sse(codes: Dict[str, Int[torch.Tensor, "n H"]], cond: Sequence[str],
-        W: Float[torch.Tensor, "f d"], mu: Float[torch.Tensor, "f"],
-        Y: Float[torch.Tensor, "n d"], k: int, lo: int, hi: int, chunk: int
+@jax.jit
+def square_error(F: Float[Array, "c f"], W: Float[Array, "f d"],
+                 off: Float[Array, "d"], y: Float[Array, "c d"],
+                 m: Float[Array, "c"]) -> Float[Array, ""]:
+    """The chunk's squared readout error, in float64, over its rows that
+    `m` marks."""
+    r = jnp.matmul(F, W, precision=HIGHEST) - off - y
+    return ((r ** 2).astype(jnp.float64).sum(1) * m).sum()
+
+
+@x64
+def sse(codes: Dict[str, Int[Array, "n H"]], cond: Sequence[str],
+        W: Float[Array, "f d"], mu: Float[Array, "f"],
+        Y: Float[Array, "n d"], k: int, lo: int, hi: int, chunk: int
         ) -> Tuple[float, float]:
     """(squared error of the readout, squared deviation of the target
     about its own mean) over rows lo:hi."""
-    W32, off = W.float(), (mu @ W).float()
+    W32, off = W.astype(jnp.float32), (mu @ W).astype(jnp.float32)
     err = 0.0
     for i in range(lo, hi, chunk):
         j = min(i + chunk, hi)
-        F = torch.cat([onehot(codes[c][i:j], k, False) for c in cond], 1)
-        err += float(((F @ W32 - off - Y[i:j]) ** 2).double().sum())
-    y = Y[lo:hi].double()
+        F = jnp.concatenate([onehot(codes[c][i:j], k, False) for c in cond], 1)
+        m = padded(jnp.ones(j - i, jnp.float64), chunk)
+        err += float(square_error(padded(F, chunk), W32, off,
+                                  padded(Y[i:j], chunk), m))
+    y = jnp.asarray(Y[lo:hi]).astype(jnp.float64)
     return err, float(((y - y.mean(0)) ** 2).sum())
 
 
-def readout(codes: Dict[str, Int[torch.Tensor, "n H"]], cond: Sequence[str],
-            S, FY, G, sy, n_fit: int, Y: Float[torch.Tensor, "n d"], k: int,
+@x64
+def readout(codes: Dict[str, Int[Array, "n H"]], cond: Sequence[str],
+            S, FY, G, sy, n_fit: int, Y: Float[Array, "n d"], k: int,
             n_val: int, n: int, lams: Sequence[float], chunk: int
             ) -> Dict[str, float]:
     """The ridge from the codes in `cond` to Y, fit on rows :n_fit with the
@@ -193,7 +216,9 @@ def overlap(ev_a: float, ev_x: float, ev_ax: float) -> float:
 
 def main() -> None:
     cfg = parse_args()
-    torch.set_num_threads(cfg.threads)
+    # before JAX's CPU client starts, which sizes its thread pool to the
+    # cores it may use
+    os.sched_setaffinity(0, set(sorted(os.sched_getaffinity(0))[:cfg.threads]))
     from pareto import load_onto
     from steerembed import init_onto
     from translate import codes_of, lsh_codes
@@ -202,7 +227,7 @@ def main() -> None:
     n = len(X)
     n_fit = n - cfg.val - cfg.test
     w_sqrt = np.sqrt(np.load(cfg.mse_weights)).astype(np.float32)
-    Y = torch.as_tensor((X - X[:n_fit].mean(0)) * w_sqrt)
+    Y = jnp.asarray((X - X[:n_fit].mean(0)) * w_sqrt)
     T = cfg.temperature
 
     ma, pa, sa = load_onto(cfg.a, cfg.step_a)
@@ -234,7 +259,7 @@ def main() -> None:
     fvu_rows: List[dict] = []
     ov_rows: List[dict] = []
     for scope, sl in scopes:
-        codes = {c: torch.as_tensor(np.ascontiguousarray(v[:, sl]))
+        codes = {c: jnp.asarray(np.ascontiguousarray(v[:, sl]))
                  for c, v in raw.items()}
         S, FY, G, sy, nf = moments(codes, pairs, Y, k, 0, n_fit, chunk)
         res = {}
