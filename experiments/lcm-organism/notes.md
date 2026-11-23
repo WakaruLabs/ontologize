@@ -1,5 +1,93 @@
 # lcm-organism: notes
 
+## 2026-11-23, later: templates with word slots don't carry the lead either, against a random-deletion control
+
+**In short.**
+- **Two more flags** catch templates whose slots vary in words, which the entry below misses:
+  - *skeleton:* a sentence with its names, numbers and URLs masked repeats another document's;
+  - *shingle:* its masked word 3-grams overlap another tail document's row at Jaccard 0.5 or more.
+
+  With them, 9.7% of the tail is flagged, against 6.0%.
+- **Dropping every flagged row leaves the lead as it was.** The LCM's within-language excess over
+  SONAR's is 0.0597, against 0.0589 on all rows.
+- **The control** drops as many rows of each language at random, and the lead there is 0.0575.
+  The targeted drop's difference from it (+0.0022) is about the size of the random drop's own
+  (−0.0014), so neither moves the lead.
+- **SONAR's agreement leans on the templated rows more than the LCM's does.** Dropping them takes
+  SONAR's excess to 0.0157, against 0.0176 for the random drop, while the LCM's barely differs
+  (0.0754 against 0.0751).
+
+**The new flags** (`templates.py`, 2 min 28 s, most of it the pass over the sentence texts).
+- **The mask** (`masked_tokens`). Words are casefolded. A URL, a word with a digit, and a name are
+  masked, and a run of one mask counts as one. A name is a word after the first that starts with
+  a capital, or a word with a capital after its first letter.
+- **Skeleton.** The masked sentence is also a sentence of another document anywhere in mc4_sent16.
+  It counts only when at least two words are left unmasked and they are at least half its tokens,
+  so two sentences don't match on their masks alone.
+  - It flags 7.0% of the rows, 3.3 points of them beyond the text and twin flags.
+- **Shingle.** For a sentence of at least four tokens whose skeleton counts (83% of the rows), its
+  masked word 3-grams have a Jaccard index of at least 0.5 with a row of another document in the
+  tail.
+  - MinHash signatures (60 hashes in 20 bands of 3) propose the pairs, and each is checked
+    exactly.
+  - It flags 2.6% of the rows, 1.6 points of them beyond the text and twin flags.
+- **All four together** flag 9.7% of the rows overall and in the scored languages alike.
+  - By kind: 16.4% of whole lines, 10.0% of cap-made pieces, 7.2% of sentences.
+  - By language: from 1.5% (Malayalam) and 1.9% (English) to 62% (Cebuano, whose mC4 pages are
+    largely bot-written), 36% (Maltese) and 30% (Scottish Gaelic).
+- **The converter family** is now caught almost whole:
+  - all 29 "fachtóir tiontaithe" sentences;
+  - 94% of the 85 rows with "airgeadra";
+  - all six "Aisghafa ó" footers;
+  - 96% of the 16 converter pages' 168 tail rows.
+- **What else they catch.** A sample of the rows only the new flags catch reads mostly as
+  boilerplate: listing titles ("Apartament Bence 32 km"), directions to an address, credit ads,
+  timestamps, GeoNames bot text, menus. A few are generic patterns, such as "Шта је Андроид
+  Рецовери?" ("What is Android Recovery?") matching another "What is X?". German capitalizes its
+  nouns, so there the mask reads them as names and the skeleton reaches further.
+
+**The control** (`keep_random.npy`) drops as many rows of each language as the four flags do,
+25,500 in all, chosen at random (seed 0). The two masks keep the same number of rows in every
+language, 236,644 of the last 262,144 in all, so their within-language scores weigh the languages
+alike. Among the
+matching's last 32,768 rows they keep 29,545 and 29,612.
+
+**The rescoring**, as in the entry below:
+
+| Rows scored | Within language: LCM excess | SONAR excess | LCM's lead | Ratio | Readout (x_n and context) gap closed | Readout (x_n alone) |
+|---|---|---|---|---|---|---|
+| All | 0.0774 | 0.0186 | 0.0589 | 4.2 | 62% | 38% |
+| Text and twin flags dropped (6.0%) | 0.0758 | 0.0163 | 0.0595 | 4.7 | 62% | 37% |
+| **All four flags dropped (9.7%)** | **0.0754** | **0.0157** | **0.0597** | **4.8** | **63%** | **37%** |
+| Random control (as many per language) | 0.0751 | 0.0176 | 0.0575 | 4.3 | 62% | 38% |
+| Flagged rows alone | 0.1306 | 0.0649 | 0.0657 | 2.0 | | |
+
+- **On all heads** the lead is 0.0189 with the flagged rows dropped and 0.0174 under the control
+  (0.0172 on all rows). The readouts close 84% and 79% of the gap without the flagged rows, and 85%
+  and 83% under the control (86% and 84% on all rows).
+- **The flagged rows alone** are scored on 22,307 rows in 60 languages at 200 or more rows each,
+  and on all heads on their 3,223 rows of the last 32,768.
+
+**What it means.**
+- **The lead sits in the ordinary rows,** now with templates that vary in words removed as well as
+  verbatim repeats, and against a deletion of the same size per language.
+- **Templated rows help SONAR's seeds agree more than the LCM's.** Removing them costs SONAR more
+  than a random deletion does, and costs the LCM no more. On them alone the LCM leads by 2.0 times
+  SONAR's excess, against 4.2 times on all rows.
+
+**Caveats.**
+- **One seed pair per arm.** The readout from x_n alone closing 79% of the all-heads gap without
+  the flagged rows, against 83% under the control, rests on it.
+- **The mask is rough.** It reads a capital as a name, which overreaches in German and misses names
+  in scripts without capitals. The shingle flag compares tail rows only with other tail rows.
+- **The control is one draw** of the random deletion.
+
+```bash
+uv run python experiments/lcm-organism/templates.py
+# as in the entry below, with --row-mask $T/keep_none.npy and $T/keep_random.npy for the four arms,
+# and $T/only_any.npy at --min-rows 200 for the LCM and SONAR
+```
+
 ## 2026-11-23: dropping verbatim repeats leaves the LCM's within-language lead as it was
 
 **In short.**
@@ -76,7 +164,9 @@ cache).
   - Wikipedia's "Aisghafa ó" (retrieved from) footers, whose URL differs: 1 of 6 flagged.
 
   Their centered SONAR cosines to their nearest other-document row have medians of 0.67–0.79, far
-  below the twin threshold. Of the 16 converter pages' 168 tail rows, 30% are flagged.
+  below the twin threshold. Of the 16 converter pages' 168 tail rows, 30% are flagged. (Later the
+  same day, the skeleton and shingle flags in the entry above catch 96% of them, and the lead holds
+  without them too.)
 - **Few rows on the templated side.** The templated-only scores rest on 7,299 rows in 23 languages
   at 200 or more rows each, where NMI over 32 entries is biased upward (their nulls are 0.24–0.27).
   Read that row by its difference between the arms, not by its level.

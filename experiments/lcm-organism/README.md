@@ -23,7 +23,7 @@ arms. Results go in `notes.md`.
 | `axes.py` | What each arm's coordinate axes carry that a rotation would remove, in the frame its loss weighs: coordinate marginals beside random directions, magnitude dependence between coordinates beside random directions, and the correlations' tail beside random rotations; the group of strongly correlated coordinates, and a draw of coordinates outside it for `--rotate-except` |
 | `phase2.sh` | Phase 2 on one GPU: the harvests, then the arms' dictionaries (`ARMS`, default `lcm init`) trained and scored by the SONAR control's recipe |
 
-| `templates.py` | Which rows of the held-out tail are templates: a sentence that another document of the cache repeats (casefolded, digits alike, whitespace collapsed), or a SONAR near-twin in another tail document. Writes masks for `seedmatch.py --row-mask` and the flagged shares by language and kind |
+| `templates.py` | Which rows of the held-out tail are templates: a sentence that another document of the cache repeats (casefolded, digits alike, whitespace collapsed), a SONAR near-twin in another tail document, a skeleton (names, numbers and URLs masked) that another document repeats, or masked word 3-grams that overlap another tail document's row. Writes masks for `seedmatch.py --row-mask`, a control that drops as many rows of each language at random, and the flagged shares by language and kind |
 
 `tests/test_lcm_organism.py` covers the thirteen Python files.
 
@@ -179,8 +179,19 @@ expired node loses only what had not reached the bucket.
 - **Templates** (`templates.py`).
   - **Why.** mC4 holds many templated pages, whose repeated sentences two seeds can agree on easily.
     Masks over the tail let `seedmatch.py` score the arms with those rows left out, or on them alone.
-  - **Two flags.** Repeated text catches exact repeats across the whole cache, digits aside. A SONAR
-    near-twin in another tail document catches templates whose slots vary in more than digits. Both
-    miss templates that differ more than that, so the flags are a lower bound.
+  - **Four flags.**
+    - *Repeated text* catches exact repeats across the whole cache, digits aside.
+    - *A SONAR near-twin* in another tail document catches what SONAR places almost on top of it.
+    - *The skeleton* masks a sentence's slots (names, words with a digit, URLs) and catches a
+      template whose slots vary in words. It needs at least two words left, at least half the
+      tokens, so that sentences don't match on their masks alone.
+    - *Shingles* catch a template that also varies in a word or two outside its slots.
+  - **The mask is rough.** It reads a capital as a name, which overreaches in German and misses
+    names in scripts without capitals.
+  - **The shingle search** compares tail rows only with tail rows. MinHash bands propose pairs, and
+    each pair's Jaccard index is checked exactly.
   - **The twin search** compares every tail row with every other on the default JAX device, in
     full float32 precision, since a TF32 product could move a cosine across the threshold.
+  - **The random control** (`keep_random.npy`) drops as many rows of each language as the flags do.
+    A drop in seed agreement is then read against the drop that losing that many rows causes by
+    itself, with the languages weighed alike.

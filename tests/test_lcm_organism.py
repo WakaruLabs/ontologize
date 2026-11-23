@@ -33,7 +33,11 @@
 #   and the draw avoids it.
 # - templates.py: a sentence is a template only when another document repeats
 #   it (case, spacing and digits aside), however the file is split among
-#   workers; a twin is the closest row of another document.
+#   workers; a twin is the closest row of another document; a skeleton masks
+#   names, numbers and URLs and needs words left; MinHash signatures agree
+#   about as often as the sets' Jaccard index, and a shingle twin must be
+#   another document's; the random control drops as many rows of each
+#   language.
 import json
 import os
 import signal
@@ -808,9 +812,10 @@ def test_a_sentence_is_a_template_only_when_another_document_repeats_it(tmp_path
     path = tmp_path / "c.sentences.jsonl"
     path.write_text("".join(json.dumps(d) + "\n" for d in docs))
     for workers in (1, 3):  # spans that cut lines are read once each
-        h, d, s = templates.sentence_hashes(path, workers)
-        assert len(h) == 7 and sorted(zip(d.tolist(), s.tolist())) == sorted(
+        h, k, ok, d, s, tail = templates.sentence_hashes(path, workers, tail_first=2)
+        assert len(h) == len(k) == len(ok) == 7 and sorted(zip(d.tolist(), s.tolist())) == sorted(
             (x["doc"], t[0]) for x in docs for t in x["sents"])
+        assert tail == {(2, 1): "Version 2 of 7", (3, 2): "Version 5 of 9"}
     row_doc = np.array([0, 0, 1, 1, 2, 3])
     row_seg = np.array([1, 2, 3, 4, 1, 2])
     # repeated across documents (case, spacing and digits aside) is flagged; within one is not
@@ -818,6 +823,58 @@ def test_a_sentence_is_a_template_only_when_another_document_repeats_it(tmp_path
         True, False, False, False, True, True]
     with pytest.raises(SystemExit, match="not in the sentences file"):
         templates.text_flags(np.array([5]), np.array([1]), h, d, s)
+
+
+def test_a_skeleton_masks_names_numbers_and_urls_and_needs_words_left():
+    import templates
+    t = templates.masked_tokens
+    # the converter pages' sentences differ in their currency's name and date only
+    a = t("An ráta malairte the WorldCoin Tugadh suas chun dáta deireanach ar 22 Deireadh Fómhair 2019")
+    b = t("An ráta malairte the Ixcoin Tugadh suas chun dáta deireanach ar 3 Nollaig 2019")
+    assert a == b and a[0] == "an"   # the first word keeps its capital's word
+    assert t('Aisghafa ó "https://ga.wikipedia.org/w/index.php?title=X"') == ["aisghafa", "ó", "<url>"]
+    assert t("Peruvian Nuevo Sol") == ["peruvian", "<name>"]   # a run of names is one name
+    assert t("pay with WorldCoin or iPhone") == ["pay", "with", "<name>", "or", "<name>"]
+    assert templates.skeleton_counts(t('Aisghafa ó "https://x.org"'))
+    assert templates.skeleton_counts(t("Zum Warenkorb hinzufügen"))   # two words left
+    assert not templates.skeleton_counts(t("Zum Warenkorb"))           # one word left
+    assert not templates.skeleton_counts(t("Alpha Beta and 12 Gamma"))  # under half words
+
+
+def test_a_shingle_twin_shares_most_three_grams_with_another_documents_row():
+    import templates
+    sents = ["the exchange rate for this coin was last updated from the market today",   # doc 0
+             "the exchange rate for that coin was last updated from the market today",   # doc 1
+             "the exchange rate for this coin was last updated from the market today",   # doc 0 again
+             "a cat sat on the mat and looked out of the window for a while",            # doc 2
+             "we ship every order within two working days of payment"]                   # doc 3
+    doc = np.array([0, 1, 0, 2, 3])
+    sets = [templates.shingles(templates.masked_tokens(x)) for x in sents]
+    sig = templates.minhash(sets, 60, 0)
+    assert sig.shape == (5, 60) and (sig[0] == sig[2]).all()
+    # the signatures agree about as often as the sets' Jaccard index
+    r = np.random.default_rng(5)
+    a, b = r.choice(10 ** 6, 400, replace=False), r.choice(10 ** 6, 400, replace=False)
+    b[:200] = a[:200]                       # 200 shared of 600: J = 1/3
+    s2 = templates.minhash([np.unique(a).astype(np.uint64), np.unique(b).astype(np.uint64)], 600, 1)
+    assert abs((s2[0] == s2[1]).mean() - 1 / 3) < 0.06
+    flag = templates.near_twins(sets, doc, sig, 20, 0.5)
+    assert templates.jaccard(sets[0], sets[1]) >= 0.5
+    assert flag.tolist() == [True, True, True, False, False]
+    # the same sentence twice in one document is no template
+    assert not templates.near_twins(sets[:3:2], np.array([0, 0]), sig[:3:2], 20, 0.5).any()
+    with pytest.raises(ValueError, match="empty"):
+        templates.minhash([np.array([], np.uint64)], 4, 0)
+
+
+def test_the_random_control_drops_as_many_rows_of_each_language():
+    import templates
+    groups = np.array(list("aaaaabbbbbbcc"))
+    drop = np.array([1, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0], bool)
+    keep = templates.random_like(drop, groups, 0)
+    for g, n in (("a", 2), ("b", 1), ("c", 0)):
+        assert (~keep[groups == g]).sum() == n
+    assert (keep == templates.random_like(drop, groups, 0)).all()
 
 
 def test_a_twin_is_the_closest_row_of_another_document():
