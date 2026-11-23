@@ -4651,7 +4651,10 @@ closed form makes affordable. Every steering run that reports the adjoint was re
 | random | 0.020 / 0.023 | 0.022 / 0.029 | 0.013 / 0.029 |
 | collateral | 0.658 / 0.877 | 0.657 / 0.877 | 0.539-0.641 / 0.860-0.887 |
 
-The old-rule row is the October run's; every other row is the rerun's.
+The old-rule row is the October run's; every other row is the rerun's. *(2026-11-22: the
+adjoint's delta subtracts the incumbent's exciting eigenvector, which excites the incumbent too.
+Reversing only the delta's positive part realizes 0.988 / 1.000 on `ste_h76_init01`, at the same
+collateral. See "The adjoint's incumbent term excites the incumbent", below.)*
 
 - **The dead adjoint was the rule, not the code's geometry.** On the hard stack it goes from
   0.001 to 0.48 at strength 0.25, and oriented per sample to 0.57-0.68 across strengths, above
@@ -4941,6 +4944,100 @@ XLA_PYTHON_CLIENT_PREALLOCATE=false uv run python bilinspec.py \
     --out data/out/sonar/multilingual/resid_nc_hm/bilinspec
 JAX_PLATFORMS=cpu uv run python experiments/ste-arm/cellshape.py \
     --ckpt data/out/sonar/multilingual/resid_nc_hm:0.03 --out data/out/sonar/cellshape_resid_nc_hm
+```
+
+## The adjoint's incumbent term excites the incumbent (2026-11-22): from the positive part alone it realizes every target
+
+**Short version.** The adjoint steers with `rev(P_int − P)`. That delta is the target's one-hot minus
+the current assignment, so the direction is the target's exciting eigenvector minus the incumbent's.
+A quadratic form is even, so stepping along minus the incumbent's eigenvector excites the incumbent
+too. Reversing only the delta's positive part, the target's eigenvector, realizes the target:
+- 0.93–0.99 of the time at strength 0.25, against 0.43–0.48 for the current rule;
+- 1.000 at strength 1.0, against 0.51–0.52;
+- 0.997–1.000 at 0.25 when also signed per sample.
+
+Every direction, the random one included, flips the same share of the other 379 heads at each
+strength, so the fix gains the target at no cost in collateral. An outside check of this repository
+pointed out the mechanism.
+
+**The mechanism.** `BilinearBlock.rev` is linear in its argument: it returns Σ_k Y_k · v̂₊,k, each
+entry's exciting eigenvector (`nlinear.excite`) weighted by the delta. With Y = e_target − P the
+incumbent enters as −v̂₊(cur). Along a direction v a form changes by 2ε·λ·(x·v) + ε²·λ (`orient`'s
+docstring), so along −v̂₊(cur) the incumbent's form gains +ε²·λ₊(cur) whatever the sign. Only the
+first-order term can lower it, and its sign belongs to the sample. `Ontologizer.intervene` passes the
+same signed delta and has not been changed.
+
+**Setup** (`steerembed.py`, CPU). Both hard stacks were run at step 369,500 with the defaults: 60
+entries stratified by layer, 32 rows each, seed 42. Strengths are fractions of the row's norm, and
+the row is renormalized after the step. `collateral` is the share of the other 379 heads, in all
+five layers, whose winner changes. The new directions are:
+- `adjoint_pos`: `rev` of the delta's positive part alone, weights only;
+- `adjoint_pos_or`: the same, signed per sample so the target's first-order change is positive;
+- `adjoint_supp`: `adjoint_pos_or` plus, at equal length, the incumbent's suppressing eigenvector
+  w/|w| − v/|v|, signed so the incumbent also falls at first order.
+
+The current rule's rows reproduce the 2026-11-19 section's `ste_h76_init01` numbers exactly
+(0.476 / 0.509 and 0.566 / 0.629), from the same draws.
+
+**`ste_h76_init01`**, the share of steered rows that select the target, by strength:
+
+| direction | 0.02 | 0.05 | 0.1 | 0.25 | 0.5 | 1.0 |
+|---|---|---|---|---|---|---|
+| adjoint (current rule) | 0.031 | 0.095 | 0.230 | 0.476 | 0.504 | 0.509 |
+| adjoint, oriented per sample | 0.055 | 0.185 | 0.421 | 0.566 | 0.594 | 0.629 |
+| positive part | 0.047 | 0.205 | 0.584 | **0.988** | 1.000 | 1.000 |
+| positive part, oriented | 0.086 | **0.394** | **0.876** | **1.000** | 1.000 | 1.000 |
+| positive part + suppression | 0.070 | 0.282 | 0.718 | 0.994 | 1.000 | 1.000 |
+| grad | 0.081 | 0.218 | 0.351 | 0.293 | 0.163 | 0.103 |
+| decode | 0.031 | 0.061 | 0.155 | 0.353 | 0.505 | 0.608 |
+| random | 0.016 | 0.015 | 0.020 | 0.020 | 0.025 | 0.023 |
+| collateral, every direction (±0.01) | 0.36 | 0.45 | 0.52 | 0.65 | 0.77 | 0.87 |
+
+**`ste_h76`**, by strength:
+
+| direction | 0.02 | 0.05 | 0.1 | 0.25 | 0.5 | 1.0 |
+|---|---|---|---|---|---|---|
+| adjoint (current rule) | 0.036 | 0.098 | 0.232 | 0.432 | 0.495 | 0.518 |
+| adjoint, oriented per sample | 0.058 | 0.176 | 0.381 | 0.522 | 0.572 | 0.607 |
+| positive part | 0.052 | 0.207 | 0.558 | 0.933 | 0.979 | 1.000 |
+| positive part, oriented | 0.093 | 0.378 | 0.824 | 0.997 | 1.000 | 1.000 |
+| positive part + suppression | 0.084 | 0.261 | 0.673 | 0.980 | 0.998 | 1.000 |
+| random | 0.011 | 0.016 | 0.015 | 0.021 | 0.024 | 0.026 |
+| collateral, every direction (±0.01) | 0.32 | 0.40 | 0.46 | 0.58 | 0.70 | 0.81 |
+
+**By target layer at strength 0.25:**
+- `ste_h76_init01`: the current rule realizes 0.39–0.54 across layers 0–4. The positive part
+  realizes 0.94 at layer 0 and 1.00 at layers 1–4. Oriented, it realizes 1.00 in every layer.
+- `ste_h76`: the current rule realizes 0.26–0.50, the positive part 0.68 at layer 0 and 0.99–1.00
+  above, and oriented 0.99–1.00.
+
+At 0.1 the oriented positive part reads 0.67–0.97 by layer, against 0.18–0.33 for the current rule.
+
+**Reading.**
+- **The adjoint's ceiling near one half was its own incumbent term.** Without it the direction
+  reaches every target past strength 0.25, at every depth, from the weights alone. With it each
+  head becomes close to a two-way choice between target and incumbent.
+- **Collateral belongs to the step, not to the direction.** Every row of each table moves the same
+  share of the other heads within 0.01, as a random step does. That share is a third of the stack
+  at strength 0.02 and two thirds at 0.25. So these steps are not selective. What the fix changes is
+  whether the intended entry is among what moves. This is "Why collateral is direction-blind"
+  (`steergeom.py`) again, now measured at the selection.
+- **Suppressing the incumbent as well does not help.** Below strength 0.25 it trails the oriented
+  positive part, since half its length goes into suppression, and from 0.25 on it is within 0.02
+  of it.
+- **What would change in the code.** `rev` should take the delta's positive part for bilinear
+  heads and keep the signed delta for linear ones (n = 1), where negating an entry does lower it.
+  The writeup's adjoint rows come from the current rule and would change with it.
+
+Output: `data/out/sonar/steerembed_pos/{ste_h76,ste_h76_init01}/` (`steer.csv`, `summary.json`,
+`geometry.csv`) and the `.log` beside each.
+
+```bash
+for m in ste_h76 ste_h76_init01; do
+  JAX_PLATFORMS=cpu uv run python experiments/ste-arm/steerembed.py \
+      --model data/out/sonar/multilingual/$m --temperature 0.00015 \
+      --strengths 0.02 0.05 0.1 0.25 0.5 1.0 --out data/out/sonar/steerembed_pos/$m
+done
 ```
 
 ## Run

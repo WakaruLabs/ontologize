@@ -38,6 +38,18 @@ only the first:
             is the dominant QUADRATIC direction, not the first-order one,
             so it is only the right answer near x = 0, and which way along
             it raises the logit depends on the sample (x.v).
+            `adjoint_or` signs it per sample so the target's first-order
+            change is positive.
+  adjoint_pos, adjoint_pos_or
+            the same from the delta's positive part alone. The delta is
+            the target's one-hot minus the current assignment, so the plain
+            adjoint subtracts the incumbent's exciting eigenvector; a
+            quadratic form is even, and that step excites the incumbent
+            as well.
+  adjoint_supp
+            `adjoint_pos_or` plus, at equal length, the incumbent's
+            suppressing eigenvector (its negative eigenvalue's), signed so
+            the incumbent's first-order change is negative too.
   random    an isotropic random unit direction, the control curve.
 
 A unit step in raw coordinates is long or short in the data's own metric
@@ -132,6 +144,7 @@ os.environ["XLA_PYTHON_CLIENT_ALLOCATOR"] = "platform"
 
 import argparse
 import csv
+import functools
 import json
 import sys
 from pathlib import Path
@@ -390,10 +403,14 @@ def main_onto(cfg: argparse.Namespace) -> None:
         return D[..., :module.d_out]
 
     def adjoint_dir(module, X: Float[Array, "b d_in"], li: int, hi: int,
-                    ki: int) -> Float[Array, "b d_out"]:
+                    ki: int, positive: bool = False) -> Float[Array, "b d_out"]:
         """Input-space direction that would cause head hi to select ki:
         `Ontologizer.intervene`'s reverse of the classification delta,
-        through the classifier's own `BilinearBlock.rev`."""
+        through the classifier's own `BilinearBlock.rev`. That delta is the
+        target's one-hot minus the current assignment, so the incumbent
+        enters as minus its exciting eigenvector; a quadratic form is even,
+        so that step excites the incumbent too. `positive` reverses only
+        the delta's positive part, the target's own direction."""
         E, _ = module.encode(X, 0.0, None)
         R = module.resid(E)
         Ein = module.constinput(E)
@@ -409,17 +426,20 @@ def main_onto(cfg: argparse.Namespace) -> None:
         # the delta is nonzero only at the target head
         dP = P.at[:, hi, :].set(0.0).at[:, hi, ki].set(1.0) - P
         dP = jnp.zeros_like(P).at[:, hi, :].set(dP[:, hi, :])
+        if positive:
+            dP = jnp.maximum(dP, 0.0)
         D = de.classifier.rev(dP)                       # (b, d_in)
         return D[..., :module.d_out]                    # drop const/code tail
 
     def adjoint_oriented_dir(module, X: Float[Array, "b d_in"], li: int,
-                             hi: int, ki: int) -> Float[Array, "b d_out"]:
+                             hi: int, ki: int, positive: bool = False
+                             ) -> Float[Array, "b d_out"]:
         """The same eigendirection, but signed per sample so the
         first-order change in the target logit is positive. `rev` cannot
         do this -- the sign depends on x.v, a property of the sample --
         so this is the eigendirection's best case."""
         de, U, P = layer_input(module, X, li)
-        D = adjoint_dir(module, X, li, hi, ki)
+        D = adjoint_dir(module, X, li, hi, ki, positive)
         W, V = de.classifier.weight_ubind()
         Wh, Vh = W[hi], V[hi]
         d = jnp.pad(D, ((0, 0), (0, U.shape[-1] - D.shape[-1])))
@@ -427,6 +447,27 @@ def main_onto(cfg: argparse.Namespace) -> None:
         first = (jnp.einsum("bd,d->b", d, Vh[ki]) * jnp.einsum("bd,d->b", U, Wh[ki])
                  + jnp.einsum("bd,d->b", d, Wh[ki]) * jnp.einsum("bd,d->b", U, Vh[ki]))
         return D * jnp.where(first < 0, -1.0, 1.0)[:, None]
+
+    def suppress_dir(module, X: Float[Array, "b d_in"], li: int, hi: int,
+                     ki: int) -> Float[Array, "b d_out"]:
+        """`adjoint_pos_or` plus the incumbent's suppressing direction, each
+        of unit length: the eigenvector of the incumbent's form on its
+        negative eigenvalue, w/|w| - v/|v|, along which the form falls at
+        second order whatever the sign, signed so its first-order change
+        falls too."""
+        de, U, P = layer_input(module, X, li)
+        Dt = adjoint_oriented_dir(module, X, li, hi, ki, True)
+        W, V = de.classifier.weight_ubind()
+        cur = jnp.argmax(P[:, hi], -1)                              # (b,)
+        Wc, Vc = W[hi][cur], V[hi][cur]                             # (b, d_in)
+        vm = (Wc / (jnp.linalg.norm(Wc, axis=-1, keepdims=True) + 1e-12)
+              - Vc / (jnp.linalg.norm(Vc, axis=-1, keepdims=True) + 1e-12))
+        vm = vm[..., :Dt.shape[-1]]
+        d = jnp.pad(vm, ((0, 0), (0, U.shape[-1] - vm.shape[-1])))
+        first = ((d * Vc).sum(-1) * (U * Wc).sum(-1)
+                 + (d * Wc).sum(-1) * (U * Vc).sum(-1))
+        vm = vm * jnp.where(first > 0, -1.0, 1.0)[:, None]
+        return unit(Dt) + unit(vm)
 
     f_adj = jax.jit(
         lambda p, X, li, hi, ki: model.apply(
@@ -443,6 +484,19 @@ def main_onto(cfg: argparse.Namespace) -> None:
     f_adjor = jax.jit(
         lambda p, X, li, hi, ki: model.apply(
             p, X, li, hi, ki, method=adjoint_oriented_dir),
+        static_argnums=(2,))
+    f_adjpos = jax.jit(
+        lambda p, X, li, hi, ki: model.apply(
+            p, X, li, hi, ki, method=functools.partial(adjoint_dir, positive=True)),
+        static_argnums=(2,))
+    f_adjposor = jax.jit(
+        lambda p, X, li, hi, ki: model.apply(
+            p, X, li, hi, ki,
+            method=functools.partial(adjoint_oriented_dir, positive=True)),
+        static_argnums=(2,))
+    f_supp = jax.jit(
+        lambda p, X, li, hi, ki: model.apply(
+            p, X, li, hi, ki, method=suppress_dir),
         static_argnums=(2,))
 
     rows, geo = [], []
@@ -478,6 +532,9 @@ def main_onto(cfg: argparse.Namespace) -> None:
             "margin": unit(f_margin(params, X, li, hi, ki)),
             "adjoint": unit(f_adj(params, X, li, hi, ki)),
             "adjoint_or": unit(f_adjor(params, X, li, hi, ki)),
+            "adjoint_pos": unit(f_adjpos(params, X, li, hi, ki)),
+            "adjoint_pos_or": unit(f_adjposor(params, X, li, hi, ki)),
+            "adjoint_supp": unit(f_supp(params, X, li, hi, ki)),
             "dm": unit(jnp.broadcast_to(dm, X.shape)),
             "probe": jnp.broadcast_to(probe, X.shape),
             **controls(z, X, Xs_all[jnp.asarray(

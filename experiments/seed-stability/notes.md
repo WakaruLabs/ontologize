@@ -824,7 +824,9 @@ recipe at seeds 42 and 43. Their matched heads agree across seeds at NMI 0.418, 
 - **At one head, training costs agreement that search does not.** The trained head reproduces at
   0.418, below k-means at the same 32 cells (0.607, ten pairs ranging 0.495–0.761) and near the
   Gaussian copy's k-means (0.396). Its held-out fit is about the same as k-means' (FVU 0.950
-  against 0.948).
+  against 0.948). *(Spherical k-means, the closer baseline for a head that reads its input's
+  shape, reproduces at 0.732 and fits at 0.931, so the shortfall is larger. See "under spherical
+  k-means", later the same day.)*
 - **From four heads on, the trained heads reproduce more than LSQ's codebooks**: 0.255, 0.098 and
   0.031 against 0.167, 0.057 and 0.0089. They fit worse at every width.
 - **The trained curve does not follow LSQ's halving.** Per doubling of h it keeps 0.78 of its NMI
@@ -1097,7 +1099,10 @@ given `--ica-iters 5000`, and the checkpoints at iterations 200 and 800 were cop
 - **A copy that keeps each row's scale shared by its sources adds little to the ICA copy.** At 128
   cells it reproduces at 0.518, against the ICA copy's 0.494 and SONAR's 0.737. That is 37% of
   SONAR's excess over the Gaussian copy, against the ICA copy's 30% and the cut-0.1 group copy's
-  43%. At 32 cells it is below the ICA copy (0.494 against 0.510).
+  43%. At 32 cells it is below the ICA copy (0.494 against 0.510). *(Under spherical k-means,
+  later the same day, it closes 47% at both k against the ICA copy's 27–37%. These are Euclidean
+  results, and Euclidean k-means lumps short rows into one oversized cell. See "under spherical
+  k-means", below.)*
 
 So what layer 0's seeds disagree on is not mainly which directions they write. Both write along
 the same reproducible sources. They differ in how those atoms are grouped into heads. That is a
@@ -1255,4 +1260,57 @@ Output: `data/out/sonar/ica_seeds_shared/` (`summary.json`, `sources.csv`, `run.
 JAX_PLATFORMS=cpu uv run python experiments/seed-stability/ica_seeds.py \
     --frame-a data/out/sonar/kmeans_seeds_ica/frame_ica.iter800.npz --iters-a 0 --iters 800 \
     --patience 50 --shared-step --out data/out/sonar/ica_seeds_shared
+```
+
+## 2026-11-22: under spherical k-means SONAR's cells reproduce at 0.73, and the scale copy closes about half of its lead
+
+**Short version.** An outside check of these notes offered an account of the scale copy's two oddities, its poor fit and its unequal cells. On rows whose lengths vary, Euclidean k-means spends cells on the long rows and lumps the short ones into one large cell. Spherical k-means, which clusters directions, should not. Both tests were run on SONAR and every copy.
+- **The oversized cell comes from the Euclidean objective, not from seeding.**
+  - Seeding k-means++ only from rows within the 99th percentile of distance from the mean leaves the cell in place. At 32 cells the largest holds 15–16% of SONAR's and of the scale copy's tail rows, where equal cells would hold 3.1%.
+  - It also leaves the scale copy's fit where it was (FVU 0.953 at 128 cells).
+  - Spherical k-means gives near-equal cells on every data set: the largest holds 4–5% at 32 cells and 1.2–1.9% at 128.
+- **Euclidean k-means also stops at worse Euclidean optima on these rows.**
+  - Score spherical k-means' partition by Euclidean FVU, with each cell's mean as its centre. It fits SONAR better than Euclidean k-means' own partition: 0.903 against 0.922 at 128 cells. On the scale copy it reaches 0.936 against 0.953.
+  - On the ICA and Gaussian copies, whose rows nearly share one length, the two methods tie.
+- **Under spherical k-means SONAR's cells reproduce more**: 0.732 at both 32 and 128 cells, against 0.607 and 0.737 under Euclidean k-means. The Gaussian copy is unchanged (0.395 and 0.387).
+- **The scale copy closes about half of SONAR's lead, at both k.** It covers 47% of SONAR's excess over the Gaussian copy at 32 and at 128 cells, against the ICA copy's 27% and 37%. Under Euclidean k-means the order between the two had flipped with k. So the shared scale is part of what SONAR's cells reproduce on, not most of it.
+
+The earlier section's conclusion ("the shared scale is not what SONAR's cells reproduce on") was a Euclidean result, and this narrows it. A reading, untested: spherical k-means divides out each row's length, so what the scale copy keeps beyond the ICA copy is how the sources' shapes depend on the scale. The skewed sources' spikes grow less than in proportion to it ("converged FastICA", above).
+
+**Setup** (`kmeans_seeds.py`, CPU, two runs side by side). As before: the `med837` frame, 131,072 training rows and the last 32,768 as the tail, seeds 42–46 (ten pairs), and the 800-iteration FastICA frame as it is for the ICA, cut-0.1 group and scale copies.
+- **`--kmeans spherical`:** rows less the training mean, scaled to unit length. Seeding is k-means++ on the sphere, and Lloyd's iterations assign each row to the unit centre it is most aligned with. FVU is Euclidean, against each cell's mean training row.
+- **`--trim-seed 0.99`:** Euclidean k-means with its k-means++ centres drawn only from training rows within the 99th percentile of distance from the training mean. Lloyd's iterations then run on every row.
+- **Largest cell:** the share of tail rows in a partition's largest cell, averaged over seeds. The earlier Euclidean runs didn't record it.
+
+| data | seed NMI k = 32: Euclidean / trimmed / spherical | k = 128 | largest cell, 32 / 128: trimmed | spherical | FVU at 128: Euclidean / trimmed / spherical |
+|---|---|---|---|---|---|
+| SONAR | 0.607 / 0.653 / **0.732** | 0.737 / 0.727 / **0.732** | 0.156 / 0.063 | 0.054 / 0.016 | 0.922 / 0.924 / **0.903** |
+| group copy, cut 0.1 | 0.528 / 0.515 / 0.591 | 0.540 / 0.540 / 0.549 | 0.060 / 0.026 | 0.048 / 0.015 | 0.943 / 0.943 / 0.938 |
+| scale copy | 0.494 / 0.526 / 0.552 | 0.518 / 0.502 / 0.550 | 0.149 / 0.086 | 0.045 / 0.015 | 0.953 / 0.953 / 0.936 |
+| ICA copy | 0.510 / 0.494 / 0.485 | 0.494 / 0.493 / 0.513 | 0.048 / 0.015 | 0.047 / 0.019 | 0.940 / 0.940 / 0.940 |
+| Gaussian copy | 0.396 / 0.403 / 0.395 | 0.391 / 0.390 / 0.387 | 0.035 / 0.010 | 0.041 / 0.012 | 0.948 / 0.948 / 0.948 |
+
+The Euclidean columns are the earlier sections' runs. Under spherical k-means every data set has the same shuffled null (0.0042–0.0043 at 32 cells, 0.058 at 128), since all cells are nearly equal. So the 128-cell comparison is like for like there, where the Euclidean nulls ranged from 0.009 to 0.053.
+
+- **Shares of SONAR's excess over the Gaussian copy:**
+
+  | copy | spherical, 32 / 128 | Euclidean, 32 / 128 |
+  |---|---|---|
+  | ICA copy | 27% / 37% | 54% / 30% |
+  | scale copy | 47% / 47% | 46% / 37% |
+  | group copy, cut 0.1 | 58% / 47% | 63% / 43% |
+
+- **Trimmed seeding moves the copies' agreement by 0.03 at most, and SONAR's at 32 cells by 0.05** (0.607 to 0.653). Its FVUs equal the plain Euclidean run's, and its cells are as unequal. The scale copy's pairs at 32 cells range widely, from 0.386 to 0.742, so its means are noisy.
+- **For a gain-shape stack, spherical k-means is the closer baseline.** The stack's heads classify the shape of their input, its direction. So the width ladder's one trained head (0.418) falls further short of k-means than against the 0.607 that section used. The 2026-11-20 test of whether layer-0 heads lie near k-means cells used Euclidean cells; spherical ones were not tried.
+
+Output: `data/out/sonar/kmeans_seeds_spherical/` and `data/out/sonar/kmeans_seeds_trim99/`
+(`summary.json`, `run.log`).
+
+```bash
+F=data/out/sonar/kmeans_seeds_ica/frame_ica.iter800.npz
+for opt in "--kmeans spherical" "--trim-seed 0.99"; do
+  JAX_PLATFORMS=cpu uv run python experiments/seed-stability/kmeans_seeds.py $opt --ks 32 128 \
+      --gauss data/out/sonar/gausscopy --marginals ica --groups 0.1 --scale-copy \
+      --ica-init $F --ica-iters 0 --out <dir>
+done
 ```

@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "experiments"
 from kmeans_seeds import (assign, energy_dependence, energy_groups,  # noqa: E402
                           fastica, fvu, group_copy, ica_frame, kmeans,
                           marginal_copy, principal, scale_copy, seed_table,
-                          shape_stats, to_sources, train_index)
+                          shape_stats, to_sources, train_index, trimmed_rows)
 
 
 def test_assign_is_the_nearest_centre():
@@ -53,6 +53,31 @@ def test_an_isotropic_gaussian_does_not_reproduce():
     u = seed_table(Y[:8000], Y[8000:], 8, [1, 2, 3])
     assert np.mean(t["nmi"]) < np.mean(u["nmi"]) - 0.2
     assert np.mean(t["nmi"]) > 10 * np.mean(t["null"])
+
+
+def test_spherical_kmeans_follows_direction_and_trimming_drops_the_far_rows():
+    # four directions, each row at a length spread over a factor of ~20:
+    # Euclidean k-means spends its cells on the long rows and lumps most of
+    # the short ones into one cell, while spherical k-means finds the rays
+    rng = np.random.default_rng(13)
+    n, d = 8000, 8
+    dirs = np.linalg.qr(rng.standard_normal((d, 4)))[0].T * 8
+    lab0 = rng.integers(4, size=n)
+    r = np.exp(rng.standard_normal(n))[:, None]
+    X = (r * (dirs[lab0] + rng.standard_normal((n, d)))).astype(np.float32)
+    from partition import nmi_matrix
+    t = seed_table(X[:6000], X[6000:], 4, [1, 2, 3], method="spherical")
+    for lab in t["labels"]:
+        assert nmi_matrix(lab[None], 4, lab0[6000:][None], 4)[0, 0] > 0.95
+    assert min(t["nmi"]) > 0.95 and max(t["largest_cell"]) < 0.35
+    e = seed_table(X[:6000], X[6000:], 4, [1, 2, 3])
+    assert min(e["largest_cell"]) > 0.8
+    keep = trimmed_rows(X, 0.9)
+    rad = np.linalg.norm(X - X.mean(0), axis=1)
+    assert abs(len(keep) / n - 0.9) < 0.01 and rad[keep].max() <= np.quantile(rad, 0.9)
+    # the default path is unchanged: no trimming gives the plain run
+    assert np.array_equal(kmeans(X, 4, 5), kmeans(X, 4, 5, seed_rows=None))
+    assert seed_table(X[:6000], X[6000:], 4, [1], trim=0.9)["fvu"][0] < 1
 
 
 def test_kmeans_ends_with_every_cell_used():

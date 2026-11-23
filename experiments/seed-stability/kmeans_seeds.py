@@ -91,12 +91,15 @@ def assign(X: Float[np.ndarray, "n d"], C: Float[np.ndarray, "k d"],
 
 
 def kmeans(X: Float[np.ndarray, "n d"], k: int, seed: int,
-           iters: int = 300) -> Float[np.ndarray, "k d"]:
+           iters: int = 300, seed_rows: Int[np.ndarray, "m"] | None = None
+           ) -> Float[np.ndarray, "k d"]:
     """Lloyd's iterations from k-means++ until no row changes cell (or
     `iters`). An emptied cell is reseeded at the row farthest from its
-    centre, so every run ends with k cells."""
+    centre, so every run ends with k cells. `seed_rows` draws the
+    k-means++ centres from those rows only (`trimmed_rows`), and Lloyd's
+    iterations then run on every row."""
     rng = np.random.default_rng(seed)
-    C = kmeans_pp(X, k, rng)
+    C = kmeans_pp(X if seed_rows is None else X[seed_rows], k, rng)
     lab = None
     for _ in range(iters):
         new = assign(X, C)
@@ -114,6 +117,74 @@ def kmeans(X: Float[np.ndarray, "n d"], k: int, seed: int,
             C[j] = X[far]
             lab[far] = j
     return C
+
+
+def trimmed_rows(X: Float[np.ndarray, "n d"], q: float) -> Int[np.ndarray, "m"]:
+    """The rows whose distance from the rows' mean is at most its q
+    quantile: k-means++ seeded from them cannot spend centres on the few
+    rows farthest out."""
+    r = np.linalg.norm(X.astype(np.float64) - X.astype(np.float64).mean(0), axis=1)
+    return np.flatnonzero(r <= np.quantile(r, q))
+
+
+def unit_rows(X: Float[np.ndarray, "n d"], mu: Float[np.ndarray, "d"]
+              ) -> Float[np.ndarray, "n d"]:
+    """Rows less `mu`, scaled to unit length: what spherical k-means sees."""
+    Y = X.astype(np.float64) - mu
+    return (Y / np.maximum(np.linalg.norm(Y, axis=1, keepdims=True), 1e-30)
+            ).astype(np.float32)
+
+
+def assign_cos(U: Float[np.ndarray, "n d"], C: Float[np.ndarray, "k d"],
+               chunk: int = 65536) -> Int[np.ndarray, "n"]:
+    """The unit centre each unit row is most aligned with."""
+    out = np.empty(len(U), np.int64)
+    for i in range(0, len(U), chunk):
+        out[i:i + chunk] = (U[i:i + chunk] @ C.T).argmax(1)
+    return out
+
+
+def spherical_kmeans(U: Float[np.ndarray, "n d"], k: int, seed: int,
+                     iters: int = 300) -> Float[np.ndarray, "k d"]:
+    """Spherical k-means on unit rows: each row joins the unit centre it is
+    most aligned with, and a centre is its cell's sum scaled to unit
+    length, from k-means++ seeding (on the sphere, squared distance is
+    2 − 2 cos) until no row changes cell. An emptied cell is reseeded at
+    the row least aligned with its centre."""
+    rng = np.random.default_rng(seed)
+    C = kmeans_pp(U, k, rng)
+    C /= np.maximum(np.linalg.norm(C, axis=1, keepdims=True), 1e-30)
+    lab = None
+    for _ in range(iters):
+        new = assign_cos(U, C)
+        if lab is not None and np.array_equal(new, lab):
+            break
+        lab = new
+        cnt = np.bincount(lab, minlength=k)
+        H = np.zeros((len(U), k), U.dtype)
+        H[np.arange(len(U)), lab] = 1
+        S = (H.T @ U).astype(np.float64)
+        live = cnt > 0
+        C[live] = (S[live] / np.maximum(np.linalg.norm(S[live], axis=1, keepdims=True),
+                                        1e-30)).astype(U.dtype)
+        for j in np.flatnonzero(~live):
+            far = (U * C[lab]).sum(1).argmin()
+            C[j] = U[far]
+            lab[far] = j
+    return C
+
+
+def cell_means(X: Float[np.ndarray, "n d"], lab: Int[np.ndarray, "n"], k: int
+               ) -> Float[np.ndarray, "k d"]:
+    """Each cell's mean row (the rows' mean for an empty cell): the
+    Euclidean centres of a partition found another way."""
+    cnt = np.bincount(lab, minlength=k)
+    H = np.zeros((len(X), k), X.dtype)
+    H[np.arange(len(X)), lab] = 1
+    S = (H.T @ X).astype(np.float64)
+    M = np.where(cnt[:, None] > 0, S / np.maximum(cnt, 1)[:, None],
+                 X.astype(np.float64).mean(0))
+    return M.astype(X.dtype)
 
 
 def fvu(X: Float[np.ndarray, "n d"], C: Float[np.ndarray, "k d"],
@@ -470,24 +541,41 @@ def group_stats(groups: Int[np.ndarray, "p"], R: Float[np.ndarray, "p p"],
 
 
 def seed_table(train: Float[np.ndarray, "n d"], tail: Float[np.ndarray, "m d"],
-               k: int, seeds: list[int], perm_seed: int = 0) -> dict:
-    """Every seed's tail partition and FVU, and every pair's NMI beside the
-    rows-shuffled null."""
+               k: int, seeds: list[int], perm_seed: int = 0,
+               method: str = "euclidean", trim: float | None = None) -> dict:
+    """Every seed's tail partition and FVU, the share of the tail in its
+    largest cell, and every pair's NMI beside the rows-shuffled null.
+    `method` "spherical" partitions the rows less the training mean, scaled
+    to unit length (`spherical_kmeans`), and scores the FVU against each
+    cell's mean training row. `trim` seeds Euclidean k-means++ from the
+    training rows within that quantile of distance from the mean."""
     from partition import nmi_matrix
-    labs, fv = [], []
+    labs, fv, big = [], [], []
+    if method == "spherical":
+        mu = train.astype(np.float64).mean(0)
+        Ut, Ue = unit_rows(train, mu), unit_rows(tail, mu)
+    elif method != "euclidean":
+        raise ValueError(f"unknown method {method!r}")
+    seed_rows = trimmed_rows(train, trim) if trim is not None else None
     for s in seeds:
-        C = kmeans(train, k, s)
-        lab = assign(tail, C)
+        if method == "spherical":
+            C = spherical_kmeans(Ut, k, s)
+            lab = assign_cos(Ue, C)
+            M = cell_means(train, assign_cos(Ut, C), k)
+        else:
+            M = kmeans(train, k, s, seed_rows=seed_rows)
+            lab = assign(tail, M)
         labs.append(lab)
-        fv.append(fvu(tail, C, lab))
+        fv.append(fvu(tail, M, lab))
+        big.append(float(np.bincount(lab, minlength=k).max() / len(lab)))
     rng = np.random.default_rng(perm_seed)
     pair, null = [], []
     for i, j in itertools.combinations(range(len(seeds)), 2):
         a, b = labs[i][None], labs[j][None]
         pair.append(float(nmi_matrix(a, k, b, k)[0, 0]))
         null.append(float(nmi_matrix(a, k, rng.permutation(labs[j])[None], k)[0, 0]))
-    return {"k": k, "seeds": seeds, "fvu": fv, "nmi": pair, "null": null,
-            "labels": labs}
+    return {"k": k, "seeds": seeds, "fvu": fv, "largest_cell": big, "nmi": pair,
+            "null": null, "labels": labs}
 
 
 def head_table(codes_: Int[np.ndarray, "heads m"], layer: Int[np.ndarray, "heads"],
@@ -653,6 +741,13 @@ def main() -> None:
     p.add_argument("--scale-copy", action="store_true",
                    help="a copy that keeps each row's scale shared by its "
                         "FastICA sources and shuffles the sources apart under it")
+    p.add_argument("--kmeans", default="euclidean", choices=["euclidean", "spherical"],
+                   help="spherical: cosine cells on the rows less the training "
+                        "mean, scaled to unit length, with FVU against each "
+                        "cell's mean row")
+    p.add_argument("--trim-seed", type=float, default=None,
+                   help="seed Euclidean k-means++ from the training rows within "
+                        "this quantile of distance from the mean (e.g. 0.99)")
     p.add_argument("--no-cache", action="store_true",
                    help="leave the cache's own rows unscored (their numbers do "
                         "not change from run to run)")
@@ -724,12 +819,14 @@ def main() -> None:
             continue
         summary[name] = {}
         for k in cfg.ks:
-            t = seed_table(train, tail, k, cfg.seeds)
+            t = seed_table(train, tail, k, cfg.seeds, method=cfg.kmeans,
+                           trim=cfg.trim_seed)
             nm, nl = np.array(t["nmi"]), np.array(t["null"])
             print(f"{name:<6} k={k:<4} seed NMI mean {nm.mean():.4f} "
                   f"[{nm.min():.4f}, {nm.max():.4f}]  null {nl.mean():.4f}  "
                   f"FVU {np.mean(t['fvu']):.4f} [{min(t['fvu']):.4f}, "
-                  f"{max(t['fvu']):.4f}]", flush=True)
+                  f"{max(t['fvu']):.4f}]  largest cell {np.mean(t['largest_cell']):.3f}",
+                  flush=True)
             row = {key: v for key, v in t.items() if key != "labels"}
             if name in ROW_FOR_ROW:   # rows that stand for the tail's own rows
                 from partition import nmi_matrix

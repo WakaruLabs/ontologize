@@ -249,6 +249,15 @@ null with one partition's rows shuffled, and each seed's FVU.
   raised the sources' median kurtosis from 4.8 to 6.1. `summary.json`'s
   `ica_scale_stats` compares the rows' and the copy's scale spread, median
   magnitude correlation and median kurtosis.
+- `--kmeans spherical` clusters directions instead: the rows less the
+  training mean, scaled to unit length, with each row in the unit centre it
+  is most aligned with (`spherical_kmeans`). FVU is still Euclidean, against
+  each cell's mean training row (`cell_means`). On rows whose lengths vary,
+  Euclidean k-means lumps the short rows into one oversized cell and stops
+  at worse optima. `--trim-seed Q` draws Euclidean k-means++'s centres only
+  from the training rows within the Q quantile of distance from the mean
+  (`trimmed_rows`). Every table also gives the share of the tail in its
+  largest cell (`largest_cell`).
 - The cells are also scored against the rows' languages (NMI,
   `language_nmi`) for the data sets whose tail row i stands for the
   cache's tail row i: the cache, the mixture and within.
@@ -271,7 +280,10 @@ JAX_PLATFORMS=cpu uv run python experiments/seed-stability/kmeans_seeds.py \
 Output: `data/out/sonar/kmeans_seeds/summary.json`.
 `tests/test_kmeans_seeds.py` checks the assignment against brute force,
 agreement on separated clusters and along a dominant direction, its
-absence on an isotropic Gaussian, and that every cell ends up used. For
+absence on an isotropic Gaussian, and that every cell ends up used. On rows
+planted along four directions at widely varying lengths, spherical k-means
+finds the directions with near-equal cells where Euclidean k-means puts most
+rows in one cell, and trimmed seeding keeps the farthest rows out. For
 the marginal copies: the `pca` copy keeps every principal coordinate's
 values and the covariance and loses a planted dependence between
 uncorrelated coordinates; FastICA recovers planted sources, with damped
