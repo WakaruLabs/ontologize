@@ -641,6 +641,38 @@ def test_the_weighted_frame_is_the_cache_recoloured_to_itself_unrotated(tmp_path
     assert np.isclose(wf0[:, :-1].var(0).mean(), 1, rtol=1e-2)
 
 
+def test_recolouring_about_the_mean_rotates_everything_but_the_mean(tmp_path):
+    import weightframe
+    _, _, tgt, P, _, _, _ = planted_harvest(tmp_path)
+    w = harvest_lcm.inverse_variance(np.load(tgt), P)
+    np.save(tmp_path / "w.npy", w.astype(np.float32))
+    out = tmp_path / "out"
+    out.mkdir()
+    common = ["--source", str(tgt), "--source-weights", str(tmp_path / "w.npy"), "--target",
+              str(tgt), "--target-weights", str(tmp_path / "w.npy"), "--min-rows", "10"]
+    recolour.main([*common, "--out", str(out / "rot.npy")])
+    recolour.main([*common, "--about-mean", "--out", str(out / "mu.npy")])
+    weightframe.main(["--source", str(tgt), "--source-weights", str(tmp_path / "w.npy"),
+                      "--scale-like", str(out / "rot.npy"), "--out", str(out / "wf.npy"),
+                      "--chunk", "50"])
+    rot, mu, wf = (np.load(out / f"{k}.npy").astype(np.float64) for k in ("rot", "mu", "wf"))
+    # the planted mean is large, and the rotation moves it off the unrotated rows' axes
+    m = wf[:P].mean(0)
+    assert np.linalg.norm(m) > 0.5 * np.sqrt(wf.shape[1])
+    assert np.abs(rot[:P].mean(0) - m).max() > 0.5
+    # about the mean, every row is the rotated row moved by one offset, which
+    # puts the mean (fitted on the prefix) where the unrotated rows have it
+    step = mu - rot
+    np.testing.assert_allclose(step, np.broadcast_to(step.mean(0), step.shape), atol=2e-2)
+    np.testing.assert_allclose(mu[:P].mean(0), m, atol=2e-2)
+    # so the covariance and the weights are the rotated rows'
+    for suf in (".mse_weights.npy", ".mse_weights_matched.npy"):
+        np.testing.assert_allclose(np.load(out / f"mu{suf}"), np.load(out / f"rot{suf}"), rtol=1e-2)
+    meta = lambda k: json.loads((out / f"{k}.meta.json").read_text())["map"]  # noqa: E731
+    assert meta("mu")["about_mean"] and not meta("rot")["about_mean"]
+    assert meta("mu")["scale"] == meta("rot")["scale"]
+
+
 def test_the_weighted_frame_rotates_all_but_the_coordinates_it_keeps(tmp_path):
     import weightframe
     _, _, tgt, P, _, _, _ = planted_harvest(tmp_path)

@@ -16,7 +16,7 @@ arms. Results go in `notes.md`.
 | `f16cache.py` | The float16 copy of the cache, for the TPU upload |
 | `phase1.sh` | Phase 1's readings once both seeds have trained: Gate B on blocks 4 and 8, tail-only harvests of each seed and its untrained init, and `stateagree.py` between the seeds and between the inits |
 | `spectrum.py` | Each arm's covariance spectrum in the frame its loss weighs, on the same prefix and tail rows of every arm: participation ratio, effective rank, directions per share of the variance, `pareto.gaussian_reference`'s FVU at given rates, and the share of the variance between languages, of the total and of the pooled within-language covariance |
-| `recolour.py` | The effective-dimension control: SONAR's rows through one linear map that gives them a harvest's spectrum, laid out as that harvest. A source already laid out as the harvest, such as the fixed mix, is read row for row |
+| `recolour.py` | The effective-dimension control: SONAR's rows through one linear map that gives them a harvest's spectrum, laid out as that harvest. A source already laid out as the harvest, such as the fixed mix, is read row for row. `--about-mean` maps each row's variation about the source's mean and leaves the mean on the source's own axes |
 | `readout.py` | The context-averaging control: Gate B's ridge readout of a harvest's state from x_n, the mean of its document's earlier rows and an indicator of n = 0, written at every row of the harvest and laid out as it. `--features row` reads from x_n alone |
 | `ctxmean.py` | The fixed-mix control: SONAR's row plus a fixed weight times its document's earlier mean, with no LCM, laid out as a harvest and weighted as SONAR |
 | `weightframe.py` | A cache's rows in the frame its loss weighs, c √w ⊙ y, unrotated. `--rotate-except J` mixes the live coordinates outside J among themselves with one random rotation and leaves J on their axes. Within J, `--rotate-block K` rotates K among themselves (at random, or with `--block-basis principal` onto their principal axes), `--whiten-block K` whitens them among themselves by ZCA, and `--gaussianize K` gives each a Gaussian marginal, keeping the rows' order; `--weights-like` takes another cache's loss weights |
@@ -110,6 +110,12 @@ JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/weightframe.py --source
     --scale-like $A/lcm_rot_b4.npy --out $A/lcm_wf_b4.npy
 ARMS="lcm_rot lcm_wf" experiments/lcm-organism/phase2.sh train
 ARMS="lcm_rot lcm_wf" experiments/lcm-organism/phase2.sh score
+# the readout from x_n alone rotated about its mean: the rotated arm, with the mean where the unrotated rows have it
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/recolour.py --source $A/lcm_readout_x_b4.npy \
+    --source-weights $A/lcm_readout_x_b4.mse_weights_matched.npy --target $A/lcm_readout_x_b4.npy \
+    --target-weights $A/lcm_readout_x_b4.mse_weights_matched.npy --about-mean \
+    --out $A/lcm_readout_x_rotmu_b4.npy
+ARMS=lcm_readout_x_rotmu experiments/lcm-organism/phase2.sh train && ARMS=lcm_readout_x_rotmu experiments/lcm-organism/phase2.sh score
 # the tail's templated rows, then an arm's seeds scored without them
 uv run python experiments/lcm-organism/templates.py
 JAX_DEFAULT_MATMUL_PRECISION=highest uv run python experiments/next-sentence/seedmatch.py --a <seed 42> --b <seed 43> \
@@ -173,6 +179,11 @@ expired node loses only what had not reached the bucket.
     embedding carries, except the direction SONAR's weights zero, and depends on no other row.
   - **What it doesn't match.** It matches the total spectrum only. The split between variance
     across languages and within them, and the mean's share of a row's norm, stay SONAR's.
+  - **About the mean** (`--about-mean`). The map applies to each row less the source's mean over
+    the fit rows, in the source's weighted frame, and the mean is added back scaled by c and
+    unrotated, so the map has an offset. The covariance, and so the weights, are as without it, and
+    only the mean's direction changes. A cache recoloured to its own spectrum about its mean is the
+    weighted frame's rows (`weightframe.py`, below) with everything but the mean rotated.
 - **The readout** (`readout.py`).
   - **The map.** One ridge, fitted on 20,000 prefix documents against the harvest's own states, as
     Gate B fits `x_context`. It is affine in x_n and in the mean of the document's earlier rows, the

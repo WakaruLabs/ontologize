@@ -1,5 +1,198 @@
 # lcm-organism: notes
 
+## 2026-11-24, later: three arms built and queued: the LCM's own states rotated and rescaled, and the readout rotated about its mean
+
+**In short.**
+- **The LCM's own states.** Every rotation arm so far is on the readout from x_n alone, which carries
+  84% of the LCM's lead on all heads and 38% within a language. Two arms ask whether block 4's own
+  states depend on their basis as the readout does:
+  - *rotated* (`lcm_rot`): the states recoloured to their own spectrum, a random rotation in the
+    frame their loss weighs;
+  - *rescaled* (`lcm_wf`): the same rows unrotated, from which the rotated arm is turned.
+
+  Against the LCM, each arm's gap closed is the share of the LCM's lead that survives it.
+- **The group of 19 is the LCM's.** In the frame the LCM arm's loss weighs, 14 of block 4's
+  coordinates have a partner above |ρ| 0.5, and 13 of them are in the group. The group holds 68.1%
+  of the mean's norm², one coordinate 16.8%. So the readout inherited both.
+- **The readout rotated about its mean** (`lcm_readout_x_rotmu`) is the rotated readout with its
+  mean put back where the unrotated rows have it. It differs from the rotated readout only in where
+  the mean lies, and its loss is that arm's.
+  - If it reads near the group-kept arm's 69% on all heads, the mean carries the lead.
+  - If it reads near the rotated arm's 41%, the group's variation about its mean, lying on 19 axes,
+    does (the entry below).
+
+**The arms.**
+- **Rotated** (`recolour.py`, with `lcm_b4` as source and target, rotation seed 0):
+  y = c R Uᵀ(√w ⊙ x), with c = 377.53.
+- **Rescaled** (`weightframe.py --scale-like` the rotated arm): y = c √w ⊙ x.
+- **About the mean** (`recolour.py --about-mean`, new): y = c m + c R Uᵀ(√w ⊙ x − m), with m the mean
+  of √w ⊙ x over the 262,144 fit rows. It is written from the readout from x_n alone, with the
+  rotated readout's fit rows and seed, so R, U and c = 376.83 are that arm's.
+
+**The written caches,** checked on 20,000 prefix rows (sample seed 0):
+
+| On these rows | LCM rotated | LCM rescaled | Readout about the mean |
+|---|---|---|---|
+| The map | from √w ⊙ x, c times an orthogonal matrix (residual share 4e-8; MᵀM/c² within 1e-4 of I) | c √w ⊙ x, to within 2.6e-4 of the largest value; the rotated arm is these rows turned (residual share 8e-8) | the rotated readout's rows, each moved by one offset (spread at most 0.002), of norm 27.9 |
+| Coordinates with a partner above \|ρ\| 0.5 | 0 | 14, as the LCM's | |
+| The group's share of the mean's norm² | 1.3% | 68.1% | 72.6%, as unrotated (rotated: 1.1%) |
+| The largest coordinate's share | 1.0% | 16.8% | 21.4% (unrotated 21.5%, rotated 1.0%) |
+| Own weights, largest over smallest | 2.14 | 1.0008 | 2.463, the rotated readout's within 1e-5 |
+| Float16: largest value, values rounded to zero | 17.0, 90 | 17.1, 93 | 15.4, 56 |
+
+- **The rotated LCM keeps its spectrum.** On the tail, its participation ratio is 147 (the LCM's
+  141), its effective rank 320 (315), and 65 / 367 directions hold 50% / 90% of the variance
+  (63 / 366). The share between languages is 0.153 (0.154).
+- **The mean's size.** In the readout's three arms the mean is 28% of a row's squared norm.
+- **The LCM's own weights span a factor of 27,** against the readout's 19. Rescaling alone cost the
+  readout 12 points on all heads (2026-11-22), so the rescaled arm separates that step here too.
+
+**Runs,** as systemd units on the RTX 3090, each waiting for the one before it to end:
+- `lcm-rot-wf` (`ARMS="lcm_rot lcm_wf"`), since 02:24 on 2026-11-24;
+- `lcm-readout-x-rotmu`.
+
+The LCM arm itself trained on the TPU. Its retrain of SONAR matched the GPU runs within 0.0001
+(2026-11-20).
+
+```bash
+A=data/activations/lcm-organism
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/recolour.py --source $A/lcm_b4.npy \
+    --source-weights $A/lcm_b4.mse_weights_matched.npy --target $A/lcm_b4.npy \
+    --target-weights $A/lcm_b4.mse_weights_matched.npy --out $A/lcm_rot_b4.npy
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/weightframe.py --source $A/lcm_b4.npy \
+    --scale-like $A/lcm_rot_b4.npy --out $A/lcm_wf_b4.npy
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/recolour.py --source $A/lcm_readout_x_b4.npy \
+    --source-weights $A/lcm_readout_x_b4.mse_weights_matched.npy --target $A/lcm_readout_x_b4.npy \
+    --target-weights $A/lcm_readout_x_b4.mse_weights_matched.npy --about-mean \
+    --out $A/lcm_readout_x_rotmu_b4.npy
+ARMS="lcm_rot lcm_wf" experiments/lcm-organism/phase2.sh train && ARMS="lcm_rot lcm_wf" experiments/lcm-organism/phase2.sh score
+ARMS=lcm_readout_x_rotmu experiments/lcm-organism/phase2.sh train && ARMS=lcm_readout_x_rotmu experiments/lcm-organism/phase2.sh score
+```
+
+## 2026-11-24: the group of 19 decorrelated, on its principal axes or whitened, keeps what keeping it gives
+
+**In short.**
+- **The question.** The entry below left the group's strong correlations as the candidate for what
+  keeping the 19 unmixed restores. Two arms remove the correlations and still keep the group apart
+  from the other 1,005 coordinates:
+  - *principal axes:* the 19 turned onto their own principal axes, so they are uncorrelated and
+    their variances are as uneven as the block's eigenvalues (a span of 155);
+  - *whitened:* the 19 whitened among themselves, so they are uncorrelated with equal variances.
+- **Both keep the lead.** On its principal axes the group closes 70.1% of SONAR's gap to the LCM on
+  all heads and 34.1% within a language. Whitened, it closes 67.5% and 33.3%. With the group kept on
+  its axes the figures are 68.8% and 33.8%, and with every coordinate rotated 41.4% and 25.6%.
+- **So the correlations don't carry it, and neither do the variances within the group.** Every change
+  made so far within the 19 keeps the lead: their axes, their tails, their correlations, their
+  variances. Every arm that mixes them into the other 1,005 loses it. What matters is something no
+  map within the block changes: the group's 19-dimensional subspace lying on 19 axes.
+- **The mean is the leading candidate for what that subspace carries.** It holds 72.6% of the mean's
+  norm² in the frame the loss weighs, and the group's own mean is 94% of its second moment. A
+  rotation of all the coordinates spreads it out. An arm that rotates everything but the mean is
+  built and queued (the entry above).
+
+**The arms** (`weightframe.py`). Both are written as the group-kept arm is: the rescaled readout from
+x_n alone, the same 19 coordinates kept out of the mixing, the same rotation of the other 1,005
+(seed 0) and the same scale (c = 376.83). Each map is fitted on the training prefix.
+- **Principal axes** (`lcm_readout_x_pca19`, `--rotate-block --block-basis principal`). The 19 are
+  turned onto the eigenvectors of their covariance, largest first, each signed so its largest entry
+  is positive. The eigenvalues over their mean are 8.41, 1.91, 1.54, 0.95, …, 0.08, 0.05: the first
+  three hold 62% of the block's variance.
+- **Whitened** (`lcm_readout_x_zca19`, `--whiten-block`). ZCA:
+  y ← (y − μ) C^(−1/2) √(mean eigenvalue) + μ. The block keeps its mean and its total variance. Of
+  the maps that whiten, ZCA moves the coordinates least.
+- **Their loss.** Both take the group-kept arm's weights (`--weights-like`), which are equal across
+  the block (the weightings span a factor of 2.37). The principal arm's loss is therefore the
+  group-kept arm's turned within the block. Whitening isn't a rotation, so the whitened arm's loss
+  measures the block's errors after the whitening.
+
+**The written caches,** checked on 20,000 prefix rows (sample seed 0) against the group-kept arm:
+
+| On these rows | Principal axes | Whitened |
+|---|---|---|
+| The other 1,005 columns | equal to the group-kept arm's | equal to the group-kept arm's |
+| The 19 from the group-kept arm's | an orthogonal map (residual share 8.8e-8) | an affine map (residual share 4.5e-7) |
+| Largest \|ρ\| among the 19 | 0.021 | 0.023 |
+| Coordinates with a partner above \|ρ\| 0.5 in the whole cache | 3 | 0 |
+| The 19's variances, largest over smallest | 155.2 | 1.1 |
+| Their total variance over the group-kept arm's | 1.0000 | 1.0044 |
+| The block's mean | turned with the block (median \|mean\|/SD 1.41) | kept (shift at most 0.005 SD) |
+| The 19's excess kurtosis, median / largest | 0.40 / 1.37 | 0.42 / 1.80 |
+
+With the group kept on its axes, 18 of the 19 have a partner above |ρ| 0.5 among them, the largest
+0.93. Float16 conversion is as for that arm: largest values 22.4 and 15.6, 72 values rounded to zero
+in each.
+
+**Runs.** `ARMS="lcm_readout_x_pca19 lcm_readout_x_zca19" phase2.sh train`, then `score`, as one
+systemd unit on the RTX 3090, from 2026-11-23 afternoon to 02:23 on 11-24. Two interruptions:
+- the principal arm's seed 42 ran out of GPU memory when another process took 18.8 GB, and resumed
+  from its step-2,500 checkpoint;
+- its seed 43 ran out of memory shortly after step 500. The machine then restarted, the unit was
+  relaunched, and the run resumed from that step-500 checkpoint.
+
+The GPU was shared at times: the whitened arm's seeds took 2 h 10 min and 2 h 50 min. As for the other readout
+arms, the stored spec computes in float32 with JAX's default TF32 matmuls, and scoring ran at
+`highest`.
+
+| Arm | All 380 heads: matched NMI (null) | First 38 heads, within language (null) | Gap closed, all heads / within | Head-specific part | Best over runner-up | FVU_w, each seed |
+|---|---|---|---|---|---|---|
+| Keep the group of 19, rotate the rest | 0.0287 (0.0048) | 0.0886 (0.0501) | 68.8% / 33.8% | 0.0024 | 0.0018 | 0.2584 / 0.2586 |
+| The group rotated among itself | 0.0282 (0.0048) | 0.0886 (0.0501) | 66.2% / 33.9% | 0.0024 | 0.0005 | 0.2590 / 0.2587 |
+| The group Gaussianized | 0.0287 (0.0048) | 0.0886 (0.0501) | 68.8% / 33.9% | 0.0024 | 0.0018 | 0.2584 / 0.2586 |
+| **The group on its principal axes** | **0.0289** (0.0048) | **0.0887** (0.0501) | **70.1% / 34.1%** | **0.0027** | **0.0006** | **0.2585 / 0.2577** |
+| **The group whitened** | **0.0284** (0.0048) | **0.0883** (0.0501) | **67.5% / 33.3%** | **0.0023** | **0.0014** | **0.2587 / 0.2588** |
+| Rotated | 0.0240 (0.0048) | 0.0842 (0.0506) | 41.4% / 25.6% | 0.0019 | 0.0006 | 0.2677 / 0.2670 |
+
+Next-sentence FVU_w, each seed: principal axes 0.9664 / 0.9662 (ridge baseline 0.7186, copy 1.062),
+whitened 0.9697 / 0.9697 (0.7211, 1.067), against 0.9660 / 0.9661 with the group kept.
+
+**What it means.**
+- **The correlations are not what the recipe responds to.** Uncorrelated either way, the group
+  restores what it restores correlated: within 1.3 points of the group-kept arm on all heads and
+  0.5 within a language, where mixing it in costs 27 and 8.
+- **Nor how the block's variance is spread.** Variances spanning 155 times and equal variances read
+  alike.
+- **What is left is the subspace.** The five arms that keep the group apart differ in everything
+  within the 19 and agree. The two arms that mix the group's 19-dimensional subspace into all 1,024
+  coordinates (the full rotation, and the arm keeping 19 others) lose the lead.
+- **The mean is the leading candidate.**
+  - **The numbers.** In the frame the loss weighs, the group holds 72.6% of the readout's mean
+    norm², and one of its coordinates 21.5%. The 19 drawn at random hold 0.5%. The group's
+    |mean|/SD has a median of 0.84 (largest 9.28), against 0.23 over the whole cache, and the
+    group's mean is 94% of its second moment. The full rotation leaves no coordinate more than
+    about 1% of the mean's norm².
+  - **Why it would reach the codes.** The recipe has no encoder to subtract a mean (`sonar.py`'s
+    `encoded = False`), and gain-shape normalizes rows uncentered. So where a large shared offset
+    lies relative to the axes reaches the classifier.
+  - **The alternative:** the group's variation about its mean, lying on 19 axes. The arm queued
+    in the entry above separates the two.
+- **A hint about matching heads one to one.** Best over runner-up is 0.0018 with the group on its
+  own axes or Gaussianized (which keeps them), and 0.0014 whitened by the map that moves them
+  least. It is 0.0005–0.0006 with the group turned within itself, on its principal axes and in
+  every other readout arm, against the LCM's 0.0010. So the group's own axes may help a head tell its
+  partner from the runner-up, while overall agreement doesn't need them. These are differences of
+  0.001 from one seed pair and one rotation each, and their noise is unmeasured.
+- **Reconstruction barely moves.** FVU_w is 0.2577–0.2588 in both arms, against 0.2584–0.2586 with
+  the group kept.
+
+**Caveats.**
+- **One seed pair per arm,** as before, so the spread between arms on all heads is unmeasured.
+- **Resumed runs.** Both principal-axes seeds resumed from checkpoints after running out of memory,
+  one of them across a reboot.
+- **The checks of the written caches** ran as a one-off script, not in the repository.
+
+```bash
+A=data/activations/lcm-organism
+G=33,34,151,188,209,317,364,369,376,386,532,611,657,706,709,710,796,852,945
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/weightframe.py --scale-like $A/lcm_readout_x_rot_b4.npy \
+    --rotate-except $G --rotate-block $G --block-basis principal \
+    --weights-like $A/lcm_readout_x_keep19_b4.npy --out $A/lcm_readout_x_pca19_b4.npy
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/weightframe.py --scale-like $A/lcm_readout_x_rot_b4.npy \
+    --rotate-except $G --whiten-block $G --weights-like $A/lcm_readout_x_keep19_b4.npy \
+    --out $A/lcm_readout_x_zca19_b4.npy
+ARMS="lcm_readout_x_pca19 lcm_readout_x_zca19" experiments/lcm-organism/phase2.sh train
+ARMS="lcm_readout_x_pca19 lcm_readout_x_zca19" experiments/lcm-organism/phase2.sh score
+```
+
 ## 2026-11-23, later still: the group of 19 rotated among themselves keeps most of what keeping it gives, and Gaussianized keeps all of it
 
 **In short.**
@@ -72,8 +265,9 @@ Next-sentence FVU_w, each seed: block-rotated 0.9670 / 0.9672 and Gaussianized 0
 - **The group's own axes matter little.** Rotated among themselves, the 19 still restore about 90%
   of what keeping them on their axes restores on all heads, and all of it within a language. What they need is
   not to be mixed with the other 1,005 coordinates.
-- **The correlations remain the candidate.** Mixing the group into all 1,024 coordinates leaves no
-  pair above |ρ| 0.5 (the largest is 0.44). Mixing it within its 19 leaves 10 coordinates with such
+- **The correlations remain the candidate.** (2026-11-24: they are not it. The group decorrelated,
+  on its principal axes or whitened, keeps the lead too: the entry above.) Mixing the group into
+  all 1,024 coordinates leaves no pair above |ρ| 0.5 (the largest is 0.44). Mixing it within its 19 leaves 10 coordinates with such
   a partner (the largest 0.75), and Gaussianizing leaves all 19 (the largest 0.90). Agreement
   follows the same order. The block-rotated arm's 2.6-point loss on all heads may be the weaker
   correlations, or seed noise.
@@ -89,6 +283,8 @@ Next-sentence FVU_w, each seed: block-rotated 0.9670 / 0.9672 and Gaussianized 0
   correlations.
 - **The correlations are untested directly.** No arm here removes them while keeping the group
   unmixed and on its axes. Whitening the block would, but it would change the block's spectrum too.
+  (2026-11-24: whitened, and turned onto its principal axes, which keeps the spectrum, the group
+  keeps the lead: the entry above.)
 - **The checks of the written caches** ran as a one-off script, not in the repository.
 
 ```bash

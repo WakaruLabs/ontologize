@@ -35,6 +35,16 @@ fixed mix,
 
     recolour.py --source <ctxmean>.npy --source-weights <ctxmean>.mse_weights_matched.npy \\
         --out data/activations/lcm-organism/sonar_ctxmean_recol_b4.npy
+
+`--about-mean` maps each row's variation about the source's mean and leaves the
+mean where the source's weighted frame has it, scaled by c and unrotated:
+
+    y = c m + c R diag(s) U^T (sqrt(w_s) * x - m),   m the mean of sqrt(w_s) * x
+
+over the fit rows. The rows' covariance, and so their weights, are what they
+are without it; only the mean's direction changes. A cache recoloured to its
+own spectrum about its mean is weightframe.py's rows, c sqrt(w) * y, with
+everything but the mean rotated.
 """
 import argparse
 import json
@@ -44,7 +54,7 @@ from pathlib import Path
 from typing import Dict, Tuple
 
 import numpy as np
-from jaxtyping import Float
+from jaxtyping import Float, Int, Shaped
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
@@ -79,6 +89,16 @@ def recolour_map(C_s: Float[np.ndarray, "d d"], C_t: Float[np.ndarray, "d d"],
                "unmatched_target_share": float(lam_t[~live].sum() / lam_t.sum())}
 
 
+def weighted_mean(x: Shaped[np.ndarray, "n d"], w: Float[np.ndarray, "d"],
+                  rows: Int[np.ndarray, "m"], chunk: int = 16384) -> Float[np.ndarray, "d"]:
+    """The mean of sqrt(w) * x over `rows` (sorted), in float64."""
+    sw = np.sqrt(np.asarray(w, np.float64))
+    total = np.zeros(x.shape[1])
+    for lo in range(0, len(rows), chunk):
+        total += (np.asarray(x[rows[lo:lo + chunk]], np.float64) * sw).sum(0)
+    return total / len(rows)
+
+
 def mean_share(total: Float[np.ndarray, "d d"], mu: Float[np.ndarray, "d"]) -> float:
     """|mean|^2 over the total variance: how much of a row's norm is shared."""
     return float(mu @ mu / np.trace(total))
@@ -98,6 +118,8 @@ def main(argv=None) -> Path:
     p.add_argument("--min-rows", type=int, default=1000)
     p.add_argument("--seed", type=int, default=0, help="the fit rows' and the rotation's")
     p.add_argument("--chunk", type=int, default=65536)
+    p.add_argument("--about-mean", action="store_true",
+                   help="map the rows about the source's mean and keep the mean on its own axes")
     cfg = p.parse_args(argv)
     resolve = lambda s: Path(s) if Path(s).is_absolute() else ROOT / s  # noqa: E731
     src, src_w = resolve(cfg.source), resolve(cfg.source_weights)
@@ -141,9 +163,16 @@ def main(argv=None) -> Path:
     C_s, _, _ = moments(x_s, w_s, lab_s, fit, cfg.min_rows)
     C_t, _, _ = moments(x_t, w_t, lab_t, file_rows(fit, mapping), cfg.min_rows)
     A, info = recolour_map(C_s, C_t, cfg.seed)
+    # the offset each mapped row takes: c m - A m about the mean, else none
+    shift = np.zeros(A.shape[0])
+    if cfg.about_mean:
+        m = weighted_mean(x_s, w_s, fit)
+        shift = info["scale"] * m - A @ m
+    info["about_mean"] = bool(cfg.about_mean)
     print(f"map: {json.dumps(info)}", flush=True)
 
     A32 = A.T.astype(np.float32)
+    shift32 = shift.astype(np.float32)
     sw = np.sqrt(w_s).astype(np.float32)
     part = dst.with_name(dst.name + ".partial")
     out = np.lib.format.open_memmap(part, mode="w+", dtype=np.float16, shape=(len(rows), A.shape[0]))
@@ -152,7 +181,7 @@ def main(argv=None) -> Path:
         r = rows[lo:lo + cfg.chunk]
         a = (np.asarray(x_s[r[0]:r[-1] + 1], np.float32) if r[-1] - r[0] + 1 == len(r)
              else np.asarray(x_s[r], np.float32))
-        h, st = to_f16((a * sw) @ A32)
+        h, st = to_f16((a * sw) @ A32 + shift32)
         conv["max_abs"] = max(conv["max_abs"], st["max_abs"])
         for k in ("subnormal", "to_zero", "nonfinite"):
             conv[k] += st[k]
