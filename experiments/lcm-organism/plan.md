@@ -213,35 +213,19 @@ it.
   one context row and see whether the LCM's predicted continuation moves, decoded through `textfid.py`'s
   `SonarDecoder`.
 
-## Cost and constraints
+## Where it runs
 
-Both the LCM and the dictionaries train on Cloud TPU, in a project of their own, through the harness
-in `experiments/cloud` (its README). The cache and every output sit in a bucket in the node's region,
-so nothing large comes back.
+Both the LCM and the dictionaries train on Cloud TPU through the harness in `experiments/cloud` (its
+README), at matmul precision `high`, and are scored at `highest`. The cache is stored in float16 (the
+float16 copy, 2026-11-19 in `notes.md`).
 
-**The machine.** A v5e-4 in us-west4-a, under Flex-start. As of 2026-11-18 that is the only zone
-offering Flex-start for v5e.
-- **Memory.** Its four chips share 192 GB of host RAM, enough to hold the float16 cache in a tmpfs
-  (`ONTO_RAM_GB`). A one-chip host has 48 GB.
-- **Parallel runs.** Four dictionary runs go at once, one per chip.
-- **The time limit.** A Flex-start node is deleted when its requested time is up, so the runner's
-  bucket sync is what keeps the work.
+**The machine.** A v5e-4. Four dictionary runs go at once, one per chip.
 
-**Prices.** These are Google's list prices on 2026-11-18, for v5e in us-west4:
-- $1.20 per chip-hour on demand, or $0.60 under DWS Flex-start;
-- Standard storage at $0.020 per GiB-month;
-- reads from a VM in the same region are free;
-- downloads to the internet cost $0.12 per GiB.
-
-| Item | Estimate | On demand | Flex-start |
-|---|---|---|---|
-| LCM: the pilot, two seeds × 3 epochs, and the harvests | 10–24 chip-hours | $12–29 | $6–14 |
-| Dictionaries: 8 runs (LCM ×3, untrained ×2, SONAR ×3) | 8–12 chip-hours | $10–15 | $5–8 |
-| Evaluations at `highest` precision | 1–3 chip-hours | $1–4 | $1–2 |
-| Storage: the cache (84 GiB as float16), the harvests (27 GiB) and checkpoints | about 115 GiB | $2.30 per month | |
-| Egress: results and decode slices | under 1 GiB | under $0.12 | |
-
-That comes to about $25–50 on demand, or $15–30 under Flex-start, plus storage.
+| Item | Estimate |
+|---|---|
+| LCM: the pilot, two seeds × 3 epochs, and the harvests | 10–24 chip-hours |
+| Dictionaries: 8 runs (LCM ×3, untrained ×2, SONAR ×3) | 8–12 chip-hours |
+| Evaluations at `highest` precision | 1–3 chip-hours |
 
 - **The basis for the compute figures.**
   - **The LCM** needs about 2.8e16 FLOPs per epoch (6 × 105M parameters × 44M rows). That is roughly
@@ -255,13 +239,6 @@ That comes to about $25–50 on demand, or $15–30 under Flex-start, plus stora
     slower than the default.
 - **Growing the LCM.** At the paper's 1.6B parameters it needs about 12 more chip-hours, and four or
     more chips for memory.
-- **Before starting.**
-  - The new project needs billing, the TPU API, and preemptible v5e quota in us-west4. The laptop's
-    gcloud needs updating for Flex-start (`gcloud components update`).
-  - The float16 copy of the cache exists (2026-11-19, `notes.md`). The harvests' float16 path
-    doesn't yet.
-  - The upload is 84 GiB, about 2 hours at 100 Mbit/s.
-  - The code is written to be TPU-compatible. Budget a short shakedown run anyway.
 - **Text evaluations** (`textfid.py`, `steerfid.py`) run SONAR's decoder in torch. They stay on the
   local GPU, on small slices.
 
@@ -269,5 +246,5 @@ That comes to about $25–50 on demand, or $15–30 under Flex-start, plus stora
 
 - Base-LCM before the JEPA arm.
 - About 105M parameters to start.
-- A v5e-4 in us-west4-a under Flex-start, with the bucket in us-west4.
+- A v5e-4.
 - float16 storage for the cache and the harvests.

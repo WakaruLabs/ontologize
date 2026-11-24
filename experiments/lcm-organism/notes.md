@@ -1,5 +1,188 @@
 # lcm-organism: notes
 
+## 2026-11-24, evening: the readout rotated about its mean keeps what keeping the group gives, so the mean's place carries the basis
+
+**In short.**
+- **The question** (the entry of 2026-11-24 on the group decorrelated). Is the readout's basis
+  dependence carried by its mean, or by the group of 19's variation about the mean lying on 19 axes?
+  The test is the readout from x_n alone, rotated, with its mean put back where the unrotated rows
+  have it.
+- **The mean carries it.**
+  - About its mean, the rotated readout closes 68.0% of SONAR's gap to the LCM on all heads and
+    33.1% within a language.
+  - With the group kept on its axes it closes 68.8% and 33.8%; fully rotated, 41.4% and 25.6%.
+- **In excess NMI over the null,** putting the mean back recovers 88% of what the rotation costs on
+  all heads and 81% within a language. Keeping the group recovers 91% and 89%.
+- **The two arms differ only in where the mean lies.** This arm's rows are the rotated arm's, each
+  moved by one offset, and its weights are the rotated arm's.
+- **The group's variation about its mean isn't needed.** Here it is mixed into all 1,024
+  coordinates with everything else. Lemma's alternative to the correlations was the right one.
+- **What it says about the recipe.**
+  - The recipe has no encoder to subtract a mean, and gain-shape normalizes rows uncentered.
+  - So where a large shared offset lies relative to the axes reaches the codes. With the offset on
+    a few axes, the seeds' codes agree more.
+  - That is a property of how the recipe meets the rows, not of how the rows vary.
+
+**Runs.** `ARMS=lcm_readout_x_rotmu phase2.sh train`, then `score`, on the RTX 3090: seeds 42 and 43
+to step 46,250, about 1 h 53 min each at 6.8 steps a second. As for the other readout arms, the stored spec computes in float32 with JAX's default
+TF32 matmuls, and scoring ran at `highest`.
+
+| Readout from x_n alone | All 380 heads: matched NMI (null) | First 38 heads, within language (null) | Gap closed, all heads / within | Head-specific part | Best over runner-up | FVU_w, each seed |
+|---|---|---|---|---|---|---|
+| Unrotated | 0.0313 (0.0048) | 0.0907 (0.0495) | 84.1% / 38.5% | 0.0026 | 0.0006 | 0.2481 / 0.2475 |
+| Rescaled | 0.0291 (0.0048) | 0.0891 (0.0500) | 71.6% / 34.8% | 0.0023 | 0.0006 | 0.2569 / 0.2559 |
+| Keep the group of 19, rotate the rest | 0.0287 (0.0048) | 0.0886 (0.0501) | 68.8% / 33.8% | 0.0024 | 0.0018 | 0.2584 / 0.2586 |
+| **Rotated about its mean** | **0.0285** (0.0048) | **0.0881** (0.0501) | **68.0% / 33.1%** | **0.0025** | **0.0004** | **0.2566 / 0.2560** |
+| Rotated | 0.0240 (0.0048) | 0.0842 (0.0506) | 41.4% / 25.6% | 0.0019 | 0.0006 | 0.2677 / 0.2670 |
+
+Next-sentence FVU_w, each seed:
+- about the mean, 0.9674 / 0.9664 (the rotated arm's baselines: ridge 0.7193, copy 1.0633);
+- rotated, 0.9698 / 0.9697.
+
+**In excess NMI over the null** (all heads / within a language). "Recovered" is the share of the
+rotation's cost, rescaled to rotated, that each arm wins back.
+
+| | Excess | Recovered |
+|---|---|---|
+| Rescaled | 0.0243 / 0.0391 | |
+| Keep the group of 19 | 0.0238 / 0.0384 | 91% / 89% |
+| About the mean | 0.0237 / 0.0381 | 88% / 81% |
+| Rotated | 0.0191 / 0.0336 | |
+
+**What it means.**
+- **The readout's basis dependence is the mean's place.** Of the rotation's cost, the mean's
+  position wins back nearly as much as keeping the group does, with the group's own variation mixed
+  into everything.
+- **Reconstruction comes back with it.**
+  - FVU_w is 0.2560–0.2566, the rescaled arm's 0.2559–0.2569, against 0.2670–0.2677 rotated.
+  - It is slightly below the group-kept arm's 0.2584–0.2586.
+  - A dictionary reconstructs the rows better with the offset on a few axes.
+- **The hint about matching heads one to one** (the entry of 2026-11-24 on the group decorrelated).
+  - Best over runner-up is 0.0004 here, against 0.0018 with the group on its own axes or
+    Gaussianized.
+  - If that difference is real, it comes from the group's variation on its own axes, not from the
+    mean.
+  - Its noise is unmeasured.
+- **The LCM's states.** Their basis-dependent part (the entry below) is about the size of the
+  readout's, and their group holds 68.1% of their mean's norm². The same arm on the states would
+  test whether the mean carries it there too.
+- **What the mean adds at all** is still open. The readout centered, unrotated and rotated, would
+  answer it.
+  - If the mean's place is the whole basis part, the two read alike.
+  - Each set against its uncentered arm says what the mean adds on a few axes and what it costs
+    spread over all of them.
+
+**Caveats.**
+- **One seed pair and one rotation,** as for every readout arm.
+- **This arm and the group-kept arm are close.** They differ by 0.0001 on all heads and 0.0004 within
+  a language, in excess. No arm has a second seed pair scored on all heads, so that difference's
+  noise is unmeasured.
+- **A resumed run.** Seed 42 resumed from its step-31,500 checkpoint. A resume continues the batch
+  stream but restarts the training noise's key (`Hyperparams.train` passes `PRNGKey(seed)` at every
+  start), so from there its noise draws repeat those of its first steps. It is not the run an
+  uninterrupted job would give.
+
+The commands are in the entry of 2026-11-24, later.
+
+## 2026-11-24, later still: the LCM's own states rotated keep most of their lead within a language, and the basis costs them what it costs the readout
+
+**In short.**
+- **The question** (the entry below): whether block 4's own states depend on their basis as the
+  readout from x_n alone does. Against the LCM, an arm's gap closed is the share of the LCM's lead
+  over SONAR that survives the change.
+- **Within a language they barely depend on it.** Rescaled to the frame their loss weighs, the states
+  keep 95.1% of their lead there. Rotated as well, they keep 88.4%. On all heads they keep 84.1%
+  and 63.8%.
+- **The basis is worth about as much to the states as to the readout.** In excess NMI over the null,
+  rescaling and rotation together cost the states 0.0062 on all heads and 0.0068 within a language.
+  They cost the readout 0.0073 and 0.0076.
+- **What the context adds doesn't lie on the axes.** The states' lead over the readout from x_n alone
+  is about the same in every frame: 0.002–0.004 on all heads and 0.036–0.037 within a language.
+  Nearly all of the LCM's lead within a language is this part, so rotating costs the states little
+  there.
+- **A reading, not a test.** This fits the readout having inherited its basis-dependent part from the
+  states. The group of 19 is the states' own: 13 of the 14 coordinates with a strong partner in their
+  frame, holding 68.1% of the mean's norm². But the evidence is only that two differences are about
+  the same size. The readout rotated about its mean (running now) tests the readout.
+
+**The arms** are as the entry below writes them: rotated, y = c R Uᵀ(√w ⊙ x), and rescaled,
+y = c √w ⊙ x, with c = 377.53.
+
+**Runs.** `ARMS="lcm_rot lcm_wf" phase2.sh train`, then `score`, on the RTX 3090: seeds 42 and 43 to
+step 46,250, 1 h 51 min to 2 h each (6.4–6.8 steps a second). As for the readout arms, the stored spec computes in float32 with JAX's default TF32 matmuls,
+and scoring ran at `highest`.
+
+| Arm | All 380 heads: matched NMI (null) | First 38 heads, within language (null) | Gap closed, all heads / within | Head-specific part | Best over runner-up | FVU_w, each seed |
+|---|---|---|---|---|---|---|
+| LCM, block 4 (TPU) | 0.0340 (0.0048) | 0.1269 (0.0495) | 100% / 100% | 0.0026 | 0.0010 | 0.2820 / 0.2812 |
+| **LCM rescaled** | **0.0313** (0.0048) | **0.1245** (0.0500) | **84.1% / 95.1%** | **0.0024** | **0.0005** | **0.2851 / 0.2845** |
+| **LCM rotated** | **0.0278** (0.0048) | **0.1211** (0.0505) | **63.8% / 88.4%** | **0.0022** | **0.0007** | **0.2940 / 0.2940** |
+| Readout, x_n alone | 0.0313 (0.0048) | 0.0907 (0.0495) | 84.1% / 38.5% | 0.0026 | 0.0006 | 0.2481 / 0.2475 |
+| Readout, x_n alone, rescaled | 0.0291 (0.0048) | 0.0891 (0.0500) | 71.6% / 34.8% | 0.0023 | 0.0006 | 0.2569 / 0.2559 |
+| Readout, x_n alone, rotated | 0.0240 (0.0048) | 0.0842 (0.0506) | 41.4% / 25.6% | 0.0019 | 0.0006 | 0.2677 / 0.2670 |
+| SONAR, TPU | 0.0169 (0.0048) | 0.0692 (0.0507) | 0 / 0 | 0.0013 | 0.0004 | 0.4593 / 0.4585 |
+
+Next-sentence FVU_w, each seed:
+- rescaled 0.5646 / 0.5643, and rotated 0.5713 / 0.5713;
+- the LCM 0.5610 / 0.5598;
+- the baselines: ridge 0.3091 and copy 0.4392 (under the rotated arm's weights, 0.3099 and 0.4403).
+
+**Where the lead goes,** in excess NMI over the null (matched minus null), all heads / within a
+language. The last column is the first minus the second.
+
+| | The LCM's states | Readout from x_n alone | The states over the readout |
+|---|---|---|---|
+| Unrotated | 0.0292 / 0.0774 | 0.0265 / 0.0412 | 0.0027 / 0.0362 |
+| Rescaled | 0.0265 / 0.0745 | 0.0243 / 0.0391 | 0.0021 / 0.0355 |
+| Rotated | 0.0230 / 0.0706 | 0.0191 / 0.0336 | 0.0038 / 0.0370 |
+| Cost of rescaling | 0.0027 / 0.0029 | 0.0021 / 0.0022 | |
+| Cost of the rotation after it | 0.0035 / 0.0039 | 0.0052 / 0.0054 | |
+| Rotated, above SONAR's 0.0120 / 0.0186 | 0.0109 / 0.0521 | 0.0071 / 0.0151 | |
+
+**What it means.**
+- **Within a language, the LCM's lead is mostly basis-free.** Of its 0.0589 lead over SONAR there,
+  0.0521 survives rescaling and rotation. On all heads, 0.0109 of 0.0171 survives.
+- **The basis-dependent part is about the same size in the states and in the readout**: 0.006–0.008
+  on both measures. The parts that survive differ by a factor of 1.5 on all heads and 3.5 within a
+  language. The readout writes block 4's state from x_n alone, so its coordinates are the states'.
+- **What the context adds is basis-free.**
+  - The readout from x_n alone closed 38% of the gap within a language, so most of the LCM's lead
+    there is the context's.
+  - That part is the states' lead over the readout, and it holds in every frame.
+  - So within a language the rotation costs the states little.
+- **The group and its mean are the candidate for the basis part.**
+  - In the states' frame, the group of 19 holds 68.1% of the mean's norm², one coordinate 16.8%.
+  - Rotated, the group holds 1.3% of it.
+  - Suppose the readout rotated about its mean recovers the readout's basis part. The same arm built
+    on the states (`recolour.py --about-mean` with `lcm_b4` as source and target) would then test
+    whether the mean carries the states' basis part too. It is not built.
+- **Rescaling costs the states a little more:** 0.0027 / 0.0029, against the readout's 0.0021 /
+  0.0022. The states' loss weights span a factor of 27, the readout's 19. Within a language, this
+  step is about the spread between the LCM's seed pairs (Caveats).
+- **Heads are still not identified one by one.**
+  - Best over runner-up is 0.0005–0.0007, against the LCM's 0.0010.
+  - The head-specific part falls from 0.0026 to 0.0024 rescaled and 0.0022 rotated. The readout's
+    falls from 0.0026 to 0.0023 and 0.0019.
+- **Reconstruction follows the same order.** FVU_w is 0.282 for the LCM, 0.285 rescaled and 0.294
+  rotated. The rotated arm's own weights span a factor of 2.14, so its loss differs a little.
+
+**Caveats.**
+- **Two platforms.** The LCM arm trained on the TPU at `high`, these arms on the GPU at TF32. The
+  platform is unlikely to account for the rescaling cost:
+  - SONAR's GPU and TPU pairs agree within 0.0001 (2026-11-20);
+  - the readout's rescaling step, all on the GPU, costs about as much.
+- **Seeds.** One seed pair per arm, and one rotation.
+  - The LCM's three seed pairs match on the 38 slow heads within 0.0017 of one another, on all rows.
+  - Rescaling moves the within-language score by 0.0024, about that spread, and the rotation by a
+    further 0.0034.
+- **"About the same size"** compares differences from one seed pair each. It does not show that the
+  states and the readout lose the same thing.
+- **A resumed run.** The rotated arm's seed 42 resumed three times, from its step-14,000, 15,500 and
+  19,000 checkpoints. Each resume restarts the training noise's key (the entry above), so the run is
+  not the one an uninterrupted job would give.
+
+The commands are in the entry below.
+
 ## 2026-11-24, later: three arms built and queued: the LCM's own states rotated and rescaled, and the readout rotated about its mean
 
 **In short.**
@@ -47,12 +230,9 @@
 - **The LCM's own weights span a factor of 27,** against the readout's 19. Rescaling alone cost the
   readout 12 points on all heads (2026-11-22), so the rescaled arm separates that step here too.
 
-**Runs,** as systemd units on the RTX 3090, each waiting for the one before it to end:
-- `lcm-rot-wf` (`ARMS="lcm_rot lcm_wf"`), since 02:24 on 2026-11-24;
-- `lcm-readout-x-rotmu`.
-
-The LCM arm itself trained on the TPU. Its retrain of SONAR matched the GPU runs within 0.0001
-(2026-11-20).
+**Runs** on the RTX 3090, by the commands below, one arm after another. The LCM arm itself trained on
+the TPU. Its retrain of
+SONAR matched the GPU runs within 0.0001 (2026-11-20).
 
 ```bash
 A=data/activations/lcm-organism
@@ -122,16 +302,10 @@ With the group kept on its axes, 18 of the 19 have a partner above |ρ| 0.5 amon
 0.93. Float16 conversion is as for that arm: largest values 22.4 and 15.6, 72 values rounded to zero
 in each.
 
-**Runs.** `ARMS="lcm_readout_x_pca19 lcm_readout_x_zca19" phase2.sh train`, then `score`, as one
-systemd unit on the RTX 3090, from 2026-11-23 afternoon to 02:23 on 11-24. Two interruptions:
-- the principal arm's seed 42 ran out of GPU memory when another process took 18.8 GB, and resumed
-  from its step-2,500 checkpoint;
-- its seed 43 ran out of memory shortly after step 500. The machine then restarted, the unit was
-  relaunched, and the run resumed from that step-500 checkpoint.
-
-The GPU was shared at times: the whitened arm's seeds took 2 h 10 min and 2 h 50 min. As for the other readout
-arms, the stored spec computes in float32 with JAX's default TF32 matmuls, and scoring ran at
-`highest`.
+**Runs.** `ARMS="lcm_readout_x_pca19 lcm_readout_x_zca19" phase2.sh train`, then `score`, on the RTX
+3090, 2026-11-23 to 11-24: seeds 42 and 43 to step 46,250. The GPU was shared at times: the whitened
+arm's seeds took 2 h 10 min and 2 h 50 min. As for the other readout arms, the stored spec computes in float32
+with JAX's default TF32 matmuls, and scoring ran at `highest`.
 
 | Arm | All 380 heads: matched NMI (null) | First 38 heads, within language (null) | Gap closed, all heads / within | Head-specific part | Best over runner-up | FVU_w, each seed |
 |---|---|---|---|---|---|---|
@@ -179,8 +353,9 @@ whitened 0.9697 / 0.9697 (0.7211, 1.067), against 0.9660 / 0.9661 with the group
 
 **Caveats.**
 - **One seed pair per arm,** as before, so the spread between arms on all heads is unmeasured.
-- **Resumed runs.** Both principal-axes seeds resumed from checkpoints after running out of memory,
-  one of them across a reboot.
+- **Resumed runs.** Both principal-axes seeds resumed from checkpoints: seed 42 from step 2,500 and
+  seed 43 from step 500. A resume restarts the training noise's key (`Hyperparams.train` passes
+  `PRNGKey(seed)` at every start), so neither is the run an uninterrupted job would give.
 - **The checks of the written caches** ran as a one-off script, not in the repository.
 
 ```bash
@@ -245,10 +420,10 @@ x_n alone, the same 19 coordinates kept out of the mixing, the same rotation of 
 | Coordinates with a partner above 0.5 in the whole cache | 23 | 11 | 23 |
 | The 19's excess kurtosis, median / largest | 0.28 / 4.99 | 0.38 / 3.03 | −0.01 / 0.09 |
 
-**Runs.** `ARMS="lcm_readout_x_blk19 lcm_readout_x_gauss19" phase2.sh train`, then `score`, as one
-systemd unit on the RTX 3090, 03:24–11:12 on 2026-11-23: about 1 h 56 min a seed, and 7 h 48 min
-with scoring. As for the other readout arms, the stored spec computes in float32 with JAX's default
-TF32 matmuls, and scoring ran at `highest`.
+**Runs.** `ARMS="lcm_readout_x_blk19 lcm_readout_x_gauss19" phase2.sh train`, then `score`, on the
+RTX 3090 on 2026-11-23: seeds 42 and 43 to step 46,250, about 1 h 56 min a seed, and 7 h 48 min for
+both arms with scoring. As for the other readout arms, the stored spec computes in
+float32 with JAX's default TF32 matmuls, and scoring ran at `highest`.
 
 | Arm | All 380 heads: matched NMI (null) | First 38 heads, within language (null) | Gap closed, all heads / within | Head-specific part | Its loss | Copy baseline | FVU_w, each seed |
 |---|---|---|---|---|---|---|---|
@@ -428,7 +603,7 @@ cache).
   were rescored: the LCM's TPU pair, SONAR's GPU pair, and the two readouts.
 - **The SONAR pair.** Unmasked, SONAR's GPU pair reads 0.0168 (0.0048) on all heads and 0.0692
   (0.0507) within a language. The TPU pair, which the gap is usually computed from, reads 0.0169 and
-  0.0692; it isn't on this machine.
+  0.0692 unmasked, and was not rescored.
 
 | Rows | Within language: LCM excess | SONAR excess | LCM's lead | Ratio | Readout (x_n and context) gap closed | Readout (x_n alone) |
 |---|---|---|---|---|---|---|
@@ -584,9 +759,8 @@ random rotations of the same covariance.
 
 **Runs.** `ARMS=lcm_readout_x_keep19 phase2.sh train`, then `score`, on the RTX 3090, as for the other
 readout arms: seeds 42 and 43 to step 46,250, about 2 h and 2 h 20 min, and 4 h 26 min with
-scoring. The control ran the same way after it, at about 2 h a seed, and was scored on 2026-11-23. The
-stored spec computes in float32, and the GPU ran its matmuls at JAX's default precision, which is TF32
-there. Scoring ran at `highest`.
+scoring. The control ran the same way after it, at about 2 h a seed, and was scored on 2026-11-23. The stored spec computes in float32, and the GPU ran its matmuls at JAX's default
+precision, which is TF32 there. Scoring ran at `highest`.
 
 **The readouts** from x_n alone:
 
@@ -848,8 +1022,7 @@ ARMS=lcm_readout_x_rot experiments/lcm-organism/phase2.sh score
   50% / 90%, 0.117 between languages, and within-language participation ratio 173.
 
 **Runs.** `ARMS=sonar_ctxmean_recol phase2.sh train`, then `score`, on the RTX 3090: seeds 42 and 43
-to step 46,250, about 2 hours each. The machine restarted during scoring, after `seedmatch.py` had
-written its scores, and the score stage was rerun for `eval_next.py`.
+to step 46,250, about 2 hours each.
 
 **The readouts,** beside every other arm's seeds 42 and 43:
 
@@ -1244,8 +1417,8 @@ JAX_PLATFORMS=cpu uv run python experiments/next-sentence/closure.py \
 
 **Runs.** Every arm is `train_pair.py --epochs 3 --pair-term agree --s-pair 0`, the SONAR control's
 recipe (`doc2_sp0_ph38`), to step 46,250, keeping only the last checkpoint.
-- **Where.** A v5e-4 under Flex-start through `experiments/cloud`, one run per chip, at matmul
-  precision `high`. Each run took about 1 h 57 min, against the plan's estimate of about an hour.
+- **Where.** A v5e-4 through `experiments/cloud`, one run per chip, at matmul precision `high`. Each
+  run took about 1 h 57 min, against the plan's estimate of about an hour.
 - **Scoring,** at `highest`: `seedmatch.py --labels <harvest>.langs.npy --label-rows 262144
   --min-rows 1000`, with `--c` for three seeds, then `eval_next.py`. The queues are in `queues/` and
   the outputs in `data/out/lcm-organism/phase2_tpu/`.
@@ -1255,9 +1428,10 @@ recipe (`doc2_sp0_ph38`), to step 46,250, keeping only the last checkpoint.
   - **Untrained:** the same harvest of that run's step 0 (`init_b4`).
   - **SONAR:** `mc4_sent16_f16.npy` with the control's `no837` weights.
   - **Recoloured SONAR** (`recolour.py`, below), added after the spectrum check.
-- **Interruptions.** LCM seed 44 and both recoloured runs died together when the VM's RAM disk filled,
-  and resumed from their last checkpoints: step 7,000 for seed 44, and within the first 500 steps for
-  the others.
+- **Resumed runs.** LCM seed 44 resumed from its step-7,000 checkpoint, and both recoloured runs from
+  checkpoints within their first 500 steps. A resume restarts the training noise's key
+  (`Hyperparams.train` passes `PRNGKey(seed)` at every start), so these are not the runs an
+  uninterrupted job would give.
 
 **The readouts.**
 
@@ -1279,7 +1453,7 @@ How to read the columns:
 - **FVU_w** is held-out, against the input, under each arm's own weights.
 
 **The TPU retrain matches the GPU runs** within 0.0001 on every NMI and FVU_w, seed by seed, so the
-arms compare across the two machines. Only the loop count below differs, by one head.
+arms compare across the two platforms. Only the loop count below differs, by one head.
 
 **Against the plan's predictions.**
 - **The untrained arm** was predicted to read near SONAR. It reads 0.0155, slightly below, so mixing in
@@ -1468,8 +1642,7 @@ when the MLP moved to `NLinear`. The rerun below is in `data/out/lcm-organism/pi
     delivers 637,000 rows per second.
   - Read cold from disk, the loader delivers 31,900 rows per second. That is nearly the same rate,
     which is a coincidence: random reads through mmap fault one page at a time.
-  - So an epoch here that isn't in the page cache would also be held to about this rate by the disk. A
-    TPU host that holds the cache in tmpfs reads it from memory.
+  - So an epoch here that isn't in the page cache would also be held to about this rate by the disk.
 
 **Learning.** The loss fell from 0.111 at step 25 to 0.044 by step 75, and flattened there: with 175
 steps, the learning rate was still warming up. The held-out next-sentence FVU_w was 2.589 untrained and
@@ -1534,9 +1707,8 @@ replaced the `nn.Dense` MLP. The init draws differ, because the parameter tree c
 
 `f16cache.py --bulk <dir> --weights data/sonar_embeddings/mc4_sent16.mse_weights.npy --weights
 data/out/sonar/sentcache/mse_weights_no837.npy` wrote `data/sonar_embeddings/mc4_sent16_f16.npy`:
-44,113,823 rows × 1024, 84.1 GiB. It took 8 minutes, reading at 0.36 GiB/s. The array is on another
-disk behind the symlink (`float16.array` in its `meta.json`), and the sidecars are hard links to
-mc4_sent16's.
+44,113,823 rows × 1024, 84.1 GiB. It took 8 minutes, reading at 0.36 GiB/s. The sidecars are hard
+links to mc4_sent16's.
 
 - **Range.** The largest magnitude is 0.165, far inside float16's range, and no value is non-finite.
 - **Small values.**
@@ -1552,4 +1724,4 @@ mc4_sent16's.
   This matches the plan's measurement on the tail (2026-11-18).
 - **Read back.**
   - Every checked row equals the source rounded to float16.
-  - Through the symlink, `StackedPairSource` returns float32 rows equal to the rounded source.
+  - `StackedPairSource` returns float32 rows equal to the rounded source.
