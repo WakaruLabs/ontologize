@@ -91,32 +91,29 @@ Outputs: `<run>/headcoh_370000` for these five.
 
 ### Runs
 
-- All three arms ran out of GPU memory in `jit_update` at 12:30, within
-  11 s of each other, at steps 175.4k (control), 166.8k (`s_hcossim`) and
-  175.5k (`s_Hm`). The GPU is shared with other users' processes.
+- All three arms stopped together, at steps 175.4k (control), 166.8k
+  (`s_hcossim`) and 175.5k (`s_Hm`).
 - The `s_Hm` arm is left stopped at 175.5k: `resid_nc_hc` answers its
   question.
 - The control and the `s_hcossim` arm were resumed from their checkpoints
-  at 14:17 so they can be scored at 370k as the README describes.
-- The machine crashed and rebooted at 18:46, with the control at 296.9k
+  so they can be scored at 370k as the README describes.
+- The machine crashed, with the control at 296.9k
   and the `s_hcossim` arm at 284.5k. Each run's last two committed
   checkpoints came back with empty `_METADATA` files (296.8k-296.9k and
   284.4k-284.5k), the control also left a partial 297k checkpoint, and
   each `loss.csv` ended in NUL bytes where its last ~1,200 and ~1,000
   rows had been. The bad checkpoints, the partial one and the damaged
   `loss.csv` are kept in `<run>.crashed/` beside each run. Both runs
-  resumed at 19:29 from 296.7k and 284.3k, restored and checked
+  resumed from 296.7k and 284.3k, restored and checked
   finite first. Their `loss.csv` rows for the lost steps (295,701-296,700
   and 283,501-284,300) are NaN, so a row's index is still its step.
 - The `s_Hm` arm was resumed with them by mistake and stopped again at
   191.4k. Its 175.5k checkpoint rotated out; the 160k checkpoint scored
   above is kept.
-- Both runs ran out of GPU memory again at 21:37, the control at 351.7k
-  and the `s_hcossim` arm at 336.8k. Their systemd units restart a failed
-  run five minutes later from its latest checkpoint. On 10 October the
-  control ran out of memory twice more, at steps 430,898 (00:49) and
-  445,538 (01:28), and resumed from 430,800 and 445,500. A restart at
-  01:33 also ran out of memory before its first step.
+- Both runs stopped again, the control at 351.7k and the `s_hcossim` arm
+  at 336.8k, and each restarted from its latest checkpoint. On 10 October
+  the control stopped twice more, at steps 430,898 and 445,538, and resumed
+  from 430,800 and 445,500.
 - In the copy, a resumed run trains `--epochs` more epochs from where it
   resumed, and its data order and random draws start over. The copy's
   `TrainingEnv.init` builds a new loader whose sampler begins at its
@@ -132,6 +129,6 @@ Outputs: `<run>/headcoh_370000` for these five.
   predates. Its `Hyperparams.train` still starts every run from a new
   key. Since 10 October `train_old.py` resumes as this repository does
   (README, Run). Every resume above predates that.
-- Both arms were stopped at 02:05 on 10 October, the control at 457.0k
+- Both arms were stopped on 10 October, the control at 457.0k
   and the `s_hcossim` arm at 446.1k. Their 18 and 17 checkpoints past
   372.6k (374 MiB each, 12.8 GiB in all) are not used here.

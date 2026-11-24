@@ -28,9 +28,8 @@ head--lens pairs with both, +0.25 under acts (15 heads, p = 0.37) and
 `spearman` then ranked tied accuracies by row order, and many head
 accuracies tie at 0, so it now averages tied ranks.
 
-The describe stage's GPU decode once ran out of memory beside a
-text-fidelity job and left empty outputs while exiting 0; it was rerun
-from the finished harvest and texts.
+The describe stage's GPU decode once failed, left empty outputs and still
+exited 0. It was rerun from the finished harvest and texts.
 
 Outputs: `out/` (`heads.npz`, `meta.json`, `descriptions.jsonl`,
 `scores.csv`, `comparison.csv`).

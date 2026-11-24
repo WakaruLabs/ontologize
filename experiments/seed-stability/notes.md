@@ -175,8 +175,8 @@ The 11-19 section left open whether the SONAR k32 pair's low agreement is SONAR'
 GPT-2's `gpt2_l8/sae/m12160_k32` has one seed, and it is older (2026-09-29) than the current
 `gpt2_l8` harvest files (10-01), so a seed-43 replica of it might not share its data.
 `gpt2_sae_seeds.sh` instead trains a fresh pair at sae.py's defaults, seeds 42 and 43, into
-`data/out/gpt2_l8/sae_seeds/`, as unit `gpt2-sae-seeds`, once `recipe-ladder-nonoise` has
-finished (about 20 minutes a seed, from the old run's timestamps). A three-step CPU smoke run
+`data/out/gpt2_l8/sae_seeds/`, once the ladder's no-noise arms have finished (about 20 minutes a
+seed, from the old run's timestamps). A three-step CPU smoke run
 trained. Then `splitting.py` and `subspace.py --mode sae` on it, beside the SONAR pair.
 
 ## 2026-11-20: the GPT-2 SAE pair agrees more than SONAR's, and less than the papers'
@@ -189,7 +189,7 @@ rules, so the pair does not apportion the SONAR pair's gap among the substrate, 
 training. The subspace result carries over: the other seed reproduces the unmatched latents'
 subspace almost to the optimum, well beyond the data's.
 
-**Where.** Unit `gpt2-sae-seeds` trained `m12160_k32` and `m12160_k32_s43` at sae.py's defaults
+**Where.** `gpt2_sae_seeds.sh` trained `m12160_k32` and `m12160_k32_s43` at sae.py's defaults
 (20 epochs, 19,360 steps of 4,096) into `data/out/gpt2_l8/sae_seeds/`: FVU_w 0.1875 and 0.1876 on
 sae.py's held-out tail, no dead latents. Seed 42 took 1 h 35 min, against seed 43's 24 min,
 because it shared the CPU with scoring jobs. `splitting.py` read the cache's first 524,288 rows,
@@ -252,11 +252,7 @@ size-matched draws; d = 768, so chance at r = 64 is 0.083:
   along the data's principal directions; on GPT-2 the two sets look alike.
 
 ```bash
-systemd-run --user --unit gpt2-sae-seeds -p Restart=on-failure -p RestartSec=120 \
-    --working-directory=$PWD \
-    -p StandardOutput=append:$PWD/experiments/logs/gpt2_sae_seeds.log \
-    -p StandardError=append:$PWD/experiments/logs/gpt2_sae_seeds.log \
-    /usr/bin/bash experiments/seed-stability/gpt2_sae_seeds.sh
+experiments/seed-stability/gpt2_sae_seeds.sh
 uv run python splitting.py --cache data/activations/gpt2_l8.npy \
     --a data/out/gpt2_l8/sae_seeds/m12160_k32/params.npz \
     --b data/out/gpt2_l8/sae_seeds/m12160_k32_s43/params.npz \
@@ -293,26 +289,14 @@ under the `med837` weights, the weighted variance is 0.0072 for both the copy an
 the mean's norm is 0.0535 against 0.0536, a row's 0.217 against 0.213. A CPU smoke run of eight
 steps starts at loss 1.03e-5, against the cache arm's 1.04e-5.
 
-**The run.** Unit `gauss-seeds` (`gauss_seeds.sh`), from 21:30, waits for an idle GPU and then
-trains the arm (the ladder's `nobcos_nosupp_nol1f_nohm` flags, with its training noise) at seeds
+**The run.** `gauss_seeds.sh` waits for an idle GPU and then trains the arm (the ladder's `nobcos_nosupp_nol1f_nohm` flags, with its training noise) at seeds
 42 and 43, about 1.2 GPU-hours each, before scoring the pair as the cache pair was scored. The
 comparison is the noisy cache pair in `recipe-ladder/notes.md`.
 
-**Restarted 2026-11-21 02:24.** The first start, at 01:41, ran at 7 s a step (about 100 hours
-for the arm): grain reads a source from several threads, and `GaussianSource`'s single-block cache,
-unguarded, had each reader thread regenerate its block with a BLAS call, 16 times per block,
-which took about 19 cores. The cache now holds eight blocks under a lock, each generated once
-(`tests/test_gausscopy.py`), with the same rows as before. The 200-step partial output was
-removed and the unit restarted; it waits for an idle GPU.
-
-**Restarted again 2026-11-21 06:27; the 02:24 diagnosis was wrong.** Training began at 06:20 and
-ran at 18 s a step (about 250 hours). The cause was the shuffle, not the threads. `train_ste.py`
-takes `sonar.py`'s `shuffle = True`, so each batch of 256 drew rows from about 256 different
-blocks, and the lock made them generate one after another. Measured on the loader alone: 28.5 s a
-batch shuffled, 45 ms in order. The rows are independent draws, so reading them in order changes
-nothing about the data. `train_gauss.py` now passes `shuffle=False` through a new optional
-argument of `train_ste.train`, and the rows and `eval.npy` are unchanged. The partial output
-(`log.jsonl` only, no checkpoint) was removed and the unit restarted with the command below.
+**Rows in order.** `train_gauss.py` reads the copy's rows in order (`shuffle=False`, through an
+optional argument of `train_ste.train`). The rows are independent draws, so reading them in order
+changes nothing about the data, and shuffled reads would regenerate a block for nearly every row of
+a batch.
 
 **Done when** the scores in `data/out/sonar/gausscopy/scores/` (written once
 `scores/done.log` exists) have been read beside the noisy cache pair, layer by layer, for partition
@@ -323,11 +307,7 @@ they do on SONAR, except at layer 0", below.)*
 
 ```bash
 uv run python experiments/seed-stability/gausscopy.py prepare
-systemd-run --user --unit gauss-seeds -p Restart=on-failure -p RestartSec=120 \
-    --working-directory=$PWD \
-    -p StandardOutput=append:$PWD/experiments/logs/gauss_seeds.log \
-    -p StandardError=append:$PWD/experiments/logs/gauss_seeds.log \
-    /usr/bin/bash experiments/seed-stability/gauss_seeds.sh
+experiments/seed-stability/gauss_seeds.sh
 ```
 
 ## 2026-11-20: k-means partitions of SONAR reproduce, beyond its Gaussian copy's, and the heads are not near them
@@ -342,7 +322,7 @@ any seed's k-means partition has median 0.054 (at most 0.144), and layers 1–4 
 The heads' disagreement across seeds is therefore not what the data force on any 32-cell
 partition.
 
-**Setup** (`kmeans_seeds.py`, CPU, 23:55). k-means++ and Lloyd's iterations to a fixed point in
+**Setup** (`kmeans_seeds.py`, CPU). k-means++ and Lloyd's iterations to a fixed point in
 the `med837` whitened frame, five seeds (42–46, so ten pairs), fit on 131,072 rows drawn from
 the first 12.8M (the ladder's training rows) and assigned on the last 32,768. The copy's training
 rows are its training stream and its tail is `gausscopy/eval.npy`. The heads are the noisy
@@ -393,7 +373,7 @@ SONAR stays above its Gaussian copy at every h. At the additive rate, 76 heads w
 h = 76 was not run. *(Measured later the same day, in the next section: 0.009 at h = 76, below the
 extrapolation and below the stack's layer 0.)*
 
-**Setup** (`kmeans_structure.py`, CPU, 00:4x–02:20). The `med837` whitened frame, k = 32, the last
+**Setup** (`kmeans_structure.py`, CPU, about 1.5 h). The `med837` whitened frame, k = 32, the last
 32,768 rows of `mc4_sent16` as the tail, and the Gaussian copy's held-out rows for `gauss`.
 - **Additive:** LSQ++ (`faiss.LocalSearchQuantizer`, 5 bits per codebook), eight restarts per h
   (seeds 0–7, so 28 pairs), each fit on 32,768 training rows. Heads are matched between two runs
@@ -508,9 +488,8 @@ more at layers 1–3, and so do their layer inputs. The subspace agreement the c
 therefore no more than the covariance gives. On SONAR the two seeds' residuals drift further apart
 than on a Gaussian.
 
-**Where.** Unit `gauss-seeds`, restarted 06:27 (the section above). It waited for another
-session's GPU job, trained seed 42 from about 10:38 to 11:43 (50,000 steps in 65 min, 12.7 steps a
-second) and seed 43 until about 12:49, then scored the pair by 13:04 (`scores/done.log`). Outputs
+**Where.** `gauss_seeds.sh` trained seed 42 in 65 min (50,000 steps, 12.7 steps a second) and seed
+43 in about 66 min, then scored the pair in about 15 min (`scores/done.log`). Outputs
 are in `data/out/sonar/gausscopy/`: `alloff`, `alloff_s43`, and `scores/` with one log per script.
 The scorers read the copy's held-out rows (`eval.npy`, stream 1, 65,536 rows) with the cache
 pair's row counts and weights: `med837` for contributions and subspaces, `ratecurve.py`'s default
@@ -563,10 +542,6 @@ most 0.0003.
 
 **Not tested.** One pair on each data. The copy is matched in its first two moments only, so it
 tells "beyond the covariance" from "within it", not which higher-order structure layer 0 uses.
-
-**Memory.** The unit's cgroup peak was 97.6 GB over training and scoring. That count includes page
-cache, and the ladder's training unit read 52.6 GB. Which step drove it was not traced. Run heavy
-CPU jobs beside such a unit with care.
 
 ## 2026-11-21: SONAR's reproducible k-means cells are not language
 
@@ -641,8 +616,7 @@ JAX_PLATFORMS=cpu uv run python experiments/seed-stability/kmeans_seeds.py \
 
 ## 2026-11-21: queued, seed agreement against width in the trained stack
 
-Unit `width-seeds` (`width_seeds.sh`, the README's command), queued 23:11 behind another session's
-`lcm-readout-x-rot`, which held the GPU. It trains one-layer stacks of 1, 4, 16 and 76 heads of 32
+`width_seeds.sh` (the README's command), queued for the GPU. It trains one-layer stacks of 1, 4, 16 and 76 heads of 32
 at seeds 42 and 43 (the ladder's all-off recipe, 50,000 steps each) and scores each pair with
 `partition.py` and `ratecurve.py` into `data/out/sonar/width_seeds/scores/`.
 
@@ -654,8 +628,7 @@ say whether the trained curve follows LSQ's halving.
 
 ## 2026-11-22: queued, the k32 SAE seed pair on a Gaussian copy of `mc4_4M`
 
-Unit `sae-gauss-seeds` (`sae_gauss_seeds.sh`, the README's command), queued 00:35 to run after
-`width-seeds`. It trains `sae_conv/m5120_k32`'s settings (150 epochs, 144,300 steps of 4,096) at
+`sae_gauss_seeds.sh` (the README's command), queued to run after `width_seeds.sh`. It trains `sae_conv/m5120_k32`'s settings (150 epochs, 144,300 steps of 4,096) at
 seeds 42 and 43 on 3,941,632 rows of a Gaussian with the moments of every row the real pair
 trained on (`data/out/sonar/gausscopy_4M`), then scores the pair with `subspace.py --mode sae` on
 the copy's held-out tail and `splitting.py` on the first 524,288 rows of its training stream, as
@@ -690,7 +663,7 @@ are distributed. At 128 cells most of it lies in how directions combine. That jo
 not language either ("not language", above): SONAR's rows less their language means still
 reproduce at 0.659 at 128 cells.
 
-**Setup** (`kmeans_seeds.py --marginals pca ica`, CPU, 00:33 to 03:55). As in the 2026-11-20
+**Setup** (`kmeans_seeds.py --marginals pca ica`, CPU, 3 h 22 min). As in the 2026-11-20
 section: the `med837` whitened frame, seeds 42–46 (ten pairs), fit on 131,072 rows drawn from
 the first 12.8M, assigned on the last 32,768. Each copy permutes every coordinate's column on its
 own, separately in the training rows and the tail (`marginal_copy`). It then maps the rows back
@@ -776,7 +749,7 @@ closest head in the same seed (0.034, 0.024). For autointerp the rule names thes
 
 Every other head reproduces, if at all, only as part of a block.
 
-**Setup** (`headscreen.py`, CPU, 06:23 to 06:45, about 7 minutes a pair).
+**Setup** (`headscreen.py`, CPU, 22 minutes, about 7 minutes a pair).
 - The last 65,535 rows of each pair's data, in thirds of 21,845: `mc4_sent16`'s tail for the
   ladder pairs (`ste_h76_init01_med837_ctrl` and `_ctrl_s43`; the all-off arm and its `_s43`), and
   `gausscopy/eval.npy` for the copy's pair (`gausscopy/alloff`, `alloff_s43`).
@@ -843,8 +816,7 @@ head's shortfall against k-means accounts for 1.45 of it, and the fall from one 
 for 13.5. The stack's low layer-0 agreement is mostly its width. The training makes a single head
 less repeatable than k-means, but makes a wide layer lose agreement more slowly than search does.
 
-**Setup** (`width_seeds.sh`, unit `width-seeds`, README's command; finished 10:56, 50 to 100
-minutes a run).
+**Setup** (`width_seeds.sh`, the README's command; 50 to 100 minutes a run).
 - `train_eps.py` with the recipe ladder's all-off flags: temperature 0.00015, lr 1e-5, σ_K 0.3,
   σ_F 0.1, p_drop 0.1, Adam's eps 1e-15, dictionary init scale 0.1, and the four auxiliary
   weights at 0. Each run trained 50,000 steps of 256 rows of `mc4_sent16` under `med837` weights.
@@ -894,11 +866,7 @@ Output: `data/out/sonar/width_seeds/l1_h{1,4,16,76}_s{42,43}/` (step 50,000) and
 `done.log`). The training logs are `experiments/logs/width_seeds_l1_h*_s*.log`.
 
 ```bash
-systemd-run --user --unit width-seeds -p Restart=on-failure -p RestartSec=120 \
-    --working-directory=$PWD \
-    -p StandardOutput=append:$PWD/experiments/logs/width_seeds.log \
-    -p StandardError=append:$PWD/experiments/logs/width_seeds.log \
-    /usr/bin/bash experiments/seed-stability/width_seeds.sh
+experiments/seed-stability/width_seeds.sh
 ```
 
 ## 2026-11-22: converged, FastICA's skewed sources reproduce and its symmetric ones are one shared scale

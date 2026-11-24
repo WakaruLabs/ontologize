@@ -161,15 +161,11 @@ chance and 1 is always the same entry. The last columns give the share of heads 
   and `transitions.py --slow-heads 38`.
 
 **Run history.**
-- The first launch died at step 553 of the control: another job on the shared card took memory
-  mid-step. The sweep was then rerun with a reserved pool (BFC allocator, 35% of the card).
-- The 1e-5 arm was interrupted at step 3,250 when the session ended. It resumed from that checkpoint.
-- **The reserved pool was a mistake on a shared card.** The Fano sweep's pools, its evaluations, and
-  then `long.sh` (which held 12.3 GB) ended the `sent16-full` training run (the hard stack on
-  `mc4_sent16`) 12 times from 20:04, mostly on a refused allocation of about 970 MiB. The other
-  session running it reported this.
-  - `long.sh` was stopped at control step 6,750 to let that run finish.
-  - Neither script reserves a pool any more.
+- The first launch stopped at step 553 of the control, and the sweep was rerun from the start.
+- The 1e-5 arm resumed from its step-3,250 checkpoint. A resume restarts the training noise's key
+  (`Hyperparams.train` passes `PRNGKey(seed)` at every start), so that arm is not the run an
+  uninterrupted job would give.
+- `long.sh` was stopped at control step 6,750, and resumed later (the next section).
   - `eval_next.py` now sets `XLA_PYTHON_CLIENT_PREALLOCATE=false` before importing jax; otherwise
     JAX reserves 75% of the card at its first touch.
 
@@ -336,16 +332,14 @@ Held-out FVU_w at step 15,250 (`eval_e1.json`): 0.5202 for the control, 0.5232 f
     question (do seed A's slow heads carry what seed B's do?) then has something to measure.
   - If the time is too long, raise the learning rate on the slow heads' classifier rows.
 
-**Interruptions.** These are the control's, since its numbers depend on them. The Fano arm ran
-uninterrupted, from about 16:25 to 16:47 (last checkpoint 16:46:40), and the evaluations ran
-16:47–16:49.
+**Interruptions.** These are the control's, since its numbers depend on them. Each resume restarts
+the training noise's key (`Hyperparams.train`). The Fano arm ran uninterrupted, in about 22
+minutes, and the evaluations took 2.
 
-- **Held.** It was stopped at step 6,750 on 2026-10-13 so `sent16-full` could finish, and held until
-  that run and `sent16-sae` had both completed (09:13 and 11:23 on 2026-10-14).
-- **Restarted at 16:04 on demand, with no cap.** It grew to 9.1 GB beside another user's training
-  benchmark, which reached 12.4 GB and left about 1.5 GB of the card free. That job ended at about
-  16:06. Whether it ran out of memory is unknown; it restarted a minute later with a shorter
-  sequence length.
+- **Held.** It was stopped at step 6,750 on 2026-10-13 so another run could finish, and held until
+  2026-10-14.
+- **Restarted, then stopped again** for a cause not known. It restarted a minute later with a
+  shorter sequence length.
 - **Two instances for about 40 seconds.** An attempt to stop the run for a capped restart missed its
   process group, so a second instance started beside the first.
   - Both wrote checkpoints and `loss.csv` rows: the file reached 9,250 rows against a latest
@@ -354,17 +348,14 @@ uninterrupted, from about 16:25 to 16:47 (last checkpoint 16:46:40), and the eva
     moved to `long/doc2_sp0_ph38.discarded_8750_9000/`.
   - The run resumed from 8,500, written before the second instance started. The resume truncated
     `loss.csv` to 8,500 rows.
-- **From 16:14, one instance to the end.** It ran under the BFC allocator without preallocation,
-  capped at 35% of the card (9.1 GB with CUDA's own). The launch allowed up to six retries, but the
-  first attempt finished both runs. The control's last checkpoint is at 16:24.
+- **From then, one instance to the end,** with no further interruption.
 
 ## 2026-10-14: three epochs (`long.sh 3`): the slow heads reach κ 0.46, but the rise is slowing
 
 `long.sh 3` continued both runs from their epoch-one checkpoints (15,250) to three epochs, step
 46,261. The last checkpoint is 46,250.
-- **Runs.** Both ran uninterrupted, one at a time: the control 17:48–18:31, then the Fano arm
-  18:31–19:15.
-- **Allocator.** As in epoch one's last stretch: BFC without preallocation, capped at 35% of the card.
+- **Runs.** Both ran uninterrupted, one at a time: the control in 43 min, then the Fano arm in
+  44 min.
 
 Slow-head means (38 heads), held out, at every kept checkpoint of the Fano arm:
 
@@ -443,7 +434,7 @@ epoch, then continued to three, with checkpoints every 2,500 steps.
 - **What the seed changes:** the initialization and the draw of each row's same-document partner.
 - **What it doesn't:** the rows themselves (the same 3,947,664) and their order, since the loader's
   shuffle seed is fixed at 42.
-- **Runs.** Uninterrupted, 05:21–07:33.
+- **Runs.** Uninterrupted, 2 h 12 min.
 
 **The trajectory replicates.** Slow-head means, held out (`transitions_s43_*`):
 

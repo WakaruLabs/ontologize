@@ -100,7 +100,7 @@ TF32, and hard codes are sensitive to the difference (`experiments/ste-arm/notes
   - **Requesting.** It goes through the queued-resources API and waits until capacity is free.
   - **Running.** The node then runs for `ONTO_HOURS`, up to 7 days, and is deleted when the time is
     up, so anything not yet synced is lost.
-  - **Where and how.** Flex-start v5e is offered in `us-west4-a`. It needs preemptible quota, and a
+  - **What it needs.** A zone that offers Flex-start for the chosen TPU, preemptible quota, and a
     gcloud recent enough to have `queued-resources create --provisioning-model`. SDK 491 (2024) lacks
     it, so run `gcloud components update`.
 - **`spot`:**
@@ -138,8 +138,8 @@ Each chip has 16 GiB of HBM.
 - **Parallel composite uploads are off.** They also need `storage.buckets.get`; without it they fail
   with a 403 after the small files have gone through, which looks like a half-working sync. So
   `restart.sh` turns them off. On a hand-made VM, do the same, or grant that permission.
-- **Put the bucket in the node's region.** Reads from a VM in the same region are free; downloads to
-  the laptop cost $0.12 per GiB.
+- **Put the bucket in the node's region,** so the VM reads it within the region rather than across
+  regions.
 
 ## Files
 

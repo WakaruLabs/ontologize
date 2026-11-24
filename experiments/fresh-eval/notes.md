@@ -2,8 +2,8 @@
 
 ## The fresh cache (2026-10-09)
 
-`encode_fresh.py --b 64 --out data/sonar_embeddings`, run as a systemd
-unit, wrote `data/sonar_embeddings/mc4_fresh.npy` (+ `.langs.npy`,
+`encode_fresh.py --b 64 --out data/sonar_embeddings` wrote
+`data/sonar_embeddings/mc4_fresh.npy` (+ `.langs.npy`,
 `.meta.json`): 131,072 rows, stream rows 3,974,400..4,105,472, encoded
 with mc4_4M's own source tags (`MC4_4M_TAGS`, recorded as `src_tags`)
 under `stopping_strategy="all_exhausted_without_replacement"`. The

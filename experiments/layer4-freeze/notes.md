@@ -95,8 +95,8 @@ reproduces the original's trajectory, the reported freeze stands.
 ### 2026-10-07: retrain with gain-shape off
 
 `--resid-gain 0 --const0 0`, otherwise as above
-(`data/out/sonar/hsic_check_nogain/hsic`). It crashed once on a GPU OOM at
-step 13,600 and resumed from that checkpoint (the batch stream continues;
+(`data/out/sonar/hsic_check_nogain/hsic`). It resumed once, from its
+step-13,600 checkpoint (the batch stream continues;
 the training RNG restarts from the seed, so noise draws after 13.6k differ
 from an uninterrupted run); it then ran to 93,150 without failing, final
 loss 7.8e-5, no late divergence. With gain-shape off the old and fixed
@@ -180,7 +180,7 @@ six-epoch retrain below reproduces the freeze itself.
 ### 2026-10-08: the biased retrain reproduces the freeze
 
 The same configuration for six epochs (93,150 steps, one uninterrupted
-run as a systemd unit; `data/out/sonar/hsic_check_biased_e6`),
+run; `data/out/sonar/hsic_check_biased_e6`),
 diagnosed at every checkpoint (`diag_fixed`; gain-shape off, so the old
 probe would read the same). Frozen heads per layer 0-4:
 

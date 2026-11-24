@@ -195,11 +195,9 @@ identical text for 99.2%; where they differ the two decodes share chrF2
 0.70, in sentences the decoder already garbles, and round-trip chrF2
 against the original is 0.6292 against 0.6291 (paired +0.0001 ± 0.0002).
 
-**Run.** The split started 2026-10-10 13:37 as the systemd unit
-`sent-split` (restart on failure; log `mc4_sent16.split.log`), at ~265
-documents/s. The encode is queued as the unit `sent-encode`
-(`encode_after_split.sh`: waits for the split to complete, then
-`encode --tf32`; restart on failure; log `mc4_sent16.encode.log`).
+**Run.** The split started 2026-10-10 (log `mc4_sent16.split.log`), at
+~265 documents/s. The encode is queued (`encode_after_split.sh`: waits for
+the split to complete, then `encode --tf32`; log `mc4_sent16.encode.log`).
 
 ## 2026-10-11: checks from the SaT reading (`scratch/literature/segment-any-text.md`)
 
@@ -255,8 +253,8 @@ as `mc4_sent16` for every document. Among chosen rows: 58.7% sentences,
 configs (`en-multi` included) were not.
 
 `mc4_sent16`'s split predates the marks, so they are backfilled from a
-re-split (`marks_backfill.sh`, the systemd unit `sent-marks`, started
-2026-10-11 08:02; log `mc4_sent16_marks.log`): `backfill_marks.py` checks the
+re-split (`marks_backfill.sh`, started 2026-10-11; log
+`mc4_sent16_marks.log`): `backfill_marks.py` checks the
 re-split chose the same sentences for every document, then writes
 `mc4_sent16.kind.npy`, swaps in the marked sentences file and adds the
 versions to the metadata. The embeddings are not touched. Tested on the
@@ -264,7 +262,7 @@ versions to the metadata. The embeddings are not touched. Tested on the
 
 ## 2026-10-12: what the cache looks like (`cachestats.py`)
 
-The marks backfill finished 2026-10-12 00:47. Outputs of `cachestats.py
+The marks backfill finished 2026-10-12, after 16 h 45 min. Outputs of `cachestats.py
 scan` and `report` are in `data/out/sonar/sentcache/`.
 
 **Rows.**
@@ -410,10 +408,12 @@ All six runs used the cache's first 12.8M rows and the shipped recipes:
 - **Direct k = 128:** the same, plus `--h 54 --k 128 --signed --direct`.
 
 The runs are in `data/out/sonar/sae_sent16/m5120_k32_*` and
-`data/out/sonar/sent16/ste_{h76_init01,k128_h54_direct}_*`. They trained as
-the unit `sent16-mask` from 2026-10-12 18:54 to 2026-10-13 02:08. The
-direct `_w837` run ran out of GPU memory at step 47,634 and resumed from
-its checkpoint at 47,500. Every other run finished in one attempt.
+`data/out/sonar/sent16/ste_{h76_init01,k128_h54_direct}_*`. They trained in
+7 h 14 min, 2026-10-12 to 10-13. The direct `_w837` run resumed from its
+checkpoint at 47,500. A resume restarts the training noise's key
+(`Hyperparams.train` passes `PRNGKey(seed)` at every start), so that run is
+not the one an uninterrupted job would give. Every other run finished in one
+attempt.
 
 `coordfvu.py --coord 837` scored them on the last 32,765 rows, the
 whole-document tail inside both trainers' holdouts, once under each
@@ -496,15 +496,14 @@ direct run's atoms.
 Three runs on the whole cache, all under `mse_weights_no837.npy`, with the
 shipped recipes:
 - the direct k = 128 stack and the hard stack, 2 epochs each (344,383 steps
-  of 256), unit `sent16-full`;
+  of 256);
 - the k32 SAE, 144,000 steps of 4,096 with block-shuffled batches
-  (`--block-rows 65536`), unit `sent16-sae`.
+  (`--block-rows 65536`).
 
-All three finished on 2026-10-14, after a host crash on 2026-10-13 and
-repeated GPU out-of-memory restarts caused by other jobs on the GPU. The
-hard stack resumed from step 80,250, because its step-80,500 checkpoint was
-zeroed by the crash; that checkpoint is in
-`data/out/sonar/sent16/corrupt/`.
+All three finished on 2026-10-14. The runs resumed from checkpoints several
+times, among them the hard stack from step 80,250. A stack's resume restarts
+its training noise's key (`Hyperparams.train`), so the stacks are not the runs
+an uninterrupted job would give.
 
 `coordfvu.py --coord 837` scored them on the CPU on the last 32,765 rows
 (`data/out/sonar/coordfvu_sent16_e2/`). FVU is over the 1023 free
@@ -555,12 +554,12 @@ The two Ontologizer runs of the 2026-10-22 section again, with
 cache's MSE is smaller than `mc4_4M`'s. Everything else is the same: the
 masked weights, 2 epochs, and the direct k = 128 stack before the hard
 stack.
-- **Where:** unit `sent16-shm`, 2026-10-23 01:07 to 2026-10-24 03:48; runs
+- **Where:** 26 h 41 min of wall time, 2026-10-23 to 10-24; runs
   `data/out/sonar/sent16/*_no837_e2_shm2e-6`.
-- **Interruptions:** both resumed from their own checkpoints.
-  - The home volume filled at step 177,500 of the direct run, so every save
-    after it failed. Training resumed once space was freed.
-  - Another job's memory on the GPU caused one out-of-memory restart.
+- **Resumes:** both resumed from their own checkpoints, the direct run from
+  step 177,500. A resume restarts the training noise's key
+  (`Hyperparams.train`), so neither is the run an uninterrupted job would
+  give.
 
 `coordfvu.py --coord 837` scored both on the CPU, on the same 32,765 rows
 under the same masked weights as before
@@ -691,8 +690,8 @@ with `sae_conv`'s runs at the same step:
 | 3e-5 (unscaled) | 2.3, 1.021 | — |
 
 The rescaled weights land within about 25% of `mc4_4M`'s sparsity. The
-unscaled one leaves almost nothing active. `sae_rate_runs.sh` (unit
-`sent16-rate`, started 2026-10-24) trains:
+unscaled one leaves almost nothing active. `sae_rate_runs.sh` (started
+2026-10-24) trains:
 - the five rescaled weights, 1.39e-7 to 1.39e-5, on the whole cache for
   144,300 steps;
 - the k32 SAE again, at the ladder's lr of 4e-4, for 144,300 steps
@@ -780,23 +779,20 @@ ran on the head of the cache, with the 2e-6 run's flags.
   over the first 100 steps and 18% below it by step 1,000. No pilot produced
   a NaN.
 
-Started 2026-10-24, both units at once (the Ontologizer trainer claims half
+Started 2026-10-24, both at once (the Ontologizer trainer claims half
 the GPU's memory, and the SAEs allocate as they go):
-- unit `sent16-eps`: `full_runs.sh 2e-6 1e-15`, writing
+- `full_runs.sh 2e-6 1e-15`, writing
   `data/out/sonar/sent16/*_no837_e2_shm2e-6_eps1e-15`;
-- unit `sent16-rate`: `sae_rate_runs.sh 1e-15`, writing
+- `sae_rate_runs.sh 1e-15`, writing
   `data/out/sonar/sae_sent16/*_eps1e-15`. The k32 trains first, then the
   L1 sweep, then k160.
 
 ## 2026-10-25: the reruns at ε = 1e-15
 
-- **Where:** `sent16-rate` finished 2026-10-24 22:38 and `sent16-eps`
-  2026-10-25 17:43.
-- **Interruptions:** each Ontologizer run stopped once with a GPU
-  out-of-memory error at 12:30, the direct run on 2026-10-24 and the hard
-  stack on 2026-10-25. Both resumed from their last checkpoint. The direct
-  run's restart waited about ten hours for an idle GPU, until the SAE queue
-  had finished.
+- **Where:** the SAE runs finished 2026-10-24 and the Ontologizer runs
+  2026-10-25.
+- **Resumes:** each Ontologizer run resumed once from its last checkpoint,
+  which restarts its training noise's key (`Hyperparams.train`).
 
 ### The throttle
 
@@ -1033,11 +1029,11 @@ rather than the cache's.
   in `mse_weights_no837.npy`. 837 holds 0.09% of the weights' sum, against
   82% under the cache's own. `mask_median.json` records the old and new
   weight.
-- **The runs.** Unit `sent16-med`, started 2026-10-25 21:37: the direct
+- **The runs,** started 2026-10-25: the direct
   k = 128 stack, then the hard stack, with the ε 1e-15 runs' flags
   (`s_hm` 2e-6, 2 epochs), writing
   `data/out/sonar/sent16/*_med837_e2_shm2e-6_eps1e-15`. It waits for an
-  idle GPU, which another user's job held at the start.
+  idle GPU.
 - **Unchanged.** The SAEs stay under the masked weights. At ε 1e-15 they
   keep 837's error within 3× the median coordinate's without a weight.
 - **To score.** `coordfvu.py` under the masked weights, so the FVU stays
@@ -1046,10 +1042,11 @@ rather than the cache's.
 
 ## 2026-10-28: the median weight holds 837, and the direct run still declines
 
-- **Where:** `sent16-med` finished 2026-10-27 17:55.
-- **Interruption:** the hard stack stopped once, with a GPU out-of-memory
-  error at step 235,452 (2026-10-27 06:33), and resumed from its last
-  checkpoint.
+- **Where:** the runs finished 2026-10-27, after 44 h 18 min of wall time,
+  including the wait for the GPU.
+- **Resume:** the hard stack resumed once, from its last checkpoint before
+  step 235,452, which restarts its training noise's key
+  (`Hyperparams.train`).
 - **Scoring:** on the CPU, with the 2026-10-25 commands, outputs and logs
   under `*_sent16_med837`:
   - `coordfvu.py`, on the same 32,765 rows under the masked weights;

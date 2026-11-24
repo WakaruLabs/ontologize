@@ -21,7 +21,7 @@ tail's 32,765 rows over the 1023 free coordinates:
 - **A layer's bits are worth less the later it comes:** 4.7, 3.1, 2.2 and 1.6 ×10⁻⁴ FVU per
   realized bit (float) for layers 2 to 5. The last value sets the penalty's scale (README.md).
 
-**Queued** as unit `rate-penalty`: `arms.sh`, with `--s-hm=-2e-8`, then `-8e-8`, then `-5e-9`.
+**Queued:** `arms.sh`, with `--s-hm=-2e-8`, then `-8e-8`, then `-5e-9`.
 A CPU smoke run of 60 steps at `-2e-8` logged `s_Hm` −2e-08 with a finite loss.
 
 ## 2026-11-18: the arms beat the control's head-drop hull, by 1–5% of the rate
@@ -32,8 +32,7 @@ bits than the control does by dropping heads. The saving is 21 bits of 1,717 at 
 the control. The gain is outside the seed spread but small, and the SAEs stay far ahead at the
 same rates.
 
-**Training.** All three arms ran 50,000 steps with no restart (the unit's Result was
-success, NRestarts 0). Over each run's last 1,000 rows:
+**Training.** All three arms ran 50,000 steps with no restart. Over each run's last 1,000 rows:
 
 | run | training MSE | `KL_m` |
 |---|---|---|

@@ -7,8 +7,8 @@ and symmetric, seeds 42 and 43 (`data/out/sonar/slow-order/
 {ord,sym}_dec1_sp0.001_ph38_s{42,43}`), 15,420 steps of 256 pairs. The
 baseline is the long Fano pair
 (`data/out/sonar/next-sentence/long/doc2_fano_sp1e-3_ph38{,_s43}`), which
-differs in `--dec` alone. Ordered seed 42 and symmetric seed 43 were
-interrupted by a machine crash and resumed from steps 7,750 and 8,000;
+differs in `--dec` alone. Ordered seed 42 and symmetric seed 43 resumed
+from steps 7,750 and 8,000;
 each lands on its uninterrupted sibling's figures below. Everything is
 `order.py --step 15000` on the cache's last 32,768 rows
 (`eval/order_{fano,sym,ord}.json`); κ is on same-document pairs two
@@ -186,8 +186,8 @@ redundant.
 
 **Runs.** `train_order.py --dec 10` and `--dec 100`, ordered, seeds 42
 and 43, one epoch (`ord_dec{10,100}_sp0.001_ph38_s{42,43}`). The
-`--dec 100` runs were interrupted near step 12,000 by a second machine
-crash and resumed from step 11,500, one seed at a time. `order.py --step
+`--dec 100` runs stopped near step 12,000 and resumed from step 11,500,
+one seed at a time. `order.py --step
 15000` as before (`eval/order_ord_dec{10,100}.json`), and on the pair
 objective's control, which has no pair term
 (`long/doc2_sp0_ph38{,_s43}`, `eval/order_control.json`), as the

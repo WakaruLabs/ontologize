@@ -32,7 +32,7 @@ as the same seed and schedule should.
 
 ## 2026-10-23: the converged runs
 
-All three ran the 144,300 steps without a restart and finished at 00:56.
+All three ran the 144,300 steps without a restart.
 `pareto.py` scored them on the cache tail, on the CPU, beside TopK-32, its
 seed-43 replica and the converged L1 sweep. The table is
 `data/out/sonar/pareto/pareto_bsf/pareto.csv`, which also has the default

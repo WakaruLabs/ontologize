@@ -16,7 +16,7 @@
   - `log.jsonl` records `sd_F` 0 and `s_L1F` 0. One checkpoint remained,
     1.1 GB.
 
-**The SAE arms.** Unit `sae-noise` was started 2026-10-25 22:51. It
+**The SAE arms.** `sae_noise_runs.sh` was started 2026-10-25. It
 waits for `sent16-med` to finish, then for an idle GPU, and writes
 `data/out/sonar/sae_sent16/m5120_k32_lr4e-4_no837_whole_eps1e-15_{sdpre0.3,pdrop0.1,sdout0.1,allnoise,s43}`.
 
@@ -24,13 +24,12 @@ waits for `sent16-med` to finish, then for an idle GPU, and writes
 - `ladder.sh` takes the MSE weights, which are chosen once `sent16-med`
   is scored: `med837` if the median weight stops the drift without
   costing FVU over the free coordinates, else `no837`.
-- The 20 arms need about 17 GB. 52 GB was free at the start, and
-  `sent16-med` will take about 38 GB of it.
+- The 20 arms need about 17 GB.
 
 ## 2026-10-28: the SAE noises do not move the k32
 
-- **Where:** `sae-noise` finished 2026-10-28 02:16, with no errors or NaN
-  in any arm's log.
+- **Where:** the SAE arms finished 2026-10-28, with no errors or NaN in any
+  arm's log.
 - **Scoring**, on the CPU: `coordfvu.py`, on the 32,765 tail rows under
   the masked weights (`data/out/sonar/coordfvu_sent16_saenoise/`), and
   `quantrate.py` (`data/out/sonar/quantrate_sent16_med837_saenoise/`, with
@@ -71,18 +70,18 @@ coordinates in both architectures:
 - direct 0.5685 against 0.6538 (`experiments/sentence-split/notes.md`,
   2026-10-28).
 
-By the rule set at queuing, the arms train under it. Unit `recipe-ladder`
-started 2026-10-28 22:15 with `ladder.sh med837`, with 332 GB of disk
-free.
+By the rule set at queuing, the arms train under it. `ladder.sh med837`
+started 2026-10-28.
 
 ## 2026-10-30: two auxiliary weights cost most of the fit
 
-- **Where:** `recipe-ladder` finished 2026-10-30 05:29. All 20 arms ran
-  50,000 steps, with no NaN in any `loss.csv`, and each kept only its final
-  checkpoint (557 MB hard stack, 1.1 GB direct).
-  - The hard stack's `nopdrop` arm hit a GPU out-of-memory error at step
-    19,734 (2026-10-29 12:30), as `sent16-med` did. The unit restarted it,
-    and it resumed from its rolling save at step 19,500.
+- **Where:** the queue finished 2026-10-30. All 20 arms ran 50,000 steps,
+  with no NaN in any `loss.csv`, and each kept only its final checkpoint
+  (557 MB hard stack, 1.1 GB direct).
+  - The hard stack's `nopdrop` arm resumed from its rolling save at step
+    19,500. A resume restarts the training noise's key (`Hyperparams.train`
+    passes `PRNGKey(seed)` at every start), so that arm is not the run an
+    uninterrupted job would give.
 - **Scoring**, on the CPU, on the 32,765 tail rows:
   - `coordfvu.py --coord 837` under the masked weights
     (`data/out/sonar/coordfvu_recipe_ladder/`);
@@ -227,8 +226,8 @@ curve never reaches that FVU (the k32's floor is 0.418).
 
 ## 2026-10-30: queued, both weights off and both rescaled
 
-- **What.** Unit `recipe-ladder` was started again 2026-10-30 22:24 with
-  `ladder.sh med837 nobcos_nosupp bcos2e-7_supp2e-8 bcos2e-7 supp2e-8`.
+- **What.** `ladder.sh med837 nobcos_nosupp bcos2e-7_supp2e-8 bcos2e-7 supp2e-8`
+  was started 2026-10-30.
   Each arm runs in both architectures, so 8 runs, about 12 GPU-hours at the
   first queue's pace.
 - **Why these.**
@@ -237,12 +236,12 @@ curve never reaches that FVU (the k32's floor is 0.418).
     Against the control and the matching off arm, they tell a term that
     costs fit at any weight from one that is only too heavy for this
     cache's loss scale.
-- **Disk.** 283 GB free at the start; the 8 runs take about 7 GB.
+- **Disk.** The 8 runs take about 7 GB.
 
 ## 2026-11-02: both weights off is best; `s_bcossim` costs even rescaled
 
-- **Where:** the queue ran 2026-10-30 22:24 to 2026-10-31 10:10, with no
-  restarts. All 8 runs reached 50,000 steps with no NaN, and each
+- **Where:** the queue ran 11 h 46 min, 2026-10-30 to 10-31. All 8 runs
+  reached 50,000 steps with no NaN, and each
   `log.jsonl` records the intended `s_bcossim` and `s_support`.
 - **Scoring**, as in the 2026-10-30 section. The outputs:
   - `data/out/sonar/coordfvu_recipe_ladder2/`;
@@ -251,10 +250,6 @@ curve never reaches that FVU (the k32's floor is 0.418).
   - `quantrate_recipe_ladder2/`.
 
   The logs are `experiments/logs/*_recipe_ladder2.log`.
-- **The first `quantrate` run stopped partway** (2026-10-31 20:15), with no
-  out-of-memory kill in the journal. It was rerun from the start as
-  systemd unit `score-ladder2` (2026-11-02), and its log holds both
-  attempts.
 - The control and single-removal rows below are the 2026-10-30 section's.
 
 ### Held-out FVU over the 1023 free coordinates
@@ -361,20 +356,18 @@ classifier / the dictionary:
 
 ## 2026-11-02: queued, `s_L1F` off as well
 
-Unit `recipe-ladder` was started 2026-11-02 15:56 with
-`ladder.sh med837 nobcos_nosupp_nol1f`: `s_bcossim`, `s_support` and
+`ladder.sh med837 nobcos_nosupp_nol1f` was started 2026-11-02:
+`s_bcossim`, `s_support` and
 `s_L1F` all at 0, in both architectures, against `nobcos_nosupp`. The
-noises and `s_Hm` 2e-6 are as in the control. Two runs, about 3 GPU-hours;
-277 GB free at the start.
+noises and `s_Hm` 2e-6 are as in the control. Two runs, about 3 GPU-hours.
 
 ## 2026-11-03: with `s_L1F` off as well, the direct stack's FVU is below the k160 SAE's
 
-- **Where:** the queue ran 2026-11-02 15:56 to 18:36, with no restarts.
-  Both runs reached 50,000 steps with no NaN in the live columns. Each
+- **Where:** the queue ran 2 h 40 min on 2026-11-02. Both runs reached 50,000 steps with no NaN in the live columns. Each
   `log.jsonl` records `s_bcossim`, `s_support` and `s_L1F` at 0, `s_Hm` at
   2e-6 and ε at 1e-15.
-- **Scoring**, as in the 2026-10-30 section, ran as systemd unit
-  `score-ladder3` on 2026-11-03. The outputs:
+- **Scoring**, as in the 2026-10-30 section, ran on 2026-11-03. The
+  outputs:
   - `data/out/sonar/coordfvu_recipe_ladder3/`;
   - `coordtrace/<arm>/`;
   - `auxpull_recipe_ladder/`;
@@ -498,33 +491,31 @@ the classifier, relative to the MSE's, is:
 
 ## 2026-11-03: queued, `s_Hm` off as well
 
-Unit `recipe-ladder` was started 2026-11-03 03:13 with
-`ladder.sh med837 nobcos_nosupp_nol1f_nohm`. With `s_bcossim`, `s_support`,
+`ladder.sh med837 nobcos_nosupp_nol1f_nohm` was started 2026-11-03. With
+`s_bcossim`, `s_support`,
 `s_L1F` and `s_Hm` all at 0, no auxiliary weight is left, and the MSE is
 the whole loss. The three training noises are as in the control. The arm
 runs in both architectures, against `nobcos_nosupp_nol1f`: two runs, about
-2.5 GPU-hours. 274 GB was free at the start.
+2.5 GPU-hours.
 
 ## 2026-11-04: with no auxiliary weight, both stacks' FVUs are below the k160 SAE's
 
-- **Where:** the queue ran 2026-11-03 03:13 to 06:07. Both runs reached
+- **Where:** the queue ran 2 h 54 min on 2026-11-03. Both runs reached
   50,000 steps with no NaN in the live columns. Each `log.jsonl` records
   all four weights at 0, and `loss` equals `MSE` on every row of `loss.csv`.
-- **The hard stack's run stopped once, at step 7,681, and resumed.** Its log
-  has no traceback, and the journal has no entry for it, so the cause is
-  not known. It resumed from the rolling save at 7,500, and its loss at
-  step 7,681 matches the first attempt's (3.08e-6). The direct run went
-  straight through.
-- **Scoring**, as in the 2026-10-30 section, ran as systemd unit
-  `score-ladder4` on 2026-11-04. The outputs:
+- **The hard stack's run resumed once,** from the rolling save at 7,500. Its
+  loss at step 7,681, where it had stopped, matches the first attempt's
+  (3.08e-6). From the resume its noise draws restart (the 2026-10-30
+  section), so it is not the run an uninterrupted job would give. The direct
+  run went straight through.
+- **Scoring**, as in the 2026-10-30 section, ran on 2026-11-04. The
+  outputs:
   - `data/out/sonar/coordfvu_recipe_ladder4/`;
   - `coordtrace/<arm>/`;
   - `auxpull_recipe_ladder/`;
   - `quantrate_recipe_ladder4/`.
 
   The logs are `experiments/logs/*_recipe_ladder4.log`.
-- **A manual restart of the machine cut off the first `quantrate` run.** It
-  was rerun alone, from the start, and its log holds both attempts.
 - **`auxpull.py` has no pull to report:** with every weight at 0, each
   term's applied pull is 0.
 - The other rows below come from the earlier sections.
@@ -643,26 +634,24 @@ the L1 1.39e-6.
 
 ## 2026-11-04: queued, a seed replica and a k256 SAE
 
-Three systemd units, in series, so nothing shares the GPU:
-- **`recipe-ladder`:** `ladder.sh med837 nobcos_nosupp_nol1f_nohm_s43`, the
+Three jobs, in series, so nothing shares the GPU:
+- **The replica:** `ladder.sh med837 nobcos_nosupp_nol1f_nohm_s43`, the
   all-four-off arm at seed 43 in both architectures. Two runs, about 2.5
   GPU-hours. It puts a spread under this arm's comparisons, which so far
   lean on the controls' seed pairs.
-- **`sae-k256`:** `sae_k256_run.sh`, the k160 with `--topk 256`, once
-  `recipe-ladder` has finished. A 30-step smoke run went at 13.4 steps per
-  second, so about 7 GPU-hours.
-- **`score-ladder5`:** `coordfvu.py` and `coordtrace.py` on the replicas,
-  then `quantrate.py` on both seeds against the k32, k160, k256, L1 1.39e-6
-  and L1 4.64e-7 SAEs. It waits for the two units above.
-
-343 GB was free at the start.
+- **The k256 SAE:** `sae_k256_run.sh`, the k160 with `--topk 256`, once the
+  replica has finished. A 30-step smoke run went at 13.4 steps per second,
+  so about 7 GPU-hours.
+- **Scoring:** `coordfvu.py` and `coordtrace.py` on the replicas, then
+  `quantrate.py` on both seeds against the k32, k160, k256, L1 1.39e-6 and
+  L1 4.64e-7 SAEs, after the two jobs above.
 
 ## 2026-11-04: the seeds agree, and the k256 SAE leads the stacks at 1,900 bits
 
-- **Where:** the three units ran 2026-11-04 01:59 to 12:18.
-  - Both replicas reached 50,000 steps with no resume and no NaN in the live
-    columns, and `loss` equals `MSE` on every row.
-  - The k256 ran 04:49 to 11:28 and reached 336,000 steps, with 47 of its
+- **Where:** the three jobs ran 10 h 19 min on 2026-11-04.
+  - Both replicas reached 50,000 steps with no NaN in the live columns, and
+    `loss` equals `MSE` on every row.
+  - The k256 ran 6 h 39 min and reached 336,000 steps, with 47 of its
     11,264 latents dead.
 - **The outputs:**
   - `data/out/sonar/coordfvu_recipe_ladder5/`;
@@ -926,15 +915,11 @@ JAX_PLATFORMS=cpu uv run python experiments/rate-penalty/ratecurve.py \
 The test the noise-share section leaves open: does training noise keep the all-off arm's upper
 heads from reproducing? `ladder.sh` has two new arms, `nobcos_nosupp_nol1f_nohm_nonoise` and
 its `_s43`, which are the all-off arm with σ_K, σ_F and p_drop at 0; `ARCHS` limits a queue to
-named architectures. Unit `recipe-ladder-nonoise` trains both in the hard stack only (about 2.5
-GPU-hours), from 14:56, once the GPU is idle:
+named architectures. The queue trains both in the hard stack only (about 2.5 GPU-hours), once the
+GPU is idle:
 
 ```bash
-systemd-run --user --unit recipe-ladder-nonoise -p Restart=on-failure -p RestartSec=120 \
-    --working-directory=$PWD --setenv=ARCHS=ste_h76_init01 \
-    -p StandardOutput=append:$PWD/experiments/logs/recipe_ladder.log \
-    -p StandardError=append:$PWD/experiments/logs/recipe_ladder.log \
-    /usr/bin/bash experiments/recipe-ladder/ladder.sh med837 \
+ARCHS=ste_h76_init01 experiments/recipe-ladder/ladder.sh med837 \
     nobcos_nosupp_nol1f_nohm_nonoise nobcos_nosupp_nol1f_nohm_nonoise_s43
 ```
 
@@ -953,8 +938,8 @@ differences of 0.0002–0.0005. So the hypothesis the noise-share section left o
 Noise makes up most of the upper layers' input in training, and removing it leaves their seed
 agreement where it was.
 
-**Where.** Unit `recipe-ladder-nonoise` trained both arms 14:56–17:33, 50,000 steps each in about
-1 h 13 min, with `loss` equal to `MSE`. Outputs in `data/out/sonar/recipe_ladder/nonoise_seeds/`,
+**Where.** Both arms trained in 2 h 37 min, 50,000 steps each in about 1 h 13 min, with `loss`
+equal to `MSE`. Outputs in `data/out/sonar/recipe_ladder/nonoise_seeds/`,
 one log per script and pair. Rows from `mc4_sent16`'s tail:
 - `partition.py`, 32,768;
 - `headcontrib.py`, 8,192 under the `med837` weights (centered contributions);
