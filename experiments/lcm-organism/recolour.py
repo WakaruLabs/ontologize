@@ -45,6 +45,14 @@ over the fit rows. The rows' covariance, and so their weights, are what they
 are without it; only the mean's direction changes. A cache recoloured to its
 own spectrum about its mean is weightframe.py's rows, c sqrt(w) * y, with
 everything but the mean rotated.
+
+`--center` maps the same variation and leaves the mean out:
+
+    y = c R diag(s) U^T (sqrt(w_s) * x - m).
+
+A cache recoloured to its own spectrum this way is weightframe.py's rows
+written with its `--center`, rotated, up to where each fits the mean (the fit
+rows here, the whole prefix there).
 """
 import argparse
 import json
@@ -120,7 +128,11 @@ def main(argv=None) -> Path:
     p.add_argument("--chunk", type=int, default=65536)
     p.add_argument("--about-mean", action="store_true",
                    help="map the rows about the source's mean and keep the mean on its own axes")
+    p.add_argument("--center", action="store_true",
+                   help="map the rows about the source's mean and leave the mean out")
     cfg = p.parse_args(argv)
+    if cfg.about_mean and cfg.center:
+        raise SystemExit("--about-mean keeps the mean and --center drops it; give one")
     resolve = lambda s: Path(s) if Path(s).is_absolute() else ROOT / s  # noqa: E731
     src, src_w = resolve(cfg.source), resolve(cfg.source_weights)
     tgt = resolve(cfg.target)
@@ -163,12 +175,13 @@ def main(argv=None) -> Path:
     C_s, _, _ = moments(x_s, w_s, lab_s, fit, cfg.min_rows)
     C_t, _, _ = moments(x_t, w_t, lab_t, file_rows(fit, mapping), cfg.min_rows)
     A, info = recolour_map(C_s, C_t, cfg.seed)
-    # the offset each mapped row takes: c m - A m about the mean, else none
+    # the offset each mapped row takes: c m - A m about the mean, -A m centered, else none
     shift = np.zeros(A.shape[0])
-    if cfg.about_mean:
+    if cfg.about_mean or cfg.center:
         m = weighted_mean(x_s, w_s, fit)
-        shift = info["scale"] * m - A @ m
+        shift = (info["scale"] * m if cfg.about_mean else 0.0) - A @ m
     info["about_mean"] = bool(cfg.about_mean)
+    info["center"] = bool(cfg.center)
     print(f"map: {json.dumps(info)}", flush=True)
 
     A32 = A.T.astype(np.float32)

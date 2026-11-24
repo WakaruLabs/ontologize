@@ -54,6 +54,11 @@ Each map is fitted on the prefix alone, so the held-out rows inform none of it.
 `--gaussianize` applies before the block's map, whose fit sees the
 Gaussianized values.
 
+`--center` subtracts the mapped rows' mean over the prefix as the last step,
+so each row keeps its variation about the mean and loses the mean. The other
+maps are affine, so the output's covariance, and so its weights, are what they
+are without it. recolour.py's `--center` writes these rows rotated.
+
 A rotated block's coordinates no longer have even variances, so the
 output's own inverse-variance weights would change the loss along with the
 basis. `--weights-like NPY` takes the weights of another cache laid out
@@ -183,6 +188,8 @@ def main(argv=None) -> Path:
                         "their own mean and standard deviation, fitted on the prefix")
     p.add_argument("--weights-like", default=None, metavar="NPY",
                    help="a cache whose loss weights the output takes, in place of its own")
+    p.add_argument("--center", action="store_true",
+                   help="subtract the mapped rows' mean over the prefix")
     p.add_argument("--out", default="data/activations/lcm-organism/lcm_readout_x_wf_b4.npy")
     p.add_argument("--chunk", type=int, default=65536)
     cfg = p.parse_args(argv)
@@ -255,12 +262,8 @@ def main(argv=None) -> Path:
                 raise SystemExit(f"{cfg.weights_like}'s weights differ across the block, so its "
                                  "loss would change with the block's map")
 
-    part = dst.with_name(dst.name + ".partial")
-    out = np.lib.format.open_memmap(part, mode="w+", dtype=np.float16, shape=(m, d))
-    conv = {"max_abs": 0.0, "subnormal": 0, "to_zero": 0, "nonfinite": 0}
-    s1, s2 = np.zeros(d), np.zeros(d)
-    for lo in range(0, m, cfg.chunk):
-        hi = min(lo + cfg.chunk, m)
+    def frame(lo: int, hi: int) -> Float[np.ndarray, "r d"]:
+        """Rows lo..hi mapped, before any centering."""
         xs = np.asarray(x[lo:hi], np.float32)
         for j, fit in fits.items():
             xs[:, j] = gaussianize(xs[:, j], fit)
@@ -271,7 +274,22 @@ def main(argv=None) -> Path:
             y32[:, whiten] = (y32[:, whiten] - mu) @ W + mu
         if R is not None:
             y32[:, rot] = y32[:, rot] @ R
-        y16, st = to_f16(y32)
+        return y32
+
+    offset = np.zeros(d)
+    if cfg.center:
+        for lo in range(0, P, cfg.chunk):
+            offset += frame(lo, min(lo + cfg.chunk, P)).sum(0, dtype=np.float64)
+        offset /= P
+    offset32 = offset.astype(np.float32)
+
+    part = dst.with_name(dst.name + ".partial")
+    out = np.lib.format.open_memmap(part, mode="w+", dtype=np.float16, shape=(m, d))
+    conv = {"max_abs": 0.0, "subnormal": 0, "to_zero": 0, "nonfinite": 0}
+    s1, s2 = np.zeros(d), np.zeros(d)
+    for lo in range(0, m, cfg.chunk):
+        hi = min(lo + cfg.chunk, m)
+        y16, st = to_f16(frame(lo, hi) - offset32)
         conv["max_abs"] = max(conv["max_abs"], st["max_abs"])
         for k in ("subnormal", "to_zero", "nonfinite"):
             conv[k] += st[k]
@@ -321,7 +339,9 @@ def main(argv=None) -> Path:
                       "block_spectrum": (None if lam is None
                                          else [float(v) for v in lam / lam.mean()]),
                       "gaussianize": gauss,
-                      "weights_like": Path(cfg.weights_like).name if cfg.weights_like else None},
+                      "weights_like": Path(cfg.weights_like).name if cfg.weights_like else None,
+                      "center": bool(cfg.center),
+                      "center_offset_norm": float(np.linalg.norm(offset))},
             "mse_weights": {"rows": P, "live": int(live.sum()), "span": span},
             "mse_weights_matched_scale": matched}
     side(".meta.json").write_text(json.dumps(meta, indent=2) + "\n")

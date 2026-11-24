@@ -673,6 +673,47 @@ def test_recolouring_about_the_mean_rotates_everything_but_the_mean(tmp_path):
     assert meta("mu")["scale"] == meta("rot")["scale"]
 
 
+def test_centering_drops_the_mean_and_keeps_the_variation_and_the_weights(tmp_path):
+    import weightframe
+    _, _, tgt, P, _, _, _ = planted_harvest(tmp_path)
+    w = harvest_lcm.inverse_variance(np.load(tgt), P)
+    np.save(tmp_path / "w.npy", w.astype(np.float32))
+    out = tmp_path / "out"
+    out.mkdir()
+    common = ["--source", str(tgt), "--source-weights", str(tmp_path / "w.npy"), "--target",
+              str(tgt), "--target-weights", str(tmp_path / "w.npy"), "--min-rows", "10"]
+    recolour.main([*common, "--out", str(out / "rot.npy")])
+    recolour.main([*common, "--center", "--out", str(out / "rotc.npy")])
+    frame = ["--source", str(tgt), "--source-weights", str(tmp_path / "w.npy"),
+             "--scale-like", str(out / "rot.npy"), "--chunk", "50"]
+    weightframe.main([*frame, "--out", str(out / "wf.npy")])
+    weightframe.main([*frame, "--center", "--out", str(out / "wfc.npy")])
+    rot, rotc, wf, wfc = (np.load(out / f"{k}.npy").astype(np.float64)
+                          for k in ("rot", "rotc", "wf", "wfc"))
+    assert np.linalg.norm(wf[:P].mean(0)) > 0.5 * np.sqrt(wf.shape[1])
+    # centered, each cache is its own rows moved by one offset, to a prefix mean of zero (the
+    # fit rows here are the whole prefix)
+    for c, u in ((wfc, wf), (rotc, rot)):
+        step = c - u
+        np.testing.assert_allclose(step, np.broadcast_to(step.mean(0), step.shape), atol=2e-2)
+        np.testing.assert_allclose(c[:P].mean(0), 0, atol=2e-2)
+    # the centered rotated rows are the centered unrotated rows rotated, with no offset
+    M = np.linalg.lstsq(wfc, rotc, rcond=None)[0]
+    assert ((wfc @ M - rotc) ** 2).sum() < 1e-4 * (rotc ** 2).sum()
+    np.testing.assert_allclose(M @ M.T, np.eye(wf.shape[1]), atol=1e-2)
+    # the covariance and so the weights are the uncentered rows'
+    for c, u in (("wfc", "wf"), ("rotc", "rot")):
+        for suf in (".mse_weights.npy", ".mse_weights_matched.npy"):
+            np.testing.assert_allclose(np.load(out / f"{c}{suf}"), np.load(out / f"{u}{suf}"),
+                                       rtol=1e-2)
+    meta = lambda k: json.loads((out / f"{k}.meta.json").read_text())  # noqa: E731
+    assert meta("rotc")["map"]["center"] and not meta("rotc")["map"]["about_mean"]
+    assert not meta("rot")["map"]["center"]
+    assert meta("wfc")["frame"]["center"] and not meta("wf")["frame"]["center"]
+    with pytest.raises(SystemExit):
+        recolour.main([*common, "--about-mean", "--center", "--out", str(out / "both.npy")])
+
+
 def test_the_weighted_frame_rotates_all_but_the_coordinates_it_keeps(tmp_path):
     import weightframe
     _, _, tgt, P, _, _, _ = planted_harvest(tmp_path)
