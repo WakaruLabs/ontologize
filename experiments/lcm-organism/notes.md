@@ -160,6 +160,9 @@ whitened 0.9697 / 0.9697 (0.7211, 1.067), against 0.9660 / 0.9661 with the group
     |mean|/SD has a median of 0.84 (largest 9.28), against 0.23 over the whole cache, and the
     group's mean is 94% of its second moment. The full rotation leaves no coordinate more than
     about 1% of the mean's norm².
+  - **Whose idea.** Lemma, a Codex agent, named this concentration (72.7% of the squared mean) as
+    the alternative to the group's correlations on 2026-11-23, after the group-kept and 19-others
+    arms.
   - **Why it would reach the codes.** The recipe has no encoder to subtract a mean (`sonar.py`'s
     `encoded = False`), and gain-shape normalizes rows uncentered. So where a large shared offset
     lies relative to the axes reaches the classifier.
