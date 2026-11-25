@@ -1,5 +1,64 @@
 # lcm-organism: notes
 
+## 2026-11-25, evening: the LCM's states and SONAR's rows centered, built and queued
+
+**In short.**
+- **Why.** Centered, the readout from x_n alone passes the uncentered LCM on all heads. Within a
+  language it is still 0.0305 below it (the entry below). That gap closed is read against uncentered
+  references. These two arms center the references too, so that the readout, the LCM and SONAR can
+  be compared all centered, each in the frame its loss weighs.
+- **The arms** are block 4's states (`lcm_wfc`) and SONAR's rows (`sonar_wfc`). Each is rescaled to
+  that frame, less its mean over the prefix, as the centered readout's unrotated arm is.
+- **What they answer.**
+  - The gap closed among centered arms: the readout's excess over SONAR's, over the LCM's, all
+    three centered.
+  - What centering does to the LCM: against the rescaled LCM (`lcm_wf`), which differs from it only
+    by the mean.
+  - What centering does to SONAR is less clean. No rescaled, uncentered SONAR arm exists, so against
+    SONAR the change mixes centering with rescaling. Rescaling cost the LCM 0.0027 / 0.0029 of
+    excess NMI.
+- **The means.** In that frame SONAR's mean is 23.5% of a row's squared norm, against the LCM's
+  14.7% and the readout's 28%.
+
+**The arms.** m is the mean of c √w ⊙ x over the prefix rows.
+- **The LCM centered** (`weightframe.py --center`, with `lcm_b4` as source): y = c √w ⊙ x − m. Here
+  w is the LCM's matched weights and c = 377.53, the rotated LCM's.
+- **SONAR's rows laid out as the harvest** (`ctxmean.py --weight 0`, with its defaults: the SONAR
+  cache's float16 copy, the SONAR arm's no837 weights, `lcm_b4`'s rows). These rows are only the
+  next arm's source.
+- **SONAR centered** (`weightframe.py --center`, with that layout as source): y = c √w ⊙ x − m.
+  Here w is no837's, and c = 376.35 comes from `weightframe.py`'s default rule (each coordinate's
+  variance about 1), since no rotated SONAR arm exists to take it from.
+
+**The written caches,** checked on 20,000 prefix rows and 2,000 tail rows (sample seed 0):
+
+| On these rows | SONAR's rows laid out | The LCM centered | SONAR centered |
+|---|---|---|---|
+| The map | SONAR's rows exactly, on prefix and tail rows | the rescaled LCM's rows (`lcm_wf`), each moved by one offset (spread at most 0.0011) of norm 13.33, their mean's | c √w ⊙ SONAR's rows, each moved by one offset (spread at most 0.0002) of norm 17.73, their mean's |
+| The mean left | | 0.215 | 0.228 |
+| The mean's share of a row's squared norm | | 0, from 14.7% | 0, from 23.5% |
+| Weights | no837's, matched scale 1.0 | `lcm_wf`'s within 5e-4 | own, largest over smallest 1.0087, coordinate 837 zeroed |
+| Live coordinates' variance | | 0.957–1.066 | 0.969–1.034 |
+| Float16: largest value, values rounded to zero | 0.165, 0 | 16.9, 55 | 16.4, 592 |
+
+- **What mean is left is the sample's.** The standard error of a mean of 20,000 such rows is about
+  √(1026 / 20000) ≈ 0.23.
+- **All three keep `lcm_b4`'s sidecars** (`.index`, `.kind`, `.langs`, `.docstart`), so every arm is
+  scored on the same rows.
+
+**Runs** on the RTX 3090, by the commands below, in one queue: seeds 42 and 43 of each arm.
+
+```bash
+A=data/activations/lcm-organism
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/weightframe.py --source $A/lcm_b4.npy \
+    --scale-like $A/lcm_rot_b4.npy --center --out $A/lcm_wfc_b4.npy
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/ctxmean.py --weight 0 --out $A/sonar_rows_b4.npy
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/weightframe.py --source $A/sonar_rows_b4.npy \
+    --center --out $A/sonar_wfc_b4.npy
+ARMS="lcm_wfc sonar_wfc" experiments/lcm-organism/phase2.sh train
+ARMS="lcm_wfc sonar_wfc" experiments/lcm-organism/phase2.sh score
+```
+
 ## 2026-11-25, later: centered, the readout agrees more across seeds, and the rotation costs it nothing
 
 **In short.**
