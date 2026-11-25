@@ -98,8 +98,8 @@ The reconstructions themselves read 0.951 (hard) and 1.002 (soft). One model and
 **Not yet done.**
 - Whether forcing a trimmed extreme steers better than forcing the vertex: decoding forced rows
   through M2M100, for the softmax model, where the two differ. It waits for an idle GPU.
-- The one-head seed pair started from spherical k-means. It is built (`kmstart.py`,
-  `train_kmstart.py`, `kmstart_seeds.sh`; README.md) but not yet run.
+- The one-head seed pair started from spherical k-means. Its starts are fitted and its runs
+  queued (next section).
 - The planted toy.
 
 ```bash
@@ -110,3 +110,38 @@ JAX_PLATFORMS=cpu uv run python experiments/vertices/place.py \
     --ckpt data/out/sonar/multilingual/resid_nc \
     --sae data/out/sonar/sae_conv/m5120_k32 --out data/out/sonar/vertices
 ```
+
+## 2026-11-25: the one-head seed test from a k-means start, fitted and queued
+
+**The question.** The stock one-head pair (`width_seeds.sh`, h = 1) agrees at NMI 0.418.
+Spherical k-means at 32 cells agrees at 0.732 in the whitened row frame. Is the shortfall the
+start, or the training? The archetypal SAE's stability is confounded the same way. The runs:
+- `km42_s42` and `km43_s43`: the stock recipe, each seed started from its own spherical
+  k-means fit;
+- `km42_s43`: seed 43 started from seed 42's fit, the shared start.
+
+**The fits** (`kmstart.py fit`; `data/out/sonar/vertices/kmstart/fit/summary.json`).
+- They are fitted on `kmeans_seeds.py`'s 131,072 training rows, in the frame the classifier
+  reads: the shape, centred and weighted by sqrt(`mse_weights_med837`).
+- They are scored on the cache's last 32,768 rows, the rows `partition.py` scores.
+- **In this frame the two fits agree at NMI 0.705** (null 0.0045). The 0.732 above was in the
+  row frame, which the classifier cannot represent, because it sees the shape and not the norm.
+- **The stock heads match these fits better than they match each other**: 0.465–0.474 against
+  each fit, against 0.418 between themselves.
+- Cells hold 1.3–5.8% of the training rows.
+- **The logit scale.** The trained stock head's median top-two gap is 0.00457, which is 30.4 T.
+  The starts are scaled to it, by 0.205 for both fits.
+
+**The start takes.** The smoke test built seed 43's model from seed 42's start on CPU, through
+`train_kmstart.py`'s flags. That model selects the start's cell on all 512 probe rows, and
+decodes every atom to its target within 6e-9. Its median gap on those rows is 0.00426.
+
+**Reading the outcome.**
+- If the own-start pair keeps most of 0.705, the agreement belongs to the start and the
+  optimizer, and a centroid start may explain the archetypal SAE's stability too.
+- If it falls to about 0.42, the shared-start pair says how much of that loss training adds by
+  itself, from a common point.
+
+Queued 2026-11-25 through `kmstart_seeds.sh` (README.md). It waits for an idle GPU, trains three
+50,000-step runs, and scores into `data/out/sonar/vertices/kmstart/scores/`. On the RTX 3090 the
+first run, `km42_s42`, took 41 minutes (20 steps a second).
