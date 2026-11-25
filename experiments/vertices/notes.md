@@ -100,8 +100,7 @@ The reconstructions themselves read 0.951 (hard) and 1.002 (soft). One model and
   for the softmax model, where the two differ. `steer.py` (README.md) was queued 2026-11-25,
   after the seed test. It adds the cell's centroid as a third target and takes each step at
   matched lengths too.
-- The one-head seed pair started from spherical k-means. Its starts are fitted and its runs
-  queued (next section).
+- The one-head seed pair started from spherical k-means: done (its section is below).
 - The planted toy: done (the last section).
 
 ```bash
@@ -147,6 +146,45 @@ decodes every atom to its target within 6e-9. Its median gap on those rows is 0.
 Queued 2026-11-25 through `kmstart_seeds.sh` (README.md). It waits for an idle GPU, trains three
 50,000-step runs, and scores into `data/out/sonar/vertices/kmstart/scores/`. On the RTX 3090 the
 first run, `km42_s42`, took 41 minutes (20 steps a second).
+
+## 2026-11-25: the one-head seed test, results
+
+**Short version.** Training from spherical k-means keeps nearly all of the start's agreement. The
+two runs from their own starts agree at NMI 0.680, against 0.705 for the starts and 0.418 for the
+stock pair. So most of the stock pair's disagreement comes from its start, not from training.
+- **From one shared start**, seeds 42 and 43 agree at 0.872. Training noise alone, from a common
+  point, costs 0.13.
+- **Each run moves away from its start.** A run agrees with its own start at 0.766–0.773 and with
+  the other seed's at 0.646–0.658. The two runs agree with each other (0.680) better than either
+  agrees with the other's start, so some of what training changes, it changes the same way in
+  both.
+- **The k-means start also trains to a lower error.** Over the last 2,000 steps the training MSE
+  is 6.645–6.650e-6 for the three k-means-start runs and 6.711–6.720e-6 for the stock pair. The
+  k-means-start runs average 6.67e-6 over their first 500 steps, already below where the stock
+  runs end.
+- **For the archetypal SAE.** Its dictionary is built on fixed k-means centroids, and its reported
+  stability is not separated from that start. Here a k-means start alone gives a head trained by
+  the stock recipe most of k-means' agreement, so the start may explain much of that stability
+  too.
+
+**Setup.** `kmstart_seeds.sh` (README.md) trains `width_seeds.sh`'s h = 1 recipe for 50,000
+steps. Each run took 41–46 minutes on the RTX 3090 (18–20 steps a second). `kmstart.py score`
+scores the runs on the cache's last 32,768 rows, beside rows-shuffled nulls, which read 0.004
+throughout. The rows against the other seed's start come from the same scorer, given that start
+(`scores/cross.json`).
+
+| pair | NMI |
+|---|---|
+| the starts, s42 against s43 (`fit`) | 0.705 |
+| `km42_s42` against `km43_s43` (each from its own start) | 0.680 |
+| `km42_s42` against `km42_s43` (both from s42's start) | 0.872 |
+| `km43_s43` against `km42_s43` | 0.681 |
+| the stock pair (`width_seeds.sh`) | 0.418 |
+| each run against its own start | 0.766–0.773 |
+| each run against the other seed's start | 0.646–0.658 |
+
+One head of 32 entries at one layer, and one pair per arm. The errors are training MSE, with the
+recipe's training noise, not held-out FVU.
 
 ## 2026-11-25: the planted-simplex toy
 
