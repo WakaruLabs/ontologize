@@ -123,3 +123,54 @@ systemd-run --user --unit kmstart-seeds -p Restart=on-failure -p RestartSec=120 
     -p StandardError=append:$PWD/experiments/logs/kmstart_seeds.log \
     /usr/bin/bash experiments/vertices/kmstart_seeds.sh
 ```
+
+## Steering with an extreme, read in text (`steer.py`, `steer.sh`)
+
+Does a head forced to its cell's trimmed extreme steer better than one
+forced to its vertex, or to its cell's centroid? `place.py`'s nearest-row
+test tells the three apart only in the softmax model, so `steer.sh` runs
+the comparison on `resid_nc`.
+
+- **The force.** At each layer, each of `--queries` held-out rows has one
+  head, drawn at random, forced to another entry with at least
+  `--min-rows` rows. The query rows are the first of the rows that place
+  the cells. The force is frozen, as in `place.py`. In place of its own
+  write, the head writes the entry's vertex (its decoded atom), its
+  cell's trimmed extreme, or its cell's centroid. `place_layer` returns
+  the last two in atom coordinates.
+- **Matched lengths.** The vertex's step is several times the extreme's,
+  so forcing the vertex mixes direction with length. Each target's step
+  (the target less the head's own write) is therefore also taken at
+  `--lengths` times the extreme's step. A random direction with the
+  rows' covariance is taken at the same lengths, as the control.
+- **The read.** Each row is decoded through M2M100
+  (`textfid.SonarDecoder`). The decoder rescales every row to SONAR's
+  norm, so it sees only direction. Each decode is re-encoded by SONAR
+  under the English tag at unit norm, and the model reads the
+  re-encoding.
+
+| measure | what it reads |
+|---|---|
+| `p`, `hit` | the forced entry's probability at the forced head on the re-encoding, and whether it is that head's argmax |
+| `p_given` | the same on the row the decoder was given, at unit norm: what the force put in before the round trip |
+| `effect` | `p` less the unforced reconstruction's, row by row |
+| `collateral` | 1 − chrF between the reconstruction's decode and this one |
+| `keep`, `keep0` | the re-encoding's cosine to its source row, and to the next query row |
+| `fidelity` | the re-encoding's cosine to the row the decoder was given |
+| `retain` | per layer, the share of rows whose own decode's re-encoding keeps the row's own entry at the forced head: the round trip's ceiling |
+
+`summary.json` gives each condition's means with standard errors. It also
+gives paired differences: the three targets at their own lengths, and,
+at each matched length, each direction against the extreme's and against
+the random one.
+
+`steer.sh` waits for the unit named by `AFTER` (default `kmstart-seeds`)
+and an idle GPU. It then runs JAX on the CPU and M2M100 on the GPU, as
+a systemd unit:
+
+```bash
+systemd-run --user --unit vertices-steer --working-directory=$PWD \
+    -p StandardOutput=append:$PWD/experiments/logs/vertices_steer_queue.log \
+    -p StandardError=append:$PWD/experiments/logs/vertices_steer_queue.log \
+    /usr/bin/bash experiments/vertices/steer.sh
+```

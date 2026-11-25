@@ -96,8 +96,10 @@ Forced rows' nearest-row distance (ratio to the held-out rows' median, 1.00):
 The reconstructions themselves read 0.951 (hard) and 1.002 (soft). One model and one seed each.
 
 **Not yet done.**
-- Whether forcing a trimmed extreme steers better than forcing the vertex: decoding forced rows
-  through M2M100, for the softmax model, where the two differ. It waits for an idle GPU.
+- Whether forcing a trimmed extreme steers better than forcing the vertex, read through M2M100,
+  for the softmax model, where the two differ. `steer.py` (README.md) was queued 2026-11-25,
+  after the seed test. It adds the cell's centroid as a third target and takes each step at
+  matched lengths too.
 - The one-head seed pair started from spherical k-means. Its starts are fitted and its runs
   queued (next section).
 - The planted toy.

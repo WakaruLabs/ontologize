@@ -282,8 +282,10 @@ def head_write(view: dict, l: int, i: int, rows: slice = slice(None)
 def place_layer(view: dict, Xw: Float[np.ndarray, "n d"], l: int,
                 var: float, min_mass_rows: int, band=BAND) -> dict:
     """The per-entry measures for every head of layer l, summarized over
-    the layer's used entries, with each entry's trimmed extreme returned
-    (in atom coordinates) for the forcing test.
+    the layer's used entries. Each entry's trimmed extreme and its
+    centroid are returned too, in atom coordinates (each read about the
+    head's centre c and placed about its mean atom abar), for the forcing
+    tests; entries with fewer than `min_mass_rows` rows read NaN.
 
     Atoms and centroids are compared about their own means: the head's
     mass-weighted mean atom abar and its one-atom least-squares write c.
@@ -303,6 +305,7 @@ def place_layer(view: dict, Xw: Float[np.ndarray, "n d"], l: int,
                                 "atom_over_mu", "price_atom",
                                 "price_extreme")}
     E = np.full_like(A, np.nan)
+    M = np.full_like(A, np.nan)
     head_price, common, common_price = [], [], []
     for i in range(h):
         sel = view["sel"][:, l, i].astype(np.int64)
@@ -327,6 +330,7 @@ def place_layer(view: dict, Xw: Float[np.ndarray, "n d"], l: int,
             at, mt = A[i, j] - abar, mu[j] - c
             beyond, reach, e = ray(z[m], w[m], c, c + at, band)
             E[i, j] = abar + (e - c)
+            M[i, j] = abar + mt
             rows["off"].append(np.linalg.norm(at - mt) / spread[j])
             rows["off_raw"].append(np.linalg.norm(A[i, j] - mu[j])
                                    / spread[j])
@@ -346,7 +350,7 @@ def place_layer(view: dict, Xw: Float[np.ndarray, "n d"], l: int,
     out["extreme_dfvu_per_head"] = quartiles(head_price)
     out["common"] = quartiles(common)
     out["common_price_per_head"] = quartiles(common_price)
-    return out, E
+    return out, E, M
 
 
 def forcing(view: dict, E_all: Dict[int, np.ndarray], Xw: np.ndarray,
@@ -516,8 +520,8 @@ def main() -> None:
     print(f"  FVU_w {fvu:.4f}, end-to-end argmax {fvu_hard:.4f}")
     E_all = {}
     for l in range(view["A"].shape[0]):
-        res["layers"][l], E_all[l] = place_layer(view, Xw, l, var,
-                                                 cfg.min_rows)
+        res["layers"][l], E_all[l], _ = place_layer(view, Xw, l, var,
+                                                    cfg.min_rows)
         r = res["layers"][l]
         med = lambda key: r[key].get("median", np.nan)  # noqa: E731
         print(f"  layer {l}: off {med('off'):.3f} (raw {med('off_raw'):.3f},"

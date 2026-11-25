@@ -38,15 +38,28 @@ def planted_layer(rng, expand=1.0, common=0.0, n=8000, h=2, k=4):
 
 def test_place_layer_reads_centroid_atoms_as_centroids():
     view, Xw, var = planted_layer(np.random.default_rng(8))
-    r, E = place_layer(view, Xw, 0, var, 10)
+    r, E, M = place_layer(view, Xw, 0, var, 10)
     assert r["off"]["median"] < 0.1
     assert abs(r["atom_over_mu"]["median"] - 1.0) < 0.05
-    assert np.isfinite(E).all()
+    assert np.isfinite(E).all() and np.isfinite(M).all()
+
+
+def test_place_layer_returns_the_planted_centroids():
+    # the model's atoms are pushed out from their head's mean, and the
+    # centroids it returns are the planted atoms they were pushed from
+    view, Xw, var = planted_layer(np.random.default_rng(11), expand=1.5)
+    _, _, M = place_layer(view, Xw, 0, var, 10)
+    A = view["A"][0]
+    mean = A.mean(1, keepdims=True)
+    true = mean + (A - mean) / 1.5
+    miss = np.linalg.norm(M - true, axis=-1)
+    push = np.linalg.norm(A - true, axis=-1)
+    assert miss.max() < 0.1 * push.min()
 
 
 def test_place_layer_sets_a_common_offset_apart():
     view, Xw, var = planted_layer(np.random.default_rng(9), common=2.0)
-    r, _ = place_layer(view, Xw, 0, var, 10)
+    r, _, _ = place_layer(view, Xw, 0, var, 10)
     # every head's own refit would take the whole shared component, so the
     # uncentred distance is large while the placement is unchanged
     assert r["off_raw"]["median"] > 1.0
@@ -57,7 +70,7 @@ def test_place_layer_sets_a_common_offset_apart():
 
 def test_place_layer_reads_atoms_pushed_outward():
     view, Xw, var = planted_layer(np.random.default_rng(10), expand=1.5)
-    r, _ = place_layer(view, Xw, 0, var, 10)
+    r, _, _ = place_layer(view, Xw, 0, var, 10)
     assert abs(r["atom_over_mu"]["median"] - 1.5) < 0.1
     assert r["off"]["median"] > 0.5
     assert r["beyond"]["median"] < 0.5
