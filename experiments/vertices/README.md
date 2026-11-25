@@ -1,7 +1,9 @@
 # vertices
 
 Where a head's vertices (its atoms) sit: at the centroids of its cells, at
-extremes of the data, or outside it.
+extremes of the data, or outside it. Measured on trained SONAR models
+(`place.py`, `steer.py`), from a k-means start (`kmstart.py`), and on a
+toy whose extremes are planted (`simplex.py`).
 
 Jade proposed training with sparsemax for most of a run, switching to
 argmax for a few epochs and back to sparsemax at the end. The aim is for the
@@ -173,4 +175,52 @@ systemd-run --user --unit vertices-steer --working-directory=$PWD \
     -p StandardOutput=append:$PWD/experiments/logs/vertices_steer_queue.log \
     -p StandardError=append:$PWD/experiments/logs/vertices_steer_queue.log \
     /usr/bin/bash experiments/vertices/steer.sh
+```
+
+## The planted-simplex toy (`simplex.py`)
+
+Where does each selection rule put a head's vertices when the data's
+extremes are known? On SONAR, `place.py` can say where vertices are, but
+nothing says where they should be. The toy plants that answer.
+
+- **The data.** Rows are convex mixtures of `--k-true` planted atoms plus
+  noise: `x = w A + sigma eps`, with `w ~ Dirichlet(alpha 1)`. With alpha
+  below 1, most rows lie near one atom, so the planted atoms are the
+  corners of the data's hull: the in-distribution extremes. A cell's
+  centroid sits inside its corner. At the defaults (8 atoms, alpha 0.2)
+  the planted cells' centroids are about halfway in.
+- **The arms.** Each arm is one head of k entries, in `dictenc-toy`'s
+  one-layer model with gain-shape off, trained by the stock step.
+  - `ste`, `softmax` and `sparsemax` train under the stock temperature
+    anneal.
+  - `sparsemax_fixed` stays at the starting temperature.
+  - `sparsemax_setpoint`'s temperature is set by the package's `DualLoop`
+    to hold a share of decided rows (one-entry supports).
+  - `schedule_short` and `schedule_long` are Jade's proposal: sparsemax,
+    then `ste`, then sparsemax again. They run at the starting
+    temperature, as the real recipe has no anneal, so they differ from
+    `sparsemax_fixed` by the `ste` phase alone. Between phases they switch
+    the model's `select` and keep its parameters and optimizer state
+    (`with_select`).
+  - `archetypal` is the reference: Cutler & Breiman's archetypes of the
+    training rows, held to the hull by construction. It is not a head.
+- **The scores.** A head's entries are matched to planted atoms through
+  its cells. Each matched entry's vertex, cell centroid and trimmed
+  extreme is placed by `lam`, its position along the ray from the planted
+  atoms' mean through its atom (1 at the atom, below 1 inside, above 1
+  past it), and by `err`, its distance from the atom. Beside them are:
+  - `place.py`'s measures of the head;
+  - the held-out FVU of the soft and the argmax decode, against the noise
+    floor;
+  - `acc`, the share of rows whose entry is matched to their largest
+    planted weight;
+  - the code's effective support (entries carrying at least 1% of a row)
+    and its decided share (rows with one entry at 99% or more).
+
+The selection rule `select="sparsemax"` is in the package
+(`ontologize/fns/classify.py`). The toy runs on CPU and writes
+`summary.json` and `arms.csv` under `data/out/vertices/simplex/<name>`:
+
+```bash
+uv run python experiments/vertices/simplex.py --seeds 5
 ```

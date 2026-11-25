@@ -9,7 +9,7 @@ import jax.numpy as jnp
 import optax
 from typing import Any, Callable
 
-from .classify import softmax_cl, ste, topk_cl
+from .classify import softmax_cl, sparsemax, ste, topk_cl
 from .loss import l2, addnoise, addnoise_batchnorm, addnoise_featvar, identity
 from ontologize.data.loaders import SampleLoader, EmbeddingLoader, ImageLoader, TextLoader
 
@@ -49,6 +49,7 @@ def get_activation(name: str) -> Callable:
         "tanh": jax.numpy.tanh,
         "sigmoid": jax.nn.sigmoid,
         "softmax": softmax_cl,
+        "sparsemax": sparsemax,
         "argmax": ste,
         "ste": ste,
     }

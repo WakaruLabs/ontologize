@@ -195,19 +195,28 @@ def run_temperature(ckpt: str) -> float:
 
 def model_view(ckpt: str, step: int, T: float, X: Float[np.ndarray, "n d"],
                w_sqrt: Float[np.ndarray, "d"], batch: int, keep_p: bool):
-    """Everything the measures read, in the whitened frame: the decoded
-    atoms (l, h, k, d), each head's argmax entry (n, l, h), the soft
-    assignments when `keep_p` (n, l, h, k), the layers' gains (n, l), each
-    layer's input residual x - x_hat_l (n, l, d), the reconstruction (n, d),
-    the end-to-end argmax reconstruction (n, d), and the step loaded."""
-    import jax
-    import jax.numpy as jnp
+    """`view_of` a checkpoint at `step` (0 = the latest)."""
     from pareto import load_onto
 
     model, raw, used = load_onto(ckpt, step)
+    return view_of(model, raw, T, X, w_sqrt, batch, keep_p, used)
+
+
+def view_of(model, raw: dict, T: float, X: Float[np.ndarray, "n d"],
+            w_sqrt: Float[np.ndarray, "d"], batch: int, keep_p: bool,
+            step: Optional[int] = None):
+    """Everything the measures read, in the whitened frame, for a model and
+    its parameters: the decoded atoms (l, h, k, d), each head's argmax entry
+    (n, l, h), the soft assignments when `keep_p` (n, l, h, k), the layers'
+    gains (n, l), each layer's input residual x - x_hat_l (n, l, d), the
+    reconstruction (n, d), the end-to-end argmax reconstruction (n, d), and
+    `step`, passed through."""
+    import jax
+    import jax.numpy as jnp
+
     if model.scaled or model.fiber_rank:
-        raise ValueError(f"{ckpt}: a router or fibers break "
-                         "contribution = gain x atom")
+        raise ValueError("a router or fibers break contribution = gain x "
+                         "atom")
     params = {"params": raw}
     k = model.k
 
@@ -264,7 +273,7 @@ def model_view(ckpt: str, step: int, T: float, X: Float[np.ndarray, "n d"],
                 G=np.concatenate(Gs).astype(np.float32),
                 Yin=np.concatenate(pre).astype(np.float32),
                 Y=np.concatenate(Ys).astype(np.float32),
-                Yhard=np.concatenate(Yh).astype(np.float32), step=used)
+                Yhard=np.concatenate(Yh).astype(np.float32), step=step)
 
 
 def head_write(view: dict, l: int, i: int, rows: slice = slice(None)

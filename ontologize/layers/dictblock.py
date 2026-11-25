@@ -26,11 +26,13 @@ class DictBlock(Sparse):
     h: int = 0
 
     # logits -> probabilities rule for `cluster`: "softmax" (dense),
-    # "argmax"/"ste" (straight-through hard), or "top<k>" ("top4"):
-    # softmax over the top-k logits per head, the rest masked to -inf
-    # (exact-zero probability, no gradient). The top-k support is chosen
-    # on the logits `cluster` receives -- after sd_K noise and winner
-    # dropout -- so both still explore support membership.
+    # "argmax"/"ste" (straight-through hard), "sparsemax" (the projection
+    # onto the simplex: exact zeros below a threshold, a support that
+    # varies by row and shrinks with the temperature), or "top<k>"
+    # ("top4"): softmax over the top-k logits per head, the rest masked to
+    # -inf (exact-zero probability, no gradient). The top-k support is
+    # chosen on the logits `cluster` receives -- after sd_K noise and
+    # winner dropout -- so both still explore support membership.
     select: str = "softmax"
     activation: str = "none"
 
@@ -117,6 +119,9 @@ class DictBlock(Sparse):
             # every entry a little mass.
             k_sel = 1
         else:
+            # sparsemax counts as dense here: its support varies by row,
+            # up to k, so there is no fixed count of selections to test
+            # an entry's rate against
             k_sel = self.k
         # tags kept per head by `select`; `k` only for the dense rules,
         # which is what makes `revive_dead` a no-op for them
