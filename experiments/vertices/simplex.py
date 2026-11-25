@@ -25,6 +25,14 @@ gain-shape off:
                       ste phase alone; --short and --long give where the
                       second and third phases start, as shares of the steps
 
+The model can be taken toward the SONAR models' setting one knob at a
+time: --h heads per layer, --l layers (with --deepsup and --resid-norm as
+the stack uses them), --no-const0 (no constant coordinate at layer 0, so
+the quadratic classifier is even in its input) and --unit (rows scaled
+to unit norm). With more than one head or layer a head's atom is one term
+of a sum, not a point of the data's space, so only `place.py`'s measures
+are read, per layer.
+
 Beside them is `archetypal`: the archetypes of the training rows
 (Cutler & Breiman 1994). Rows are convex mixtures of archetypes, and
 archetypes convex mixtures of rows. It is not a head, but the reference
@@ -78,8 +86,8 @@ ARMS = ("ste", "softmax", "sparsemax", "sparsemax_fixed",
         "sparsemax_setpoint", "schedule_short", "schedule_long")
 POINTS = ("vertex", "centroid", "extreme")
 COLUMNS = ("acc", "fvu", "fvu_hard", "lam_vertex", "err_vertex",
-           "lam_centroid", "lam_extreme", "err_extreme", "beyond", "reach",
-           "support", "decided", "T")
+           "lam_centroid", "lam_extreme", "atom_over_mu", "aom_max",
+           "beyond", "reach", "support", "decided", "T")
 
 
 # ---- the planted simplex ----------------------------------------------------
@@ -263,9 +271,10 @@ def build(cfg, arm: str, seed: int):
         sd_K_end=0.2 * cfg.temperature_end if anneal else None)
     rule = phases(arm, cfg.short, cfg.long)[0][1]
     model = hyper.ontologizer(
-        cfg.d, cfg.d, cfg.e_dec, cfg.k, 1, 1, n=cfg.n, gate="none",
-        select=rule, forward="resid", deepsup=False, resid_norm=False,
-        resid_const=True, resid_gain=False,
+        cfg.d, cfg.d, cfg.e_dec, cfg.k, cfg.h, cfg.l, n=cfg.n, gate="none",
+        select=rule, forward="resid", deepsup=cfg.deepsup,
+        resid_norm=cfg.resid_norm, resid_const=True,
+        const0=not cfg.no_const0, resid_gain=False,
         dtype_str="float32", dtype_p_str="float32")
     return hyper, hyper.init(model, save_each=cfg.steps)
 
@@ -343,37 +352,54 @@ def train(cfg, arm: str, X_tr: Float[np.ndarray, "n d"], seed: int):
 
 def evaluate(cfg, state, T: float, X: Float[np.ndarray, "n d"],
              W: Float[np.ndarray, "n k"], clean: Float[np.ndarray, "n d"],
-             A_true: Float[np.ndarray, "k d"]) -> Dict[str, float]:
+             A_ref: Float[np.ndarray, "k d"]) -> Dict[str, float]:
+    """One trained arm's scores on the held-out rows. `place.py`'s measures
+    are read per layer (`L<l>_<measure>`); the unprefixed ones are layer
+    0's, and `aom_max` is the largest atom over centroid of any layer. The
+    readout against the planted corners (acc, lam, err) needs one head at
+    one layer, whose vertices are points of the data's own space; with more
+    heads or layers a head's atom is one term of a sum, and it is left
+    out. Support and decided share are over layer 0's heads."""
     from ontologize.ontologizer import Ontologizer
     from place import place_layer, view_of
     model, params = state.model, state.params
     soft = model.select.lower() not in ("ste", "argmax")
     view = view_of(model, params["params"], T, X,
                    np.ones(X.shape[1], np.float32), 1024, soft)
+    L, h, k, d = view["A"].shape
     V = np.asarray(model.apply(params, method=Ontologizer.decodeEntries)[0]
-                   ).reshape(model.k, -1)
-    A = view["A"][0, 0]
-    b = (V - A).mean(0)                 # decode(0), shared by every entry
-    if np.abs(V - A - b).max() > 1e-4 * max(1.0, np.abs(V).max()):
+                   ).reshape(L, h, k, d)
+    b = (V - view["A"]).reshape(-1, d).mean(0)   # decode(0), every entry's
+    if np.abs(V - view["A"] - b).max() > 1e-4 * max(1.0, np.abs(V).max()):
         raise RuntimeError("decoded entries are not decode(0) plus atoms")
     var = float(((X - X.mean(0)) ** 2).sum())
-    r, E, M = place_layer(view, X, 0, var, cfg.min_rows)
-    sel = view["sel"][:, 0, 0].astype(np.int64)
-    ents, atoms, acc = match_cells(sel, W.argmax(1), model.k, len(A_true))
-    m = A_true.mean(0)
-    out = {"acc": acc, "T": T,
+    out = {"T": T,
            "fvu": float(((X - view["Y"]) ** 2).sum() / var),
            "fvu_hard": float(((X - view["Yhard"]) ** 2).sum() / var),
            "fvu_oracle": float(((X - clean) ** 2).sum() / var)}
-    for name, pts in zip(POINTS, (V, b + M[0], b + E[0])):
-        lam, err = ray_position(pts[ents], A_true[atoms], m)
-        out[f"lam_{name}"] = float(np.nanmean(lam))
-        out[f"err_{name}"] = float(np.nanmean(err))
-    P = view["P"][:, 0, 0] if soft else np.eye(model.k)[sel]
+    P = view["P"][:, 0] if soft else \
+        np.eye(k)[view["sel"][:, 0].astype(np.int64)]
     out["support"] = float((P >= 0.01).sum(-1).mean())
     out["decided"] = float((P.max(-1) >= 0.99).mean())
+    for l in range(L):
+        r, E, M = place_layer(view, X, l, var, cfg.min_rows)
+        for key in ("off", "beyond", "reach", "atom_over_mu", "common"):
+            out[f"L{l}_{key}"] = float(r[key].get("median", np.nan))
+        if l == 0:
+            E0, M0 = E, M
     for key in ("off", "beyond", "reach", "atom_over_mu"):
-        out[key] = float(r[key].get("median", np.nan))
+        out[key] = out[f"L0_{key}"]
+    out["aom_max"] = float(np.nanmax([out[f"L{l}_atom_over_mu"]
+                                      for l in range(L)]))
+    if L == 1 and h == 1:
+        sel = view["sel"][:, 0, 0].astype(np.int64)
+        ents, atoms, out["acc"] = match_cells(sel, W.argmax(1), k,
+                                              len(A_ref))
+        m = A_ref.mean(0)
+        for name, pts in zip(POINTS, (V[0, 0], b + M0[0], b + E0[0])):
+            lam, err = ray_position(pts[ents], A_ref[atoms], m)
+            out[f"lam_{name}"] = float(np.nanmean(lam))
+            out[f"err_{name}"] = float(np.nanmean(err))
     return out
 
 
@@ -407,11 +433,17 @@ def replicate(cfg, seed: int, data_seed: int) -> dict:
     X_tr, _, _ = mixtures(data, A_true, cfg.n_train, cfg.alpha, cfg.sigma)
     X_ev, W_ev, C_ev = mixtures(data, A_true, cfg.n_eval, cfg.alpha,
                                 cfg.sigma)
+    A_ref = A_true
+    if cfg.unit:
+        n_ev = np.linalg.norm(X_ev, axis=1, keepdims=True)
+        X_tr = X_tr / np.linalg.norm(X_tr, axis=1, keepdims=True)
+        X_ev, C_ev = X_ev / n_ev, C_ev / n_ev
+        A_ref = A_true / np.linalg.norm(A_true, axis=1, keepdims=True)
     # where a perfect hard code's atoms would sit: the planted cells'
     # centroids
     dom = W_ev.argmax(1)
     cen = np.stack([X_ev[dom == j].mean(0) for j in range(cfg.k_true)])
-    lam_c, _ = ray_position(cen, A_true, A_true.mean(0))
+    lam_c, _ = ray_position(cen, A_ref, A_ref.mean(0))
     # the planted code itself, read as the heads' codes are
     res = {"seed": seed, "data_seed": data_seed,
            "planted_centroid_lam": float(lam_c.mean()),
@@ -424,11 +456,11 @@ def replicate(cfg, seed: int, data_seed: int) -> dict:
           f"{res['planted_decided']:.3f}", flush=True)
     for arm in cfg.arms:
         state, T = train(cfg, arm, X_tr, seed)
-        res["arms"][arm] = evaluate(cfg, state, T, X_ev, W_ev, C_ev, A_true)
+        res["arms"][arm] = evaluate(cfg, state, T, X_ev, W_ev, C_ev, A_ref)
     sub = data.choice(len(X_tr), cfg.aa_rows, replace=False)
     Z = archetypes(X_tr[sub], cfg.k_true, np.random.default_rng(seed),
                    cfg.aa_iters, cfg.aa_restarts)
-    res["arms"]["archetypal"] = evaluate_archetypes(Z, X_ev, W_ev, A_true)
+    res["arms"]["archetypal"] = evaluate_archetypes(Z, X_ev, W_ev, A_ref)
     print_header()
     for arm, r in res["arms"].items():
         print_row(arm, r)
@@ -456,8 +488,23 @@ def parse_args():
     g.add_argument("--data-seed", type=int, default=0)
     m = p.add_argument_group("model")
     m.add_argument("--k", type=int, default=None, help="entries (k_true)")
-    m.add_argument("--e-dec", type=int, default=32)
+    m.add_argument("--h", type=int, default=1, help="heads per layer")
+    m.add_argument("--l", type=int, default=1, help="layers")
+    m.add_argument("--e-dec", type=int, default=None,
+                   help="dictionary width (default: 32, or h k if larger)")
     m.add_argument("--n", type=int, default=2, help="classifier order")
+    m.add_argument("--deepsup", action="store_true",
+                   help="every layer prefix reconstructs the row too")
+    m.add_argument("--resid-norm", action="store_true",
+                   help="unit-normalize the residual that each layer after "
+                        "the first reads")
+    m.add_argument("--no-const0", action="store_true",
+                   help="leave the constant coordinate out of layer 0's "
+                        "classifier input, which makes the quadratic "
+                        "classifier even in its input")
+    m.add_argument("--unit", action="store_true",
+                   help="scale rows to unit norm, as SONAR's cached rows are; "
+                        "the planted corners become the atoms' directions")
     t = p.add_argument_group("training")
     t.add_argument("--arms", nargs="+", default=list(ARMS), choices=ARMS)
     t.add_argument("--steps", type=int, default=4000)
@@ -495,9 +542,16 @@ def parse_args():
                    help="default data/out/vertices/simplex/<name>")
     cfg = p.parse_args()
     cfg.k = cfg.k or cfg.k_true
+    cfg.e_dec = cfg.e_dec or max(32, cfg.h * cfg.k)
     if cfg.name is None:
         cfg.name = (f"k{cfg.k_true}_d{cfg.d}_a{cfg.alpha:g}_s{cfg.sigma:g}"
                     + (f"_m{cfg.k}" if cfg.k != cfg.k_true else "")
+                    + (f"_h{cfg.h}" if cfg.h != 1 else "")
+                    + (f"_l{cfg.l}" if cfg.l != 1 else "")
+                    + ("_deepsup" if cfg.deepsup else "")
+                    + ("_rnorm" if cfg.resid_norm else "")
+                    + ("_noconst0" if cfg.no_const0 else "")
+                    + ("_unit" if cfg.unit else "")
                     + (f"_x{cfg.seeds}" if cfg.seeds > 1 else ""))
     return cfg
 
@@ -516,8 +570,7 @@ def main() -> None:
     tally = {}
     for arm in names:
         tally[arm] = {}
-        for c in COLUMNS + ("fvu_oracle", "err_centroid", "off",
-                            "atom_over_mu"):
+        for c in sorted({c for r in results for c in r["arms"][arm]}):
             v = np.array([r["arms"][arm].get(c, np.nan) for r in results])
             if np.isfinite(v).any():
                 tally[arm][c] = {"mean": float(np.nanmean(v)),
@@ -525,7 +578,7 @@ def main() -> None:
                                  "sd": float(np.nanstd(v))}
         # seeds whose cells match the planted ones; a seed that merges two
         # corners into one entry leaves a corner unmatched
-        tally[arm]["clean"] = int(sum(r["arms"][arm]["acc"] >= 0.9
+        tally[arm]["clean"] = int(sum(r["arms"][arm].get("acc", np.nan) >= 0.9
                                       for r in results))
     planted = {key: float(np.mean([r[key] for r in results]))
                for key in ("planted_centroid_lam", "planted_support",

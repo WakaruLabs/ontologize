@@ -100,6 +100,33 @@ def test_phases_and_select_at():
     assert phases("ste", short, long) == [(0.0, "ste")]
 
 
+def small_cfg(**kw):
+    import argparse
+    cfg = dict(d=8, b=64, lr=1e-3, temperature=1.0, temperature_end=0.03,
+               anneal_steps=10, steps=10, sd_k=0.02, sd_f=0.1, p_drop=0.1,
+               short=(0.75, 0.9), long=(0.6, 0.75), k=4, h=1, l=1, e_dec=16,
+               n=2, deepsup=False, resid_norm=False, no_const0=False,
+               min_rows=4)
+    cfg.update(kw)
+    return argparse.Namespace(**cfg)
+
+
+def test_evaluate_reads_every_layer_and_the_corners_only_for_one_head():
+    from simplex import build, evaluate
+    rng = np.random.default_rng(8)
+    A = planted(rng, k=4, d=8)
+    X, W, clean = mixtures(rng, A, 512, 0.3, 0.05)
+    one = evaluate(small_cfg(), build(small_cfg(), "softmax", 0)[1], 1.0,
+                   X, W, clean, A)
+    assert "lam_vertex" in one and "acc" in one and "L0_atom_over_mu" in one
+    cfg = small_cfg(h=2, l=2, deepsup=True, resid_norm=True)
+    many = evaluate(cfg, build(cfg, "softmax", 0)[1], 1.0, X, W, clean, A)
+    assert "lam_vertex" not in many and "acc" not in many
+    assert {"L0_atom_over_mu", "L1_atom_over_mu", "aom_max"} <= set(many)
+    assert many["aom_max"] == max(many["L0_atom_over_mu"],
+                                  many["L1_atom_over_mu"])
+
+
 def test_with_select_keeps_the_parameters():
     import jax
     from ontologize.training.config import Hyperparams

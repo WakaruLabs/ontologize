@@ -217,10 +217,23 @@ nothing says where they should be. The toy plants that answer.
   - the code's effective support (entries carrying at least 1% of a row)
     and its decided share (rows with one entry at 99% or more).
 
+- **Toward SONAR.** Flags move the model toward the SONAR models one knob
+  at a time: `--h` heads per layer, `--l` layers (with `--deepsup` and
+  `--resid-norm` as the stack uses them), `--no-const0` and `--unit`.
+  `--no-const0` drops layer 0's constant coordinate, which makes the
+  quadratic classifier even in its input, as in `resid_nc`. `--unit`
+  scales rows to unit norm, as SONAR's cached rows are.
+  - With more than one head or layer, a head's atom is one term of a sum
+    rather than a point of the data's space. So only `place.py`'s measures
+    are read, per layer: `L<l>_atom_over_mu` and the rest, with `aom_max`
+    the largest atom over centroid of any layer.
+  - `simplex_grid.sh` runs each knob alone and then all of them together.
+
 The selection rule `select="sparsemax"` is in the package
 (`ontologize/fns/classify.py`). The toy runs on CPU and writes
 `summary.json` and `arms.csv` under `data/out/vertices/simplex/<name>`:
 
 ```bash
 uv run python experiments/vertices/simplex.py --seeds 5
+experiments/vertices/simplex_grid.sh
 ```
