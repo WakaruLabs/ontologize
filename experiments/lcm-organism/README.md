@@ -16,10 +16,10 @@ arms. Results go in `notes.md`.
 | `f16cache.py` | The float16 copy of the cache, for the TPU upload |
 | `phase1.sh` | Phase 1's readings once both seeds have trained: Gate B on blocks 4 and 8, tail-only harvests of each seed and its untrained init, and `stateagree.py` between the seeds and between the inits |
 | `spectrum.py` | Each arm's covariance spectrum in the frame its loss weighs, on the same prefix and tail rows of every arm: participation ratio, effective rank, directions per share of the variance, `pareto.gaussian_reference`'s FVU at given rates, and the share of the variance between languages, of the total and of the pooled within-language covariance |
-| `recolour.py` | The effective-dimension control: SONAR's rows through one linear map that gives them a harvest's spectrum, laid out as that harvest. A source already laid out as the harvest, such as the fixed mix, is read row for row. `--about-mean` maps each row's variation about the source's mean and leaves the mean on the source's own axes |
+| `recolour.py` | The effective-dimension control: SONAR's rows through one linear map that gives them a harvest's spectrum, laid out as that harvest. A source already laid out as the harvest, such as the fixed mix, is read row for row. `--about-mean` maps each row's variation about the source's mean and leaves the mean on the source's own axes, and `--center` maps the same variation and leaves the mean out |
 | `readout.py` | The context-averaging control: Gate B's ridge readout of a harvest's state from x_n, the mean of its document's earlier rows and an indicator of n = 0, written at every row of the harvest and laid out as it. `--features row` reads from x_n alone |
 | `ctxmean.py` | The fixed-mix control: SONAR's row plus a fixed weight times its document's earlier mean, with no LCM, laid out as a harvest and weighted as SONAR |
-| `weightframe.py` | A cache's rows in the frame its loss weighs, c √w ⊙ y, unrotated. `--rotate-except J` mixes the live coordinates outside J among themselves with one random rotation and leaves J on their axes. Within J, `--rotate-block K` rotates K among themselves (at random, or with `--block-basis principal` onto their principal axes), `--whiten-block K` whitens them among themselves by ZCA, and `--gaussianize K` gives each a Gaussian marginal, keeping the rows' order; `--weights-like` takes another cache's loss weights |
+| `weightframe.py` | A cache's rows in the frame its loss weighs, c √w ⊙ y, unrotated. `--rotate-except J` mixes the live coordinates outside J among themselves with one random rotation and leaves J on their axes. Within J, `--rotate-block K` rotates K among themselves (at random, or with `--block-basis principal` onto their principal axes), `--whiten-block K` whitens them among themselves by ZCA, and `--gaussianize K` gives each a Gaussian marginal, keeping the rows' order; `--weights-like` takes another cache's loss weights; `--center` subtracts the mapped rows' prefix mean |
 | `axes.py` | What each arm's coordinate axes carry that a rotation would remove, in the frame its loss weighs: coordinate marginals beside random directions, magnitude dependence between coordinates beside random directions, and the correlations' tail beside random rotations; the group of strongly correlated coordinates, and a draw of coordinates outside it for `--rotate-except` |
 | `phase2.sh` | Phase 2 on one GPU: the harvests, then the arms' dictionaries (`ARMS`, default `lcm init`) trained and scored by the SONAR control's recipe |
 
@@ -116,6 +116,19 @@ JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/recolour.py --source $A
     --target-weights $A/lcm_readout_x_b4.mse_weights_matched.npy --about-mean \
     --out $A/lcm_readout_x_rotmu_b4.npy
 ARMS=lcm_readout_x_rotmu experiments/lcm-organism/phase2.sh train && ARMS=lcm_readout_x_rotmu experiments/lcm-organism/phase2.sh score
+# the LCM's own states rotated about their mean
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/recolour.py --source $A/lcm_b4.npy \
+    --source-weights $A/lcm_b4.mse_weights_matched.npy --target $A/lcm_b4.npy \
+    --target-weights $A/lcm_b4.mse_weights_matched.npy --about-mean --out $A/lcm_rotmu_b4.npy
+# the readout from x_n alone centered, unrotated and rotated: the two differ by the rotation alone
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/weightframe.py --source $A/lcm_readout_x_b4.npy \
+    --scale-like $A/lcm_readout_x_rot_b4.npy --center --out $A/lcm_readout_x_wfc_b4.npy
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/recolour.py --source $A/lcm_readout_x_b4.npy \
+    --source-weights $A/lcm_readout_x_b4.mse_weights_matched.npy --target $A/lcm_readout_x_b4.npy \
+    --target-weights $A/lcm_readout_x_b4.mse_weights_matched.npy --center \
+    --out $A/lcm_readout_x_rotc_b4.npy
+ARMS="lcm_rotmu lcm_readout_x_wfc lcm_readout_x_rotc" experiments/lcm-organism/phase2.sh train
+ARMS="lcm_rotmu lcm_readout_x_wfc lcm_readout_x_rotc" experiments/lcm-organism/phase2.sh score
 # the tail's templated rows, then an arm's seeds scored without them
 uv run python experiments/lcm-organism/templates.py
 JAX_DEFAULT_MATMUL_PRECISION=highest uv run python experiments/next-sentence/seedmatch.py --a <seed 42> --b <seed 43> \
@@ -184,6 +197,10 @@ expired node loses only what had not reached the bucket.
     unrotated, so the map has an offset. The covariance, and so the weights, are as without it, and
     only the mean's direction changes. A cache recoloured to its own spectrum about its mean is the
     weighted frame's rows (`weightframe.py`, below) with everything but the mean rotated.
+  - **Centered** (`--center`). The same map of each row less the mean, with the mean left out, so
+    the rows' prefix mean is zero. A cache recoloured to its own spectrum this way is the weighted
+    frame's centered rows rotated, up to where each fits the mean: here on the fit rows, there on the
+    whole prefix. It and `--about-mean` are refused together.
 - **The readout** (`readout.py`).
   - **The map.** One ridge, fitted on 20,000 prefix documents against the harvest's own states, as
     Gate B fits `x_context`. It is affine in x_n and in the mean of the document's earlier rows, the
@@ -226,6 +243,9 @@ expired node loses only what had not reached the bucket.
     change the loss along with the basis. `--weights-like NPY` takes another cache's weights
     instead. It is refused unless they are equal across the block, which makes the loss that
     cache's, turned within the block.
+  - **Centered** (`--center`). The last step subtracts the mapped rows' mean over the prefix, so
+    each row keeps its variation about the mean and loses the mean. The other maps are affine, so
+    the covariance, and so the weights, are as without it.
 - **The axes** (`axes.py`).
   - **Why.** Adam's per-coordinate step sizes make the trainer sensitive to the basis, so a
     rotation can change seed agreement although it keeps the spectrum. `axes.py` asks what on the axes

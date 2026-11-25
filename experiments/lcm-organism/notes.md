@@ -1,5 +1,66 @@
 # lcm-organism: notes
 
+## 2026-11-24, later again: three arms built and queued: the LCM's states rotated about their mean, and the readout centered, unrotated and rotated
+
+**In short.**
+- **The LCM's states about their mean** (`lcm_rotmu`) ask whether the mean carries the states' basis
+  dependence, as it does the readout's (the entry below). The arm is the rotated LCM with its mean
+  put back where the rescaled states have it. Against the LCM:
+  - if it closes near the rescaled arm's 84.1% on all heads and 95.1% within a language, the mean
+    carries it;
+  - if it closes near the rotated arm's 63.8% and 88.4%, the variation about the mean does.
+- **The readout from x_n alone, centered,** unrotated (`lcm_readout_x_wfc`) and rotated
+  (`lcm_readout_x_rotc`), asks what the mean adds at all. The two arms differ by the rotation alone.
+  - If they read alike, the mean's place is the whole of the readout's basis dependence.
+  - Against its uncentered arm, the unrotated one says what the mean adds on a few axes (rescaled:
+    71.6% / 34.8%), and the rotated one what it costs spread over all of them (rotated: 41.4% /
+    25.6%).
+- **The LCM's mean is smaller than the readout's,** 14.7% of a row's squared norm against 28%.
+
+**The arms.** m is the mean of √w ⊙ x, over the rotated arm's 262,144 fit rows unless said otherwise.
+- **The LCM about its mean** (`recolour.py --about-mean`, with `lcm_b4` as source and target):
+  y = c m + c R Uᵀ(√w ⊙ x − m). R, U and c = 377.53 are the rotated LCM's.
+- **The readout centered and rotated** (`recolour.py --center`, new): y = c R Uᵀ(√w ⊙ x − m). R, U
+  and c = 376.83 are the rotated readout's.
+- **The readout centered and unrotated** (`weightframe.py --center`, new): y = c √w ⊙ x less its mean
+  over the prefix, with c from the rotated readout.
+
+**The written caches,** checked on 20,000 prefix rows (sample seed 0):
+
+| On these rows | LCM about its mean | Readout centered, unrotated | Readout centered, rotated |
+|---|---|---|---|
+| The map | the rotated LCM's rows, each moved by one offset (spread at most 0.0011) of norm 19.2; centered, the two agree within 0.0074 | the rescaled readout's rows, each moved by one offset (spread at most 0.0022) of norm 19.98, the mean's | the rotated readout's rows, each moved by one offset (spread at most 0.0005) of norm 19.97; the unrotated centered rows by a linear map with no offset (residual share 4e-6) |
+| The mean left | 13.34, the rescaled LCM's within 0.03 in every coordinate | 0.22 | 0.23 |
+| The group's share of the mean's norm² | 68.0% (rescaled 68.1%, rotated 1.3%) | | |
+| The mean's share of a row's squared norm | 14.7%, as rotated and rescaled | 0, from 28% | 0, from 28% |
+| Weights against the uncentered arm's | the rotated LCM's within 3e-6 | the rescaled readout's within 1.5e-4 | the rotated readout's within 3e-6 |
+| Own weights, largest over smallest | 2.14 | 1.0001 | 2.463 |
+| Float16: largest value, values rounded to zero | 17.7, 87 | 9.2, 0 | 8.7, 69 |
+
+- **What mean is left in the centered arms is the sample's.** The standard error of a mean of
+  20,000 such rows is √(1026 / 20000) ≈ 0.23.
+- **Centering takes the mean's square off each row.** A row's mean squared norm drops from 1424.7 to
+  1025.8, by 19.975².
+
+**Runs** on the RTX 3090, by the commands below, in one queue: the LCM arm, then the two centered
+arms, seeds 42 and 43 each.
+
+```bash
+A=data/activations/lcm-organism
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/recolour.py --source $A/lcm_b4.npy \
+    --source-weights $A/lcm_b4.mse_weights_matched.npy --target $A/lcm_b4.npy \
+    --target-weights $A/lcm_b4.mse_weights_matched.npy --about-mean --out $A/lcm_rotmu_b4.npy
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/weightframe.py --source $A/lcm_readout_x_b4.npy \
+    --scale-like $A/lcm_readout_x_rot_b4.npy --center --out $A/lcm_readout_x_wfc_b4.npy
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/recolour.py --source $A/lcm_readout_x_b4.npy \
+    --source-weights $A/lcm_readout_x_b4.mse_weights_matched.npy --target $A/lcm_readout_x_b4.npy \
+    --target-weights $A/lcm_readout_x_b4.mse_weights_matched.npy --center \
+    --out $A/lcm_readout_x_rotc_b4.npy
+ARMS=lcm_rotmu experiments/lcm-organism/phase2.sh train && ARMS=lcm_rotmu experiments/lcm-organism/phase2.sh score
+ARMS="lcm_readout_x_wfc lcm_readout_x_rotc" experiments/lcm-organism/phase2.sh train
+ARMS="lcm_readout_x_wfc lcm_readout_x_rotc" experiments/lcm-organism/phase2.sh score
+```
+
 ## 2026-11-24, evening: the readout rotated about its mean keeps what keeping the group gives, so the mean's place carries the basis
 
 **In short.**
