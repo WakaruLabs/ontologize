@@ -1,5 +1,91 @@
 # lcm-organism: notes
 
+## 2026-11-25, later: centered, the readout agrees more across seeds, and the rotation costs it nothing
+
+**In short.**
+- **The question** (the entry of 2026-11-24, later again) is what the readout's mean adds at all. Two
+  arms answer it, both the readout from x_n alone with its mean subtracted: one unrotated
+  (`lcm_readout_x_wfc`), one rotated (`lcm_readout_x_rotc`). They differ by the rotation alone.
+- **Centered, the rotation costs nothing.** In excess NMI over the null, the two arms read 0.0317
+  and 0.0319 on all heads, and 0.0469 and 0.0468 within a language. Uncentered, the rotation costs
+  0.0052 / 0.0054. So the mean's place is the whole of the readout's basis dependence, as that
+  entry's first reading said it would be if the two arms read alike.
+- **The mean costs agreement.** Centering adds 0.0074 / 0.0079 to the unrotated arm and 0.0128 /
+  0.0132 to the rotated one. The centered arms are also above the readout in its own frame
+  (`lcm_readout_x`), by 0.0052 / 0.0057.
+- **The references are not centered.** Against them, the centered arms close 114.6% and 116.1% of
+  SONAR's gap to the LCM on all heads, and 48.2% and 48.0% within a language. On all heads they
+  pass the LCM, by 0.0025 and 0.0028; within a language they are 0.0305 and 0.0306 below it. The
+  like-for-like comparison needs the LCM's states and SONAR's rows centered too.
+
+**Runs.** `ARMS="lcm_readout_x_wfc lcm_readout_x_rotc" phase2.sh train`, then `score`, on the RTX
+3090. Seeds 42 and 43 of each arm trained to step 46,250 without interruption:
+
+| Arm | Seed 42 | Seed 43 |
+|---|---|---|
+| Unrotated | 2 h 17 min (5.6 steps a second) | 2 h 20 min (5.5) |
+| Rotated | 2 h 10 min (5.9) | 1 h 53 min (6.9) |
+
+As for the other arms, the stored spec computes in float32 with JAX's default TF32 matmuls, and
+scoring ran at `highest`. The commands are in the entry of 2026-11-24, later again.
+
+| Readout from x_n alone | All 380 heads: matched NMI (null) | First 38 heads, within language (null) | Gap closed, all heads / within | Head-specific part | Best over runner-up | FVU_w, each seed |
+|---|---|---|---|---|---|---|
+| In its own frame | 0.0313 (0.0048) | 0.0907 (0.0495) | 84.1% / 38.5% | 0.0026 | 0.0006 | 0.2481 / 0.2475 |
+| Rescaled | 0.0291 (0.0048) | 0.0891 (0.0500) | 71.6% / 34.8% | 0.0023 | 0.0006 | 0.2569 / 0.2559 |
+| Rotated about its mean | 0.0285 (0.0048) | 0.0881 (0.0501) | 68.0% / 33.1% | 0.0025 | 0.0004 | 0.2566 / 0.2560 |
+| Rotated | 0.0240 (0.0048) | 0.0842 (0.0506) | 41.4% / 25.6% | 0.0019 | 0.0006 | 0.2677 / 0.2670 |
+| **Centered, unrotated** | **0.0365** (0.0048) | **0.0968** (0.0499) | **114.6% / 48.2%** | **0.0032** | **0.0043** | **0.2634 / 0.2636** |
+| **Centered, rotated** | **0.0368** (0.0048) | **0.0968** (0.0499) | **116.1% / 48.0%** | **0.0032** | **0.0016** | **0.2651 / 0.2655** |
+
+Next-sentence FVU_w, each seed:
+
+| Readout from x_n alone | Seed 42 / seed 43 |
+|---|---|
+| Centered, unrotated | 0.9427 / 0.9422 |
+| Centered, rotated | 0.9482 / 0.9477 |
+| Rescaled | 0.9610 / 0.9606 |
+| Rotated | 0.9698 / 0.9697 |
+| In its own frame | 0.9707 / 0.9681 |
+
+**In excess NMI over the null** (all heads / within a language):
+
+| | Uncentered | Centered | Centering adds |
+|---|---|---|---|
+| Unrotated (rescaled) | 0.0243 / 0.0391 | 0.0317 / 0.0469 | 0.0074 / 0.0079 |
+| Rotated | 0.0191 / 0.0336 | 0.0319 / 0.0468 | 0.0128 / 0.0132 |
+| Unrotated less rotated | 0.0052 / 0.0054 | −0.0003 / 0.0001 | |
+
+**What it means.**
+- **The mean's place is the whole of the readout's basis dependence.** Rotated about its mean, the
+  readout won back 88% / 81% of the rotation's cost (2026-11-24, evening). With the mean gone there
+  is nothing left to win back.
+- **What the mean adds is negative.** The recipe has no encoder to subtract it, and gain-shape
+  normalizes rows uncentered. The readout's mean is 28% of a row's squared norm.
+  - One reading, not tested: with the mean in place, every row's shape shares one large direction,
+    and the heads cut less of the variation that tells rows apart.
+- **Reconstruction moves less than agreement, and not always the same way.**
+  - Unrotated, centering raises FVU_w from 0.2559–0.2569 to 0.2634–0.2636.
+  - Rotated, it lowers FVU_w from 0.2670–0.2677 to 0.2651–0.2655.
+  - Centered, the rotation costs 0.0017 and 0.0019 of FVU_w (seeds 42 and 43), against 0.0108 and
+    0.0111 uncentered.
+  - Next-sentence FVU_w falls in both bases.
+- **The heads are more head-specific.** The head-specific part is 0.0032 in both centered arms, the
+  most of any readout arm (the LCM's is 0.0026). The unrotated arm's best over runner-up is 0.0043,
+  the largest of any arm so far (the LCM's is 0.0010); the rotated arm's is 0.0016. That is one seed
+  pair, so how far the two margins differ may be noise.
+- **What it says about the LCM's lead.** The gap closed is read against uncentered references, and
+  the LCM's states carry a mean too (14.7% of a row's squared norm). Until the LCM and SONAR are
+  centered as well, "passes the LCM on all heads" is a statement about centering, not about context.
+  Within a language, the uncentered LCM stays 0.0305 ahead of the centered readout.
+
+**Caveats.**
+- **One seed pair and one rotation,** as for every arm. The two centered arms differ by 0.0003 /
+  0.0001, inside the 0.0017 spread of the LCM's three seed pairs on the slow heads. Centering's gain,
+  0.0074–0.0132, is 4 to 8 times that spread.
+- **Two platforms.** The references trained on the TPU at `high`, and these arms on the GPU at TF32,
+  like the other readout arms.
+
 ## 2026-11-25: the LCM's states rotated about their mean win back most of what the rotation costs, so the mean's place carries their basis dependence too
 
 **In short.**
