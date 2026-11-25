@@ -1,5 +1,79 @@
 # lcm-organism: notes
 
+## 2026-11-25: the LCM's states rotated about their mean win back most of what the rotation costs, so the mean's place carries their basis dependence too
+
+**In short.**
+- **The question** (the entry below). Does the mean carry the states' basis dependence, as it carries
+  the readout's (2026-11-24, evening)? The arm is the rotated LCM with its mean put back where the
+  rescaled states have it.
+- **Mostly.** Against the LCM, the rotated states about their mean close 79.9% of SONAR's gap on all
+  heads and 94.0% within a language. Rescaled they close 84.1% and 95.1%, and rotated 63.8% and
+  88.4%.
+- **In excess NMI over the null,** putting the mean back recovers 79% of what the rotation costs on
+  all heads and 84% within a language. For the readout it recovered 88% and 81%.
+- **The two arms differ only in where the mean lies.** This arm's rows are the rotated arm's, each
+  moved by one offset, and its weights are the rotated arm's.
+- **So in the states, as in the readout,** most of what the basis is worth is where a large shared
+  offset lies relative to the axes. The recipe has no encoder to subtract it, and gain-shape
+  normalizes rows uncentered. The states' mean is 14.7% of a row's squared norm, about half the
+  readout's 28%, and it wins back nearly as large a share.
+
+**Runs.** `ARMS=lcm_rotmu phase2.sh train`, then `score`, on the RTX 3090: seeds 42 and 43 to step
+46,250, 2 h 5 min and 2 h 17 min of training (6.1 and 5.6 steps a second). As for the other arms, the
+stored spec computes in float32 with JAX's default TF32 matmuls, and scoring ran at `highest`.
+
+| Arm | All 380 heads: matched NMI (null) | First 38 heads, within language (null) | Gap closed, all heads / within | Head-specific part | Best over runner-up | FVU_w, each seed |
+|---|---|---|---|---|---|---|
+| LCM, block 4 (TPU) | 0.0340 (0.0048) | 0.1269 (0.0495) | 100% / 100% | 0.0026 | 0.0010 | 0.2820 / 0.2812 |
+| LCM rescaled | 0.0313 (0.0048) | 0.1245 (0.0500) | 84.1% / 95.1% | 0.0024 | 0.0005 | 0.2851 / 0.2845 |
+| **LCM rotated about its mean** | **0.0306** (0.0048) | **0.1240** (0.0501) | **79.9% / 94.0%** | **0.0023** | **0.0004** | **0.2858 / 0.2854** |
+| LCM rotated | 0.0278 (0.0048) | 0.1211 (0.0505) | 63.8% / 88.4% | 0.0022 | 0.0007 | 0.2940 / 0.2940 |
+| SONAR, TPU | 0.0169 (0.0048) | 0.0692 (0.0507) | 0 / 0 | 0.0013 | 0.0004 | 0.4593 / 0.4585 |
+
+Next-sentence FVU_w, each seed: about the mean 0.5647 / 0.5643, rescaled 0.5646 / 0.5643, rotated
+0.5713 / 0.5713.
+
+**In excess NMI over the null** (all heads / within a language). "Recovered" is the share of the
+rotation's cost, rescaled to rotated, that the arm about the mean wins back.
+
+| | The LCM's states | Readout from x_n alone |
+|---|---|---|
+| Rescaled | 0.0265 / 0.0745 | 0.0243 / 0.0391 |
+| About the mean | 0.0257 / 0.0739 | 0.0237 / 0.0381 |
+| Rotated | 0.0230 / 0.0706 | 0.0191 / 0.0336 |
+| Recovered | 79% / 84% | 88% / 81% |
+| Rescaled less about the mean | 0.0007 / 0.0006 | 0.0006 / 0.0010 |
+
+**What it means.**
+- **The mean's place is most of the basis part in both.** The rotation costs the states 0.0035 /
+  0.0039 and the readout 0.0052 / 0.0054. With the mean back on its axes, 0.0006–0.0010 is left in
+  either.
+- **Reconstruction comes back with it.** FVU_w is 0.2854–0.2858, against 0.2845–0.2851 rescaled and
+  0.2940 rotated, so the mean's place wins back about 91% of what the rotation costs. The
+  next-sentence FVU_w is the rescaled arm's.
+- **Heads are still not identified one by one.** Best over runner-up is 0.0004, against 0.0005
+  rescaled, 0.0007 rotated and the LCM's 0.0010. The mean's place does not reach it.
+- **Where that leaves the LCM's lead,** within a language, where most of it is:
+  - 0.0521 of its 0.0589 over SONAR survives rotation (the entry of 2026-11-24, later still);
+  - of the 0.0068 that does not, rescaling costs 0.0029 and the rotation 0.0039, and the mean's
+    place wins back 0.0033 of the rotation's part.
+- **What the mean adds at all** is the centered pair's question (the entry below, running now).
+
+**Caveats.**
+- **One seed pair and one rotation,** as for every arm.
+- **This arm and the rescaled arm are close.** They differ by 0.0007 on all heads and 0.0006 within
+  a language, in excess. The LCM's three seed pairs spread by 0.0017 on the slow heads, so that
+  difference, and the recovered shares, are inside the noise of one pair. The rotation's cost within
+  a language, 0.0039, is about twice that spread.
+- **Two platforms.** The LCM arm trained on the TPU at `high`, this arm on the GPU at TF32 (the entry
+  of 2026-11-24, later still).
+- **Resumed runs.** Seed 42 resumed from its step-24,000 and 27,500 checkpoints, and seed 43 from its
+  step-12,750 checkpoint. Each resume continues the batch stream but restarts the training noise's
+  key (`Hyperparams.train` passes `PRNGKey(seed)` at every start), so neither run is the one an
+  uninterrupted job would give.
+
+The commands are in the entry below.
+
 ## 2026-11-24, later again: three arms built and queued: the LCM's states rotated about their mean, and the readout centered, unrotated and rotated
 
 **In short.**
@@ -159,8 +233,9 @@ The commands are in the entry of 2026-11-24, later.
   They cost the readout 0.0073 and 0.0076.
 - **What the context adds doesn't lie on the axes.** The states' lead over the readout from x_n alone
   is about the same in every frame: 0.002–0.004 on all heads and 0.036–0.037 within a language.
-  Nearly all of the LCM's lead within a language is this part, so rotating costs the states little
-  there.
+  Most of the LCM's lead within a language is this part (0.036 of 0.0589, the 62% the readout from
+  x_n alone leaves), so rotating costs the states little there. (Corrected 2026-11-25: this said
+  "nearly all".)
 - **A reading, not a test.** This fits the readout having inherited its basis-dependent part from the
   states. The group of 19 is the states' own: 13 of the 14 coordinates with a strong partner in their
   frame, holding 68.1% of the mean's norm². But the evidence is only that two differences are about
