@@ -202,6 +202,13 @@ nothing says where they should be. The toy plants that answer.
     `sparsemax_fixed` by the `ste` phase alone. Between phases they switch
     the model's `select` and keep its parameters and optimizer state
     (`with_select`).
+  - `voronoi_ste` and `voronoi_softmax` are a different head: its logits
+    are tied to its atoms, `-beta |x - a_j|^2 / 2`, so its cells are the
+    atoms' Voronoi cells, and with `ste` it is the Voronoi STE. It trains
+    on reconstruction alone under the same anneal, with a learned `beta`
+    and none of the stock arms' training noises. `--voronoi-init` starts
+    its atoms near the rows' mean, as the stock head's decoded atoms
+    begin, or at k training rows.
   - `archetypal` is the reference: Cutler & Breiman's archetypes of the
     training rows, held to the hull by construction. It is not a head.
 - **The scores.** A head's entries are matched to planted atoms through

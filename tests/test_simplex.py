@@ -127,6 +127,43 @@ def test_evaluate_reads_every_layer_and_the_corners_only_for_one_head():
                                   many["L1_atom_over_mu"])
 
 
+def test_voronoi_logits_pick_the_nearest_atom():
+    from simplex import voronoi_logits
+    rng = np.random.default_rng(9)
+    X, A = rng.normal(size=(300, 5)), rng.normal(size=(6, 5))
+    near = np.linalg.norm(X[:, None] - A[None], axis=-1).argmin(1)
+    assert (voronoi_logits(X, A, 2.0).argmax(1) == near).all()
+
+
+def test_a_voronoi_head_at_the_corners_reads_them():
+    from simplex import evaluate_voronoi
+    rng = np.random.default_rng(10)
+    A = planted(rng, k=4, d=8) * 3.0
+    X, W, clean = mixtures(rng, A, 2000, 0.05, 0.01)
+    r = evaluate_voronoi(small_cfg(), "ste", A, 1.0, 1.0, X, W, clean, A)
+    assert np.isclose(r["lam_vertex"], 1.0) and np.isclose(r["err_vertex"], 0)
+    assert r["acc"] > 0.95 and r["support"] == 1.0 and r["decided"] == 1.0
+    # the cells' centroids sit inside their corners
+    assert r["lam_centroid"] < 1.0
+
+
+def test_the_voronoi_ste_moves_its_atoms_to_the_cluster_means():
+    # from one displaced atom per cluster; like k-means it has local minima
+    # from other starts, so a start that misses a cluster is not tested
+    from simplex import train_voronoi
+    rng = np.random.default_rng(11)
+    C = rng.normal(size=(4, 6)) * 4.0
+    X = (C[rng.integers(0, 4, 4096)]
+         + 0.1 * rng.normal(size=(4096, 6))).astype(np.float32)
+    cfg = small_cfg(d=6, k=4, b=128, steps=1500, anneal_steps=1000,
+                    voronoi_init="rows", voronoi_beta=1.0, lr=3e-2)
+    A0 = C + 1.0 * rng.normal(size=C.shape)
+    A, _, _ = train_voronoi(cfg, "ste", X, 0, A0=A0)
+    D = np.linalg.norm(A[:, None] - C[None], axis=-1)
+    assert np.linalg.norm(A0 - C, axis=1).min() > 1.0
+    assert D.min(0).max() < 0.1 and D.min(1).max() < 0.1
+
+
 def test_with_select_keeps_the_parameters():
     import jax
     from ontologize.training.config import Hyperparams

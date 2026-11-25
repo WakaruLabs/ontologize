@@ -33,6 +33,13 @@ to unit norm). With more than one head or layer a head's atom is one term
 of a sum, not a point of the data's space, so only `place.py`'s measures
 are read, per layer.
 
+`voronoi_ste` and `voronoi_softmax` are a different head: its logits are
+tied to its atoms, -beta |x - a_j|^2 / 2, so its cells are the atoms'
+Voronoi cells, and `ste` makes the Voronoi STE. It is trained on
+reconstruction alone under the same anneal, with a learned beta and none
+of the stock arms' training noises, from atoms near the rows' mean or at
+k training rows (--voronoi-init).
+
 Beside them is `archetypal`: the archetypes of the training rows
 (Cutler & Breiman 1994). Rows are convex mixtures of archetypes, and
 archetypes convex mixtures of rows. It is not a head, but the reference
@@ -71,7 +78,7 @@ import json  # noqa: E402
 import sys  # noqa: E402
 import time  # noqa: E402
 from pathlib import Path  # noqa: E402
-from typing import Dict, List, Tuple  # noqa: E402
+from typing import Dict, List, Optional, Tuple  # noqa: E402
 
 import numpy as np  # noqa: E402
 from jaxtyping import Float, Int  # noqa: E402
@@ -83,7 +90,8 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(HERE))
 
 ARMS = ("ste", "softmax", "sparsemax", "sparsemax_fixed",
-        "sparsemax_setpoint", "schedule_short", "schedule_long")
+        "sparsemax_setpoint", "schedule_short", "schedule_long",
+        "voronoi_ste", "voronoi_softmax")
 POINTS = ("vertex", "centroid", "extreme")
 COLUMNS = ("acc", "fvu", "fvu_hard", "lam_vertex", "err_vertex",
            "lam_centroid", "lam_extreme", "atom_over_mu", "aom_max",
@@ -348,6 +356,121 @@ def train(cfg, arm: str, X_tr: Float[np.ndarray, "n d"], seed: int):
     return state, float(T)
 
 
+# ---- a Voronoi head ---------------------------------------------------------
+
+def voronoi_logits(X, A, beta):
+    """A Voronoi head's logits, -beta |x - a_j|^2 / 2: the classifier is tied
+    to the atoms, so its cells are the atoms' Voronoi cells. Works on numpy
+    and JAX arrays alike."""
+    d2 = (X * X).sum(-1)[:, None] - 2.0 * X @ A.T + (A * A).sum(-1)[None, :]
+    return -0.5 * beta * d2
+
+
+def voronoi_init(X: Float[np.ndarray, "n d"], k: int, how: str,
+                 rng: np.random.Generator) -> Float[np.ndarray, "k d"]:
+    """The head's starting atoms: `mean`, the rows' mean plus Gaussian noise
+    of a tenth of each coordinate's SD (near the stock head's start, whose
+    decoded atoms begin close together), or `rows`, k distinct training
+    rows (the usual quantizer start)."""
+    if how == "rows":
+        return X[rng.choice(len(X), k, replace=False)].astype(np.float32)
+    return (X.mean(0) + 0.1 * X.std(0) * rng.normal(size=(k, X.shape[1]))
+            ).astype(np.float32)
+
+
+def train_voronoi(cfg, rule: str, X_tr: Float[np.ndarray, "n d"], seed: int,
+                  A0: Optional[Float[np.ndarray, "k d"]] = None):
+    """One Voronoi head trained on reconstruction alone, x_hat = p A with
+    p = rule(logits / T), under the stock temperature anneal, by Adam at
+    the stock arms' learning rate and batch. `ste` is the Voronoi STE: the
+    forward writes the nearest atom. The learned scale beta lets the head
+    soften or sharpen its own code, as the stock classifier's logit scale
+    does; the stock arms' training noises are left out. It starts from
+    `voronoi_init`'s atoms unless `A0` gives them. Returns the atoms, beta
+    and the last temperature."""
+    import jax
+    import jax.numpy as jnp
+    import optax
+    from ontologize.fns.keys import get_activation
+    from ontologize.training.ontostate import schedules
+    fn = get_activation(rule)
+    rng = np.random.default_rng(seed)
+    if A0 is None:
+        A0 = voronoi_init(X_tr, cfg.k, cfg.voronoi_init, rng)
+    params = {"A": jnp.asarray(A0, jnp.float32),
+              "log_beta": jnp.asarray(np.log(cfg.voronoi_beta), jnp.float32)}
+    opt = optax.adam(cfg.lr)
+    ost = opt.init(params)
+
+    def loss(p, X, T):
+        P = fn(voronoi_logits(X, p["A"], jnp.exp(p["log_beta"])) / T)
+        return ((X - P @ p["A"]) ** 2).mean()
+
+    @jax.jit
+    def step(p, s, X, T):
+        L, g = jax.value_and_grad(loss)(p, X, T)
+        u, s = opt.update(g, s, p)
+        return optax.apply_updates(p, u), s, L
+
+    n_batches = len(X_tr) // cfg.b
+    perm = rng.permutation(len(X_tr))
+    t0 = time.time()
+    for i in range(cfg.steps):
+        if i and i % n_batches == 0:
+            perm = rng.permutation(len(X_tr))
+        j = (i % n_batches) * cfg.b
+        T = schedules(i, cfg.anneal_steps, cfg.temperature,
+                      cfg.temperature_end, 0.0, None, 0.0, None)[0]
+        params, ost, L = step(params, ost, jnp.asarray(X_tr[perm[j:j + cfg.b]]),
+                              T)
+        if i % 1000 == 0 or i == cfg.steps - 1:
+            print(f"    voronoi_{rule} step {i:5d}  MSE {float(L):.4f}  "
+                  f"T {T:.4f}  beta {float(jnp.exp(params['log_beta'])):.3g}"
+                  f"  ({time.time() - t0:.0f}s)", flush=True)
+    return (np.asarray(params["A"]), float(np.exp(params["log_beta"])),
+            float(T))
+
+
+def evaluate_voronoi(cfg, rule: str, A: Float[np.ndarray, "k d"], beta: float,
+                     T: float, X: Float[np.ndarray, "n d"],
+                     W: Float[np.ndarray, "n k"],
+                     clean: Float[np.ndarray, "n d"],
+                     A_ref: Float[np.ndarray, "k d"]) -> Dict[str, float]:
+    """`evaluate`'s scores for a Voronoi head. Its atoms are its vertices,
+    and its write is the whole reconstruction, so `place.py` reads it
+    through a one-head view with gain 1."""
+    import jax.numpy as jnp
+    from ontologize.fns.keys import get_activation
+    from place import place_layer
+    fn = get_activation(rule)
+    P = np.asarray(fn(jnp.asarray(voronoi_logits(X, A, beta) / T)),
+                   np.float64)
+    sel = P.argmax(1)
+    soft = rule not in ("ste", "argmax")
+    view = dict(A=A[None, None], sel=sel[:, None, None],
+                P=P[:, None, None] if soft else None,
+                G=np.ones((len(X), 1)), Y=P @ A)
+    var = float(((X - X.mean(0)) ** 2).sum())
+    r, E, M = place_layer(view, X, 0, var, cfg.min_rows)
+    ents, atoms, acc = match_cells(sel, W.argmax(1), len(A), len(A_ref))
+    m = A_ref.mean(0)
+    out = {"acc": acc, "T": T, "beta": beta,
+           "fvu": float(((X - view["Y"]) ** 2).sum() / var),
+           "fvu_hard": float(((X - A[sel]) ** 2).sum() / var),
+           "fvu_oracle": float(((X - clean) ** 2).sum() / var)}
+    for name, pts in zip(POINTS, (A, M[0], E[0])):
+        lam, err = ray_position(pts[ents], A_ref[atoms], m)
+        out[f"lam_{name}"] = float(np.nanmean(lam))
+        out[f"err_{name}"] = float(np.nanmean(err))
+    Pc = P if soft else np.eye(len(A))[sel]
+    out["support"] = float((Pc >= 0.01).sum(-1).mean())
+    out["decided"] = float((Pc.max(-1) >= 0.99).mean())
+    for key in ("off", "beyond", "reach", "atom_over_mu", "common"):
+        out[key] = float(r[key].get("median", np.nan))
+    out["aom_max"] = out["atom_over_mu"]
+    return out
+
+
 # ---- scoring ----------------------------------------------------------------
 
 def evaluate(cfg, state, T: float, X: Float[np.ndarray, "n d"],
@@ -455,6 +578,12 @@ def replicate(cfg, seed: int, data_seed: int) -> dict:
           f"{res['planted_support']:.2f}, decided "
           f"{res['planted_decided']:.3f}", flush=True)
     for arm in cfg.arms:
+        if arm.startswith("voronoi_"):
+            rule = arm[len("voronoi_"):]
+            A, beta, T = train_voronoi(cfg, rule, X_tr, seed)
+            res["arms"][arm] = evaluate_voronoi(cfg, rule, A, beta, T, X_ev,
+                                                W_ev, C_ev, A_ref)
+            continue
         state, T = train(cfg, arm, X_tr, seed)
         res["arms"][arm] = evaluate(cfg, state, T, X_ev, W_ev, C_ev, A_ref)
     sub = data.choice(len(X_tr), cfg.aa_rows, replace=False)
@@ -527,6 +656,11 @@ def parse_args():
     t.add_argument("--decided-warmup", type=int, default=500)
     t.add_argument("--tmin", type=float, default=1e-3,
                    help="the lowest temperature the setpoint may reach")
+    t.add_argument("--voronoi-init", default="mean", choices=("mean", "rows"),
+                   help="the Voronoi arms' starting atoms: near the rows' "
+                        "mean, or k training rows")
+    t.add_argument("--voronoi-beta", type=float, default=1.0,
+                   help="the Voronoi arms' starting logit scale")
     t.add_argument("--seed", type=int, default=42)
     p.add_argument("--min-rows", type=int, default=32,
                    help="cells with fewer rows get no centroid or extreme")
