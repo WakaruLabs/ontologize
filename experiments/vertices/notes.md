@@ -428,8 +428,12 @@ factor on the constant coordinate and the other on a centroid. Did training from
 curvature, or only move linear boundaries? The runs read are the three k-means-start runs and the
 stock pair (`l1_h1_s42`, `l1_h1_s43`), all at step 50,000 and temperature 0.00015.
 
-**Short version.** Linear boundaries moved. The k-means-start heads kept affine cells and gained
-little curvature. The stock heads are quadratic: their cells are cones, and partly blind to sign.
+**Short version.** Linear boundaries moved. The k-means-start heads' cells stayed convex and did
+not become cones, and their decisions are consistent with predominantly affine behaviour on the
+tested rows: one affine classifier built from their logits keeps 98% of their held-out winners
+(checked 2026-11-26, below). The stock heads' forms are quadratic: their cells are cones, and
+partly blind to sign, though only to negations that real rows don't reach. Even so, an affine
+classifier keeps about 94% of their winners.
 
 **`bilinspec.py`** (`data/out/sonar/vertices/kmstart/bilinspec/<run>`). Per entry, the logit is
 (w·u + a)(v·u + b), with w and v the two factors' semantic parts and a and b their constants.
@@ -440,8 +444,10 @@ little curvature. The stock heads are quadratic: their cells are cones, and part
 | `l1_h1_s42`, `l1_h1_s43` | 0.028–0.032 | 0.015–0.038 | 0.034–0.035 | 31–47% |
 
 - **The k-means-start factor never changes sign.** In those runs v is the factor that started on
-  the constant. Its constant is still 1.7–1.8 times its semantic part, so v·u + b keeps its sign
-  for every unit u, and each logit is an affine form times a nearly constant positive one.
+  the constant. Its constant is still a median 1.7–1.8 times its semantic part, and v·u + b
+  keeps its sign on every held-out row. Each logit is an affine form times a positive one. Taken
+  about each cell's mean, the product's quadratic term (w·u)(v·u) changes about 2% of the winners
+  (2026-11-26, below).
 - **The stock heads' forms are saddles.** Both factors are semantic, with constants of a few
   percent of their norms.
 - **The odd share doesn't separate them.** It reads 1.000 for the k-means-start runs and
@@ -468,10 +474,67 @@ the entry.
   negated rows keep their entry, as a linear head's would.
 
 **Reading it.** The agreement the k-means start gives (NMI 0.680 against the stock pair's 0.418)
-comes with heads whose cells keep the start's affine shape. Training from k-means gave v a
-semantic part (it has none at the start) and so some curvature, but not enough to make the cells
-cones or the logits sign-blind. So the comparison with a Voronoi head should expect the k-means-start
-stock head to behave much like one already.
+comes with heads whose cells, like the start's, are convex but neither cones nor sign-blind, and
+whose decisions an affine classifier nearly reproduces. Training from k-means gave v a semantic part
+(it has none at the start) and so a quadratic term, but taken about each cell's mean it changes
+about 2% of the winners. An affine head is still not a Voronoi head, since its constants and norms
+are free, so the warm row of a comparison with a Voronoi head can tell the two apart. Whether the
+quadratic form is needed at all is for an affine head trained from the same start to decide.
+
+### Checked 2026-11-26: the quadratic term, and where the negations land
+
+The affine reading above was questioned in the agent forum: a positive second factor doesn't remove
+the quadratic term. Dropping that term about the origin first seemed to refute the reading, and a
+correction said so. Taking it about each cell's own mean shows the reading was right to within about
+2% of the winners. All the checks below ran on the cache's last 32,768 rows at step 50,000, with
+untracked scripts in `scratch/vertices/`: `quadterm.py`, `switched.py`, `negation_support.py`, and
+`tangent.py`, written by another session.
+
+**The quadratic term, taken about different points** (`quadterm.py`, `tangent.py`). Each logit
+K_j = (w_j·u + a_j)(v_j·u + b_j) loses (w_j·(u − m))(v_j·(u − m)), which leaves K_j's tangent at m,
+an affine function of u.
+- m is the origin, the mean shape of the fit rows (the cache's first 32,768), or each entry's own
+  cell mean on those rows.
+- The last column replaces each logit by its least-squares affine fit on the fit rows instead.
+- Each variant is one classifier, evaluated on every held-out row.
+
+| | constant-heavy factor's \|semantic\|/\|constant\| on rows: median, q99, max | that factor changes sign | winners changed, about: origin / data mean / own cell mean / least-squares fit | FVU_w: trained → origin → own cell mean |
+|---|---|---|---|---|
+| `km42_s42` | 0.039, 0.276, 0.738 | never | 21.5% / 4.8% / 1.9% / 2.9% | 0.9383 → 0.9424 → 0.9383 |
+| `km42_s43` | 0.039, 0.269, 0.705 | never | 21.7% / 4.9% / 1.8% / 3.0% | 0.9382 → 0.9422 → 0.9382 |
+| `km43_s43` | 0.038, 0.255, 0.689 | never | 19.5% / 4.9% / 1.7% / 3.1% | 0.9390 → 0.9423 → 0.9390 |
+| `l1_h1_s42` | 0.675, 6.60, 20.4 | on 13.2% of rows | 43.1% / 34.3% / 6.3% / 22.0% | 0.9505 → 0.9651 → 0.9505 |
+| `l1_h1_s43` | 0.716, 21.2, 107 | on 16.7% of rows | 47.0% / 36.0% / 6.4% / 23.0% | 0.9490 → 0.9713 → 0.9489 |
+
+- **One affine classifier nearly reproduces each head.** Taken about each cell's mean, it keeps
+  98.1–98.3% of the k-means-start heads' held-out winners and 93.6–93.7% of the stock heads', at
+  the same FVU_w.
+- **The origin result describes the surrogate, not the head.** Dropping the term about the origin
+  changes 19.5–21.7% of the winners (stock 43–47%), and expanding about the data mean falls in
+  between.
+- **So the k-means-start heads are consistent with predominantly affine behaviour on the tested
+  rows,** and the stock heads nearly so. This is one head of 32 entries and one checkpoint per run;
+  wide stacks are a different regime. Whether training needs the quadratic form is for an affine
+  head trained from the same start to decide.
+- **The k-means-start heads' second factor varies little and never changes sign.** Some entries'
+  reach 69–74% of its constant, above the 57% the median |b|/|v| alone allows.
+- **The origin surrogate's switched rows** (`switched.py`, `tangent.py`) describe that surrogate,
+  not the head. On them a row's error rises a median 2%, while the new decode lies a median
+  0.75–0.78 of the way to a random other entry's. The nearest other entry's decode is already
+  0.61–0.64 of the way, and the new winner is that nearest entry on only 17–21% of the rows. With
+  one head of 32 entries most of a row's error is what no entry explains, so similar error says
+  little about similar representation.
+
+**Where the negations land** (`negation_support.py`). Both kinds of head read x/‖x‖ of the raw
+cache row plus a constant 1; nothing subtracts a mean, and the k-means start's centring sits in
+its logits, not in its input.
+- **A negated row lands far from the data.** Its best cosine to 28,672 other rows has a median of
+  0.125, against 0.373 for a real row's nearest neighbour.
+- **Centring the rows on the training mean brings the negations only partway:** 0.184 against
+  0.320. No negated row of 4,096 comes as close as a typical real neighbour.
+
+So the stock heads' sign-blindness (11–27% of negated rows keep their entry) is behaviour off the
+data. Whether it folds real opposite deviations together needs a head trained on centred inputs.
 
 `bilinspec.py` now restores checkpoints as numpy, as `pareto.load_onto` does, so it runs under
 `JAX_PLATFORMS=cpu`. It took seconds a run, and `cellshape.py` took 77 seconds for all five.
