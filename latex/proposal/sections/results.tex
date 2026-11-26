@@ -445,9 +445,9 @@ active SAE latent, and entry swaps cost $0.001$--$0.06$ nats) and
 swapping a head to entry $j'$ shifts next-token probabilities toward
 $j'$'s empirical distribution (mean target rank $3.5$--$6$ out of 31 at
 unit step and $5$--$8$ at $4\times$ step, vs.\ $14$--$18$ for random
-directions), centroid steps between random-projection bins achieve equally
-specific next-token steering across all five layers (mean rank
-$0.21$--$1.69$ vs.\ $0.56$--$1.37$ for learned entries) because the
+directions), centroid steps between random-projection bins steer next
+tokens at least as specifically as learned entries in four of the five
+layers (mean rank $0.00$--$1.69$ vs.\ $0.56$--$1.37$) because the
 downstream map to the logits is locally nearly linear.
 
 \subsection{Automated interpretability}
