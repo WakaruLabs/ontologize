@@ -28,3 +28,16 @@ def test_noise_and_l1f_flags_reach_the_hyperparams(tmp_path):
                         "--checkpoint-each", "50000")
     assert (hyper.sd_F, hyper.s_L1F, hyper.sd_K, hyper.p_drop) == (0, 0, 0, 0)
     assert (meta.max_to_keep, meta.checkpoint_each) == (1, 50000)
+
+
+def test_the_headline_flags_reach_the_model(tmp_path):
+    def model(*argv):
+        np.save(tmp_path / "c.npy", np.zeros((8, 4), np.float32))
+        cfg = train_ste.parser().parse_args(
+            ["--cache", str(tmp_path / "c.npy"), "--out",
+             str(tmp_path / "run"), *argv])
+        return train_ste.setup(train_ste.finish(cfg), src=list(range(4)))[1]
+    off = model()
+    assert not (off.resid_first or off.gain_clip or off.logit_norm)
+    on = model("--resid-first", "--gain-clip", "--logit-norm")
+    assert on.resid_first and on.gain_clip and on.logit_norm

@@ -211,8 +211,10 @@ def test_a_headline_spec_rebuilds(signed, concat):
     """The headline branch names signed and block-diagonal heads
     `signed_dict` and `private_heads`, and carries fields this branch lacks.
     Its private heads are ConcatDictBlock under another name (same
-    `(h, k, d // h)` weights), so the spec maps onto `concat`."""
-    model = Ontologizer(**{**KW, "signed": signed, "concat": concat})
+    `(h, k, d // h)` weights), so the spec maps onto `concat`. Built
+    without `resid_gain`, headline's default (see the next tests)."""
+    model = Ontologizer(**{**KW, "signed": signed, "concat": concat,
+                           "resid_gain": False})
     spec = headline_spec(model)
     with pytest.raises(TypeError):
         Ontologizer(**spec)                    # the failure being migrated
@@ -222,18 +224,45 @@ def test_a_headline_spec_rebuilds(signed, concat):
 def test_a_headline_direct_spec_rebuilds():
     """`direct` is ported, so a headline model that used it is no longer
     refused: it maps onto this branch's field of the same name."""
-    kw = {**KW, "signed": True, "direct": True, "e_dec": KW["d_out"]}
+    kw = {**KW, "signed": True, "direct": True, "e_dec": KW["d_out"],
+          "resid_gain": False}
     model = Ontologizer(**kw)
     assert Ontologizer(**migrate_spec(headline_spec(model))) == model
 
 
-@pytest.mark.parametrize("field,value", [("resid_first", True),
-                                         ("logit_norm", True), ("gain_clip", True),
-                                         ("head_sparse", "jumprelu")])
-def test_an_active_headline_feature_refuses(field, value):
+def test_a_headline_gain_shape_spec_rebuilds_with_its_flags():
+    """resid_first, gain_clip and logit_norm are implemented here, so a
+    headline model that used them, with resid_gain, resid_norm and
+    resid_const as its GPT-2 runs do, rebuilds with them on."""
+    kw = {**KW, "signed": True, "direct": True, "e_dec": KW["d_out"],
+          "resid_gain": True, "resid_norm": True, "resid_const": True,
+          "resid_first": True, "gain_clip": True, "logit_norm": True}
+    model = Ontologizer(**kw)
+    spec = headline_spec(model)
+    spec.update(resid_first=True, gain_clip=True, logit_norm=True)
+    rebuilt = Ontologizer(**migrate_spec(spec))
+    assert rebuilt == model
+    assert rebuilt.resid_first and rebuilt.gain_clip and rebuilt.logit_norm
+
+
+@pytest.mark.parametrize("first,norm", [(False, True), (True, False),
+                                        (False, False)])
+def test_a_headline_gain_spec_the_two_branches_compute_differently_refuses(
+        first, norm):
+    """Headline's resid_gain leaves layer 0 unscaled without resid_first and
+    classifies the raw residual without resid_norm; this branch's
+    gain-shape does neither, so those checkpoints are refused."""
+    spec = headline_spec(Ontologizer(**{**KW, "resid_gain": False}))
+    spec.update(resid_gain=True, resid_first=first, resid_norm=norm,
+                resid_const=True)
+    with pytest.raises(ValueError, match="resid_first and resid_norm"):
+        migrate_spec(spec)
+
+
+def test_an_active_head_sparse_refuses():
     """Dropping a headline-only field is safe only at its no-op value; a
-    model that used the feature cannot be built here."""
-    spec = headline_spec(Ontologizer(**KW))
-    spec[field] = value
-    with pytest.raises(ValueError, match=field):
+    model that used the per-head sparse encoder cannot be built here."""
+    spec = headline_spec(Ontologizer(**{**KW, "resid_gain": False}))
+    spec["head_sparse"] = "jumprelu"
+    with pytest.raises(ValueError, match="head_sparse"):
         migrate_spec(spec)

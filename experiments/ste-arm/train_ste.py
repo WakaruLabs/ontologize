@@ -342,6 +342,18 @@ def parser() -> argparse.ArgumentParser:
                         "attenuate that constant ~270x to land on the "
                         "embedding mean, which is why it is dense and "
                         "magnitude pruning explodes")
+    p.add_argument("--resid-first", action="store_true",
+                   help="layer 0 reads the residual X - decode(0) as the "
+                        "later layers read theirs (DictStack.resid_first, "
+                        "from the headline branch). Needs no encoder")
+    p.add_argument("--gain-clip", action="store_true",
+                   help="clip each layer's gain at the row's input norm "
+                        "(DictStack.gain_clip, from the headline branch)")
+    p.add_argument("--logit-norm", action="store_true",
+                   help="standardize each head's logits across its entries "
+                        "before noise, winner dropout and the temperature, "
+                        "so the temperature alone sets the code's spread "
+                        "(DictStack.logit_norm, from the headline branch)")
     p.add_argument("--encoded", action="store_true",
                    help="build the Linear encoder sonar.py switches off. "
                         "With it off, E is X exactly, so the layer-0 "
@@ -600,7 +612,8 @@ def setup(cfg: argparse.Namespace, src=None, hp=None, hp_extra=None):
         biased_enc=bool(cfg.zca) or _needs_encoder(
             cfg.biased_enc, cfg.encoded or base.encoded),
         biased_dec=cfg.biased_dec, direct=cfg.direct,
-        per_layer_dec=cfg.per_layer_dec,
+        per_layer_dec=cfg.per_layer_dec, resid_first=cfg.resid_first,
+        gain_clip=cfg.gain_clip, logit_norm=cfg.logit_norm,
         forward=cfg.forward or base.fwd_mode, deepsup=base.deepsup,
         deepsup_sg=base.deepsup_sg,
         resid_norm=base.resid_norm, resid_const=base.resid_const,

@@ -126,6 +126,25 @@ class DictStack(nn.Module):
     # residual and excluded from the norm inside the layer. Applies to
     # layer 0 too -- the identity for unit-norm SONAR input.
     resid_gain: bool = True
+    # layer 0 reads the conditioned residual of the empty reconstruction,
+    # X - decode(0), as every later layer reads its residual (`nextinput`:
+    # normalized or gain-shaped, with the constant coordinate), instead of
+    # the encoder output. The `headline` branch's flag, with its meaning;
+    # needs forward="resid" and no encoder. With a decoder, decode(0) is its
+    # bias, so layer 0 sees rows about that bias; under `direct` it is 0.
+    resid_first: bool = False
+    # with `resid_gain`, clip each layer's gain at the row's input norm, so
+    # a badly fitted layer cannot enlarge the residual that scales the
+    # next. `nextinput` caps the norm of the residual it hands on, which
+    # leaves its shape alone and makes the gain each layer measures the
+    # clipped one.
+    gain_clip: bool = False
+    # standardize each head's logits across its k entries (zero mean, unit
+    # SD) at the classifier's output, before noise, winner dropout and the
+    # temperature. Bilinear logits have a free scale, so without this a
+    # classifier can rescale them to cancel any temperature schedule; with
+    # it the temperature alone sets the code's spread.
+    logit_norm: bool = False
 
     # classifier (NLinearBlock) args
     n: int = 2
@@ -233,9 +252,9 @@ class DictStack(nn.Module):
             e_off=i * self.e_dec if self.per_layer_dec else 0,
             e_lat=self.e_lat if self.per_layer_dec else 0,
             n=self.n,
-            gate=self.gate, activation_cl=self.activation_cl, 
-            biased_cl=self.biased_cl, 
-            select=self.select, 
+            gate=self.gate, activation_cl=self.activation_cl,
+            biased_cl=self.biased_cl, logit_norm=self.logit_norm,
+            select=self.select,
             activation_dict=self.activation_dict,
             norm_rows=self.norm_rows, concat=self.concat,
             signed=self.signed,
@@ -295,6 +314,18 @@ class DictStack(nn.Module):
                 "forwarding adds later layers' output to an earlier layer's "
                 "dictionary vectors (`decodeLayerEntries`), and each layer "
                 "now has its own block")
+        if self.resid_first and (self.forward != "resid" or self.encoded
+                                 or self.d_in != self.d_out):
+            raise ValueError(
+                "resid_first hands layer 0 the residual X - decode(0), which "
+                "needs forward='resid', no encoder and d_in == d_out")
+        if self.resid_first and self.resid_const and not self.const0:
+            raise ValueError(
+                "resid_first gives layer 0 the constant coordinate as every "
+                "residual layer has it, so const0=False contradicts it")
+        if self.gain_clip and not self.resid_gain:
+            raise ValueError("gain_clip clips resid_gain's gain, so it needs "
+                             "resid_gain")
 
         if self.encoded and self.e_enc > 0:
             d_enc = self.e_enc
@@ -332,8 +363,11 @@ class DictStack(nn.Module):
             n_up = n_const
             d_next = self.d_out + n_const
 
-        n_const0 = n_const if self.const0 else 0
-        dictencs = [self.dictenc(d_enc + n_const0, n_const0)]
+        if self.resid_first:     # layer 0 reads a residual, as the rest do
+            dictencs = [self.dictenc(d_next, n_up)]
+        else:
+            n_const0 = n_const if self.const0 else 0
+            dictencs = [self.dictenc(d_enc + n_const0, n_const0)]
         for i in range(1, self.l):
             dictencs.append(self.dictenc(d_next, n_up, i))
 
@@ -405,7 +439,17 @@ class DictStack(nn.Module):
         inputs, 0 for ghost inputs (the coordinate is constant, so its
         gradient surrogate is zero). No-op unless a residual-carrying
         forward mode is set, `resid_const`, and `const0`; a `None` ghost
-        input passes through."""
+        input passes through.
+
+        With `resid_first` layer 0's input is instead the conditioned
+        residual of the empty reconstruction, `nextinput(E, resid(E))`: the
+        encoder is a passthrough there, so E is the row. It has no ghost
+        path."""
+        if E is not None and self.resid_first:
+            if const != 1.0:
+                raise NotImplementedError(
+                    "resid_first has no ghost path (set ghost=False)")
+            return self.nextinput(E, self.resid(E), None)
         if (E is None or not self.resid_const or not self.const0
                 or self.forward not in ("resid", "resid_labels")):
             return E
@@ -433,6 +477,13 @@ class DictStack(nn.Module):
         if self.forward in ("resid", "resid_labels"):
             D = jax.lax.stop_gradient(
                 X.astype(self.dtype) - self.decode(R))
+            if self.gain_clip:
+                # cap the residual's norm at the row's; the next layer's
+                # gain-shape split then measures the clipped gain
+                n = jnp.linalg.norm(D, axis=-1, keepdims=True)
+                cap = jnp.linalg.norm(jax.lax.stop_gradient(
+                    X.astype(self.dtype)), axis=-1, keepdims=True)
+                D = D * jnp.minimum(1.0, cap / (n + jnp.finfo(self.dtype).eps))
             if self.resid_norm and not self.resid_gain:
                 D = D / (jnp.linalg.norm(D, axis=-1, keepdims=True)
                          + jnp.finfo(self.dtype).eps)
@@ -548,6 +599,10 @@ class DictStack(nn.Module):
             raise NotImplementedError(
                 "the ghost path composes through the decoder's weights, and "
                 "direct has no decoder (set ghost=False)")
+        if self.resid_first or self.logit_norm:
+            raise NotImplementedError(
+                "resid_first and logit_norm are implemented on the plain and "
+                "statistics paths, not the ghost path (set ghost=False)")
         E, rng_K = self.encode(X, sd_in, rng)
         E_g = self.encoder.ghost(X, E)
 

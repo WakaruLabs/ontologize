@@ -42,6 +42,9 @@ class DictEnc(nn.Module):
     gate: str = "none"
     activation_cl: str = "none"
     biased_cl: bool = False
+    # standardize each head's logits at the classifier's output
+    # (`DictStack.logit_norm`; `NLinearBlock.standardize`)
+    logit_norm: bool = False
 
     select: str = "softmax"
     activation_dict: str = "none"
@@ -124,9 +127,10 @@ class DictEnc(nn.Module):
             d_in=self.d_in, 
             d_out=self.k, 
             h=self.h, n=self.n,
-            biased=self.biased_cl, 
-            gate=self.gate, 
+            biased=self.biased_cl,
+            gate=self.gate,
             activation=self.activation_cl,
+            standardize=self.logit_norm,
             sparse=self.sparse_K,
             noise=self.noise_K, sd=self.sd_K,
             dtype_str=self.dtype_str,

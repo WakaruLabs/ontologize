@@ -190,6 +190,13 @@ class NLinearBlock(Sparse):
     biased: bool = True
     activation: str = "none"
     gate: str = "none"
+    # standardize each head's outputs across `d_out` (zero mean, unit SD),
+    # after the activation and the bias. As a classifier this is
+    # `logit_norm`: the logits' scale is fixed, so a temperature alone sets
+    # the selection's spread. `__call__` and `withL1` apply it, so every
+    # caller gets the same logits; the adjoint and eigen-analyses describe
+    # the forms before it, which order the entries the same way.
+    standardize: bool = False
     dtype_str: str = "bfloat16"
     # float32 master weights: in bfloat16 an Adam step below |w|/256 rounds away
     dtype_p_str: str = "float32"
@@ -225,10 +232,23 @@ class NLinearBlock(Sparse):
         Ys = self.nfwd(X)
         return self.fn_gate(Ys[0]) * jnp.prod(Ys[1:], axis=0)
 
+    def standardized(self, Y: Float[Array, "... h d_out"]
+                     ) -> Float[Array, "... h d_out"]:
+        """Y standardized across each head's outputs when `standardize`.
+        The variance floor is a fixed 1e-12, not finfo.eps: bilinear
+        logits at initialization have a variance near 1/d_in^2, which eps
+        would bias."""
+        if not self.standardize:
+            return Y
+        Y = Y.astype(self.dtype)
+        mu = Y.mean(-1, keepdims=True)
+        return (Y - mu) / jnp.sqrt(((Y - mu) ** 2).mean(-1, keepdims=True)
+                                   + 1e-12)
+
     def __call__(self, X: Float[Array, "... d_in"]) -> Float[Array, "... h d_out"]:
         # X: (batchsize, m) -> (batchsize, d, h)
         Y = self.fn(self.fwd(X))
-        return self.haddbias(Y, self.bias)
+        return self.standardized(self.haddbias(Y, self.bias))
 
     def withL1(self, X: Float[Array, "... d_in"]
                ) -> Tuple[Float[Array, "... h d_out"], Float[Array, ""]]:
@@ -237,7 +257,7 @@ class NLinearBlock(Sparse):
         mask = self.fn_gate(Ys[0])
         L1 = self.l1(mask)
         Y = self.fn(mask * jnp.prod(Ys[1:], axis=0))
-        return self.haddbias(Y, self.bias), L1
+        return self.standardized(self.haddbias(Y, self.bias)), L1
 
     def weight_ubind(self) -> Tuple[Float[Array, "h d_out d_in"], ...]:
         W = self.weight.astype(self.dtype)
@@ -246,6 +266,9 @@ class NLinearBlock(Sparse):
     def ghost(self, X: Float[Array, "... d_in"], Y: Float[Array, "... h d_out"],
               *args, **kwargs) -> Float[Array, "... d_out"]:
         """Map `fns.loss.ghostgrad` over `n` and `h`."""
+        if self.standardize:
+            raise NotImplementedError(
+                "the ghost gradient does not pass through `standardize`")
         W = self.weight.astype(self.dtype)
         X = X.astype(self.dtype)
         Y = Y.astype(self.dtype)

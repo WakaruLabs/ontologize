@@ -22,11 +22,10 @@ LEGACY_SPEC_KEYS = {
 #: have, with the value at which each is a no-op. Every `headline`
 #: checkpoint carries all of them, so a spec is only constructible here if
 #: they are dropped -- which is safe exactly when each is at its no-op
-#: value, and `migrate_spec` refuses otherwise.
+#: value, and `migrate_spec` refuses otherwise. (`resid_first`,
+#: `gain_clip` and `logit_norm` were here until this branch implemented
+#: them; `head_sparse`, the per-head sparse encoder, is not implemented.)
 HEADLINE_INERT_SPEC_KEYS = {
-    "resid_first": False,
-    "logit_norm": False,
-    "gain_clip": False,
     "head_sparse": "none",
 }
 #: `head_sparse`'s sizes, inert whenever `head_sparse` is "none"
@@ -97,6 +96,18 @@ def migrate_spec(spec: Dict[str, Any], params: Any = None) -> Dict[str, Any]:
     checkpoint whose layer 0 lacks the constant fails to load with a shape
     error rather than loading wrong."""
     spec = dict(spec)
+    # only `headline` checkpoints carry `head_sparse`. There `resid_gain`
+    # scales a layer's output by its residual's norm and leaves the input
+    # to `resid_norm`, and it leaves layer 0 alone unless `resid_first` is
+    # set. This branch's gain-shape always classifies the unit shape and
+    # applies at layer 0 too. The two agree only with all three on
+    if ("head_sparse" in spec and spec.get("resid_gain")
+            and not (spec.get("resid_first") and spec.get("resid_norm"))):
+        raise ValueError(
+            "a headline checkpoint with resid_gain needs resid_first and "
+            "resid_norm to build here: without resid_first headline leaves "
+            "layer 0 unscaled, and without resid_norm it classifies the raw "
+            "residual, where this branch's gain-shape does neither")
     for old, new in LEGACY_SPEC_KEYS.items():
         if old in spec:
             spec[new] = spec.pop(old)
