@@ -1,5 +1,129 @@
 # lcm-organism: notes
 
+## 2026-11-26: centered, the LCM's lead over SONAR grows, and on all heads the centered readout only matches it
+
+**In short.**
+- **The question** (the entry below). Compare the readout, the LCM and SONAR all centered, each in
+  the frame its loss weighs. A third arm, SONAR rescaled but not centered (`sonar_wf`), was added so
+  that centering's effect on SONAR is read apart from rescaling's.
+- **Centering is worth far more to the LCM than to SONAR.** In excess NMI over the null, it adds
+  0.0061 / 0.0078 (all heads / within a language) to the LCM, against its rescaled states. It adds
+  0.0012 / 0.0014 to SONAR, against its rescaled rows. It added 0.0074 / 0.0079 to the unrotated
+  readout.
+- **So the LCM's lead grows.** Centered, the LCM is ahead of SONAR by 0.0213 / 0.0646, against
+  0.0164 / 0.0583 rescaled and 0.0171 / 0.0589 for the TPU references.
+- **Against the centered pair, the centered readout closes 96.0% / 45.2% of SONAR's gap to the LCM**
+  unrotated, and 97.2% / 45.0% rotated. Against the TPU pair it closed 114.6% / 48.2% and 116.1% /
+  48.0%. On all heads it is now 0.0009 and 0.0006 below the centered LCM, inside the seed spread.
+  Within a language it is 0.0354 and 0.0355 below. So when the entry of 2026-11-25, later, found the
+  readout passing the LCM on all heads, that was the centering.
+- **Rescaling costs SONAR 0.0020 / 0.0023,** about what it cost the LCM (0.0027 / 0.0029). Both
+  figures are near the seed spread, and both are measured against TPU references.
+
+**SONAR rescaled** (`weightframe.py`, with the layout of SONAR's rows as source and no `--center`):
+y = c √w ⊙ x. Here w is no837's and c = 376.35, the default rule's c, which `sonar_wfc` also has.
+Checked on 20,000 prefix rows (sample seed 0):
+- it is `sonar_wfc` moved by one offset of norm 17.730, `sonar_wfc`'s recorded offset (spread at
+  most 0.0040);
+- it is c √w ⊙ SONAR's rows to within 0.0078, float16's rounding at its largest values (18.6), and
+  float16 rounded no value to zero;
+- its weights are within 1e-4 of `sonar_wfc`'s and zero the same coordinates, and its sidecars are
+  `lcm_b4`'s;
+- its mean is 23.5% of a row's squared norm.
+
+**Runs** on the RTX 3090, seeds 42 and 43 of each arm to step 46,250, by the commands in the entry
+below and these:
+
+```bash
+A=data/activations/lcm-organism
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/weightframe.py --source $A/sonar_rows_b4.npy \
+    --out $A/sonar_wf_b4.npy
+ARMS=sonar_wf experiments/lcm-organism/phase2.sh train
+ARMS=sonar_wf experiments/lcm-organism/phase2.sh score
+```
+
+| Arm | Seed 42 | Seed 43 |
+|---|---|---|
+| LCM centered | 2 h 18 min (5.6 steps a second) | 2 h 16 min (5.7), resumed twice |
+| SONAR centered | 1 h 54 min (6.8) | 1 h 53 min (6.8) |
+| SONAR rescaled | 2 h 11 min (5.9), resumed once | 1 h 52 min (6.9), resumed once |
+
+A resumed run's time includes the steps it repeated after its checkpoint. As for the other arms, the
+stored spec computes in float32 with JAX's default TF32 matmuls, and scoring ran at `highest`.
+
+| Arm | All 380 heads: matched NMI (null) | First 38 heads, within language (null) | Excess, all heads / within | Head-specific part | Best over runner-up | FVU_w, each seed |
+|---|---|---|---|---|---|---|
+| LCM, block 4 (TPU) | 0.0340 (0.0048) | 0.1269 (0.0495) | 0.0292 / 0.0774 | 0.0026 | 0.0010 | 0.2820 / 0.2812 |
+| LCM rescaled | 0.0313 (0.0048) | 0.1245 (0.0500) | 0.0265 / 0.0745 | 0.0024 | 0.0005 | 0.2851 / 0.2845 |
+| **LCM centered** | **0.0374** (0.0048) | **0.1322** (0.0498) | **0.0325 / 0.0823** | **0.0029** | **0.0009** | **0.2867 / 0.2869** |
+| SONAR, TPU | 0.0169 (0.0048) | 0.0692 (0.0507) | 0.0120 / 0.0186 | 0.0013 | 0.0004 | 0.4593 / 0.4585 |
+| **SONAR rescaled** | **0.0149** (0.0048) | **0.0670** (0.0507) | **0.0100 / 0.0163** | **0.0012** | **0.0003** | **0.4405 / 0.4402** |
+| **SONAR centered** | **0.0161** (0.0048) | **0.0684** (0.0507) | **0.0113 / 0.0177** | **0.0014** | **0.0029** | **0.4549 / 0.4548** |
+| Readout from x_n alone, centered, unrotated | 0.0365 (0.0048) | 0.0968 (0.0499) | 0.0317 / 0.0469 | 0.0032 | 0.0043 | 0.2634 / 0.2636 |
+| Readout from x_n alone, centered, rotated | 0.0368 (0.0048) | 0.0968 (0.0499) | 0.0319 / 0.0468 | 0.0032 | 0.0016 | 0.2651 / 0.2655 |
+
+Next-sentence FVU_w, each seed: LCM centered 0.5628 / 0.5635, rescaled 0.5646 / 0.5643; SONAR
+centered 1.2132 / 1.2127, rescaled 1.2271 / 1.2270, TPU 1.2135 / 1.2139.
+
+**In excess NMI over the null** (all heads / within a language):
+
+| | The LCM's states | SONAR's rows | Readout from x_n alone, unrotated |
+|---|---|---|---|
+| TPU reference | 0.0292 / 0.0774 | 0.0120 / 0.0186 | |
+| Rescaled | 0.0265 / 0.0745 | 0.0100 / 0.0163 | 0.0243 / 0.0391 |
+| Centered | 0.0325 / 0.0823 | 0.0113 / 0.0177 | 0.0317 / 0.0469 |
+| Centering adds | 0.0061 / 0.0078 | 0.0012 / 0.0014 | 0.0074 / 0.0079 |
+| Rescaling adds, against the TPU reference | −0.0027 / −0.0029 | −0.0020 / −0.0023 | |
+| The mean's share of a row's squared norm | 14.7% | 23.5% | 28% |
+
+| Gap closed by the centered readout (all heads / within) | Unrotated | Rotated |
+|---|---|---|
+| Against the TPU pair | 114.6% / 48.2% | 116.1% / 48.0% |
+| Against the rescaled pair | 131.8% / 52.6% | 133.4% / 52.4% |
+| Against the centered pair | 96.0% / 45.2% | 97.2% / 45.0% |
+
+**What it means.**
+- **The like-for-like reading is the centered one.** With all three arms centered, each in its
+  weighted frame:
+  - On all heads, the readout from x_n alone reaches the LCM to within the seed spread.
+  - Within a language, it gets 45% of the way from SONAR to the LCM.
+
+  What the LCM's states agree on beyond a linear function of the current row is still in the
+  within-language slow heads, where most of the lead always was.
+- **The LCM's lead is not the mean's doing.** Centering both references widens it, by 0.0049 on all
+  heads and 0.0064 within a language, against the rescaled pair.
+- **Centering's gain does not follow the mean's size.** SONAR's mean is a larger share of its rows
+  than the LCM's (23.5% against 14.7%), yet centering adds a fifth as much to it. The readout's mean
+  is the largest (28%), and centering adds to it about what it adds to the LCM. The entry of
+  2026-11-25, later, offered an untested reading: with the mean in place, every row's shape shares
+  one large direction, and the heads cut less of the variation that tells rows apart. If that is
+  so, the mean's share alone does not set the cost. What else would set it was not measured.
+- **Reconstruction moves the other way from agreement, and only a little.**
+  - Centering raises FVU_w in both references, by 0.0016 / 0.0024 for the LCM and 0.0144 / 0.0146
+    for SONAR (seeds 42 / 43).
+  - It lowers next-sentence FVU_w, by 0.0018 / 0.0008 for the LCM and 0.0139 / 0.0143 for SONAR.
+  - Rescaling lowered SONAR's FVU_w by 0.0188 / 0.0183 against the TPU arm's, and raised the LCM's
+    by 0.0031 / 0.0033.
+- **SONAR centered's best over runner-up is 0.0029,** against 0.0003–0.0004 for the other SONAR
+  arms. Its head-specific part, 0.0014, is SONAR's. With one seed pair this may be noise; it was not
+  examined.
+
+**Caveats.**
+- **One seed pair per arm.** The LCM's three seed pairs spread by 0.0017 on the slow heads. Against
+  that spread:
+  - centering's gain to the LCM (0.0061 / 0.0078) is 3.6 to 4.6 times as large;
+  - centering's gain to SONAR (0.0012 / 0.0014) is inside it;
+  - rescaling's cost to SONAR (0.0020 / 0.0023) is just outside it;
+  - the readout's distance from the centered LCM on all heads (0.0009 unrotated, 0.0006 rotated) is
+    inside it.
+- **Two platforms.** The references trained on the TPU at `high`, and these arms on the GPU at TF32,
+  so rescaling's cost mixes in the change of platform. Centering's gain does not: both arms of each
+  comparison trained on the GPU.
+- **Resumed runs.** The LCM centered's seed 43 resumed from its step-6,250 and 7,250 checkpoints. SONAR
+  rescaled's seed 42 resumed from its step-27,000 checkpoint, and seed 43 from step 2,500. Each resume
+  continues the batch stream but restarts the training noise's key (`Hyperparams.train` passes
+  `PRNGKey(seed)` at every start), so those runs are not the ones uninterrupted jobs would give.
+
 ## 2026-11-25, evening: the LCM's states and SONAR's rows centered, built and queued
 
 **In short.**
@@ -16,7 +140,8 @@
     by the mean.
   - What centering does to SONAR is less clean. No rescaled, uncentered SONAR arm exists, so against
     SONAR the change mixes centering with rescaling. Rescaling cost the LCM 0.0027 / 0.0029 of
-    excess NMI.
+    excess NMI. (2026-11-26: one was built and trained after this entry, `sonar_wf`, so centering
+    is read against it; the entry above.)
 - **The means.** In that frame SONAR's mean is 23.5% of a row's squared norm, against the LCM's
   14.7% and the readout's 28%.
 
