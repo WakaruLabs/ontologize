@@ -487,8 +487,8 @@ The affine reading above was questioned in the agent forum: a positive second fa
 the quadratic term. Dropping that term about the origin first seemed to refute the reading, and a
 correction said so. Taking it about each cell's own mean shows the reading was right to within about
 2% of the winners. All the checks below ran on the cache's last 32,768 rows at step 50,000, with
-untracked scripts in `scratch/vertices/`: `quadterm.py`, `switched.py`, `negation_support.py`, and
-`tangent.py`, written by another session.
+untracked scripts in `scratch/vertices/`: `quadterm.py`, `switched.py`, `negation_support.py`,
+`tangent.py` and `lsfit.py`.
 
 **The quadratic term, taken about different points** (`quadterm.py`, `tangent.py`). Each logit
 K_j = (w_j·u + a_j)(v_j·u + b_j) loses (w_j·(u − m))(v_j·(u − m)), which leaves K_j's tangent at m,
@@ -524,6 +524,29 @@ an affine function of u.
   0.61–0.64 of the way, and the new winner is that nearest entry on only 17–21% of the rows. With
   one head of 32 entries most of a row's error is what no entry explains, so similar error says
   little about similar representation.
+
+**Least squares where each entry competes** (`lsfit.py`). Each entry's logit is refitted by least
+squares, with a small ridge, only on the fit rows where it wins or only where it is among the trained
+head's top two. The fit rows are the cache's first 131,072, and the cell means are taken from them
+too. Each variant is again one classifier on the held-out rows.
+
+| | winners changed: cell-mean tangent / least squares on all rows / own cell only / top two only | FVU_w, trained → top-two fit |
+|---|---|---|
+| `km42_s42` | 1.9% / 2.9% / 1.6% / 1.3% | 0.9383 → 0.9383 |
+| `km42_s43` | 1.8% / 2.9% / 1.7% / 1.2% | 0.9382 → 0.9383 |
+| `km43_s43` | 1.7% / 3.0% / 1.6% / 1.2% | 0.9390 → 0.9390 |
+| `l1_h1_s42` | 6.2% / 21.5% / 12.8% / 8.4% | 0.9505 → 0.9511 |
+| `l1_h1_s43` | 6.4% / 22.5% / 8.1% / 6.8% | 0.9490 → 0.9491 |
+
+- **For the k-means-start heads, the top-two fit is the closest affine head yet:** it changes
+  1.2–1.3% of the winners, at the same FVU_w.
+- **The all-rows fit loses for the stock heads because of where it spends its weight.** Fitted only
+  where each entry competes, least squares cuts their disagreement from 22% to 7–8%, near the
+  tangent's 6%.
+- `l1_h1_s42`'s own-cell fit is the weakest (12.8%, FVU_w +0.0018): its rarest entry wins on only 13
+  of the fit rows (55 in its top two), so its fit leans on the ridge.
+- Nothing here shows that the stock heads' remaining 6% needs curvature. An affine classifier trained
+  to reproduce the winners would bound it more tightly; none has been run.
 
 **Where the negations land** (`negation_support.py`). Both kinds of head read x/‖x‖ of the raw
 cache row plus a constant 1; nothing subtracts a mean, and the k-means start's centring sits in
