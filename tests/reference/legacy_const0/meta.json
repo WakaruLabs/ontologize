@@ -1,0 +1,40 @@
+{
+ "about": "a checkpoint from before `const0` existed, shaped like resid_nc: soft selection, no gain-shape, and no constant coordinate at layer 0. Its spec lacks the field, and the fields added after it, so migrate_spec must infer const0 from the classifier's width",
+ "temperature": 0.03,
+ "rtol": 0.0001,
+ "atol_rel": 1e-05,
+ "rows": {
+  "held_out": [
+   0,
+   1,
+   2,
+   3
+  ],
+  "clear_winner": 4,
+  "near_tie": 5,
+  "rescaled_0.5": 6,
+  "rescaled_3": 7
+ },
+ "rescaled_of": 0,
+ "near_tie": {
+  "layer": 0,
+  "head": 0,
+  "gap_over_max_logit": 0.0002004282723646611
+ },
+ "clear_winner_min_gap_over_max_logit": 0.373410165309906,
+ "spec_without": [
+  "const0",
+  "resid_first",
+  "gain_clip",
+  "logit_norm"
+ ],
+ "made": {
+  "commit": "c11015e",
+  "seed": 0,
+  "steps": 1500,
+  "final_loss": 0.12882229685783386,
+  "jax": "0.11.2",
+  "flax": "0.12.10",
+  "data": "planted: one of 8 atoms N(0, 1) plus one of 8 N(0, 0.25), noise SD 0.1, gains U(0.5, 1.5), d 16"
+ }
+}

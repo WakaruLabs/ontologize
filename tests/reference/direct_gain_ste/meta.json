@@ -1,0 +1,35 @@
+{
+ "about": "headline's V_direct_gain_ste design, small: signed entries in the output space with no decoder, gain-shape coding of every layer's residual including layer 0's (resid_first), each gain clipped at the row's norm (gain_clip), hard selection. The model is positively homogeneous: f(cX) = c f(X), with the same codes",
+ "temperature": 0.03,
+ "rtol": 0.0001,
+ "atol_rel": 1e-05,
+ "rows": {
+  "held_out": [
+   0,
+   1,
+   2,
+   3
+  ],
+  "clear_winner": 4,
+  "near_tie": 5,
+  "rescaled_0.5": 6,
+  "rescaled_3": 7
+ },
+ "rescaled_of": 0,
+ "near_tie": {
+  "layer": 0,
+  "head": 0,
+  "gap_over_max_logit": 0.00020000588847324252
+ },
+ "clear_winner_min_gap_over_max_logit": 0.4337702691555023,
+ "spec_without": [],
+ "made": {
+  "commit": "c11015e",
+  "seed": 0,
+  "steps": 1500,
+  "final_loss": 0.10286523401737213,
+  "jax": "0.11.2",
+  "flax": "0.12.10",
+  "data": "planted: one of 8 atoms N(0, 1) plus one of 8 N(0, 0.25), noise SD 0.1, gains U(0.5, 1.5), d 16"
+ }
+}
