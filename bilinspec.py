@@ -85,8 +85,8 @@ the first and last (0 = every saved step). The last chosen step is the
                     share, |w||v| and `kept` for every (layer, head,
                     entry), and `common` for every (layer, head)
   bilinspec.csv     per (step, layer) summary
---replot redraws from bilinspec.npz without the checkpoint. NOTE:
-Ontologizer checkpoints restore on GPU JAX only.
+--replot redraws from bilinspec.npz without the checkpoint.
+Checkpoints restore as numpy, so JAX_PLATFORMS=cpu works.
 """
 # disable preallocation so this can share the GPU (same as sonar.py)
 import os
@@ -291,6 +291,7 @@ def load_classifiers(ckpt, steps: Optional[Sequence[int]], n_steps: int):
     import jax
     import orbax.checkpoint as ocp
     from ontologize.training.serialize import restore_spec
+    from pareto import _plain
 
     manager = ocp.CheckpointManager(
         Path(ckpt).resolve(),
@@ -300,7 +301,14 @@ def load_classifiers(ckpt, steps: Optional[Sequence[int]], n_steps: int):
     spec = restore_spec(manager, chosen[-1])
     out = {}
     for st in chosen:
-        state = manager.restore(st, items={"state": None})["state"]
+        # restored as numpy, as pareto.load_onto does: orbax's default
+        # reuses the saved sharding, which a CPU-only process lacks
+        args = jax.tree_util.tree_map(
+            lambda _: ocp.RestoreArgs(restore_type=np.ndarray),
+            _plain(manager.item_metadata(st)["state"]))
+        state = manager.restore(
+            st, items={"state": None},
+            restore_kwargs={"state": {"restore_args": args}})["state"]
         params = state["params"] if "opt_state" in state else state
         while "params" in params:
             params = params["params"]
