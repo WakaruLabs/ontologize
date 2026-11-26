@@ -287,8 +287,9 @@ centroids sit at λ 0.80, and the noise floor is FVU 0.0041.
   - On unit-norm rows, one softmax head's vertices move to λ 1.38, past every row.
   - At layer 2 of three, softmax atoms sit at 7.3 times their centroids' length (reach 4.6), as
     in `resid_nc`.
-  - The short schedule cut both (λ 1.04; reach 2.0 at layer 2), but its last phase is a tenth of
-    the steps, so that may only mean it was too short to push them back out.
+  - The short schedule cut both (λ 1.04; reach 2.0 at layer 2). That came from its short last
+    phase: with a last phase of a quarter of the steps the vertices went back out, to λ 1.39 on
+    unit rows and reach 2.7 at layer 2.
   - With every knob on together, the cut mostly goes. The fixed-temperature soft arms overshoot
     at every layer, and annealed softmax, whose code hardened there, doesn't. So the overshoot
     follows a soft code under unit-norm rows or depth.
@@ -365,8 +366,15 @@ Vertices past the data read reach well above 1 with nothing beyond.
   for its placement in reconstruction.
 - **The mechanism on unit-norm rows.** Convex mixtures of points on a sphere lie inside the ball,
   so to reach rows on the sphere by mixing, the atoms have to sit outside it.
-- **Not in the grid.** The long schedule wasn't in it, and it is what would tell whether the short
-  schedule's cut on single knobs lasts.
+- **The long schedule on the two knobs** (run afterwards, same data and seeds;
+  `data/out/vertices/simplex/grid_long_{unit,l3}_x5`). With a last sparsemax phase of a quarter of
+  the steps instead of a tenth, the vertices go back out.
+  - On `--unit`: λ 1.393, with atom over centroid / reach / beyond at 1.81 / 1.43 / 0 and soft
+    FVU 0.042. That is `sparsemax_fixed`'s λ 1.372.
+  - On `--l 3`: 1.59 / 1.03 / 0.017, 2.03 / 1.35 / 0 and 4.53 / 2.70 / 0 at layers 0–2, between the
+    short schedule and `sparsemax_fixed`.
+  - So the short schedule's cut came from its short last phase. The schedule delays the overshoot
+    rather than preventing it.
 
 **The Voronoi head** (`voronoi_ste`, `voronoi_softmax`; ten seeds per arm, medians; `simplex.py`'s
 defaults except where noted; `data/out/vertices/simplex/voronoi_a*`, `stock_nonoise_a*`).
