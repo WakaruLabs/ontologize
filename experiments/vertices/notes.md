@@ -274,3 +274,141 @@ centroids sit at λ 0.80, and the noise floor is FVU 0.0041.
 - **Caveats.** One head at one layer, with as many entries as atoms, and one noise level. This
   classifier can represent the barycentric coordinates exactly, since they are affine in x; a
   SONAR head's need not.
+
+## 2026-11-25: the toy at fifty seeds, taken toward the stack, and a Voronoi head
+
+**Short version.**
+- **The argmax phase of the sparsemax–argmax–sparsemax schedule repairs merged corners.** Over
+  fifty seeds per arm, with the same data and seeds for every arm, the schedules found every
+  corner in 37–43 runs, and fixed-temperature sparsemax in 23. Paired by seed, they rescued 14–20
+  runs and lost none. Where both found every corner, the vertices sit in the same places.
+- **Two of the stack's features make soft codes overshoot: unit-norm rows and depth.** More heads
+  don't, and neither does a layer 0 without its constant coordinate.
+  - On unit-norm rows, one softmax head's vertices move to λ 1.38, past every row.
+  - At layer 2 of three, softmax atoms sit at 7.3 times their centroids' length (reach 4.6), as
+    in `resid_nc`.
+  - The short schedule cut both (λ 1.04; reach 2.0 at layer 2), but its last phase is a tenth of
+    the steps, so that may only mean it was too short to push them back out.
+  - With every knob on together, the cut mostly goes. The fixed-temperature soft arms overshoot
+    at every layer, and annealed softmax, whose code hardened there, doesn't. So the overshoot
+    follows a soft code under unit-norm rows or depth.
+- **A Voronoi head, whose logits are tied to its atoms, is the more reliable hard code.**
+  - The Voronoi STE found every corner in 7–8 of 10 seeds at α 0.2 and 10 of 10 at α 0.05,
+    from atoms started near the rows' mean.
+  - The stock `ste` head found them in 4 and 5 of 10 with its training noise, and in 2 and 6 of
+    10 without it.
+  - The Voronoi STE also fits better (argmax FVU 0.265–0.268 against 0.29–0.30, and 0.117–0.119
+    against 0.147–0.156).
+- **As a soft code the Voronoi head matches stock softmax, at a fixed temperature.**
+  - It fits about as well (FVU 0.055 against 0.053 at α 0.2, 0.025 against 0.031 at α 0.05),
+    finds the corners as often, and puts its vertices just past them (λ 1.06–1.10, nothing
+    beyond).
+  - Under the stock anneal it hardened instead. Its one scale is learned as log β, which Adam
+    at lr 1e-3 moves about one e-fold per 1,000 steps, while the anneal lowers the temperature
+    33-fold in 3,000. A Voronoi head's logit scale has to be free to follow the temperature.
+- **Training noise holds stock softmax's vertices on the hull.** Without it, they sit at λ 1.17
+  past the corners, and the soft FVU is lower.
+
+**The schedule at fifty seeds** (`sparsemax_fixed`, `schedule_short`, `schedule_long`; α 0.05 and
+0.2, otherwise `simplex.py`'s defaults; `data/out/vertices/simplex/k8_d16_a{0.05,0.2}_s0.05_x50`).
+A clean run has acc ≥ 0.9; one that isn't merged two corners into one entry. Rescued means the
+schedule was clean and `sparsemax_fixed` wasn't, on the same seed; lost is the reverse. The
+p-values are exact McNemar tests.
+
+| | α 0.05 | α 0.2 |
+|---|---|---|
+| `sparsemax_fixed`, clean | 23 / 50 | 23 / 50 |
+| `schedule_short`, clean | 43 / 50 | 37 / 50 |
+| `schedule_long`, clean | 43 / 50 | 38 / 50 |
+| `schedule_short`, rescued / lost | 20 / 0 (p = 2e-6) | 14 / 0 (p = 1e-4) |
+| `schedule_long`, rescued / lost | 20 / 0 (p = 2e-6) | 15 / 0 (p = 6e-5) |
+
+- **Placement where both arms were clean (23 seeds at each α).** λ is 0.956 for both at α 0.05.
+  At α 0.2 it is 0.900 for `sparsemax_fixed` against 0.883 (short) and 0.898 (long).
+- **The five-seed table overstated `sparsemax_fixed`.** Its four clean seeds of five at α 0.05
+  were a lucky draw.
+
+**The knob grid** (`simplex_grid.sh`; α 0.2, five seeds, 4,000 steps). The measures are
+`place.py`'s, per layer, as medians of atom over centroid / reach / beyond. Vertices at the
+corners read atom over centroid above 1, since the centroids sit inside, with reach near 1.
+Vertices past the data read reach well above 1 with nothing beyond.
+
+| configuration | `softmax` | `sparsemax_fixed` | `schedule_short` | `ste` |
+|---|---|---|---|---|
+| one head | 1.81 / 1.07 / 0.014 | 1.85 / 1.07 / 0.015 | 1.67 / 0.99 / 0.054 | 0.94 / 0.56 / 0.52 |
+| `--h 4` | 1.69 / 1.03 / 0.034 | 1.83 / 1.12 / 0.010 | 1.47 / 0.92 / 0.114 | 1.05 / 0.57 / 0.45 |
+| `--h 16` | 1.65 / 1.01 / 0.047 | 1.93 / 1.29 / 0.001 | 1.54 / 0.90 / 0.100 | 1.25 / 0.54 / 0.36 |
+| `--no-const0` | 1.80 / 1.07 / 0.013 | 1.70 / 1.02 / 0.043 | 1.65 / 0.98 / 0.059 | 0.94 / 0.57 / 0.53 |
+| `--unit` | 2.16 / 1.69 / 0 | 2.86 / 2.39 / 0 | 1.38 / 1.07 / 0 | 0.93 / 0.73 / 0.65 |
+| `--no-const0 --unit` | 1.81 / 1.43 / 0 | 2.12 / 1.73 / 0 | 1.26 / 0.99 / 0.081 | 0.94 / 0.74 / 0.64 |
+| `--l 3`, layer 0 | 1.67 / 1.14 / 0 | 1.61 / 1.04 / 0.010 | 1.54 / 1.02 / 0.031 | 1.03 / 0.81 / 0.44 |
+| `--l 3`, layer 1 | 2.70 / 1.78 / 0 | 2.20 / 1.55 / 0 | 1.44 / 0.97 / 0.067 | 1.04 / 0.71 / 0.43 |
+| `--l 3`, layer 2 | 7.30 / 4.56 / 0 | 7.80 / 5.04 / 0 | 3.17 / 2.02 / 0 | 1.14 / 0.67 / 0.34 |
+| all knobs, layer 0 | 1.32 / 0.97 / 0.10 | 2.48 / 1.73 / 0 | 2.19 / 1.55 / 0 | 1.01 / 0.80 / 0.48 |
+| all knobs, layer 1 | 1.33 / 0.72 / 0.26 | 5.32 / 2.70 / 0 | 4.85 / 2.36 / 0 | 0.89 / 0.51 / 0.59 |
+| all knobs, layer 2 | 3.58 / 1.09 / 0.036 | 8.72 / 3.09 / 0 | 8.32 / 2.43 / 0 | 2.15 / 0.70 / 0.15 |
+
+- **What `--l 3` means.** It runs with `--deepsup --resid-norm`.
+- **"All knobs"** is `--h 16 --l 3 --deepsup --resid-norm --no-const0 --unit`. It took 25 minutes
+  for five seeds of the four arms on CPU, beside other CPU jobs; the whole grid took 48.
+  - There annealed softmax hardened, to 3.86 entries a row with 7.9% of rows decided, and its
+    vertices stay at or inside the hull.
+  - The fixed-temperature arms stay soft (5.2–5.7 entries a row, none decided) and overshoot at
+    every layer.
+  - The short schedule's cut mostly goes: its reach is 1.55, 2.36 and 2.43 at layers 0–2, against
+    1.73, 2.70 and 3.09 for `sparsemax_fixed`.
+- **The corner readout**, available with one head at one layer:
+  - On `--unit`, λ is 1.377 for softmax, 1.372 for `sparsemax_fixed` and 1.038 for
+    `schedule_short`.
+  - On `--no-const0 --unit` it is 1.337, 1.305 and 0.967.
+- **Soft FVU on `--unit`:** 0.059, 0.038 and 0.101 for the same three arms, so the schedule paid
+  for its placement in reconstruction.
+- **The mechanism on unit-norm rows.** Convex mixtures of points on a sphere lie inside the ball,
+  so to reach rows on the sphere by mixing, the atoms have to sit outside it.
+- **Not in the grid.** The long schedule wasn't in it, and it is what would tell whether the short
+  schedule's cut on single knobs lasts.
+
+**The Voronoi head** (`voronoi_ste`, `voronoi_softmax`; ten seeds per arm, medians; `simplex.py`'s
+defaults except where noted; `data/out/vertices/simplex/voronoi_a*`, `stock_nonoise_a*`).
+- "Mean" starts its atoms near the rows' mean, and "rows" at k training rows drawn at random.
+- "Fixed T" holds the temperature at 1 (`--temperature-end 1`). The rest anneal as the stock
+  arms do.
+- The stock arms' noise is the recipe's: logit noise, feature noise and winner dropout. "No
+  noise" turns all three off.
+
+α 0.2 (the planted cells' centroids at λ 0.53):
+
+| arm | clean | λ vertex | err vertex | support | decided | FVU | FVU, argmax |
+|---|---|---|---|---|---|---|---|
+| `ste` | 4 | 0.420 | 0.597 | 1.00 | 1.000 | 0.292 | 0.292 |
+| `ste`, no noise | 2 | 0.437 | 0.576 | 1.00 | 1.000 | 0.302 | 0.302 |
+| `voronoi_ste`, mean | 7 | 0.501 | 0.500 | 1.00 | 1.000 | 0.268 | 0.268 |
+| `voronoi_ste`, rows | 8 | 0.523 | 0.478 | 1.00 | 1.000 | 0.267 | 0.267 |
+| `voronoi_ste`, mean, fixed T | 8 | 0.534 | 0.467 | 1.00 | 1.000 | 0.265 | 0.265 |
+| `softmax` | 9 | 0.962 | 0.089 | 7.34 | 0.000 | 0.054 | 0.751 |
+| `softmax`, no noise | 7 | 1.171 | 0.207 | 7.96 | 0.000 | 0.036 | 1.279 |
+| `voronoi_softmax`, mean | 9 | 0.587 | 0.413 | 2.34 | 0.368 | 0.170 | 0.276 |
+| `voronoi_softmax`, rows | 8 | 0.840 | 0.216 | 6.28 | 0.001 | 0.076 | 0.515 |
+| `voronoi_softmax`, mean, fixed T | 8 | 1.064 | 0.175 | 7.62 | 0.000 | 0.055 | 0.994 |
+
+α 0.05 (the planted cells' centroids at λ 0.80):
+
+| arm | clean | λ vertex | err vertex | support | decided | FVU | FVU, argmax |
+|---|---|---|---|---|---|---|---|
+| `ste` | 5 | 0.673 | 0.342 | 1.00 | 1.000 | 0.156 | 0.156 |
+| `ste`, no noise | 6 | 0.776 | 0.225 | 1.00 | 1.000 | 0.147 | 0.147 |
+| `voronoi_ste`, mean | 10 | 0.790 | 0.211 | 1.00 | 1.000 | 0.119 | 0.119 |
+| `voronoi_ste`, rows | 5 | 0.715 | 0.295 | 1.00 | 1.000 | 0.139 | 0.139 |
+| `voronoi_ste`, mean, fixed T | 10 | 0.795 | 0.205 | 1.00 | 1.000 | 0.117 | 0.117 |
+| `softmax` | 10 | 1.017 | 0.051 | 5.28 | 0.000 | 0.031 | 0.191 |
+| `softmax`, no noise | 10 | 1.170 | 0.185 | 7.60 | 0.000 | 0.019 | 0.318 |
+| `voronoi_softmax`, mean | 9 | 0.796 | 0.204 | 1.03 | 0.975 | 0.116 | 0.119 |
+| `voronoi_softmax`, rows | 4 | 0.831 | 0.324 | 2.41 | 0.285 | 0.080 | 0.208 |
+| `voronoi_softmax`, mean, fixed T | 10 | 1.100 | 0.134 | 6.39 | 0.000 | 0.025 | 0.247 |
+
+- **The start matters for the Voronoi STE.** From training rows it found every corner in 5 of 10
+  seeds at α 0.05, against 10 from near the mean. Like k-means, it has local minima.
+- **The toy favours a Voronoi head.** The planted cells are close to the corners' own Voronoi
+  cells, so the toy can't test whether a free quadratic classifier finds covers that Voronoi
+  cells miss. What it shows is that tying costs a soft code nothing here, and makes a hard code
+  more reliable.
