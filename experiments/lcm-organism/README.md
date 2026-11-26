@@ -19,13 +19,14 @@ arms. Results go in `notes.md`.
 | `recolour.py` | The effective-dimension control: SONAR's rows through one linear map that gives them a harvest's spectrum, laid out as that harvest. A source already laid out as the harvest, such as the fixed mix, is read row for row. `--about-mean` maps each row's variation about the source's mean and leaves the mean on the source's own axes, and `--center` maps the same variation and leaves the mean out |
 | `readout.py` | The context-averaging control: Gate B's ridge readout of a harvest's state from x_n, the mean of its document's earlier rows and an indicator of n = 0, written at every row of the harvest and laid out as it. `--features row` reads from x_n alone |
 | `ctxmean.py` | The fixed-mix control: SONAR's row plus a fixed weight times its document's earlier mean, with no LCM, laid out as a harvest and weighted as SONAR |
-| `weightframe.py` | A cache's rows in the frame its loss weighs, c √w ⊙ y, unrotated. `--rotate-except J` mixes the live coordinates outside J among themselves with one random rotation and leaves J on their axes. Within J, `--rotate-block K` rotates K among themselves (at random, or with `--block-basis principal` onto their principal axes), `--whiten-block K` whitens them among themselves by ZCA, and `--gaussianize K` gives each a Gaussian marginal, keeping the rows' order; `--weights-like` takes another cache's loss weights; `--center` subtracts the mapped rows' prefix mean |
+| `weightframe.py` | A cache's rows in the frame its loss weighs, c √w ⊙ y, unrotated. `--rotate-except J` mixes the live coordinates outside J among themselves with one random rotation and leaves J on their axes. Within J, `--rotate-block K` rotates K among themselves (at random, or with `--block-basis principal` onto their principal axes), `--whiten-block K` whitens them among themselves by ZCA, and `--gaussianize K` gives each a Gaussian marginal, keeping the rows' order; `--weights-like` takes another cache's loss weights; `--center` subtracts the mapped rows' prefix mean, and with it `--move-mean J\|random` puts the mean back at its own norm on coordinates J or along a random direction |
 | `axes.py` | What each arm's coordinate axes carry that a rotation would remove, in the frame its loss weighs: coordinate marginals beside random directions, magnitude dependence between coordinates beside random directions, and the correlations' tail beside random rotations; the group of strongly correlated coordinates, and a draw of coordinates outside it for `--rotate-except` |
+| `meanplace.py` | Where each arm's mean lies, as the gain-shape layer reads the rows: its share of a row's squared norm; against the covariance (the variance along it, its principal directions, its Mahalanobis distance); against the coordinate axes (how many it spreads over, its largest coordinate and how far each coordinate sits from zero); what a row's norm says about its shape; whether centering changes the cells (an affine map between the centered and uncentered unit shapes, and spherical k-means seed agreement on each); the languages' own offsets |
 | `phase2.sh` | Phase 2 on one GPU: the harvests, then the arms' dictionaries (`ARMS`, default `lcm init`) trained and scored by the SONAR control's recipe |
 
 | `templates.py` | Which rows of the held-out tail are templates: a sentence that another document of the cache repeats (casefolded, digits alike, whitespace collapsed), a SONAR near-twin in another tail document, a skeleton (names, numbers and URLs masked) that another document repeats, or masked word 3-grams that overlap another tail document's row. Writes masks for `seedmatch.py --row-mask`, a control that drops as many rows of each language at random, and the flagged shares by language and kind |
 
-`tests/test_lcm_organism.py` covers the thirteen Python files.
+`tests/test_lcm_organism.py` covers the fourteen Python files.
 
 ## Run
 
@@ -129,6 +130,18 @@ JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/recolour.py --source $A
     --out $A/lcm_readout_x_rotc_b4.npy
 ARMS="lcm_rotmu lcm_readout_x_wfc lcm_readout_x_rotc" experiments/lcm-organism/phase2.sh train
 ARMS="lcm_rotmu lcm_readout_x_wfc lcm_readout_x_rotc" experiments/lcm-organism/phase2.sh score
+# the LCM's states centered with their mean put back on coordinate 532 alone, and SONAR's own rows
+# (laid out as the harvest) centered with theirs put back along a random direction: each differs
+# from its uncentered rows only in where the mean lies
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/weightframe.py --source $A/lcm_b4.npy \
+    --scale-like $A/lcm_rot_b4.npy --center --move-mean 532 --out $A/lcm_m1_b4.npy
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/ctxmean.py --weight 0 --out $A/sonar_rows_b4.npy
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/weightframe.py --source $A/sonar_rows_b4.npy \
+    --center --move-mean random --out $A/sonar_mrand_b4.npy
+ARMS="lcm_m1 sonar_mrand" experiments/lcm-organism/phase2.sh train
+ARMS="lcm_m1 sonar_mrand" experiments/lcm-organism/phase2.sh score
+# where each arm's mean lies, and whether centering changes what its heads can cut
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/meanplace.py --arms lcm_wf sonar_wf lcm_readout_x_wf
 # the tail's templated rows, then an arm's seeds scored without them
 uv run python experiments/lcm-organism/templates.py
 JAX_DEFAULT_MATMUL_PRECISION=highest uv run python experiments/next-sentence/seedmatch.py --a <seed 42> --b <seed 43> \
@@ -246,6 +259,23 @@ expired node loses only what had not reached the bucket.
   - **Centered** (`--center`). The last step subtracts the mapped rows' mean over the prefix, so
     each row keeps its variation about the mean and loses the mean. The other maps are affine, so
     the covariance, and so the weights, are as without it.
+  - **The mean moved** (`--move-mean`, with `--center`). Every row then takes back one offset of
+    the mean's norm, placed elsewhere: on the coordinates J, in equal shares with the mean's own
+    sign on each, or along a direction drawn over the live coordinates (`--mean-seed`). The rows'
+    variation and weights are the centered rows', so the arm differs from the uncentered one only in
+    where its mean lies, and from the centered one only by that offset.
+- **Where the mean lies** (`meanplace.py`).
+  - **Why.** The trainer has no encoder to remove a mean, and gain-shape normalizes each row about
+    the origin, so the mean is part of every unit shape a classifier reads. How much that costs
+    could depend on the mean's size, on how it lies against the variation, or on how it lies
+    against the coordinate axes, which a per-coordinate optimizer treats one by one.
+  - **Cells or parametrization.** A classifier quadratic in its input, with a constant coordinate,
+    draws the same cells after any affine change of that input. So when an affine map takes the
+    centered unit shapes to the uncentered ones almost exactly, centering changes how the cells
+    are parametrized, not which can be drawn. Spherical k-means on each, which has no optimizer
+    state, says whether centering makes the data's own cells reproduce better across seeds.
+  - **Rows.** Every arm is read on the same prefix and tail rows, drawn once from `--seed`, and the
+    script refuses an arm laid out differently.
 - **The axes** (`axes.py`).
   - **Why.** Adam's per-coordinate step sizes make the trainer sensitive to the basis, so a
     rotation can change seed agreement although it keeps the spectrum. `axes.py` asks what on the axes

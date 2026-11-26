@@ -1,5 +1,166 @@
 # lcm-organism: notes
 
+## 2026-11-26, later: SONAR's mean lies on one coordinate and the LCM's over a dozen; two arms built and queued that move each
+
+**In short.**
+- **The question** (the entry below). Centering adds 0.0061 / 0.0078 of excess NMI (all heads /
+  within a language) to the LCM's states and 0.0074 / 0.0079 to the readout from x_n alone, but
+  0.0012 / 0.0014 to SONAR's rows. Why is SONAR's mean so cheap?
+- **Centering barely changes what the heads can draw** (`meanplace.py`, below).
+  - In each rescaled arm, an affine map takes the centered unit shapes to the uncentered ones to
+    within 0.2–0.6% of their variance, on held-out rows. A classifier quadratic in its input, with a
+    constant coordinate, draws the same cells after an affine change of that input.
+  - Spherical k-means on the unit rows, which has no optimizer state, agrees across seeds as well
+    with the mean as without it.
+  - So centering's gain most likely lies in how training reaches the cells, not in which cells
+    there are.
+- **Where the mean lies on the coordinate axes tracks the gain.**
+  - SONAR's mean is 85% on one coordinate, 652, which sits 16.3 SDs from zero.
+  - The LCM's spreads over 13.3 coordinates' worth (17% on 532, at 5.4 SDs), and the readout's over
+    9.6 (21% on 532, at 9.3 SDs).
+  - Spread over every axis, the mean costs most: the rotated LCM reads 0.0096 / 0.0117 below the
+    centered LCM, and the rotated readout 0.0128 / 0.0132 below its centered arm.
+- **Its size and its alignment with the variance do not.**
+  - SONAR's mean is the larger share of a row, 23.5% against the LCM's 14.7%.
+  - Rotated about their mean, the LCM's and the readout's means stay on their axes but no longer
+    lie along the variation. The variance along them falls from 13.3 and 11.2 times the average
+    direction's to 0.87 and 0.86, and centering is worth as much to them: 0.0068 / 0.0085 and
+    0.0082 / 0.0088.
+- **The hypothesis.** A mean costs agreement according to how many coordinate axes it spreads
+  over, and little when it sits on one coordinate far from zero. Adam's per-coordinate step sizes
+  are one way that could happen. The arms below test the dependence, not the mechanism.
+- **Two arms test it.** Each differs from its rescaled arm only in where the mean lies, at the
+  mean's own norm, and from its centered arm only by that one offset, so its weights are the
+  centered arm's:
+  - `lcm_m1`: the LCM's centered states with the mean put back on coordinate 532 alone;
+  - `sonar_mrand`: SONAR's centered rows with the mean put back along a random direction over the
+    live coordinates.
+
+**Where each arm's mean lies** (`meanplace.py`). The moments are read on 60,000 prefix rows.
+Spherical k-means (32 cells, four seeds) is fitted on 40,000 of them and read on 40,000 rows of the
+scored tail. The rows are the same in every arm, and each cache is read as the trainer reads it.
+
+| | LCM rescaled | Readout from x_n alone, rescaled | SONAR rescaled |
+|---|---|---|---|
+| Centering adds, all heads / within | 0.0061 / 0.0078 | 0.0074 / 0.0079 | 0.0012 / 0.0014 |
+| The mean's share of a row's squared norm | 14.7% | 28.0% | 23.5% |
+| Coordinates the mean spreads over (participation ratio of its squares) | 13.3 | 9.6 | 1.4 |
+| Its largest coordinate's share of its squared norm | 17% (532) | 21% (532) | 85% (652) |
+| That coordinate's distance from zero | 5.4 SDs | 9.3 SDs | 16.3 SDs |
+| Coordinates more than 1 SD from zero | 13 | 21 | 2 |
+| The variance along the mean, over the average direction's | 13.3 | 11.2 | 1.6 |
+| The mean's Mahalanobis distance from the origin | 13.4 | 113 | 101 |
+| Rows' norms: coefficient of variation | 0.24 | 0.12 | 0.16 |
+| Affine map from the centered unit shapes to the uncentered: held-out FVU | 0.0021 | 0.0059 | 0.0048 |
+| Spherical k-means, NMI between seeds, uncentered / centered (null 0.004) | 0.692 / 0.680 | 0.682 / 0.684 | 0.661 / 0.651 |
+| The same within a language (nulls 0.11–0.16) | 0.692 / 0.687 | 0.665 / 0.668 | 0.680 / 0.680 |
+
+- **SONAR's coordinate 652 is not a coordinate of its own.** It correlates 0.74 with coordinate
+  654, as the LCM's coordinate 532 does 0.94 with 709. What differs is how many coordinates the
+  mean occupies.
+- **The languages' own offsets don't explain it either.** Each language's mean is 27–28% of its
+  rows' squared norm in the LCM and SONAR alike. Removing the global mean leaves 15% in the LCM and
+  4.5% in SONAR, so centering removes more of each language's offset from SONAR.
+
+**The same means elsewhere.** Centering's worth is the centered arm's excess less this arm's. For
+the LCM's arms that is the centered LCM, since no centered rotated LCM exists, and the readout's
+centered arms read alike rotated and unrotated. For the readout's rotated arms it is the centered
+rotated readout.
+
+| Arm | Coordinates the mean spreads over | Variance along the mean, over the average | Centering's worth, all heads / within |
+|---|---|---|---|
+| LCM rescaled | 13.3 | 13.3 | 0.0061 / 0.0078 |
+| LCM rotated about its mean | 13.3 | 0.87 | 0.0068 / 0.0085 |
+| LCM rotated | 350 | 13.3 | 0.0096 / 0.0117 |
+| Readout rescaled | 9.6 | 11.2 | 0.0074 / 0.0079 |
+| Readout rotated about its mean | 9.6 | 0.86 | 0.0082 / 0.0088 |
+| Readout rotated | 328 | 11.2 | 0.0128 / 0.0132 |
+| SONAR rescaled | 1.4 | 1.6 | 0.0012 / 0.0014 |
+| **`lcm_m1`** | **1.0** | **1.00** | training |
+| **`sonar_mrand`** | **310** | **0.94** | training |
+
+**Before rescaling.** The TPU references trained on the raw frames.
+- **The LCM:** its mean there is 48% of a row's squared norm, on 3.3 coordinates' worth. Rescaling
+  spread it over 13.3 and cost 0.0027 / 0.0029 (the entry below). That fits the hypothesis.
+- **SONAR:** its raw mean is 6.0% of a row's squared norm, spread over 49 coordinates' worth.
+  Rescaling gathered it onto coordinate 652 yet cost 0.0020 / 0.0023. So something else in
+  rescaling carries SONAR's cost. The candidates are the variation's per-coordinate scales;
+  coordinate 837, which the raw input carries about 54 SDs from zero and the weighted frame zeroes;
+  and the change of platform.
+- **Neither bears on the two arms,** each of which keeps its frame, weights and platform.
+
+**What the arms predict.**
+
+| Arm | If the number of axes is the cause | If not |
+|---|---|---|
+| `lcm_m1`, all heads / within | as the centered LCM, 0.0325 / 0.0823, within the seed spread | as the rescaled LCM, 0.0265 / 0.0745 |
+| `sonar_mrand` | below the rescaled SONAR's 0.0100 / 0.0163 | within the seed spread of 0.0100 / 0.0163 |
+
+- **`lcm_m1` decides it with one seed pair.** The two outcomes are 0.0061 / 0.0078 apart, 3.6 to 4.6
+  times the 0.0017 spread of the LCM's seed pairs on the slow heads. An arm reading in between would
+  make the axes part of it.
+- **`sonar_mrand` may not.** Rotated, the LCM and the readout lose 29.4% and 40.1% of their centered
+  excess on all heads, and 14.3% and 28.2% within a language. The same shares of SONAR's centered
+  0.0113 / 0.0177 put this arm at 0.0067–0.0080 / 0.0127–0.0152, only 0.002–0.003 / 0.001–0.004 below
+  the rescaled arm. If the cost doesn't scale with the arm's level, it could be up to about 0.01. A
+  drop within about twice the seed spread needs seed 44 of this arm and of the rescaled one to read.
+
+**The arms.** m is each source's mean over the prefix, in its weighted frame.
+- **`lcm_m1`** (`weightframe.py --center --move-mean 532`, with `lcm_b4` as source): y = c √w ⊙ x −
+  m − |m| e₅₃₂. Here w is the LCM's matched weights and c = 377.53, the rotated LCM's. The mean's
+  component on 532 is negative, so the offset is too.
+- **`sonar_mrand`** (`weightframe.py --center --move-mean random`, with SONAR's rows laid out as the
+  harvest): y = c √w ⊙ x − m + |m| r. Here r is a unit direction drawn from seed 0 over the 1,023 live
+  coordinates, w is no837's, and c = 376.35 comes from the default rule, as for the rescaled and
+  centered SONAR arms.
+
+**The written caches,** checked on 20,000 prefix rows and 2,000 tail rows (sample seed 0):
+
+| On these rows | `lcm_m1` | `sonar_mrand` |
+|---|---|---|
+| The map | the centered LCM's rows, each moved by one offset (spread at most 0.0071) of norm 13.335, the mean's | the centered SONAR's rows, each moved by one offset (spread at most 0.0063) of norm 17.730, the mean's |
+| Where the offset lies | all on coordinate 532, at −13.335 | over the live coordinates, 310 coordinates' worth, at most 1.6% of it on one; coordinate 837 stays 0 |
+| The mean's share of a row's squared norm | 14.8% | 23.5% |
+| Weights against the centered arm's | within 1.2e-5 | within 9e-5 |
+| Float16: largest value, values rounded to zero | 18.7, 55 | 16.2, 153 |
+
+- **Both keep `lcm_b4`'s sidecars** (`.index`, `.kind`, `.langs`, `.docstart`), so every arm is
+  scored on the same rows.
+- **Moving a mean also moves the rows' own cells.** Spherical k-means agrees less on both arms than
+  on their rescaled arms, uncentered:
+  - `lcm_m1` 0.636, against the rescaled LCM's 0.692. On one coordinate the mean makes that
+    coordinate, in each unit shape, a function of the row's norm, and the cells follow it.
+  - `sonar_mrand` 0.627, against the rescaled SONAR's 0.661.
+  - Centered, both read as their centered arms: 0.682 and 0.650.
+
+  For `lcm_m1` this runs against the hypothesis, so a dictionary that agrees more there than on
+  the rescaled LCM would be gaining from how it trains. For `sonar_mrand` it runs with it, so a drop
+  there could come from either.
+
+**Runs** on the RTX 3090, seeds 42 and 43 of each arm to step 46,250, `lcm_m1` first, each arm scored
+once both seeds have trained:
+
+```bash
+A=data/activations/lcm-organism
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/meanplace.py --arms lcm_wf sonar_wf \
+    lcm_readout_x_wf lcm_m1 sonar_mrand lcm_rotmu lcm_readout_x_rotmu lcm_rot lcm_readout_x_rot lcm \
+    sonar_rows sonar_recol init sonar_ctxmean
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/weightframe.py --source $A/lcm_b4.npy \
+    --scale-like $A/lcm_rot_b4.npy --center --move-mean 532 --out $A/lcm_m1_b4.npy
+JAX_PLATFORMS=cpu uv run python experiments/lcm-organism/weightframe.py --source $A/sonar_rows_b4.npy \
+    --center --move-mean random --out $A/sonar_mrand_b4.npy
+ARMS=lcm_m1 experiments/lcm-organism/phase2.sh train && ARMS=lcm_m1 experiments/lcm-organism/phase2.sh score
+ARMS=sonar_mrand experiments/lcm-organism/phase2.sh train && ARMS=sonar_mrand experiments/lcm-organism/phase2.sh score
+```
+
+**Caveats.**
+- **One seed pair per arm,** with the LCM's seed pairs 0.0017 apart on the slow heads.
+- **The number of axes and each coordinate's distance from zero go together.** At a fixed norm, one
+  sets the other, so these arms can't tell which matters.
+- **Spherical k-means is not the trainer's code.** It fits one partition of 32 cells, which agrees
+  across seeds at 0.63–0.72, where a dictionary's matched heads agree at 0.01–0.04. It says centering
+  leaves the rows' own cells as reproducible as they were. It does not say how the heads would fare.
+
 ## 2026-11-26: centered, the LCM's lead over SONAR grows, and on all heads the centered readout only matches it
 
 **In short.**

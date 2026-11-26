@@ -59,6 +59,14 @@ so each row keeps its variation about the mean and loses the mean. The other
 maps are affine, so the output's covariance, and so its weights, are what they
 are without it. recolour.py's `--center` writes these rows rotated.
 
+`--move-mean` puts the mean back somewhere else after `--center`: every row
+takes one offset of the mean's own norm, on the coordinates J given (equal
+shares, each with the sign of the mean's component there) or, with `random`,
+along a direction drawn over the live coordinates from `--mean-seed`. The
+rows' variation is the centered rows', so the covariance and the weights are
+again what they are without it, and the output differs from the uncentered
+rows only in where the mean lies.
+
 A rotated block's coordinates no longer have even variances, so the
 output's own inverse-variance weights would change the loss along with the
 basis. `--weights-like NPY` takes the weights of another cache laid out
@@ -190,6 +198,12 @@ def main(argv=None) -> Path:
                    help="a cache whose loss weights the output takes, in place of its own")
     p.add_argument("--center", action="store_true",
                    help="subtract the mapped rows' mean over the prefix")
+    p.add_argument("--move-mean", default=None, metavar="J|random",
+                   help="with --center, add back an offset of the mean's norm on the "
+                        "comma-separated coordinates J, or along a random direction over the "
+                        "live coordinates")
+    p.add_argument("--mean-seed", type=int, default=0,
+                   help="the random direction's seed, for --move-mean random")
     p.add_argument("--out", default="data/activations/lcm-organism/lcm_readout_x_wf_b4.npy")
     p.add_argument("--chunk", type=int, default=65536)
     cfg = p.parse_args(argv)
@@ -222,6 +236,14 @@ def main(argv=None) -> Path:
     gauss = coordinates(cfg.gaussianize, d, "--gaussianize")
     if block is not None and whiten is not None:
         raise SystemExit("--rotate-block and --whiten-block each map the block; give one")
+    moved = None
+    if cfg.move_mean is not None:
+        if not cfg.center:
+            raise SystemExit("--move-mean puts back the mean that --center removes; give both")
+        if cfg.move_mean != "random":
+            moved = coordinates(cfg.move_mean, d, "--move-mean")
+            if not moved or not live[moved].all():
+                raise SystemExit("--move-mean needs live coordinates, or random")
     for flag, js in (("--rotate-block", block), ("--whiten-block", whiten),
                      ("--gaussianize", gauss)):
         if js is None:
@@ -281,7 +303,16 @@ def main(argv=None) -> Path:
         for lo in range(0, P, cfg.chunk):
             offset += frame(lo, min(lo + cfg.chunk, P)).sum(0, dtype=np.float64)
         offset /= P
-    offset32 = offset.astype(np.float32)
+    # the mean put back elsewhere at its own norm (--move-mean), so the rows take one offset
+    place = np.zeros(d)
+    if cfg.move_mean is not None:
+        if moved is None:
+            u = np.random.default_rng(cfg.mean_seed).standard_normal(d) * live
+        else:
+            u = np.zeros(d)
+            u[moved] = np.where(offset[moved] < 0, -1.0, 1.0)
+        place = np.linalg.norm(offset) * u / np.linalg.norm(u)
+    offset32 = (offset - place).astype(np.float32)
 
     part = dst.with_name(dst.name + ".partial")
     out = np.lib.format.open_memmap(part, mode="w+", dtype=np.float16, shape=(m, d))
@@ -341,7 +372,11 @@ def main(argv=None) -> Path:
                       "gaussianize": gauss,
                       "weights_like": Path(cfg.weights_like).name if cfg.weights_like else None,
                       "center": bool(cfg.center),
-                      "center_offset_norm": float(np.linalg.norm(offset))},
+                      "center_offset_norm": float(np.linalg.norm(offset)),
+                      "move_mean": cfg.move_mean,
+                      "mean_seed": cfg.mean_seed if cfg.move_mean == "random" else None,
+                      "moved_mean": ([float(v) for v in place[moved]] if moved is not None
+                                     else None)},
             "mse_weights": {"rows": P, "live": int(live.sum()), "span": span},
             "mse_weights_matched_scale": matched}
     side(".meta.json").write_text(json.dumps(meta, indent=2) + "\n")

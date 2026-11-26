@@ -38,6 +38,12 @@
 #   about as often as the sets' Jaccard index, and a shingle twin must be
 #   another document's; the random control drops as many rows of each
 #   language.
+# - meanplace.py: a mean on one coordinate reads as one axis at that
+#   coordinate's offset in SDs, and one in equal shares over n as n axes; the
+#   variance along a planted direction and a planted share between languages
+#   read as planted; an affine map is fitted exactly and independent rows not
+#   at all; separated directions reproduce across k-means seeds and the
+#   shuffled null does not; an arm laid out as a harvest is read end to end.
 import json
 import os
 import signal
@@ -714,6 +720,47 @@ def test_centering_drops_the_mean_and_keeps_the_variation_and_the_weights(tmp_pa
         recolour.main([*common, "--about-mean", "--center", "--out", str(out / "both.npy")])
 
 
+def test_moving_the_mean_keeps_the_centered_rows_and_their_weights(tmp_path):
+    import weightframe
+    _, _, tgt, P, _, _, _ = planted_harvest(tmp_path)
+    w = harvest_lcm.inverse_variance(np.load(tgt), P)
+    w[5] = 0.0
+    np.save(tmp_path / "w.npy", w.astype(np.float32))
+    out = tmp_path / "out"
+    out.mkdir()
+    base = ["--source", str(tgt), "--source-weights", str(tmp_path / "w.npy"), "--chunk", "50"]
+    weightframe.main([*base, "--out", str(out / "wf.npy")])
+    weightframe.main([*base, "--center", "--out", str(out / "wfc.npy")])
+    weightframe.main([*base, "--center", "--move-mean", "2", "--out", str(out / "one.npy")])
+    weightframe.main([*base, "--center", "--move-mean", "random", "--out", str(out / "rand.npy")])
+    wf, wfc, one, rand = (np.load(out / f"{k}.npy").astype(np.float64)
+                          for k in ("wf", "wfc", "one", "rand"))
+    mean = wf[:P].mean(0)
+    for k, moved in (("one", one), ("rand", rand)):
+        # the centered rows, each moved by one offset of the mean's norm, which is their mean
+        step = moved - wfc
+        off = step.mean(0)
+        np.testing.assert_allclose(step, np.broadcast_to(off, step.shape), atol=2e-2)
+        np.testing.assert_allclose(np.linalg.norm(off), np.linalg.norm(mean), rtol=1e-2)
+        np.testing.assert_allclose(moved[:P].mean(0), off, atol=2e-2)
+        # nothing on the coordinate the weights zero, and the centered rows' weights
+        np.testing.assert_allclose(moved[:, 5], 0, atol=1e-6)
+        for suf in (".mse_weights.npy", ".mse_weights_matched.npy"):
+            np.testing.assert_allclose(np.load(out / f"{k}{suf}"), np.load(out / f"wfc{suf}"),
+                                       rtol=1e-2)
+    # on the coordinate named, with the mean's sign there; random, over several live ones
+    off = (one - wfc).mean(0)
+    assert off[2] ** 2 > 0.999 * (off ** 2).sum() and np.sign(off[2]) == np.sign(mean[2])
+    off = (rand - wfc).mean(0)
+    assert (off ** 2).sum() ** 2 / (off ** 4).sum() > 3
+    meta = lambda k: json.loads((out / f"{k}.meta.json").read_text())["frame"]  # noqa: E731
+    assert meta("one")["move_mean"] == "2" and len(meta("one")["moved_mean"]) == 1
+    assert meta("rand")["mean_seed"] == 0 and meta("wfc")["move_mean"] is None
+    for bad in (["--move-mean", "2"], ["--center", "--move-mean", "5"]):
+        with pytest.raises(SystemExit):
+            weightframe.main([*base, *bad, "--out", str(out / "bad.npy")])
+
+
 def test_the_weighted_frame_rotates_all_but_the_coordinates_it_keeps(tmp_path):
     import weightframe
     _, _, tgt, P, _, _, _ = planted_harvest(tmp_path)
@@ -1084,3 +1131,56 @@ def test_a_twin_is_the_closest_row_of_another_document():
     S = X @ X.T
     S[doc[:, None] == doc[None, :]] = -2
     np.testing.assert_allclose(cos, S.max(1), atol=1e-5)
+
+
+def test_meanplace_reads_where_the_mean_lies_and_what_centering_changes():
+    import meanplace
+    r = np.random.default_rng(0)
+    n, d = 4000, 16
+    V = r.standard_normal((n, d))
+    V[:, 0] *= 3  # one direction with 9 times the others' variance
+    langs = np.array(["a", "b"])[r.integers(0, 2, n)]
+    one = np.zeros(d)
+    one[3] = -8.0
+    g, m = meanplace.geometry(V + one, langs, 100)
+    # on one coordinate: one axis, that coordinate, 8 SDs from zero, and generic variance
+    assert g["mean_axis_pr"] == pytest.approx(1, abs=1e-3) and g["mean_axis_top1_coord"] == 3
+    assert g["coord_mean_over_sd_max"] == pytest.approx(8, rel=0.05)
+    np.testing.assert_allclose(m, one, atol=0.1)
+    assert meanplace.geometry(V + 2.0, langs, 100)[0]["mean_axis_pr"] == pytest.approx(d, rel=1e-2)
+    # along the direction of most variance: 9 over the average eigenvalue, 24 / 16
+    along = meanplace.geometry(V + 8.0 * np.eye(d)[0], langs, 100)[0]
+    assert along["var_along_mean_over_avg"] == pytest.approx(6, rel=0.05)
+    # two languages offset by +-2 along a third coordinate: 4 of the 28 units of variation
+    off = np.where(langs[:, None] == "a", 2.0, -2.0) * np.eye(d)[1]
+    lang = meanplace.geometry(V + one + off, langs, 100)[0]["language"]
+    assert lang["between_share"] == pytest.approx(4 / 28, rel=0.1) and lang["langs"] == 2
+    # an affine map is fitted exactly, independent rows not at all
+    X = r.standard_normal((900, 6))
+    assert meanplace.affine_fvu(X, X @ r.standard_normal((6, 5)) + 3) < 1e-8
+    assert meanplace.affine_fvu(X, r.standard_normal((900, 5))) > 0.95
+    z = r.standard_normal(n)
+    assert meanplace.r2_on(np.outer(z, np.ones(3)) + 0.1 * r.standard_normal((n, 3)), z) > 0.95
+    # separated directions reproduce across seeds, and the shuffled null does not
+    C = r.standard_normal((4, d))
+    U = meanplace.unit(C[r.integers(0, 4, 3000)] + 0.05 * r.standard_normal((3000, d)))
+    km = meanplace.kmeans_agreement(U[:2000], U[2000:], langs[:1000], k=4, seeds=3, min_rows=100)
+    assert km["all"] > 0.99 and km["null"] < 0.05 and km["within"] > 0.99
+
+
+def test_meanplace_reads_an_arm_laid_out_as_a_harvest(tmp_path):
+    import meanplace
+    _, _, tgt, P, _, _, _ = planted_harvest(tmp_path)
+    sub = tmp_path / "arms"
+    sub.mkdir()
+    for suf in (".npy", ".meta.json", ".langs.npy"):
+        (sub / f"arm_b4{suf}").symlink_to(tmp_path / f"h{suf}")
+    out = tmp_path / "mp.json"
+    args = ["--arms", "arm", "--dir", str(sub), "--fit", "200", "--tail", "100", "--kfit", "150",
+            "--k", "4", "--seeds", "2", "--min-rows", "10", "--scored", "300", "--out", str(out)]
+    meanplace.main(args)
+    g = json.loads(out.read_text())["arm"]
+    assert 0 < g["share_mean"] < 1 and g["d_live"] == np.load(tgt).shape[1]
+    assert set(g["kmeans"]) == {"k", "uncentered", "centered"} and g["rows"]["fit"] == 200
+    with pytest.raises(SystemExit):
+        meanplace.main([*args[:-1], str(tmp_path / "too_many.json"), "--fit", str(P + 1)])
