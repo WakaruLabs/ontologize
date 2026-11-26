@@ -5,9 +5,11 @@ FINDINGS_SRC = findings.tex $(SHARED) $(wildcard findings/sections/*.tex) \
 PROPOSAL_SRC = proposal.tex $(SHARED) $(wildcard proposal/sections/*.tex) \
 	$(wildcard tikz/*.tex)
 
-# TeX tools run inside this directory's flake dev shell, unless already in one or nix is absent
+# TeX tools run inside the dev shell of the flake in nix/, unless already in one or nix is
+# absent. It is called as a path: flake, so nix copies only nix/ into the store; as a git
+# flake it would copy the whole repository into a new store path after every edit.
 ifndef IN_NIX_SHELL
-NIX := $(if $(shell command -v nix),nix develop $(CURDIR) --command)
+NIX := $(if $(shell command -v nix),nix develop path:$(CURDIR)/nix --command)
 endif
 
 # Every pdflatex pass rewrites the .bcf. The final passes leave its contents

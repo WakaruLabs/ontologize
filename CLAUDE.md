@@ -33,7 +33,7 @@ which should be used for explaining code structure, usage, and rationale.
 The findings writeup, its two-page brief and the project proposal live together in
 `latex/` and share one style (`latex/wakaru.sty`), one set of macros, one bibliography
 (`latex/refs.bib`), and the same diagrams and figures; `latex/CLAUDE.md` covers all three. They are compiled with
-`make`, using `pdflatex` and `biber`. The toolchain is provided by `latex/flake.nix`; the
+`make`, using `pdflatex` and `biber`. The toolchain is provided by `latex/nix/flake.nix`; the
 Makefile runs `pdflatex`/`biber` through `nix develop` itself (skipped when already inside
 a nix shell), so plain `make -C latex` (the findings), `make -C latex brief` and
 `make -C latex proposal` work.

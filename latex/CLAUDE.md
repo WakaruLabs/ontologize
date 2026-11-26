@@ -97,7 +97,7 @@ provides the author block's `\mutedlabel` and the optional `\eyebrow` and `\runn
 - the kit's box (a black border with a hard shadow merged into it, rounded corners) for
   the masthead, the abstract, `wakaruquote` and the folio.
 
-Its text is IBM Plex Serif (`plex` in `flake.nix`): paragraphs, the abstract, captions,
+Its text is IBM Plex Serif (`plex` in `nix/flake.nix`): paragraphs, the abstract, captions,
 tables and their column heads, footnotes and the bibliography. The title, author block,
 headings, labels, chips, running head, folio and theorem heads are IBM Plex Sans. Both
 are at scale 0.9 with lining figures. Code is Plex Mono, or Noto Sans Mono under
@@ -148,10 +148,13 @@ A failed run can leave a malformed `build/<document>.bcf` that makes biber refus
 later run (`ERROR - build/proposal.bcf is malformed`, say); `make clean` and a rebuild fix
 it, so do not chase the biber error itself.
 
-The system TeX Live install is unusable (no `texmf.cnf`, format files or `biber`), so the
-Makefile runs `pdflatex`/`biber` through `nix develop` on `flake.nix` in this directory;
-plain `make` works. A flake inside a git repository sees only the files git tracks, so
-`flake.nix` must be tracked (or at least `git add`ed) before `nix develop` can find it.
+The Makefile runs `pdflatex`/`biber` through `nix develop` on the flake in `nix/`, which
+pins the TeX distribution, so plain `make` builds the documents the same way wherever nix is
+installed, whatever TeX the system has. It calls the flake as `path:nix`, so nix copies only
+`nix/` (`flake.nix` and `flake.lock`) into the store, and reuses that copy until they change.
+Called as a git flake, it would copy every tracked file of the repository into a new store
+path after any edit. `figures/texfonts.py` calls it the same way. Keep `nix/` to those two
+files, since a `path:` flake copies everything in its directory.
 For a quick check without a full build, after any structural change run:
 
 ```bash

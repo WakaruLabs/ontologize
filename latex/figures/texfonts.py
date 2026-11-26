@@ -2,7 +2,7 @@
 
 latex/wakaru.sty sets headings and labels in IBM Plex Sans, math in newpx
 and code in IBM Plex Mono. Figures take the same faces from the TeX
-distribution that sets the documents (latex/flake.nix): IBM Plex Sans for
+distribution that sets the documents (latex/nix/flake.nix): IBM Plex Sans for
 text, TeX Gyre Pagella (the OpenType Palatino that newpx is built on) for
 mathtext, and IBM Plex Mono. The files are found with kpsewhich, run
 through `nix develop` as the Makefile runs pdflatex, so a figure needs no
@@ -47,7 +47,7 @@ def find() -> list[str]:
     """Paths of FILES in the flake's TeX distribution; [] if out of reach."""
     cmd = ["kpsewhich", *FILES]
     if "IN_NIX_SHELL" not in os.environ and shutil.which("nix"):
-        cmd = ["nix", "develop", str(LATEX), "--command", *cmd]
+        cmd = ["nix", "develop", f"path:{LATEX / 'nix'}", "--command", *cmd]
     try:
         out = subprocess.run(cmd, capture_output=True, text=True,
                              timeout=900).stdout
