@@ -663,7 +663,8 @@ the hard stack under entropy coding. When continuous values are quantized
 and each slot's symbols are entropy-coded (Appendix~\ref{sec:quantrate}), a
 weakly penalized ReLU+L1 SAE ($s_{\mathrm{L1}}{=}3\times10^{-6}$) with
 coarse quantization reaches $\fvu = 0.129$ at an average rate of 1900 bits
-per row, 17\% below the hard stack: skewed latent firing rates reduce its
+per row, 17\% below the hard stack's $0.155$ under the same coding: skewed
+latent firing rates reduce its
 support-indexing cost by roughly one fifth relative to fixed-length
 indexing, whereas the hard stack uses entries almost uniformly and gains
 nothing from entropy coding. Because active-set sizes also vary across
@@ -1134,8 +1135,11 @@ held-out documents. Categorical dictionaries run for one pass over 10M or
 40M tokens on a single seed (the 10M direct run's seed-43 replica reaches
 $\mathrm{FVU} = 0.219$ and $96.9\%$ loss recovered). SAEs train for 10
 epochs over the 10M-token cache under \texttt{sae.py}'s unwhitened
-objective; quantizing active coefficients to ${\sim}5$ bits each gives the
-$k_{\mathrm{SAE}}{=}32$ SAE 556--588 total bits at
+objective. Their index bits code the active latents as a set,
+$\log_2\binom{m}{k_{\mathrm{SAE}}}$. Counted at fixed length instead, as
+the categorical dictionaries' bits are, the $k_{\mathrm{SAE}}{=}32$ SAE's
+indices take $k_{\mathrm{SAE}}\log_2 m = 394$ bits, and quantizing its
+active coefficients to ${\sim}5$ bits each gives 556--588 total bits at
 $\mathrm{FVU} = 0.189$--$0.190$. Clean cross-entropy is $3.806$,
 mean-ablated is $8.283$, and the 40M direct code reaches $3.914$;
 $\mathrm{FVU}$ is unwhitened here.}
@@ -1149,7 +1153,8 @@ $\mathrm{FVU}$ of $0.217$ vs.\ $0.189$) and after one pass over 40M tokens
 ($97.6\%$ at $\mathrm{FVU} = 0.195$; Table~\ref{tab:gpt2hard}). However,
 when the SAE's 32 active coefficients are quantized to ${\sim}5$ bits each
 (556--588 total bits vs.\ $800 + {\sim}25$ for the categorical
-dictionary), the SAE achieves lower $\mathrm{FVU}$ per bit. Across model
+dictionary, both counted at fixed length), the SAE achieves lower
+$\mathrm{FVU}$ per bit. Across model
 families, raw $\mathrm{FVU}$ therefore does not monotonically order
 downstream loss recovery, whereas within the categorical dictionary family
 on SONAR, downstream text fidelity varied monotonically with $\fvu$

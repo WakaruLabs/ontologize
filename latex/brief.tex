@@ -289,8 +289,9 @@ training cache (97.0\% vs.\ 96.2\%) and after one pass over 40M tokens
 (97.5--97.6\%), indicating that its reconstruction errors fall in
 directions that affect next-token predictions less. However, when the
 SAE's 32 active coefficients are quantized to roughly 5 bits each
-(556--588 total bits), the SAE achieves lower unexplained variance per
-bit. In the concatenated variant (\texttt{concat.}\ in the table), where
+(556--588 bits in all, counting each feature's index and value at a fixed
+length, as the discrete code's bits are counted), the SAE achieves lower
+unexplained variance per bit. In the concatenated variant (\texttt{concat.}\ in the table), where
 each classifier writes to a disjoint coordinate block, replacing the
 shared output projection with separate per-round projections reduces
 unexplained variance from 0.186 to 0.169 (97.3\% to 97.7\% loss

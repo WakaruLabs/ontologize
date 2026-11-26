@@ -387,8 +387,8 @@ unwhitened $\mathrm{FVU}$ of $0.217$ vs.\ $0.189$) and after one pass
 over 40M tokens ($97.6\%$ at $\mathrm{FVU}$ $0.195$;
 Table~\ref{tab:prelim-gpt2}). When the SAE's 32 active coefficients are
 quantized to ${\sim}5$ bits each (556--588 total bits vs.\ $800 + {\sim}25$
-for the hard code), however, the SAE achieves lower $\mathrm{FVU}$ per
-bit; across model families, raw $\mathrm{FVU}$ does not monotonically
+for the hard code, both counted at fixed length), however, the SAE
+achieves lower $\mathrm{FVU}$ per bit; across model families, raw $\mathrm{FVU}$ does not monotonically
 predict downstream loss recovery. Replacing the shared decoder in the
 40M-token concatenated-head model with separate per-layer decoders
 reduces $\mathrm{FVU}$ from $0.186$ to $0.169$ ($97.3\% \to 97.7\%$ loss
@@ -417,8 +417,11 @@ $(\mathrm{CE}_{\mathrm{ablate}} - \mathrm{CE}_{\mathrm{recon}}) /
 (\mathrm{CE}_{\mathrm{ablate}} - \mathrm{CE}_{\mathrm{clean}})$ with the
 residual mean-ablated as the floor; FVU is unwhitened here. Concatenated
 heads write disjoint 48-dimensional blocks through a shared decoder. SAEs
-train 10 epochs over the 10M-token cache (556--588 total bits for
-$k_{\mathrm{SAE}}{=}32$ at $\sim$5 bits per coefficient). One seed per
+train 10 epochs over the 10M-token cache. Their index bits code the
+active latents as a set, $\log_2\binom{m}{k_{\mathrm{SAE}}}$; counting
+the indices at fixed length instead, as the hard codes' bits are, and
+each coefficient at ${\sim}5$ bits gives the $k_{\mathrm{SAE}}{=}32$ SAE
+556--588 total bits. One seed per
 categorical dictionary (10M direct seed-43 replica: $\mathrm{FVU}$
 $0.219$, $96.9\%$).}
 \label{tab:prelim-gpt2}
