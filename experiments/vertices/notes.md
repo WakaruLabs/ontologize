@@ -420,3 +420,58 @@ defaults except where noted; `data/out/vertices/simplex/voronoi_a*`, `stock_nono
   cells, so the toy can't test whether a free quadratic classifier finds covers that Voronoi
   cells miss. What it shows is that tying costs a soft code nothing here, and makes a hard code
   more reliable.
+
+## 2026-11-25: the k-means-start heads' classifiers, against the stock heads'
+
+**The question** (asked in the agent forum). The k-means start builds a linear classifier: one
+factor on the constant coordinate and the other on a centroid. Did training from it add quadratic
+curvature, or only move linear boundaries? The runs read are the three k-means-start runs and the
+stock pair (`l1_h1_s42`, `l1_h1_s43`), all at step 50,000 and temperature 0.00015.
+
+**Short version.** Linear boundaries moved. The k-means-start heads kept affine cells and gained
+little curvature. The stock heads are quadratic: their cells are cones, and partly blind to sign.
+
+**`bilinspec.py`** (`data/out/sonar/vertices/kmstart/bilinspec/<run>`). Per entry, the logit is
+(w·u + a)(v·u + b), with w and v the two factors' semantic parts and a and b their constants.
+
+| | \|cos(w, v)\| median | \|a\|/\|w\| | \|b\|/\|v\| | dominant eigenvalue negative |
+|---|---|---|---|---|
+| `km42_s42`, `km43_s43`, `km42_s43` | 0.332–0.336 | 0.059–0.061 | 1.74–1.82 | 0% |
+| `l1_h1_s42`, `l1_h1_s43` | 0.028–0.032 | 0.015–0.038 | 0.034–0.035 | 31–47% |
+
+- **The k-means-start factor never changes sign.** In those runs v is the factor that started on
+  the constant. Its constant is still 1.7–1.8 times its semantic part, so v·u + b keeps its sign
+  for every unit u, and each logit is an affine form times a nearly constant positive one.
+- **The stock heads' forms are saddles.** Both factors are semantic, with constants of a few
+  percent of their norms.
+- **The odd share doesn't separate them.** It reads 1.000 for the k-means-start runs and
+  0.68–0.73 for the stock ones, but the script notes that on isotropic inputs a small constant
+  dominates it in high dimensions.
+
+**`cellshape.py`** (the cache's last 32,768 rows; `data/out/sonar/vertices/kmstart/cellshape`).
+These are the shares of means of 2, 8 and 32 of an entry's rows, and of its centroid, that keep
+the entry.
+
+| | rescaled: mean2 / mean8 / mean32 / centroid | raw | negation |
+|---|---|---|---|
+| `km42_s42` | 0.930 / 0.705 / 0.598 / 0.562 | 1.000 throughout | 0.019 |
+| `km43_s43` | 0.936 / 0.740 / 0.617 / 0.594 | 1.000 throughout | 0.021 |
+| `km42_s43` | 0.910 / 0.721 / 0.592 / 0.562 | 1.000 throughout | 0.019 |
+| `l1_h1_s42` | 0.994 / 1.000 / 1.000 / 1.000 | 1.000 throughout | 0.111 |
+| `l1_h1_s43` | 1.000 / 1.000 / 1.000 / 1.000 | 1.000 throughout | 0.265 |
+
+- **Every head's cells are convex**, since every raw mean keeps its entry.
+- **The stock heads' cells are convex cones,** which depend only on a row's direction. They are
+  also partly sign-blind: 11–27% of negated rows keep their entry, against 1/32 by chance.
+- **The k-means-start heads' cells are not cones.** They lose 7–44% of rescaled means, as the
+  affine cells of the start's centred frame would. They are not sign-blind either: about 2% of
+  negated rows keep their entry, as a linear head's would.
+
+**Reading it.** The agreement the k-means start gives (NMI 0.680 against the stock pair's 0.418)
+comes with heads whose cells keep the start's affine shape. Training from k-means gave v a
+semantic part (it has none at the start) and so some curvature, but not enough to make the cells
+cones or the logits sign-blind. So the comparison with a Voronoi head should expect the k-means-start
+stock head to behave much like one already.
+
+`bilinspec.py` now restores checkpoints as numpy, as `pareto.load_onto` does, so it runs under
+`JAX_PLATFORMS=cpu`. It took seconds a run, and `cellshape.py` took 77 seconds for all five.
