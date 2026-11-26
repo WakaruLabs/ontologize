@@ -97,9 +97,7 @@ The reconstructions themselves read 0.951 (hard) and 1.002 (soft). One model and
 
 **Not yet done.**
 - Whether forcing a trimmed extreme steers better than forcing the vertex, read through M2M100,
-  for the softmax model, where the two differ. `steer.py` (README.md) was queued 2026-11-25,
-  after the seed test. It adds the cell's centroid as a third target and takes each step at
-  matched lengths too.
+  for the softmax model, where the two differ: done, and it doesn't (2026-11-26, below).
 - The one-head seed pair started from spherical k-means: done (its section is below).
 - The planted toy: done (the last section).
 
@@ -561,3 +559,125 @@ data. Whether it folds real opposite deviations together needs a head trained on
 
 `bilinspec.py` now restores checkpoints as numpy, as `pareto.load_onto` does, so it runs under
 `JAX_PLATFORMS=cpu`. It took seconds a run, and `cellshape.py` took 77 seconds for all five.
+
+## 2026-11-26: forcing a vertex, an extreme or a centroid, read through text
+
+**The question.** `place.py` put the softmax model's vertices far outside their cells, and its cells'
+trimmed extremes inside the data. Does a head forced to the extreme steer better in text than one
+forced to the vertex or to the cell's centroid?
+
+**What ran** (`steer.py`, `data/out/sonar/vertices/steer`; about 21 minutes on the RTX 3090).
+- The model is `resid_nc` at step 372,600, a softmax code at temperature 0.03.
+- In each layer, each of 512 held-out `mc4_fresh` rows has one head forced (frozen) to another
+  entry j's vertex, trimmed extreme or centroid, at its own length and at 0.5–8 times the extreme's
+  step. Beside them is a random direction with the rows' covariance, at the same lengths.
+- Every row is decoded through M2M100 and re-encoded by SONAR. The model then reads the re-encoding.
+  - *effect* is the gain in entry j's probability at the forced head over the unforced
+    reconstruction's round trip.
+  - *hit* is the share of rows where j wins there.
+  - *collateral* is 1 − chrF against the reconstruction's decode.
+
+**The round trip keeps little of a head.** A row's own decode, re-encoded, keeps the row's own entry
+at the forced head on 11–14% of rows in layers 0–3, and 59–60% in layer 4. Chance is 3%. So every
+effect below is small in absolute terms.
+
+**Steps' lengths.** The vertex's step is a median 5.75, 5.25, 4.60, 4.44 and 0.59 times the
+extreme's in layers 0–4. The centroid's is 0.86–0.96 times.
+
+**At their own lengths.**
+
+| layer | effect: vertex / extreme / centroid | hit: vertex / extreme / centroid / unforced | collateral: vertex / extreme / centroid |
+|---|---|---|---|
+| 0 | 0.029 / 0.005 / 0.003 | 25.0% / 4.1% / 4.3% / 4.7% | 0.78 / 0.59 / 0.58 |
+| 1 | 0.030 / 0.002 / 0.002 | 15.0% / 3.7% / 3.5% / 2.7% | 0.68 / 0.51 / 0.50 |
+| 2 | 0.006 / 0.000 / 0.002 | 6.8% / 4.1% / 4.9% / 4.7% | 0.59 / 0.40 / 0.38 |
+| 3 | 0.001 / 0.000 / −0.002 | 5.3% / 5.5% / 4.5% / 4.5% | 0.55 / 0.33 / 0.32 |
+| 4 | −0.003 / 0.006 / 0.003 | 3.7% / 5.3% / 4.3% / 3.9% | 0.30 / 0.24 / 0.25 |
+
+**At matched lengths**: the effect over the random direction at four and eight times the extreme's
+step, as paired means over the 512 rows, with z in brackets.
+
+| layer | vertex − random, ×4 | extreme − random, ×4 | centroid − random, ×4 | vertex − random, ×8 | extreme − random, ×8 | centroid − random, ×8 |
+|---|---|---|---|---|---|---|
+| 0 | 0.035 (21) | 0.022 (16) | 0.015 (10) | 0.030 (10) | 0.025 (18) | 0.022 (15) |
+| 1 | 0.025 (17) | 0.011 (8) | 0.009 (7) | 0.052 (25) | 0.022 (14) | 0.017 (11) |
+| 2 | 0.009 (1.9) | 0.004 (1.0) | 0.004 (0.8) | 0.029 (5.8) | 0.018 (3.5) | 0.010 (2.8) |
+| 3 | −0.001 (−0.2) | −0.008 (−2.0) | −0.004 (−0.8) | 0.013 (2.8) | −0.003 (−0.7) | 0.006 (1.0) |
+| 4 | −0.001 (−0.2) | −0.010 (−2.5) | 0.002 (0.2) | 0.006 (1.5) | 0.006 (1.2) | 0.001 (0.2) |
+
+- **At matched length the vertex's direction steers best.** In layers 0–2 the order is vertex,
+  extreme, centroid, random. At four times the extreme's step, the vertex beats the extreme by
+  0.014 in layers 0 and 1 (z −8 and −9 for extreme − vertex). In layer 1 at eight times, the forced
+  entry wins the re-encoding on 33% of rows, against 2% for the random direction.
+- **The extreme beats the centroid only slightly:** by at most 0.008, at matched lengths in layers
+  0–2. At their own lengths the two are nearly tied.
+- **Collateral is set by the step's length, not its direction.** At matched length in layers 0–3 the
+  targets differ from each other and from random by about 0.02. In layer 4, steps along any target
+  cost 0.04–0.10 less than random.
+- **At their own lengths, the vertex wins by length.** In layers 0–3 its step is four to six times
+  the extreme's, and it costs 0.18–0.22 more collateral. The extreme and the centroid barely move the
+  entry.
+- **Before the round trip the model reads the extreme as j more strongly.** In layer 0 the forced row
+  itself gives j 0.147 at its own length, against the vertex's 0.066. After decoding and
+  re-encoding, the vertex's direction is what survives.
+- **The effects fade with depth.** In layers 3 and 4 almost nothing clears random.
+
+**Reading it.** The extreme was meant to be the better target because it lies inside the data. Text
+doesn't bear that out. Per unit of step, the vertex's direction carries the most entry-specific
+signal through decoding and re-encoding. Its extra collateral at its own length is the cost of its
+length, not of lying off the data. So to steer by direction, take the vertex's direction at a
+moderate length; the extreme is mostly a shorter step along a weaker direction. `resid_nc_hm` (below)
+limits this to moderate lengths.
+
+English is forced in decoding. The round trip keeps a head's own entry on only 11–14% of rows in
+layers 0–3, which bounds every effect here.
+
+### The same on `resid_nc_hm`
+
+`resid_nc_hm` is the softmax model most of the findings' later softmax analyses use. It has half
+the dictionary width and the uniformity term from the start, and it is read at its 4.38M-step
+checkpoint (temperature 0.03). `place.py` took about 3 minutes on CPU and `steer.py` about 22
+minutes on the RTX 3090, with the settings above (`data/out/sonar/vertices/resid_nc_hm_4380000.json`
+and `steer_hm`).
+
+**Its vertices sit further out than `resid_nc`'s.**
+
+| layer | entries | off | reach | centred atom / centroid | forced row's nearest-row ratio: another entry's vertex / an extreme |
+|---|---|---|---|---|---|
+| 0 | 1008 | 8.09 | 14.2 | 18.9 | 1.390 / 0.996 |
+| 1 | 1024 | 7.78 | 15.2 | 18.4 | 1.085 / 1.000 |
+| 2 | 997 | 6.62 | 14.3 | 17.9 | 1.026 / 1.003 |
+| 3 | 997 | 5.01 | 11.8 | 17.0 | 1.006 / 1.000 |
+| 4 | 996 | 3.43 | 21.7 | 23.5 | 1.003 / 1.001 |
+
+- No cell's row lies past its vertex, in any layer.
+- With the uniformity term, 996–1,024 entries per layer have 32 rows or more. `resid_nc` has 755–954,
+  and only 127 in its layer 4.
+- The soft reconstruction reaches FVU_w 0.0005. The argmax decode reaches 22.0 (`resid_nc` 17.4),
+  and lies at 4.49 times the typical nearest-row distance (3.99).
+
+**Steering.** The round trip keeps the head's own entry on 12.7%, 7.4%, 4.5%, 6.1% and 5.3% of rows in
+layers 0–4. The vertex's step is 5.9–6.7 times the extreme's in every layer.
+
+| layer | vertex − random, ×4 | extreme − random, ×4 | centroid − random, ×4 | vertex − random, ×8 | extreme − random, ×8 | centroid − random, ×8 |
+|---|---|---|---|---|---|---|
+| 0 | 0.034 (23) | 0.018 (12) | 0.015 (9) | 0.019 (12) | 0.027 (16) | 0.024 (15) |
+| 1 | 0.013 (10) | 0.006 (5) | 0.005 (4) | 0.026 (16) | 0.014 (9) | 0.011 (8) |
+
+In layers 2–4 every direction is within ±0.008 of random (|z| ≤ 1.9).
+
+- **Layers 0–1 repeat `resid_nc`'s order at four times the extreme's step:** vertex, extreme,
+  centroid, random.
+- **At eight times, in layer 0, the extreme overtakes the vertex** (+0.008, z 4.5). In `resid_nc` the
+  same comparison was −0.005 (z −1.7), so the vertex's lead holds at moderate lengths and fades or
+  reverses at the longest, in layer 0. In layer 1 the vertex still leads at eight times.
+- **Collateral again follows length:** about 0.02 between directions at matched length. At its own
+  length the vertex costs 0.21–0.29 more than the extreme.
+- **Before the round trip the model barely reads a vertex-forced row as j.** In layer 0, at its own
+  length, it gives j 0.001, against 0.066 in `resid_nc` and 0.099 for an extreme-forced row. The
+  vertex's effect appears only after decoding and re-encoding.
+
+**The two models together.** The extreme is the better steering target in neither. Where text
+carries a head's entry at all (layers 0–1 here, 0–2 in `resid_nc`), the vertex's direction moves it
+most at up to about four times the extreme's step. At eight times in layer 0, the three directions
+converge or the extreme leads. One seed of each model.
